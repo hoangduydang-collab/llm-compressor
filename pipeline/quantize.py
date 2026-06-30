@@ -4,6 +4,7 @@ Produces a vLLM-servable ``pack-quantized`` compressed-tensors checkpoint in
 ``<run_dir>/checkpoint``.
 """
 
+import json
 from pathlib import Path
 
 from pipeline.calibration import build_calibration_dataset
@@ -43,6 +44,35 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
         m.id, trust_remote_code=m.trust_remote_code
     )
     return model, tokenizer
+
+
+def _persist_ignore_to_config(ckpt: Path, ignore: list[str]) -> None:
+    """Ensure the recipe's ignore patterns survive into the saved config.
+
+    llm-compressor prunes ignore patterns that didn't match a *quantized* module
+    from the serialized ``quantization_config.ignore``. That silently drops
+    entries for modules it (correctly) left unquantized -- e.g. the MoE router
+    ``mlp.gate`` (and, for VL MoE, the vision tower / MSA indexer). Downstream
+    loaders (vLLM) then treat those Linears as quantized and either fail to load
+    or, worse, mis-load them -> broken routing -> garbage output. We re-add the
+    intended ignore patterns so the on-disk config reflects what was actually
+    skipped.
+    """
+    cfg_path = ckpt / "config.json"
+    if not cfg_path.exists():
+        return
+    with cfg_path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    qc = data.get("quantization_config")
+    if not qc:
+        return
+    saved = list(qc.get("ignore", []))
+    added = [p for p in ignore if p not in saved]
+    if added:
+        qc["ignore"] = saved + added
+        with cfg_path.open("w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+        print(f"[pipeline] persisted ignore patterns to config: {added}")
 
 
 def _sample_generation(model, tokenizer, prompt: str) -> str:
@@ -97,6 +127,10 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
         save_kwargs["quantization_format"] = "pack-quantized"
     model.save_pretrained(str(ckpt), **save_kwargs)
     tokenizer.save_pretrained(str(ckpt))
+
+    # Re-add intended ignore patterns that llm-compressor pruned from the saved
+    # config (e.g. the MoE router gate), so loaders treat them as unquantized.
+    _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
 
     versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
 

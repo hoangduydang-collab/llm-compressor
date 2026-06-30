@@ -21,11 +21,21 @@ pipeline/
 
 ## Install (on the 8xH100 cluster)
 
+A single environment handles quantize + serve + eval (vLLM 0.24.0 stable serves
+W4AFP8 MoE correctly — see the MoE-gate note below). Using `uv` + a project venv:
+
 ```bash
-cd /mnt/nfs/hoangduy/projects/llm-compressor
-pip install -e .
-pip install -r pipeline/requirements.txt   # vllm + lm-eval
+source /mnt/nfs/hoangduy/env.sh                       # sets $UV, caches, WORK_ROOT
+"$UV" venv --python 3.12 /mnt/nfs/hoangduy/venvs/quant
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate     # AFTER env.sh so it wins on PATH
+"$UV" pip install -e .
+"$UV" pip install -r pipeline/requirements.txt        # vllm + lm-eval
 ```
+
+Per-session afterwards: `source env.sh` then `source venvs/quant/bin/activate`
+(order matters), and `export HOME=/mnt/nfs/hoangduy` (the cluster HOME is not
+writable; `pipeline._env` also redirects FlashInfer/HOME caches at runtime).
+GPU runs go through Slurm (see `pipeline/slurm/`).
 
 ## One command
 
@@ -149,6 +159,33 @@ Check any model's geometry before a run:
 ```bash
 python -c "from transformers import AutoConfig; c=AutoConfig.from_pretrained('<model_id>', trust_remote_code=True); print(getattr(c,'moe_intermediate_size', getattr(getattr(c,'text_config',c),'moe_intermediate_size',None)))"
 ```
+
+## MoE gate must stay in the saved config's `ignore` (auto-handled)
+
+The MoE router (`mlp.gate`) is correctly left **unquantized** during
+quantization, but llm-compressor prunes ignore patterns that didn't match a
+*quantized* module from the serialized `quantization_config.ignore`. That
+silently drops the gate (and, for VL MoE, `vision_tower` / MSA `indexer`) from
+the on-disk config. vLLM then treats those unquantized Linears as quantized and
+either fails to load or mis-loads them -> **broken routing -> garbage output**
+(empty / `\r\n` repetitions), even though the checkpoint weights are correct.
+
+`quantize.py` fixes this via `_persist_ignore_to_config()`: after save, it
+re-adds every recipe `ignore` pattern into the checkpoint's `config.json`. To
+repair a checkpoint produced before this fix:
+
+```bash
+python - <<'PY'
+import json, glob
+for cfgp in glob.glob('artifacts/*/*/checkpoint/config.json'):
+    d=json.load(open(cfgp)); qc=d.get('quantization_config',{}); ig=list(qc.get('ignore',[]))
+    if 're:.*mlp.gate$' not in ig:
+        qc['ignore']=ig+['re:.*mlp.gate$']; json.dump(d, open(cfgp,'w'), indent=2); print('patched', cfgp)
+PY
+```
+
+Sanity check any checkpoint: its `config.json` `quantization_config.ignore`
+should list `lm_head` and the MoE gate (plus vision/indexer for VL MoE).
 
 ## Deferred: SGLang serving (NOT in current scope)
 

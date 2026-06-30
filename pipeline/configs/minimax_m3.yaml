@@ -24,12 +24,15 @@ model:
 quantization:
   method: gptq            # sweep gptq | awq | smoothquant+gptq | smoothquant+awq
   scheme: W4AFP8          # and W4A8
+  # Module paths verified against transformers 5.12.1 modeling_minimax_m3_vl.py.
+  # Experts (MiniMaxM3VLExperts) carry @use_experts_implementation -> they
+  # auto-linearize; no custom MoE calibration module is needed.
   ignore:
     - "lm_head"
-    - "re:.*mlp.gate$"          # MoE router gate
-    - "re:.*vision.*"           # vision encoder (~600M) - CONFIRM name
-    - "re:.*visual.*"           # alt vision naming - CONFIRM name
-    - "re:.*indexer.*"          # MSA attention indexer - CONFIRM name
+    - "re:.*mlp.gate$"                # MoE router (MiniMaxM3VLTopKRouter)
+    - "re:.*vision_tower.*"           # vision encoder (MiniMaxM3VLVisionModel) - keep BF16
+    - "re:.*multi_modal_projector.*"  # VL projector (linear_1/2, merge_linear_1/2)
+    - "re:.*indexer.*"                # MSA sparse-attention indexer - keep high precision
 
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
@@ -37,9 +40,8 @@ calibration:
   num_samples: 512
   max_seq_length: 2048
   moe_calibrate_all_experts: true
-  # Set to the M3 decoder layer class to onload layer-at-a-time, e.g.:
-  # sequential_targets: ["MiniMaxM3DecoderLayer"]
-  sequential_targets: null
+  # Onload one decoder layer at a time during calibration (428B model).
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
 
 serve:
   enabled: true

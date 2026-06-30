@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
 
         report = verify_serve(cfg, ckpt)
         (run_dir / "serve_report.json").write_text(json.dumps(report, indent=2))
-        if report.get("loaded") and not report.get("sane_output", True):
+        if not report.get("ok", False):
             overall_ok = False
 
     if args.stage in ("eval", "all") and cfg.eval.enabled:

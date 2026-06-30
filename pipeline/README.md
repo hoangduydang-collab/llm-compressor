@@ -118,6 +118,38 @@ GLM-4 / MiniMax-M2 definitions following
 - For models that exceed CPU RAM, set `model.device_map: auto_offload` +
   `model.offload_folder` + `model.max_memory`.
 
+## Serve constraint: W4A8 MoE expert width must be a multiple of 256
+
+The vLLM CUTLASS W4A8 grouped-GEMM MoE kernel requires each routed expert's
+`moe_intermediate_size` to be divisible by **256**. `serve_verify.py` runs a
+cheap preflight on the checkpoint config and fails fast (before loading vLLM)
+with an actionable message when this is violated. Examples:
+
+- Qwen1.5-MoE-A2.7B: `moe_intermediate_size=1408` (= 5.5 x 256) -> incompatible.
+- Qwen3-30B-A3B: `moe_intermediate_size=768` (= 3 x 256) -> compatible.
+
+Note this is on the **per-partition** width. With expert parallelism
+(`serve.enable_expert_parallel: true`) each rank holds whole experts, so the
+full width is used; with plain tensor parallelism the width is divided by TP,
+which can break the multiple-of-256 requirement (e.g. 768 with TP=2 -> 384).
+
+If a model you must serve fails this check:
+
+1. **Pad** the expert intermediate dim up to the next multiple of 256
+   (zero-pad gate/up_proj output rows + down_proj input cols; numerically
+   lossless). Requires a small repack step at quantize/save time.
+2. **Switch scheme** for that model to a kernel that has no such constraint
+   (e.g. `W4A16` MoE via Marlin, or `FP8`) at the cost of FP8 activations /
+   memory.
+3. Sharding (TP/EP) cannot rescue a fundamentally non-256 width - only padding
+   or a scheme change can.
+
+Check any model's geometry before a run:
+
+```bash
+python -c "from transformers import AutoConfig; c=AutoConfig.from_pretrained('<model_id>', trust_remote_code=True); print(getattr(c,'moe_intermediate_size', getattr(getattr(c,'text_config',c),'moe_intermediate_size',None)))"
+```
+
 ## Deferred: SGLang serving (NOT in current scope)
 
 Current scope is **quantization + evaluation on vLLM only**. SGLang serving is

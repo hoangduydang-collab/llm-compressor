@@ -9,7 +9,7 @@ from pathlib import Path
 from pipeline.calibration import build_calibration_dataset
 from pipeline.config import PipelineConfig
 from pipeline.recipe import build_recipe, describe_recipe
-from pipeline import versioning
+from pipeline import metrics, versioning
 
 
 # Schemes whose weights are INT-packed and need explicit pack-quantized on save
@@ -77,7 +77,11 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     if cfg.calibration.pipeline:
         oneshot_kwargs["pipeline"] = cfg.calibration.pipeline
 
-    oneshot(**oneshot_kwargs)
+    # Capture llm-compressor's internal METRIC-level logs (GPTQ error/time, etc.)
+    # to a per-run JSONL alongside the checkpoint.
+    metrics_path = run_dir / "quant_metrics.jsonl"
+    with metrics.capture_quant_metrics(metrics_path):
+        oneshot(**oneshot_kwargs)
 
     # Sanity check: a quantized model should still produce coherent text.
     print("\n========== SAMPLE GENERATION ==========")
@@ -95,4 +99,10 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     tokenizer.save_pretrained(str(ckpt))
 
     versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
+
+    # Summarize the captured internal metrics into metadata.json.
+    summary = metrics.summarize_quant_metrics(metrics_path)
+    versioning.update_metadata(run_dir, {"quant_metrics": summary})
+    print(f"[pipeline] quant metrics: {summary}")
+
     return ckpt

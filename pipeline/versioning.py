@@ -109,6 +109,18 @@ def write_metadata(run_dir: Path, cfg: PipelineConfig, extra: dict | None = None
         json.dump(meta, fh, indent=2)
 
 
+def update_metadata(run_dir: Path, extra: dict) -> None:
+    """Merge ``extra`` into an existing metadata.json (created by write_metadata)."""
+    path = Path(run_dir) / "metadata.json"
+    data: dict = {}
+    if path.exists():
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    data.update(extra)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+
+
 def write_eval_report(run_dir: Path, report: dict) -> Path:
     path = run_dir / "eval_report.json"
     with path.open("w", encoding="utf-8") as fh:

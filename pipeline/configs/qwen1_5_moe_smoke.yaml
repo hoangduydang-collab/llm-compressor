@@ -1,0 +1,43 @@
+# Stage 0 - plumbing smoke test on a tiny MoE.
+# Goal: exercise the whole CLI path (quantize -> serve -> gate -> versioned
+# artifact) quickly and cheaply before touching a real model.
+#   python -m pipeline.run --config pipeline/configs/qwen1_5_moe_smoke.yaml
+# Switch the scheme to confirm parameterization:
+#   ... --set quantization.scheme=W4A8
+name: qwen1_5_moe_smoke
+
+model:
+  id: Qwen/Qwen1.5-MoE-A2.7B-Chat
+  trust_remote_code: false
+  dtype: auto
+
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  # qwen MoE gate is not a Linear, but ignored for clarity.
+  ignore: ["lm_head", "re:.*mlp.gate$"]
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 32
+  max_seq_length: 512
+  moe_calibrate_all_experts: true
+
+serve:
+  enabled: true
+  tensor_parallel_size: 1
+  max_model_len: 2048
+  prompt: "The capital of France is"
+
+eval:
+  enabled: true
+  baseline: null            # informational only on the smoke run
+  tasks:
+    - name: wikitext
+      metric: "word_perplexity,none"
+      higher_is_better: false
+      num_fewshot: 0
+      limit: 50
+
+output_dir: ./artifacts

@@ -1,0 +1,5 @@
+# Pipeline runtime deps beyond llm-compressor's own install_requires.
+# Install on the 8xH100 cluster after `pip install -e .` of llm-compressor.
+vllm>=0.11.0
+lm-eval>=0.4.5
+pyyaml>=6.0.1

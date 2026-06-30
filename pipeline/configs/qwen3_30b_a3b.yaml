@@ -1,0 +1,56 @@
+# Stage 1 - small-MoE real run (the M1 smoke target, Qwen3-30B-A3B).
+# Base config = GPTQ x W4AFP8. Sweep the 4 M1 cells with --set:
+#   python -m pipeline.run --config pipeline/configs/qwen3_30b_a3b.yaml
+#   ... --set quantization.scheme=W4A8
+#   ... --set quantization.method=awq
+#   ... --set quantization.method=awq --set quantization.scheme=W4A8
+#
+# Produce the BF16 baseline first (one-time), then point eval.baseline at it:
+#   python -m pipeline.run --config pipeline/configs/qwen3_30b_a3b.yaml \
+#       --make-baseline artifacts/qwen3-30b-a3b-baseline.json
+name: qwen3_30b_a3b
+
+model:
+  id: Qwen/Qwen3-30B-A3B
+  trust_remote_code: false
+  dtype: auto
+
+quantization:
+  method: gptq            # gptq | awq | smoothquant+gptq | smoothquant+awq
+  scheme: W4AFP8          # W4AFP8 | W4A8
+  # vLLM does not support asymmetric MoE; presets here are symmetric.
+  ignore: ["lm_head", "re:.*mlp.gate$"]
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 512
+  max_seq_length: 2048
+  moe_calibrate_all_experts: true
+
+serve:
+  enabled: true
+  tensor_parallel_size: 2
+  enable_expert_parallel: true
+  max_model_len: 4096
+  gpu_memory_utilization: 0.9
+  prompt: "The capital of France is"
+
+eval:
+  enabled: true
+  baseline: null          # set to the --make-baseline output to gate
+  recovery_threshold: 0.94
+  max_ppl_increase: 0.10
+  tasks:
+    - name: wikitext
+      metric: "word_perplexity,none"
+      higher_is_better: false
+      num_fewshot: 0
+      limit: null
+    - name: mmlu
+      metric: "acc,none"
+      higher_is_better: true
+      num_fewshot: 5
+      limit: 250
+
+output_dir: ./artifacts

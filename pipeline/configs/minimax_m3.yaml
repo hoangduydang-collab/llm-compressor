@@ -1,0 +1,76 @@
+# Stage 4 - MiniMax-M3 candidate checkpoints (W4AFP8 / W4A8).
+#
+# PREREQUISITE (Stage 3): confirm M3 MoE linearization works (see
+# pipeline/README.md "MiniMax-M3 enablement"). The ignore regexes below are a
+# STARTING POINT and MUST be confirmed against the real module names in the M3
+# config / remote code before a production run: keep the vision encoder, the MSA
+# attention indexer, the MoE gate, and lm_head out of quantization.
+#
+#   python -m pipeline.run --config pipeline/configs/minimax_m3.yaml \
+#       --set quantization.scheme=W4A8     # and W4AFP8
+name: minimax_m3
+
+model:
+  id: MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  # ~428B params: load to CPU/disk and let the sequential pipeline onload
+  # one decoder layer at a time onto the GPU during calibration.
+  device_map: null
+  # For nodes with limited CPU RAM, switch to disk offload:
+  # device_map: auto_offload
+  # offload_folder: ./offload
+  # max_memory: {cpu: 500e9}
+
+quantization:
+  method: gptq            # sweep gptq | awq | smoothquant+gptq | smoothquant+awq
+  scheme: W4AFP8          # and W4A8
+  ignore:
+    - "lm_head"
+    - "re:.*mlp.gate$"          # MoE router gate
+    - "re:.*vision.*"           # vision encoder (~600M) - CONFIRM name
+    - "re:.*visual.*"           # alt vision naming - CONFIRM name
+    - "re:.*indexer.*"          # MSA attention indexer - CONFIRM name
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 512
+  max_seq_length: 2048
+  moe_calibrate_all_experts: true
+  # Set to the M3 decoder layer class to onload layer-at-a-time, e.g.:
+  # sequential_targets: ["MiniMaxM3DecoderLayer"]
+  sequential_targets: null
+
+serve:
+  enabled: true
+  tensor_parallel_size: 8
+  enable_expert_parallel: true
+  block_size: 128            # MSA sparse block size; defaults fail KV init
+  kv_cache_dtype: fp8
+  max_model_len: 32768
+  gpu_memory_utilization: 0.9
+  prompt: "The capital of France is"
+  # The HTTP server additionally needs (not used by offline serve-verify):
+  #   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3
+  #   --enable-auto-tool-choice --trust-remote-code
+  extra_args:
+    - "--tool-call-parser=minimax_m3"
+    - "--reasoning-parser=minimax_m3"
+    - "--enable-auto-tool-choice"
+
+eval:
+  enabled: true
+  baseline: null            # point at the BF16/MXFP8 M3 baseline metrics JSON
+  recovery_threshold: 0.94
+  max_ppl_increase: 0.10
+  tasks:
+    - name: wikitext
+      metric: "word_perplexity,none"
+      higher_is_better: false
+      limit: null
+    - name: mmlu
+      metric: "acc,none"
+      num_fewshot: 5
+      limit: 500
+
+output_dir: ./artifacts

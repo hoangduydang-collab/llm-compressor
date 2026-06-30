@@ -29,6 +29,7 @@ def _evaluate_task(model_path: str, cfg: PipelineConfig, task: EvalTask) -> dict
         f"max_model_len={s.max_model_len},"
         f"gpu_memory_utilization={s.gpu_memory_utilization},"
         f"trust_remote_code={cfg.model.trust_remote_code},"
+        f"enforce_eager={s.enforce_eager},"
         f"dtype=auto,"
     )
 

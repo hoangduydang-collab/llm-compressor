@@ -76,6 +76,9 @@ class ServeConfig:
     kv_cache_dtype: str | None = None
     max_model_len: int = 4096
     gpu_memory_utilization: float = 0.9
+    # Disable CUDA graphs. Useful to sidestep CUDA-graph/stream issues (e.g. the
+    # W4A8 MoE stream-race in older vLLM) and for debugging.
+    enforce_eager: bool = False
     # Extra raw flags appended to ``vllm serve`` / passed to ``LLM(...)``.
     extra_args: list[str] = field(default_factory=list)
     prompt: str = "The capital of France is"

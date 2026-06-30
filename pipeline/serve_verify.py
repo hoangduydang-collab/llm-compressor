@@ -169,7 +169,7 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         max_model_len=s.max_model_len,
         gpu_memory_utilization=s.gpu_memory_utilization,
         trust_remote_code=cfg.model.trust_remote_code,
-        enforce_eager=False,
+        enforce_eager=s.enforce_eager,
     )
     if s.enable_expert_parallel:
         llm_kwargs["enable_expert_parallel"] = True

@@ -154,6 +154,12 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         print("============================================\n")
         return report
 
+    from pipeline._env import ensure_writable_caches
+
+    changed = ensure_writable_caches()
+    if changed:
+        print(f"[pipeline] redirected caches: {changed}")
+
     from vllm import LLM, SamplingParams
 
     s = cfg.serve

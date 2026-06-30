@@ -15,6 +15,10 @@ from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 
 
 def _evaluate_task(model_path: str, cfg: PipelineConfig, task: EvalTask) -> dict:
+    from pipeline._env import ensure_writable_caches
+
+    ensure_writable_caches()
+
     import lm_eval
     import lm_eval.models  # noqa: F401  (populates the model registry)
 

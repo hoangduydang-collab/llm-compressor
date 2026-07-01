@@ -33,6 +33,10 @@ KNOWN_SCHEMES = {"W4AFP8", "W4A8", "W4A16", "W8A8", "FP8_DYNAMIC", "FP8", "NVFP4
 class ModelConfig:
     id: str = ""
     trust_remote_code: bool = False
+    # transformers auto-class used to load the model. Causal LMs use the default;
+    # VL / image-text-to-text MoEs (e.g. MiniMax-M3) need AutoModelForImageTextToText
+    # so the full model (language backbone + vision tower) is loaded and saved.
+    auto_class: str = "AutoModelForCausalLM"
     # Large-model loading. device_map="auto_offload" + offload_folder spills to
     # disk; max_memory caps per-device usage e.g. {"cpu": 500e9, 0: 70e9}.
     device_map: str | None = None
@@ -94,6 +98,28 @@ class EvalTask:
     higher_is_better: bool = True
 
 
+def default_gate_tasks() -> list[EvalTask]:
+    """Small task set for the accuracy gate (backward-compatible default)."""
+    return [
+        EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False, limit=None),
+        EvalTask(name="mmlu", metric="acc,none", num_fewshot=5, limit=250),
+    ]
+
+
+def full_static_tasks() -> list[EvalTask]:
+    """Full static lm-eval suite for quantized-vs-original comparison."""
+    return [
+        EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False, limit=None),
+        EvalTask(name="mmlu", metric="acc,none", num_fewshot=5, limit=None),
+        EvalTask(name="arc_challenge", metric="acc_norm,none", num_fewshot=25, limit=None),
+        EvalTask(name="hellaswag", metric="acc_norm,none", num_fewshot=10, limit=None),
+        EvalTask(name="winogrande", metric="acc,none", num_fewshot=5, limit=None),
+        EvalTask(name="gsm8k", metric="exact_match,strict-match", num_fewshot=5, limit=None),
+        EvalTask(name="truthfulqa_mc2", metric="acc,none", num_fewshot=0, limit=None),
+        EvalTask(name="bbh", metric="exact_match,strict-match", num_fewshot=3, limit=None),
+    ]
+
+
 @dataclass
 class EvalConfig:
     enabled: bool = True
@@ -106,12 +132,57 @@ class EvalConfig:
     max_ppl_increase: float = 0.10
     backend: str = "vllm"  # lm-eval model backend
     apply_chat_template: bool = False
-    tasks: list[EvalTask] = field(
-        default_factory=lambda: [
-            EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False, limit=None),
-            EvalTask(name="mmlu", metric="acc,none", num_fewshot=5, limit=250),
-        ]
+    # Per-sample logging for post-hoc flip-rate comparison (evalsuite).
+    log_samples: bool = True
+    samples_dir: str | None = None  # defaults to <out>/samples at runtime
+    tasks: list[EvalTask] = field(default_factory=default_gate_tasks)
+
+
+@dataclass
+class AgenticConfig:
+    enabled: bool = False
+    harness: str = "tau2"
+    # Path to cloned tau2-bench repo (must contain .venv/bin/tau2).
+    tau2_dir: str | None = None
+    # Path to benchmarks-repo run_calibration.sh (tau2 launcher).
+    calibration_script: str | None = None
+    domain: str = "telecom"
+    split: str = "small"
+    num_tasks: int | None = None
+    max_conc: int = 5
+    num_trials: int = 1
+    thinking: str = "off"  # on|off
+    # Served agent endpoint (defaults derived from serve config at runtime).
+    agent_base: str | None = None
+    agent_model: str | None = None
+    # User simulator (required for tau2; if unset agentic self-skips).
+    user_base: str | None = None
+    user_model: str | None = None
+    user_key_file: str | None = None
+    save_to: str = "evalsuite_agentic"
+    max_steps: int = 50
+    timeout: int = 900
+    seed: int = 42
+
+
+@dataclass
+class CompareConfig:
+    """Post-hoc comparison knobs (used by evalsuite.compare)."""
+    # Per-task lm-eval metric keys treated as binary correctness for flip-rate.
+    flip_task_metrics: dict[str, str] = field(
+        default_factory=lambda: {
+            "mmlu": "acc",
+            "arc_challenge": "acc_norm",
+            "hellaswag": "acc_norm",
+            "winogrande": "acc",
+            "gsm8k": "exact_match",
+            "truthfulqa_mc2": "acc",
+            "bbh": "exact_match",
+        }
     )
+    perplexity_tasks: list[str] = field(default_factory=lambda: ["wikitext"])
+    perplexity_metric: str = "word_perplexity"
+    agentic_reward_threshold: float = 1.0
 
 
 @dataclass
@@ -122,6 +193,8 @@ class PipelineConfig:
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     serve: ServeConfig = field(default_factory=ServeConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    agentic: AgenticConfig = field(default_factory=AgenticConfig)
+    compare: CompareConfig = field(default_factory=CompareConfig)
     # Root under which a per-run versioned artifact directory is written.
     output_dir: str = "./artifacts"
 

@@ -3,3 +3,9 @@
 vllm>=0.11.0
 lm-eval>=0.4.5
 pyyaml>=6.0.1
+
+# Agentic eval (optional): tau2-bench is NOT a pip dependency.
+#   git clone https://github.com/sierra-research/tau2-bench
+#   cd tau2-bench && uv sync
+# Point agentic.tau2_dir at the clone in eval_full.yaml.
+# Reuses benchmarks/llm-perf-benchmarks/performance/calibration/run_calibration.sh when present.

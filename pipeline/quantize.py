@@ -19,10 +19,12 @@ _PACK_QUANTIZED_SCHEMES = {"W4AFP8", "W4A8", "W4A16", "W4A16_ASYM"}
 
 
 def _load_model_and_tokenizer(cfg: PipelineConfig):
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import transformers
+    from transformers import AutoTokenizer
     from llmcompressor.utils import load_context
 
     m = cfg.model
+    model_cls = getattr(transformers, m.auto_class)
     from_pretrained_kwargs: dict = {"trust_remote_code": m.trust_remote_code}
     if m.dtype and m.dtype != "auto":
         from_pretrained_kwargs["dtype"] = m.dtype
@@ -39,7 +41,7 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
     # load_context() patches from_pretrained so fused MoE experts load in a
     # linearized, quantizable layout (and handles offloaded loading).
     with load_context():
-        model = AutoModelForCausalLM.from_pretrained(m.id, **from_pretrained_kwargs)
+        model = model_cls.from_pretrained(m.id, **from_pretrained_kwargs)
     tokenizer = AutoTokenizer.from_pretrained(
         m.id, trust_remote_code=m.trust_remote_code
     )

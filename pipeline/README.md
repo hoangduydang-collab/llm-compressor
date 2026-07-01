@@ -12,6 +12,7 @@ pipeline/
   quantize.py        # load -> oneshot -> sanity-gen -> save pack-quantized
   serve_verify.py    # boot vLLM on the artifact, confirm load + sane output
   eval_gate.py       # lm-eval (Wikitext PPL + MMLU) vs baseline -> pass/fail
+  evalsuite/         # full static + agentic eval + quant-vs-original compare
   versioning.py      # timestamped artifact dirs + reproducible metadata
   run.py             # CLI tying the stages together
   sweep.py           # method x format comparison matrix (M2 Phase 3)
@@ -57,6 +58,69 @@ eval_report.json   # gate metrics + pass/fail
 
 Run a single stage with `--stage quantize|serve|eval`, reuse a checkpoint with
 `--checkpoint <dir>`, and override any field with `--set a.b.c=value`.
+
+## Evaluation suite (static + agentic + quant-vs-original)
+
+The `pipeline/evalsuite/` package runs the full static lm-eval suite with
+per-sample logging, optional tau2 agentic eval (reuses
+`benchmarks/llm-perf-benchmarks/performance/calibration/run_calibration.sh`),
+and a post-hoc quantized-vs-original comparison with flip-rate, Cohen's kappa,
+and McNemar statistics.
+
+When `eval.log_samples: true` (default), `pipeline.run --stage eval` writes:
+
+```
+artifacts/<run_slug>/<ts>/evalsuite/
+  aggregate.json           # task-level metrics
+  samples/<task>.jsonl     # per-doc correctness (for flip-rate)
+  agentic_samples.jsonl    # if agentic.enabled
+  eval_meta.json
+```
+
+### Standalone usage
+
+```bash
+# 1. Evaluate ORIGINAL model
+python -m pipeline.evalsuite.cli run \
+  --config pipeline/configs/eval_full.yaml \
+  --model <original-hf-id-or-path> \
+  --out evals/original
+
+# 2. Evaluate QUANTIZED checkpoint (same config)
+python -m pipeline.evalsuite.cli run \
+  --config pipeline/configs/eval_full.yaml \
+  --model artifacts/<slug>/<ts>/checkpoint \
+  --out evals/quant
+
+# 3. Post-hoc comparison (no GPU)
+python -m pipeline.evalsuite.cli compare \
+  --a evals/original --b evals/quant --out evals/compare \
+  --config pipeline/configs/eval_full.yaml
+# -> evals/compare/compare.json + report.md
+```
+
+### Agentic (optional)
+
+Enable in YAML (`agentic.enabled: true`) and configure:
+
+- `tau2_dir` — cloned [tau2-bench](https://github.com/sierra-research/tau2-bench) with `uv sync`
+- `user_base`, `user_model`, `user_key_file` — separate user-simulator endpoint
+- `agent_base` / serve the model under test at an OpenAI-compatible URL
+
+If user-sim is not configured, agentic self-skips.
+
+### Test procedure
+
+1. **Unit tests:** `pytest pipeline/tests/test_compare.py`
+2. **Smoke:** `--set eval.tasks.0.limit=8` on a small model; self-compare must show 0 flips
+3. **Agentic smoke:** `domain: mock`, `num_tasks: 1` against a live endpoint
+4. **E2E:** BF16 vs W4AFP8 checkpoint on full static suite; review `report.md`
+
+### Deferred: serving performance
+
+Throughput / TTFT / concurrency sweeps are **not** in this pipeline stage. Use the
+aiperf suite in `benchmarks/llm-perf-benchmarks/` (`scripts/run_all.sh`) against
+the same served endpoint when needed. `report.md` includes a pointer stub.
 
 ## Method x scheme matrix
 

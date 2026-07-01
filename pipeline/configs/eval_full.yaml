@@ -1,0 +1,83 @@
+# Full static + optional agentic evaluation config.
+# Use with: python -m pipeline.evalsuite.cli run --config pipeline/configs/eval_full.yaml --out evals/<name>
+#
+# For post-hoc quant vs original comparison:
+#   python -m pipeline.evalsuite.cli compare --a evals/original --b evals/quant --out evals/compare --config pipeline/configs/eval_full.yaml
+
+name: eval-full
+
+model:
+  id: meta-llama/Meta-Llama-3-8B-Instruct  # override via --model or --set model.id=...
+  trust_remote_code: false
+
+serve:
+  tensor_parallel_size: 1
+  max_model_len: 8192
+  gpu_memory_utilization: 0.9
+  enforce_eager: false
+
+eval:
+  enabled: true
+  log_samples: true
+  backend: vllm
+  apply_chat_template: true
+  baseline: null
+  tasks:
+    - name: wikitext
+      metric: word_perplexity,none
+      higher_is_better: false
+      num_fewshot: 0
+      limit: null
+    - name: mmlu
+      metric: acc,none
+      num_fewshot: 5
+      limit: null
+    - name: arc_challenge
+      metric: acc_norm,none
+      num_fewshot: 25
+      limit: null
+    - name: hellaswag
+      metric: acc_norm,none
+      num_fewshot: 10
+      limit: null
+    - name: winogrande
+      metric: acc,none
+      num_fewshot: 5
+      limit: null
+    - name: gsm8k
+      metric: exact_match,strict-match
+      num_fewshot: 5
+      limit: null
+    - name: truthfulqa_mc2
+      metric: acc,none
+      num_fewshot: 0
+      limit: null
+    - name: bbh
+      metric: exact_match,strict-match
+      num_fewshot: 3
+      limit: null
+
+agentic:
+  enabled: false
+  harness: tau2
+  # Clone: git clone https://github.com/sierra-research/tau2-bench && cd tau2-bench && uv sync
+  tau2_dir: null
+  calibration_script: null  # defaults to ../benchmarks/llm-perf-benchmarks/performance/calibration/run_calibration.sh
+  domain: telecom
+  split: small
+  num_tasks: null
+  max_conc: 5
+  num_trials: 1
+  thinking: off
+  user_base: null
+  user_model: null
+  user_key_file: null
+  save_to: evalsuite_agentic
+
+compare:
+  agentic_reward_threshold: 1.0
+
+# Quantization section unused for eval-only runs but required by schema if you reuse pipeline.run.
+quantization:
+  method: gptq
+  scheme: W4AFP8

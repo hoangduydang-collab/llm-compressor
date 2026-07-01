@@ -108,9 +108,22 @@ def main(argv: list[str] | None = None) -> int:
             overall_ok = False
 
     if args.stage in ("eval", "all") and cfg.eval.enabled:
-        from pipeline.eval_gate import run_eval_gate
+        eval_out = run_dir / "evalsuite"
+        if cfg.eval.log_samples:
+            from pipeline.evalsuite.static import run_static_eval
 
-        report = run_eval_gate(cfg, ckpt)
+            static_result = run_static_eval(cfg, ckpt, eval_out)
+            report = static_result["gate"]
+        else:
+            from pipeline.eval_gate import run_eval_gate
+
+            report = run_eval_gate(cfg, ckpt)
+
+        if cfg.agentic.enabled:
+            from pipeline.evalsuite.agentic import run_agentic_eval
+
+            run_agentic_eval(cfg, ckpt, eval_out)
+
         versioning.write_eval_report(run_dir, report)
         if report.get("passed") is False:
             overall_ok = False

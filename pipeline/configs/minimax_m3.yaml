@@ -13,6 +13,9 @@ name: minimax_m3
 model:
   id: MiniMaxAI/MiniMax-M3
   trust_remote_code: true
+  # M3 is a VL (image-text-to-text) MoE; load the full model so the language
+  # backbone is quantized while the vision tower is kept (ignored) and saved.
+  auto_class: AutoModelForImageTextToText
   # ~428B params: load to CPU/disk and let the sequential pipeline onload
   # one decoder layer at a time onto the GPU during calibration.
   device_map: null

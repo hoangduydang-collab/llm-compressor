@@ -13,6 +13,7 @@ from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 from pipeline.lmeval_runner import evaluate_tasks
+from pipeline.metrics_lmeval import resolve_task_metric
 
 
 def _gate_metric(task: EvalTask, value: float, baseline: float | None, ev: EvalConfig) -> dict:
@@ -39,14 +40,8 @@ def _gate_metric(task: EvalTask, value: float, baseline: float | None, ev: EvalC
 
 
 def _task_metric_value(task: EvalTask, task_results: dict) -> float:
-    value = task_results.get(task.metric)
-    if value is None:
-        available = list(task_results.keys())
-        raise KeyError(
-            f"metric {task.metric!r} not in lm-eval results for task "
-            f"{task.name!r}; available: {available}"
-        )
-    return float(value)
+    value, _ = resolve_task_metric(task, task_results)
+    return value
 
 
 def _build_report(

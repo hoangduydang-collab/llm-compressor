@@ -8,11 +8,7 @@ from pathlib import Path
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 from pipeline.eval_gate import _gate_metric
 from pipeline.lmeval_runner import evaluate_tasks
-
-
-def _metric_base(metric: str) -> str:
-    """``acc,none`` -> ``acc``."""
-    return metric.split(",")[0]
+from pipeline.metrics_lmeval import metric_base, resolve_task_metric
 
 
 def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
@@ -21,8 +17,16 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
     if doc_id is None:
         doc_id = sample.get("doc_hash") or sample.get("id")
 
-    base = _metric_base(task.metric)
+    base = metric_base(task.metric)
     candidates = [base, task.metric, "acc", "acc_norm", "exact_match", "perplexity"]
+    if base == "exact_match":
+        candidates.extend(
+            [
+                "exact_match,strict-match",
+                "exact_match,get-answer",
+                "exact_match,flexible-extract",
+            ]
+        )
 
     metric_value = None
     used_metric = None
@@ -39,6 +43,17 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
                     metric_value = float(nested[key])
                     used_metric = key
                     break
+    if metric_value is None:
+        for key, val in sample.items():
+            if (
+                isinstance(val, (int, float, bool))
+                and isinstance(key, str)
+                and key.startswith(f"{base},")
+                and "stderr" not in key
+            ):
+                metric_value = float(val)
+                used_metric = key
+                break
 
     row: dict = {
         "doc_id": doc_id,
@@ -93,18 +108,14 @@ def _build_gate_report(
 
     for task_name, metrics in aggregate.items():
         task = task_by_name[task_name]
-        value = metrics.get(task.metric)
-        if value is None:
-            value = metrics.get(_metric_base(task.metric))
-        if value is None:
-            raise KeyError(
-                f"metric {task.metric!r} missing for task {task_name!r}; "
-                f"available: {list(metrics.keys())}"
-            )
+        value, resolved = resolve_task_metric(task, metrics)
         base_val = baseline.get(task_name, {}).get(task.metric)
         if base_val is None and task_name in baseline:
-            base_val = baseline[task_name].get(_metric_base(task.metric))
-        entry = _gate_metric(task, float(value), base_val, ev)
+            base_val = baseline[task_name].get(resolved)
+            if base_val is None:
+                base_val = baseline[task_name].get(metric_base(task.metric))
+        entry = _gate_metric(task, value, base_val, ev)
+        entry["resolved_metric"] = resolved
         report["tasks"][task_name] = entry
         if entry["passed"] is False:
             report["passed"] = False

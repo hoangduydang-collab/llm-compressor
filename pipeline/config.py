@@ -108,7 +108,7 @@ def full_static_tasks() -> list[EvalTask]:
         EvalTask(name="winogrande", metric="acc,none", num_fewshot=5, limit=None),
         EvalTask(name="gsm8k", metric="exact_match,strict-match", num_fewshot=5, limit=None),
         EvalTask(name="truthfulqa_mc2", metric="acc,none", num_fewshot=0, limit=None),
-        EvalTask(name="bbh", metric="exact_match,strict-match", num_fewshot=3, limit=None),
+        EvalTask(name="bbh", metric="exact_match,get-answer", num_fewshot=3, limit=None),
     ]
 
 

@@ -53,7 +53,7 @@ eval:
       num_fewshot: 0
       limit: null
     - name: bbh
-      metric: exact_match,strict-match
+      metric: exact_match,get-answer
       num_fewshot: 3
       limit: null
 

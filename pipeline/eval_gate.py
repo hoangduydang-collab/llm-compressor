@@ -12,36 +12,7 @@ import json
 from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
-
-
-def _evaluate_task(model_path: str, cfg: PipelineConfig, task: EvalTask) -> dict:
-    from pipeline._env import ensure_writable_caches
-
-    ensure_writable_caches()
-
-    import lm_eval
-    import lm_eval.models  # noqa: F401  (populates the model registry)
-
-    s = cfg.serve
-    model_args = (
-        f"pretrained={model_path},"
-        f"tensor_parallel_size={s.tensor_parallel_size},"
-        f"max_model_len={s.max_model_len},"
-        f"gpu_memory_utilization={s.gpu_memory_utilization},"
-        f"trust_remote_code={cfg.model.trust_remote_code},"
-        f"enforce_eager={s.enforce_eager},"
-        f"dtype=auto,"
-    )
-
-    results = lm_eval.simple_evaluate(
-        model=cfg.eval.backend,
-        model_args=model_args,
-        tasks=[task.name],
-        num_fewshot=task.num_fewshot,
-        limit=task.limit,
-        apply_chat_template=cfg.eval.apply_chat_template,
-    )
-    return results["results"][task.name]
+from pipeline.lmeval_runner import evaluate_tasks
 
 
 def _gate_metric(task: EvalTask, value: float, baseline: float | None, ev: EvalConfig) -> dict:
@@ -67,8 +38,22 @@ def _gate_metric(task: EvalTask, value: float, baseline: float | None, ev: EvalC
     return entry
 
 
-def run_eval_gate(cfg: PipelineConfig, ckpt: Path) -> dict:
-    """Evaluate ``ckpt`` and gate against the baseline. Returns a report dict."""
+def _task_metric_value(task: EvalTask, task_results: dict) -> float:
+    value = task_results.get(task.metric)
+    if value is None:
+        available = list(task_results.keys())
+        raise KeyError(
+            f"metric {task.metric!r} not in lm-eval results for task "
+            f"{task.name!r}; available: {available}"
+        )
+    return float(value)
+
+
+def _build_report(
+    cfg: PipelineConfig,
+    ckpt: Path,
+    task_results_by_name: dict[str, dict],
+) -> dict:
     ev = cfg.eval
     baseline: dict = {}
     if ev.baseline:
@@ -78,21 +63,14 @@ def run_eval_gate(cfg: PipelineConfig, ckpt: Path) -> dict:
     report: dict = {"checkpoint": str(ckpt), "tasks": {}, "passed": True}
 
     for task in ev.tasks:
-        task_results = _evaluate_task(str(ckpt), cfg, task)
-        value = task_results.get(task.metric)
-        if value is None:
-            available = list(task_results.keys())
-            raise KeyError(
-                f"metric {task.metric!r} not in lm-eval results for task "
-                f"{task.name!r}; available: {available}"
-            )
+        task_results = task_results_by_name[task.name]
+        value = _task_metric_value(task, task_results)
         base_val = baseline.get(task.name, {}).get(task.metric)
-        entry = _gate_metric(task, float(value), base_val, ev)
+        entry = _gate_metric(task, value, base_val, ev)
         report["tasks"][task.name] = entry
         if entry["passed"] is False:
             report["passed"] = False
 
-    # If no baseline at all, the gate is "informational only".
     if not baseline:
         report["passed"] = None
 
@@ -108,12 +86,20 @@ def run_eval_gate(cfg: PipelineConfig, ckpt: Path) -> dict:
     return report
 
 
+def run_eval_gate(cfg: PipelineConfig, ckpt: Path) -> dict:
+    """Evaluate ``ckpt`` and gate against the baseline. Returns a report dict."""
+    results = evaluate_tasks(str(ckpt), cfg, cfg.eval.tasks)
+    task_results_by_name = {task.name: results["results"][task.name] for task in cfg.eval.tasks}
+    return _build_report(cfg, ckpt, task_results_by_name)
+
+
 def make_baseline(cfg: PipelineConfig, model_path: str, out_path: Path) -> dict:
     """Evaluate an (unquantized) model and write a baseline metrics JSON."""
+    results = evaluate_tasks(model_path, cfg, cfg.eval.tasks)
     baseline: dict = {}
     for task in cfg.eval.tasks:
-        task_results = _evaluate_task(model_path, cfg, task)
-        baseline[task.name] = {task.metric: float(task_results[task.metric])}
+        task_results = results["results"][task.name]
+        baseline[task.name] = {task.metric: _task_metric_value(task, task_results)}
     with out_path.open("w", encoding="utf-8") as fh:
         json.dump(baseline, fh, indent=2)
     print(f"wrote baseline -> {out_path}")

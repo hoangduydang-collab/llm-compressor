@@ -7,19 +7,7 @@ from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 from pipeline.eval_gate import _gate_metric
-
-
-def _model_args(cfg: PipelineConfig, model_path: str) -> str:
-    s = cfg.serve
-    return (
-        f"pretrained={model_path},"
-        f"tensor_parallel_size={s.tensor_parallel_size},"
-        f"max_model_len={s.max_model_len},"
-        f"gpu_memory_utilization={s.gpu_memory_utilization},"
-        f"trust_remote_code={cfg.model.trust_remote_code},"
-        f"enforce_eager={s.enforce_eager},"
-        f"dtype=auto,"
-    )
+from pipeline.lmeval_runner import evaluate_tasks
 
 
 def _metric_base(metric: str) -> str:
@@ -89,26 +77,6 @@ def _write_samples(path: Path, rows: list[dict]) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _evaluate_task(model_path: str, cfg: PipelineConfig, task: EvalTask, log_samples: bool) -> dict:
-    from pipeline._env import ensure_writable_caches
-
-    ensure_writable_caches()
-
-    import lm_eval
-    import lm_eval.models  # noqa: F401
-
-    ev = cfg.eval
-    return lm_eval.simple_evaluate(
-        model=ev.backend,
-        model_args=_model_args(cfg, model_path),
-        tasks=[task.name],
-        num_fewshot=task.num_fewshot,
-        limit=task.limit,
-        apply_chat_template=ev.apply_chat_template,
-        log_samples=log_samples,
-    )
-
-
 def _build_gate_report(
     cfg: PipelineConfig,
     ckpt: Path,
@@ -165,9 +133,10 @@ def run_static_eval(
     aggregate: dict[str, dict[str, float]] = {}
     all_samples: dict[str, list[dict]] = {}
 
+    results = evaluate_tasks(str(model_path), cfg, ev.tasks, log_samples=log_samples)
+
     for task in ev.tasks:
         print(f"[evalsuite] static task: {task.name} (limit={task.limit})")
-        results = _evaluate_task(str(model_path), cfg, task, log_samples=log_samples)
         task_results = results["results"][task.name]
         aggregate[task.name] = {
             k: float(v) if isinstance(v, (int, float)) else v

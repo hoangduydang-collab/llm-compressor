@@ -17,7 +17,32 @@ def test_per_task_num_fewshot_dict_when_mixed():
         EvalTask(name="wikitext", num_fewshot=0),
         EvalTask(name="mmlu", num_fewshot=5),
     ]
+    # Helper still reports dict form; evaluate_tasks uses per-task scalars instead.
     assert per_task_num_fewshot(tasks) == {"wikitext": 0, "mmlu": 5}
+
+
+def test_merge_eval_results():
+    from pipeline.lmeval_runner import _merge_eval_results
+
+    merged: dict = {}
+    _merge_eval_results(
+        merged,
+        {
+            "results": {"wikitext": {"word_perplexity,none": 11.0}},
+            "samples": {"wikitext": [{"doc_id": 0}]},
+            "config": {"model": "vllm"},
+        },
+    )
+    _merge_eval_results(
+        merged,
+        {
+            "results": {"mmlu": {"acc,none": 0.8}},
+            "samples": {"mmlu": [{"doc_id": 1}]},
+        },
+    )
+    assert set(merged["results"]) == {"wikitext", "mmlu"}
+    assert len(merged["samples"]["wikitext"]) == 1
+    assert merged["config"] == {"model": "vllm"}
 
 
 def test_per_task_limit_omitted_when_all_unlimited():

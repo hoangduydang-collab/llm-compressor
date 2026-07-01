@@ -19,7 +19,12 @@ def model_args(cfg: PipelineConfig, model_path: str) -> str:
 
 
 def per_task_num_fewshot(tasks: list[EvalTask]) -> int | dict[str, int]:
-    """lm-eval ``num_fewshot``: scalar when uniform, else per-task dict."""
+    """lm-eval ``num_fewshot``: scalar when uniform, else per-task dict.
+
+    Note: dict form is not safe for group tasks (mmlu, bbh) because lm-eval
+    propagates the whole dict to subtasks. ``evaluate_tasks`` always uses a
+    scalar per task via a reused model instance instead.
+    """
     if not tasks:
         return 0
     by_name = {t.name: t.num_fewshot for t in tasks}
@@ -44,6 +49,27 @@ def per_task_limit(tasks: list[EvalTask]) -> int | float | dict[str, int | float
     return limited
 
 
+def _load_lm_model(cfg: PipelineConfig, model_path: str):
+    """Instantiate the lm-eval backend once (e.g. vLLM) for reuse across tasks."""
+    from lm_eval.api.registry import get_model
+    import lm_eval.models  # noqa: F401  (populates the model registry)
+
+    model_cls = get_model(cfg.eval.backend)
+    return model_cls.create_from_arg_string(
+        model_args(cfg, model_path),
+        {"batch_size": "auto"},
+    )
+
+
+def _merge_eval_results(merged: dict, batch: dict) -> None:
+    merged.setdefault("results", {}).update(batch.get("results", {}))
+    if batch.get("samples"):
+        merged.setdefault("samples", {}).update(batch["samples"])
+    for key, value in batch.items():
+        if key not in ("results", "samples"):
+            merged[key] = value
+
+
 def evaluate_tasks(
     model_path: str,
     cfg: PipelineConfig,
@@ -51,7 +77,7 @@ def evaluate_tasks(
     *,
     log_samples: bool = False,
 ) -> dict:
-    """Run lm-eval once over ``tasks``; returns the full ``simple_evaluate`` dict."""
+    """Evaluate ``tasks`` with one model load; returns merged ``simple_evaluate`` dict."""
     if not tasks:
         raise ValueError("evaluate_tasks requires at least one task")
 
@@ -60,22 +86,36 @@ def evaluate_tasks(
     ensure_writable_caches()
 
     import lm_eval
-    import lm_eval.models  # noqa: F401  (populates the model registry)
 
     ev = cfg.eval
-    kwargs: dict = {
-        "model": ev.backend,
-        "model_args": model_args(cfg, model_path),
-        "tasks": [t.name for t in tasks],
-        "num_fewshot": per_task_num_fewshot(tasks),
-        "apply_chat_template": ev.apply_chat_template,
-    }
-    limit = per_task_limit(tasks)
-    if limit is not None:
-        kwargs["limit"] = limit
-    if log_samples:
-        kwargs["log_samples"] = True
-
     names = ", ".join(t.name for t in tasks)
     print(f"[lmeval] evaluating tasks ({names}) with a single model load")
-    return lm_eval.simple_evaluate(**kwargs)
+
+    lm = _load_lm_model(cfg, model_path)
+    merged: dict = {}
+
+    try:
+        for task in tasks:
+            print(
+                f"[lmeval] task={task.name} num_fewshot={task.num_fewshot} "
+                f"limit={task.limit}"
+            )
+            kwargs: dict = {
+                "model": lm,
+                "tasks": [task.name],
+                "num_fewshot": task.num_fewshot,
+                "apply_chat_template": ev.apply_chat_template,
+            }
+            if task.limit is not None:
+                kwargs["limit"] = task.limit
+            if log_samples:
+                kwargs["log_samples"] = True
+
+            batch = lm_eval.simple_evaluate(**kwargs)
+            _merge_eval_results(merged, batch)
+    finally:
+        cleanup = getattr(lm, "clean", None) or getattr(lm, "cleanup", None)
+        if callable(cleanup):
+            cleanup()
+
+    return merged

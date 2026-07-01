@@ -30,10 +30,12 @@ export SCHEME="${SCHEME:-W4AFP8}"
 export SERVE_TP="${SERVE_TP:-1}"
 export AGENTIC="${AGENTIC:-0}"
 
-EXPORT_VARS="ALL,CONFIG,METHODS,SCHEME,SERVE_TP,AGENTIC"
-[[ -n "${CKPTS:-}" ]] && EXPORT_VARS+=",CKPTS"
-[[ -n "${AGENT_BASE:-}" ]] && EXPORT_VARS+=",AGENT_BASE"
-[[ -n "${AGENT_MODEL:-}" ]] && EXPORT_VARS+=",AGENT_MODEL"
+# Export only job knobs — NOT --export=ALL (bloated SSH env can break sbatch on NFS).
+EXPORT_VARS=(NONE CONFIG METHODS SCHEME SERVE_TP AGENTIC)
+[[ -n "${CKPTS:-}" ]] && EXPORT_VARS+=(CKPTS)
+[[ -n "${AGENT_BASE:-}" ]] && EXPORT_VARS+=(AGENT_BASE)
+[[ -n "${AGENT_MODEL:-}" ]] && EXPORT_VARS+=(AGENT_MODEL)
+EXPORT_LIST=$(IFS=,; echo "${EXPORT_VARS[*]}")
 
 echo "Submitting full static eval (agentic=${AGENTIC})"
 echo "  config:  $CONFIG"
@@ -46,7 +48,7 @@ fi
 echo "  serve_tp: $SERVE_TP"
 echo "  tasks:   wikitext mmlu arc_challenge hellaswag winogrande gsm8k truthfulqa_mc2 bbh"
 
-JOB_LINE=$(sbatch --export="$EXPORT_VARS" pipeline/slurm/eval_full.sbatch)
+JOB_LINE=$(sbatch --export="$EXPORT_LIST" pipeline/slurm/eval_full.sbatch)
 JOB_ID="${JOB_LINE##* }"
 LOG_PATH="/mnt/nfs/hoangduy/logs/eval-full-${JOB_ID}.out"
 

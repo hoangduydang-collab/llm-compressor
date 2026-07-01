@@ -41,16 +41,27 @@ eval:
   baseline: null          # set to the --make-baseline output to gate
   recovery_threshold: 0.94
   max_ppl_increase: 0.10
-  tasks:
-    - name: wikitext
-      metric: "word_perplexity,none"
-      higher_is_better: false
-      num_fewshot: 0
-      limit: null
-    - name: mmlu
-      metric: "acc,none"
-      higher_is_better: true
-      num_fewshot: 5
-      limit: 250
+  # tasks: default 8-task full suite (wikitext, mmlu, arc_challenge, hellaswag,
+  # winogrande, gsm8k, truthfulqa_mc2, bbh) — see full_static_tasks() in config.py
+
+# tau2 agentic eval (off by default; enable with --agentic or agentic.enabled: true).
+# Requires vLLM serving the checkpoint at agent_base before eval.
+agentic:
+  enabled: false
+  harness: tau2
+  tau2_dir: /mnt/nfs/hoangduy/tau2-bench
+  calibration_script: null
+  domain: mock              # smoke: mock; production: telecom
+  split: small
+  num_tasks: 1              # smoke: 1; production: null (full split)
+  max_conc: 1
+  num_trials: 1
+  thinking: off
+  agent_base: http://localhost:8000/v1
+  agent_model: null         # defaults to model.id at runtime
+  user_base: https://api-inference.bitdeer.ai/v1
+  user_model: deepseek-ai/DeepSeek-V3.2
+  user_key_file: /mnt/nfs/hoangduy/.bitdeer_key
+  save_to: evalsuite_agentic
 
 output_dir: ./artifacts

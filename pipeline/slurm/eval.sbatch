@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=200G
-#SBATCH --time=06:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=/mnt/nfs/hoangduy/logs/eval-%j.out
 #
 # Accuracy gate on EXISTING checkpoint(s) - eval only (serve already verified).
@@ -16,6 +16,9 @@
 #
 # Option B: auto-resolve newest per method:
 #   METHODS="gptq awq" SCHEME=W4AFP8 sbatch pipeline/slurm/eval.sbatch
+#
+# Agentic tau2 eval (model must be served at AGENT_BASE first):
+#   AGENTIC=1 AGENT_BASE=http://localhost:8000/v1 sbatch pipeline/slurm/eval.sbatch
 
 set -uo pipefail
 source /mnt/nfs/hoangduy/env.sh
@@ -34,10 +37,15 @@ run_eval() {
     return 1
   fi
   echo "================================================================"
-  echo "  EVAL: $CKPT (tp=$SERVE_TP)"
+  echo "  EVAL: $CKPT (tp=$SERVE_TP agentic=${AGENTIC:-0})"
   echo "================================================================"
+  local -a EVAL_EXTRA=()
+  [[ "${AGENTIC:-0}" == "1" ]] && EVAL_EXTRA+=(--agentic)
+  [[ -n "${AGENT_BASE:-}" ]] && EVAL_EXTRA+=(--agent-base "$AGENT_BASE")
+  [[ -n "${AGENT_MODEL:-}" ]] && EVAL_EXTRA+=(--agent-model "$AGENT_MODEL")
   python -m pipeline.run --config "$CONFIG" --stage eval --checkpoint "$CKPT" \
-    --set serve.tensor_parallel_size="$SERVE_TP"
+    --set serve.tensor_parallel_size="$SERVE_TP" \
+    "${EVAL_EXTRA[@]}"
 }
 
 overall_rc=0

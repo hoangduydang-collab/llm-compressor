@@ -29,10 +29,38 @@ def _agentic_ready(ag: AgenticConfig) -> tuple[bool, str]:
 
 def _default_calibration_script() -> Path | None:
     """Locate benchmarks-repo run_calibration.sh relative to workspace."""
+    import os
+
     here = Path(__file__).resolve()
+    work_root = Path(os.environ.get("WORK_ROOT", "/mnt/nfs/hoangduy"))
     candidates = [
-        here.parents[3] / "benchmarks" / "llm-perf-benchmarks" / "performance" / "calibration" / "run_calibration.sh",
-        here.parents[2] / ".." / "benchmarks" / "llm-perf-benchmarks" / "performance" / "calibration" / "run_calibration.sh",
+        here.parents[2]
+        / ".."
+        / "benchmarks"
+        / "llm-perf-benchmarks"
+        / "performance"
+        / "calibration"
+        / "run_calibration.sh",
+        here.parents[3]
+        / "benchmarks"
+        / "llm-perf-benchmarks"
+        / "performance"
+        / "calibration"
+        / "run_calibration.sh",
+        here.parents[3]
+        / "projects"
+        / "benchmarks"
+        / "llm-perf-benchmarks"
+        / "performance"
+        / "calibration"
+        / "run_calibration.sh",
+        work_root
+        / "projects"
+        / "benchmarks"
+        / "llm-perf-benchmarks"
+        / "performance"
+        / "calibration"
+        / "run_calibration.sh",
     ]
     for p in candidates:
         p = p.resolve()
@@ -41,14 +69,15 @@ def _default_calibration_script() -> Path | None:
     return None
 
 
-def _run_via_shell_script(ag: AgenticConfig, env_extra: dict[str, str]) -> Path:
-    script = Path(ag.calibration_script) if ag.calibration_script else _default_calibration_script()
-    if script is None or not script.is_file():
-        raise FileNotFoundError(
-            "tau2 calibration script not found; set agentic.calibration_script to "
-            "benchmarks/llm-perf-benchmarks/performance/calibration/run_calibration.sh"
-        )
+def _resolve_calibration_script(ag: AgenticConfig) -> Path | None:
+    if ag.calibration_script:
+        script = Path(ag.calibration_script)
+        return script if script.is_file() else None
+    return _default_calibration_script()
 
+
+def _run_via_shell_script(ag: AgenticConfig, env_extra: dict[str, str], script: Path) -> Path:
+    script = Path(script)
     env = os.environ.copy()
     env.update(env_extra)
     print(f"[evalsuite] agentic: running {script}")
@@ -228,9 +257,12 @@ def run_agentic_eval(
     if ag.num_tasks is not None:
         env_extra["NUM_TASKS"] = str(ag.num_tasks)
 
-    if ag.num_trials == 1 and (ag.calibration_script or _default_calibration_script()):
-        sim_dir = _run_via_shell_script(ag, env_extra)
+    script = _resolve_calibration_script(ag)
+    if ag.num_trials == 1 and script is not None:
+        sim_dir = _run_via_shell_script(ag, env_extra, script)
     else:
+        if ag.num_trials == 1 and script is None:
+            print("[evalsuite] agentic: calibration script not found; using tau2 CLI directly")
         sim_dir = _run_tau2_direct(ag, env_extra)
 
     threshold = cfg.compare.agentic_reward_threshold

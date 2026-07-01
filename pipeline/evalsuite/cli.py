@@ -20,6 +20,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
         _apply_overrides(cfg, args.overrides)
         cfg.validate()
+    if args.agentic:
+        cfg.agentic.enabled = True
 
     model_path = args.model or cfg.model.id
     out_dir = Path(args.out)
@@ -85,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--out", required=True, help="output directory for eval artifacts")
     run_p.add_argument("--agent-base", help="OpenAI-compatible base URL for agentic (tau2)")
     run_p.add_argument("--agent-model", help="model name served at agent-base")
+    run_p.add_argument(
+        "--agentic",
+        action="store_true",
+        help="enable tau2 agentic benchmark eval (also requires agentic.* in config)",
+    )
     run_p.add_argument(
         "--set", dest="overrides", action="append", default=[],
         help="override config field, e.g. --set eval.tasks[0].limit=8",

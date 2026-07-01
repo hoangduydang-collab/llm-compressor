@@ -64,12 +64,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--checkpoint", help="for --stage serve/eval: use an existing checkpoint dir"
     )
+    parser.add_argument(
+        "--agentic",
+        action="store_true",
+        help="enable tau2 agentic benchmark eval (also requires agentic.* in config)",
+    )
+    parser.add_argument(
+        "--agent-base",
+        help="OpenAI-compatible base URL for the agent under test (overrides agentic.agent_base)",
+    )
+    parser.add_argument(
+        "--agent-model",
+        help="model name served at --agent-base (overrides agentic.agent_model)",
+    )
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
     if args.overrides:
         _apply_overrides(cfg, args.overrides)
         cfg.validate()
+    if args.agentic:
+        cfg.agentic.enabled = True
 
     if args.make_baseline:
         from pipeline.eval_gate import make_baseline
@@ -122,7 +137,13 @@ def main(argv: list[str] | None = None) -> int:
         if cfg.agentic.enabled:
             from pipeline.evalsuite.agentic import run_agentic_eval
 
-            run_agentic_eval(cfg, ckpt, eval_out)
+            run_agentic_eval(
+                cfg,
+                ckpt,
+                eval_out,
+                agent_base=args.agent_base,
+                agent_model=args.agent_model,
+            )
 
         versioning.write_eval_report(run_dir, report)
         if report.get("passed") is False:

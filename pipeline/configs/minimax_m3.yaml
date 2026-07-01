@@ -68,14 +68,6 @@ eval:
   baseline: null            # point at the BF16/MXFP8 M3 baseline metrics JSON
   recovery_threshold: 0.94
   max_ppl_increase: 0.10
-  tasks:
-    - name: wikitext
-      metric: "word_perplexity,none"
-      higher_is_better: false
-      limit: null
-    - name: mmlu
-      metric: "acc,none"
-      num_fewshot: 5
-      limit: 500
+  # tasks: default 8-task full suite — see full_static_tasks() in config.py
 
 output_dir: ./artifacts

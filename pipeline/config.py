@@ -98,16 +98,8 @@ class EvalTask:
     higher_is_better: bool = True
 
 
-def default_gate_tasks() -> list[EvalTask]:
-    """Small task set for the accuracy gate (backward-compatible default)."""
-    return [
-        EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False, limit=None),
-        EvalTask(name="mmlu", metric="acc,none", num_fewshot=5, limit=250),
-    ]
-
-
 def full_static_tasks() -> list[EvalTask]:
-    """Full static lm-eval suite for quantized-vs-original comparison."""
+    """Default static lm-eval suite (8 tasks, full splits unless overridden)."""
     return [
         EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False, limit=None),
         EvalTask(name="mmlu", metric="acc,none", num_fewshot=5, limit=None),
@@ -135,7 +127,7 @@ class EvalConfig:
     # Per-sample logging for post-hoc flip-rate comparison (evalsuite).
     log_samples: bool = True
     samples_dir: str | None = None  # defaults to <out>/samples at runtime
-    tasks: list[EvalTask] = field(default_factory=default_gate_tasks)
+    tasks: list[EvalTask] = field(default_factory=full_static_tasks)
 
 
 @dataclass

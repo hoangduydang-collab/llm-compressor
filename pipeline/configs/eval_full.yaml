@@ -60,18 +60,19 @@ eval:
 agentic:
   enabled: false
   harness: tau2
-  # Clone: git clone https://github.com/sierra-research/tau2-bench && cd tau2-bench && uv sync
-  tau2_dir: null
-  calibration_script: null  # defaults to ../benchmarks/llm-perf-benchmarks/performance/calibration/run_calibration.sh
-  domain: telecom
+  tau2_dir: /mnt/nfs/hoangduy/tau2-bench
+  calibration_script: null
+  domain: mock
   split: small
-  num_tasks: null
-  max_conc: 5
+  num_tasks: 1
+  max_conc: 1
   num_trials: 1
   thinking: off
-  user_base: null
-  user_model: null
-  user_key_file: null
+  agent_base: http://localhost:8000/v1
+  agent_model: null
+  user_base: https://api-inference.bitdeer.ai/v1
+  user_model: deepseek-ai/DeepSeek-V3.2
+  user_key_file: /mnt/nfs/hoangduy/.bitdeer_key
   save_to: evalsuite_agentic
 
 compare:

@@ -8,6 +8,7 @@
 #SBATCH --output=/mnt/nfs/hoangduy/logs/eval-%j.out
 #
 # Accuracy gate on EXISTING checkpoint(s) - eval only (serve already verified).
+# For the full 8-task static suite, use pipeline/slurm/submit_eval_full.sh instead.
 #
 # Option A: explicit checkpoint dirs (space-separated):
 #   CKPTS="artifacts/Qwen3-30B-A3B-gptq-W4AFP8/20260630-080115/checkpoint \

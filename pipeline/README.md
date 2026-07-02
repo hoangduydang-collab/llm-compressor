@@ -128,8 +128,11 @@ Warning: please use at least NVCC 12.9 for the best DeepGEMM performance
 Install nvcc 12.9 into the venv (works when `module` is unavailable):
 
 ```bash
+source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
-uv pip install "nvidia-cuda-nvcc-cu12==12.9.86"
+export HOME=/mnt/nfs/hoangduy
+
+"$UV" pip install "nvidia-cuda-nvcc-cu12==12.9.86"
 
 export DG_JIT_NVCC_COMPILER="$(python -c "import site; from pathlib import Path; print(Path(site.getsitepackages()[0]) / 'nvidia/cuda_nvcc/bin/nvcc')")"
 export DG_JIT_USE_NVRTC=0

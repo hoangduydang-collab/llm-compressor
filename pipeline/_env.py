@@ -175,8 +175,8 @@ def preflight_sglang_deepgemm() -> list[str]:
     if not candidates:
         msgs.append(
             "nvcc not found. GLM-5.2 DSA needs DeepGEMM JIT with nvcc >= 12.9. "
-            "Install into the venv: "
-            'uv pip install "nvidia-cuda-nvcc-cu12==12.9.86"'
+            "Install: source /mnt/nfs/hoangduy/env.sh && "
+            '"$UV" pip install "nvidia-cuda-nvcc-cu12==12.9.86"'
         )
         return msgs
 
@@ -204,7 +204,8 @@ def preflight_sglang_deepgemm() -> list[str]:
 
     if best_path is None:
         msgs.append(
-            'Fix: uv pip install "nvidia-cuda-nvcc-cu12==12.9.86" in sglang-eval, '
+            'Fix: source /mnt/nfs/hoangduy/env.sh && '
+            '"$UV" pip install \\"nvidia-cuda-nvcc-cu12==12.9.86\\" in sglang-eval, '
             "then rm -rf ~/.cache/deep_gemm/tmp and re-run compile_deep_gemm / eval."
         )
 

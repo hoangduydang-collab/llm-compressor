@@ -73,9 +73,8 @@ submit_method() {
     echo "sbatch failed for method=$method:"
     echo "$job_line"
     echo ""
-    echo "If you see NFS spool I/O errors, run quantize interactively on a free node:"
-    echo "  METHOD=$method MODEL_ID=$MODEL_ID CONFIG=$CONFIG SCHEME=$SCHEME \\"
-    echo "    bash -c 'source /mnt/nfs/hoangduy/env.sh && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && cd $REPO_ROOT && export HOME=/mnt/nfs/hoangduy && bash pipeline/slurm/quantize.sbatch'"
+    echo "If you see NFS spool I/O errors, run interactively on two idle nodes:"
+    echo "  METHOD=$method tmux new -s m3-$method 'bash pipeline/slurm/run_quantize_minimax_m3_local.sh'"
     rm -f "$tmp_job" 2>/dev/null || true
     return 1
   fi

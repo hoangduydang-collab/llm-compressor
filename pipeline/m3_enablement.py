@@ -20,6 +20,7 @@ import argparse
 import json
 
 from pipeline.config import load_config
+from pipeline.minimax_m3_config import apply_minimax_m3_config
 
 
 def probe_moe_support(model) -> dict:
@@ -92,6 +93,10 @@ def main(argv: list[str] | None = None) -> int:
         from_pretrained_kwargs["max_memory"] = {
             k: float(v) for k, v in cfg.model.max_memory.items()
         }
+
+    from_pretrained_kwargs = apply_minimax_m3_config(
+        cfg.model.id, from_pretrained_kwargs, trust_remote_code=cfg.model.trust_remote_code
+    )
 
     print(
         f"[probe] loading {cfg.model.id} via {cfg.model.auto_class} "

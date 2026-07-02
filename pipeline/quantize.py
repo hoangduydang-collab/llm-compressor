@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pipeline.calibration import build_calibration_dataset
 from pipeline.config import PipelineConfig
+from pipeline.minimax_m3_config import apply_minimax_m3_config
 from pipeline.recipe import build_recipe, describe_recipe
 from pipeline import metrics, versioning
 
@@ -37,6 +38,10 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
         from_pretrained_kwargs["max_memory"] = {
             k: float(v) for k, v in m.max_memory.items()
         }
+
+    from_pretrained_kwargs = apply_minimax_m3_config(
+        m.id, from_pretrained_kwargs, trust_remote_code=m.trust_remote_code
+    )
 
     # load_context() patches from_pretrained so fused MoE experts load in a
     # linearized, quantizable layout (and handles offloaded loading).

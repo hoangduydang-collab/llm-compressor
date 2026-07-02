@@ -1,17 +1,7 @@
-# Full static eval for PhalaCloud/GLM-5.2-W4AFP8 (SGLang-native w4afp8 layout).
-#
-# Requires: SGLang >= 0.5.13.post1, 8x Hopper GPUs, lm-eval sglang backend.
-#
-# Memory notes:
-#   - Phala validated on 8x H200 (140GB). On 8x H100 (80GB) weights ~76GB/GPU;
-#     disable CUDA graphs and lower mem_fraction_static to fit.
-#   - Prefer an H200 node if available; use eval_glm52_w4afp8_sglang_h200.yaml there.
-#
-#   python -m pipeline.evalsuite.cli run \
-#     --config pipeline/configs/eval_glm52_w4afp8_sglang.yaml \
-#     --out evals/glm52-w4afp8-phala
+# GLM-5.2-W4AFP8 eval on 8x H200 (Phala's reference hardware).
+# Use this on 140GB GPUs; the default eval_glm52_w4afp8_sglang.yaml targets H100 80GB.
 
-name: eval-glm52-w4afp8-sglang
+name: eval-glm52-w4afp8-sglang-h200
 
 model:
   id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8
@@ -19,17 +9,12 @@ model:
 
 serve:
   tensor_parallel_size: 8
-  max_model_len: 4096
-  # mem_fraction_static in SGLang; lower leaves headroom for runtime/graph buffers on H100.
-  gpu_memory_utilization: 0.75
+  max_model_len: 8192
+  gpu_memory_utilization: 0.85
   kv_cache_dtype: fp8_e4m3
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
-    # H100 80GB: weights fill ~76GB/GPU; CUDA graph capture OOMs without this.
-    disable_cuda_graph: true
-    chunked_prefill_size: 2048
-    max_running_requests: 4
 
 eval:
   enabled: true

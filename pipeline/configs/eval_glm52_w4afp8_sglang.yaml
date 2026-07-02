@@ -1,8 +1,9 @@
-# Default GLM-5.2-W4AFP8 SGLang eval config → points to perf settings.
+# Default GLM-5.2-W4AFP8 SGLang eval config (alias for H100 minimal-KV).
 # See also:
-#   eval_glm52_w4afp8_sglang_perf.yaml  — full CUDA graphs + native kernels
-#   eval_glm52_w4afp8_sglang_safe.yaml  — H100 80GB / no-nvcc fallbacks
-#   eval_glm52_w4afp8_sglang_h200.yaml  — same as perf on H200 nodes
+#   eval_glm52_w4afp8_sglang_h100.yaml   — H100, tiny KV, graphs on
+#   eval_glm52_w4afp8_sglang_safe.yaml   — H100, tiny KV, graphs off (fallback)
+#   eval_glm52_w4afp8_sglang_perf.yaml   — H200 / Phala-like serving knobs
+#   eval_glm52_w4afp8_sglang_h200.yaml   — same as perf on H200 nodes
 
 name: eval-glm52-w4afp8-sglang
 
@@ -12,13 +13,16 @@ model:
 
 serve:
   tensor_parallel_size: 8
-  max_model_len: 8192
-  gpu_memory_utilization: 0.85
+  max_model_len: 2048
+  gpu_memory_utilization: 0.72
   kv_cache_dtype: fp8_e4m3
-  sglang_compat_fallbacks: false
+  sglang_compat_fallbacks: true
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
+    max_total_tokens: 8192
+    chunked_prefill_size: 1024
+    max_running_requests: 1
 
 eval:
   enabled: true

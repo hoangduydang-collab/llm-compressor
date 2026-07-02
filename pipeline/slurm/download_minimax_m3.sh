@@ -3,7 +3,7 @@
 #
 # Prerequisites:
 #   1. Accept the model license on https://huggingface.co/MiniMaxAI/MiniMax-M3
-#   2. huggingface-cli login  (or export HF_TOKEN=...)
+#   2. hf auth login  (or export HF_TOKEN=...)
 #   3. ~1 TB free under LOCAL_DIR (428B BF16 safetensors)
 #
 # Run on any compute node with good network (GPU not required):
@@ -26,18 +26,21 @@ export LOCAL_DIR
 echo "host=$(hostname) repo=$REPO_ID dest=$LOCAL_DIR"
 df -h "$(dirname "$LOCAL_DIR")" || true
 
+if ! hf auth who &>/dev/null; then
+  echo "[download] not logged in — run: hf auth login"
+  exit 1
+fi
+hf auth who
+
+mkdir -p "$LOCAL_DIR"
 if [[ ! -f "$LOCAL_DIR/config.json" ]]; then
-  mkdir -p "$LOCAL_DIR"
   echo "[download] fetching $REPO_ID -> $LOCAL_DIR (resumable)..."
-  hf download "$REPO_ID" \
-    --local-dir "$LOCAL_DIR" \
-    --local-dir-use-symlinks False
 else
   echo "[download] $LOCAL_DIR/config.json exists; resuming incomplete shards..."
-  hf download "$REPO_ID" \
-    --local-dir "$LOCAL_DIR" \
-    --local-dir-use-symlinks False
 fi
+hf download "$REPO_ID" \
+  --local-dir "$LOCAL_DIR" \
+  --local-dir-use-symlinks False
 
 echo "[download] verifying snapshot..."
 python - <<'PY'

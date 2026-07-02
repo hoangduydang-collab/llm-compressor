@@ -115,8 +115,15 @@ On **8× H100 80GB**, do not use Phala's 1M `context_length` / large KV pool for
 eval. Cap KV with `serve.max_model_len` (→ SGLang `context_length`),
 `serve.gpu_memory_utilization` (→ `mem_fraction_static`), and
 `serve.sglang_kwargs.max_total_tokens`. Static lm-eval tasks fit in 2k context;
-`max_total_tokens=8192` and `max_running_requests=1` are enough. If CUDA graph
-capture still OOMs, use `eval_glm52_w4afp8_sglang_safe.yaml` (graphs off).
+`max_total_tokens=8192` and `max_running_requests=1` are enough.
+
+**DeepGEMM / NVCC:** If you see `NVCC compilation failed` during load (often
+misreported as a CUDA-graph OOM), the cluster likely has no working `nvcc`.
+Configs with `sglang_compat_fallbacks: true` set `SGLANG_ENABLE_JIT_DEEPGEMM=0`
+and `SGL_DG_USE_NVRTC=1` before SGLang imports. Keep `disable_cuda_graph: true`
+on H100. One-time alternative: `python3 -m sglang.compile_deep_gemm` with the
+same model/tp args on a node that has the CUDA toolkit.
+
 On **8× H200**, use `eval_glm52_w4afp8_sglang_h200.yaml` for Phala-like perf.
 
 Or override an existing config:

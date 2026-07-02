@@ -121,12 +121,12 @@ def evaluate_tasks(
 
     import os
 
-    from pipeline._env import ensure_writable_caches
+    from pipeline._env import apply_sglang_compat_env, ensure_writable_caches
 
-    # Optional fallbacks for broken FlashInfer CuTe / DeepGEMM JIT on the cluster.
     if cfg.eval.backend == "sglang" and cfg.serve.sglang_compat_fallbacks:
-        os.environ.setdefault("FLASHINFER_USE_CUDA_NORM", "1")
-        os.environ.setdefault("SGL_ENABLE_JIT_DEEPGEMM", "0")
+        applied = apply_sglang_compat_env()
+        if applied:
+            print(f"[lmeval] sglang compat env: {applied}")
 
     ensure_writable_caches()
 

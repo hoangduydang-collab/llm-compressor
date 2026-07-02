@@ -1,6 +1,9 @@
 """Unit tests for per-task lm-eval kwargs (no GPU)."""
 
+import os
+
 from pipeline.config import EvalTask, PipelineConfig, ServeConfig
+from pipeline._env import apply_sglang_compat_env
 from pipeline.lmeval_runner import (
     model_args,
     per_task_limit,
@@ -117,3 +120,17 @@ def test_model_args_dispatches_on_backend():
     assert "tp_size=4" in model_args(cfg, "/m")
     cfg.eval.backend = "vllm"
     assert "tensor_parallel_size=4" in model_args(cfg, "/m")
+
+
+def test_apply_sglang_compat_env_sets_sglang_keys(monkeypatch):
+    for key in (
+        "FLASHINFER_USE_CUDA_NORM",
+        "SGLANG_ENABLE_JIT_DEEPGEMM",
+        "SGL_DG_USE_NVRTC",
+        "DG_JIT_USE_NVRTC",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    applied = apply_sglang_compat_env()
+    assert applied["SGLANG_ENABLE_JIT_DEEPGEMM"] == "0"
+    assert os.environ["SGL_DG_USE_NVRTC"] == "1"
+    assert os.environ["DG_JIT_USE_NVRTC"] == "1"

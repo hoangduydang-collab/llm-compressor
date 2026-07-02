@@ -1,14 +1,15 @@
 # GLM-5.2-W4AFP8 eval on 8x H100 80GB with minimal KV reservation.
 #
-# Same tiny KV budget as safe.yaml but CUDA graphs left on (faster if it fits).
-# Weights are ~76 GB/GPU; shrinking the KV pool is what frees headroom for
-# graph capture — not EP or Phala's 1M-token context_length.
+# Minimal KV (2k ctx, max_total_tokens=8192) + compat fallbacks (NVRTC, no JIT).
+# CUDA graphs stay off: graph capture still runs DeepGEMM DSA kernels and the
+# cluster often has no working nvcc (NVCC compilation failed).
 #
 #   python -m pipeline.evalsuite.cli run \
 #     --config pipeline/configs/eval_glm52_w4afp8_sglang_h100.yaml \
 #     --out evals/glm52-w4afp8-phala
 #
-# If graph capture still OOMs, use eval_glm52_w4afp8_sglang_safe.yaml instead.
+# If DeepGEMM still fails, precompile once (needs nvcc on a build node):
+#   python3 -m sglang.compile_deep_gemm --model-path ... --tp 8 --trust-remote-code
 
 name: eval-glm52-w4afp8-sglang-h100
 
@@ -25,6 +26,8 @@ serve:
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
+    disable_cuda_graph: true
+    disable_piecewise_cuda_graph: true
     max_total_tokens: 8192
     chunked_prefill_size: 1024
     max_running_requests: 1

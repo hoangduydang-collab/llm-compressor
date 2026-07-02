@@ -128,9 +128,9 @@ def test_apply_sglang_compat_env_sets_sglang_keys(monkeypatch):
         "SGLANG_ENABLE_JIT_DEEPGEMM",
         "SGLANG_DG_USE_NVRTC",
         "DG_JIT_USE_NVRTC",
+        "DG_JIT_NVCC_COMPILER",
     ):
         monkeypatch.delenv(key, raising=False)
     applied = apply_sglang_compat_env()
     assert applied["SGLANG_ENABLE_JIT_DEEPGEMM"] == "0"
-    assert os.environ["SGLANG_DG_USE_NVRTC"] == "1"
-    assert os.environ["DG_JIT_USE_NVRTC"] == "1"
+    assert os.environ["FLASHINFER_USE_CUDA_NORM"] == "1"

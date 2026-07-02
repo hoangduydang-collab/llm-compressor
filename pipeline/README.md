@@ -118,34 +118,36 @@ eval. Cap KV with `serve.max_model_len` (→ SGLang `context_length`),
 `max_total_tokens=8192` and `max_running_requests=1` are enough.
 
 **DeepGEMM / NVCC:** GLM-5.2's DSA indexer always calls `deep_gemm.fp8_paged_mqa_logits`
-at runtime (not gated by `SGLANG_ENABLE_JIT_DEEPGEMM`). You need a working **nvcc
->= 12.4** on `PATH` / `CUDA_HOME` — driver-only CUDA is not enough. Symptom:
+at runtime. You need **nvcc >= 12.9** (12.4 on PATH is not enough). Symptom:
 
 ```
 ld_st.cuh: st.shared.b128 ... constraint 'q' ... NVCC compilation failed
+Warning: please use at least NVCC 12.9 for the best DeepGEMM performance
 ```
 
-That means the toolkit nvcc is too old for DeepGEMM's `__int128` PTX. Fix:
+Install nvcc 12.9 into the venv (works when `module` is unavailable):
 
 ```bash
-module avail cuda          # cluster-specific
-module load cuda/12.6      # or whatever matches torch's CUDA
-export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
-export PATH=$CUDA_HOME/bin:$PATH
-nvcc --version             # must be >= 12.4
+source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
+uv pip install "nvidia-cuda-nvcc-cu12==12.9.86"
 
-rm -rf ~/.cache/deep_gemm/tmp   # drop failed JIT artifacts
+export DG_JIT_NVCC_COMPILER="$(python -c "import site; from pathlib import Path; print(Path(site.getsitepackages()[0]) / 'nvidia/cuda_nvcc/bin/nvcc')")"
+export DG_JIT_USE_NVRTC=0
+export SGLANG_DG_USE_NVRTC=0
+"$DG_JIT_NVCC_COMPILER" --version   # must show release 12.9
 
-# optional but recommended: precompile once, then eval reuses cache
+rm -rf ~/.cache/deep_gemm/tmp
+
 python3 -m sglang.compile_deep_gemm \
   --model-path /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8 \
   --tp 8 --trust-remote-code --quantization w4afp8 \
   --disable-shared-experts-fusion
 ```
 
-Configs with `sglang_compat_fallbacks: true` still set FlashInfer + NVRTC env vars,
-but NVRTC does not replace nvcc for this kernel today. Keep `disable_cuda_graph:
-true` on H100. On **8× H200**, use `eval_glm52_w4afp8_sglang_h200.yaml`.
+First compile can take 10–20 minutes; re-run until it finishes. With
+`sglang_compat_fallbacks: true`, eval auto-picks the venv nvcc when installed.
+Keep `disable_cuda_graph: true` on H100. On **8× H200**, use
+`eval_glm52_w4afp8_sglang_h200.yaml`.
 
 Or override an existing config:
 

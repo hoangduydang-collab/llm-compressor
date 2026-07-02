@@ -7,9 +7,17 @@ the real working dir is on NFS). vLLM/FlashInfer create a JIT workspace under
 those caches land in a writable location.
 """
 
+from __future__ import annotations
+
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
+
+# DeepGEMM's __int128 PTX (st.shared.b128 + constraint "q") needs nvcc >= 12.9.
+DEEPGEMM_MIN_NVCC = (12, 9)
 
 
 def _is_writable(path: str) -> bool:
@@ -47,11 +55,100 @@ def ensure_writable_caches() -> dict:
     return changed
 
 
+def _parse_nvcc_release(text: str) -> tuple[int, int] | None:
+    match = re.search(r"release (\d+)\.(\d+)", text)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _nvcc_version(nvcc_path: str) -> tuple[int, int] | None:
+    try:
+        proc = subprocess.run(
+            [nvcc_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        return _parse_nvcc_release(proc.stdout + proc.stderr)
+    except Exception:
+        return None
+
+
+def _iter_nvcc_candidates() -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def add(path: str | Path | None) -> None:
+        if not path:
+            return
+        resolved = str(Path(path).resolve())
+        if resolved not in seen and Path(resolved).is_file():
+            seen.add(resolved)
+            ordered.append(resolved)
+
+    add(os.environ.get("DG_JIT_NVCC_COMPILER"))
+    add(shutil.which("nvcc"))
+    try:
+        from torch.utils.cpp_extension import CUDA_HOME
+
+        if CUDA_HOME:
+            add(Path(CUDA_HOME) / "bin" / "nvcc")
+    except Exception:
+        pass
+
+    try:
+        import site
+
+        roots = list(site.getsitepackages())
+        user = site.getusersitepackages()
+        if user:
+            roots.append(user)
+        for root in roots:
+            add(Path(root) / "nvidia" / "cuda_nvcc" / "bin" / "nvcc")
+    except Exception:
+        pass
+
+    return ordered
+
+
+def ensure_deepgemm_nvcc(
+    min_version: tuple[int, int] = DEEPGEMM_MIN_NVCC,
+) -> dict[str, str]:
+    """Pick nvcc >= 12.9 for DeepGEMM JIT (sets ``DG_JIT_NVCC_COMPILER``)."""
+    applied: dict[str, str] = {}
+    best_path: str | None = None
+    best_ver: tuple[int, int] | None = None
+
+    for path in _iter_nvcc_candidates():
+        ver = _nvcc_version(path)
+        if ver is None or ver < min_version:
+            continue
+        if best_ver is None or ver > best_ver:
+            best_path, best_ver = path, ver
+
+    if best_path:
+        if os.environ.get("DG_JIT_NVCC_COMPILER") != best_path:
+            os.environ["DG_JIT_NVCC_COMPILER"] = best_path
+            applied["DG_JIT_NVCC_COMPILER"] = best_path
+        # Prefer nvcc 12.9+ over NVRTC for DSA paged_mqa kernels.
+        for key, value in (
+            ("DG_JIT_USE_NVRTC", "0"),
+            ("SGLANG_DG_USE_NVRTC", "0"),
+        ):
+            if os.environ.get(key) != value:
+                os.environ[key] = value
+                applied[key] = value
+
+    return applied
+
+
 def apply_sglang_compat_env() -> dict[str, str]:
     """SGLang eval fallbacks for clusters without a working NVCC toolkit.
 
     Must run before ``import lm_eval`` / ``import sglang`` so DeepGEMM picks
-    NVRTC and SGLang reads ``SGLANG_ENABLE_JIT_DEEPGEMM`` at import time.
+    the right compiler and SGLang reads env at import time.
     """
     applied: dict[str, str] = {}
 
@@ -61,59 +158,54 @@ def apply_sglang_compat_env() -> dict[str, str]:
             applied[key] = value
 
     _set("FLASHINFER_USE_CUDA_NORM", "1")
-    # SGLang 0.5.x env name (SGL_ENABLE_JIT_DEEPGEMM is not read).
     _set("SGLANG_ENABLE_JIT_DEEPGEMM", "0")
-    # DSA indexer still calls deep_gemm directly; NVRTC avoids a broken nvcc.
-    _set("SGLANG_DG_USE_NVRTC", "1")
-    _set("DG_JIT_USE_NVRTC", "1")
+    applied.update(ensure_deepgemm_nvcc())
+    if "DG_JIT_NVCC_COMPILER" not in applied:
+        # Last resort when only an old system nvcc exists.
+        _set("SGLANG_DG_USE_NVRTC", "1")
+        _set("DG_JIT_USE_NVRTC", "1")
 
     return applied
 
 
 def preflight_sglang_deepgemm() -> list[str]:
-    """Warn when nvcc is missing or likely too old for DeepGEMM DSA kernels."""
-    import re
-    import shutil
-    import subprocess
-
+    """Warn when nvcc is missing or too old for DeepGEMM DSA kernels."""
     msgs: list[str] = []
-    nvcc = shutil.which("nvcc")
-    if not nvcc:
-        try:
-            from torch.utils.cpp_extension import CUDA_HOME
-
-            if CUDA_HOME:
-                candidate = Path(CUDA_HOME) / "bin" / "nvcc"
-                if candidate.is_file():
-                    nvcc = str(candidate)
-        except Exception:
-            pass
-    if not nvcc:
+    candidates = _iter_nvcc_candidates()
+    if not candidates:
         msgs.append(
-            "nvcc not found (GLM-5.2 DSA indexer JIT-compiles DeepGEMM at first forward). "
-            "Load a CUDA toolkit module and export CUDA_HOME, e.g. "
-            "module load cuda/12.6 && export CUDA_HOME=$CUDA_HOME."
+            "nvcc not found. GLM-5.2 DSA needs DeepGEMM JIT with nvcc >= 12.9. "
+            "Install into the venv: "
+            'uv pip install "nvidia-cuda-nvcc-cu12==12.9.86"'
         )
         return msgs
-    try:
-        proc = subprocess.run(
-            [nvcc, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
+
+    best_path: str | None = None
+    best_ver: tuple[int, int] | None = None
+    for path in candidates:
+        ver = _nvcc_version(path)
+        if ver is None:
+            continue
+        note = f"nvcc {ver[0]}.{ver[1]} at {path}"
+        if ver < DEEPGEMM_MIN_NVCC:
+            msgs.append(
+                f"{note} is too old for DeepGEMM (__int128 PTX needs >= 12.9)."
+            )
+            continue
+        if best_ver is None or ver > best_ver:
+            best_path, best_ver = path, ver
+
+    if best_path:
+        msgs.append(
+            f"DeepGEMM will use nvcc {best_ver[0]}.{best_ver[1]} at {best_path}"
         )
-        text = proc.stdout + proc.stderr
-        match = re.search(r"release (\d+)\.(\d+)", text)
-        if match:
-            major, minor = int(match.group(1)), int(match.group(2))
-            if major < 12 or (major == 12 and minor < 4):
-                msgs.append(
-                    f"nvcc {major}.{minor} at {nvcc} is likely too old for DeepGEMM "
-                    f"(__int128 PTX / st.shared.b128). Use CUDA toolkit >= 12.4 "
-                    f"(12.8+ recommended to match torch)."
-                )
-        msgs.append(f"DeepGEMM will JIT with nvcc: {nvcc}")
-    except Exception as exc:
-        msgs.append(f"could not run nvcc --version ({exc})")
+    elif not any("too old" in m for m in msgs):
+        msgs.append("could not parse nvcc version from candidate paths")
+
+    if best_path is None:
+        msgs.append(
+            'Fix: uv pip install "nvidia-cuda-nvcc-cu12==12.9.86" in sglang-eval, '
+            "then rm -rf ~/.cache/deep_gemm/tmp and re-run compile_deep_gemm / eval."
+        )
+
     return msgs

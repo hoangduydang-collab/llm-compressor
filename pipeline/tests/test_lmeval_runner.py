@@ -1,7 +1,13 @@
 """Unit tests for per-task lm-eval kwargs (no GPU)."""
 
-from pipeline.config import EvalTask
-from pipeline.lmeval_runner import per_task_limit, per_task_num_fewshot
+from pipeline.config import EvalTask, PipelineConfig, ServeConfig
+from pipeline.lmeval_runner import (
+    model_args,
+    per_task_limit,
+    per_task_num_fewshot,
+    sglang_model_args,
+    vllm_model_args,
+)
 
 
 def test_per_task_num_fewshot_scalar_when_uniform():
@@ -67,3 +73,47 @@ def test_per_task_limit_dict_when_mixed():
         EvalTask(name="mmlu", limit=250),
     ]
     assert per_task_limit(tasks) == {"mmlu": 250}
+
+
+def test_vllm_model_args():
+    cfg = PipelineConfig()
+    cfg.model.trust_remote_code = True
+    cfg.serve.tensor_parallel_size = 2
+    cfg.serve.max_model_len = 4096
+    args = vllm_model_args(cfg, "/models/qwen")
+    assert "pretrained=/models/qwen" in args
+    assert "tensor_parallel_size=2" in args
+    assert "max_model_len=4096" in args
+    assert "trust_remote_code=True" in args
+
+
+def test_sglang_model_args_maps_serve_knobs():
+    cfg = PipelineConfig()
+    cfg.model.trust_remote_code = True
+    cfg.serve = ServeConfig(
+        tensor_parallel_size=8,
+        max_model_len=8192,
+        gpu_memory_utilization=0.85,
+        kv_cache_dtype="fp8",
+        sglang_kwargs={
+            "quantization": "w4afp8",
+            "disable_shared_experts_fusion": True,
+        },
+    )
+    args = sglang_model_args(cfg, "/models/glm")
+    assert "pretrained=/models/glm" in args
+    assert "tp_size=8" in args
+    assert "context_length=8192" in args
+    assert "mem_fraction_static=0.85" in args
+    assert "kv_cache_dtype=fp8_e4m3" in args
+    assert "quantization=w4afp8" in args
+    assert "disable_shared_experts_fusion=True" in args
+
+
+def test_model_args_dispatches_on_backend():
+    cfg = PipelineConfig()
+    cfg.eval.backend = "sglang"
+    cfg.serve.tensor_parallel_size = 4
+    assert "tp_size=4" in model_args(cfg, "/m")
+    cfg.eval.backend = "vllm"
+    assert "tensor_parallel_size=4" in model_args(cfg, "/m")

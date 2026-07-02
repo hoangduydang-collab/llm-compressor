@@ -99,6 +99,32 @@ python -m pipeline.evalsuite.cli compare \
 # -> evals/compare/compare.json + report.md
 ```
 
+### SGLang backend (native w4afp8 checkpoints)
+
+Checkpoints with `quant_method: w4afp8` in `config.json` (e.g.
+`PhalaCloud/GLM-5.2-W4AFP8`) are SGLang-native and cannot load in vLLM.
+Use `eval.backend: sglang` and install SGLang (>= 0.5.13.post1 for GLM-5.2).
+
+```bash
+python -m pipeline.evalsuite.cli run \
+  --config pipeline/configs/eval_glm52_w4afp8_sglang.yaml \
+  --out evals/glm52-w4afp8-phala
+```
+
+Or override an existing config:
+
+```bash
+python -m pipeline.evalsuite.cli run \
+  --config pipeline/configs/eval_full.yaml \
+  --model /path/to/GLM-5.2-W4AFP8 \
+  --out evals/glm52-w4afp8-phala \
+  --set eval.backend=sglang \
+  --set model.trust_remote_code=true \
+  --set serve.tensor_parallel_size=8 \
+  --set serve.sglang_kwargs.quantization=w4afp8 \
+  --set serve.sglang_kwargs.disable_shared_experts_fusion=true
+```
+
 ### Agentic (optional)
 
 Enable in YAML (`agentic.enabled: true`) and configure:

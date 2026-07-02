@@ -1,0 +1,70 @@
+# Full static eval for PhalaCloud/GLM-5.2-W4AFP8 (SGLang-native w4afp8 layout).
+#
+# Requires: SGLang >= 0.5.13.post1, 8x Hopper GPUs, lm-eval sglang backend.
+#
+#   python -m pipeline.evalsuite.cli run \
+#     --config pipeline/configs/eval_glm52_w4afp8_sglang.yaml \
+#     --out evals/glm52-w4afp8-phala
+
+name: eval-glm52-w4afp8-sglang
+
+model:
+  id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8
+  trust_remote_code: true
+
+serve:
+  tensor_parallel_size: 8
+  max_model_len: 8192
+  gpu_memory_utilization: 0.85
+  kv_cache_dtype: fp8_e4m3
+  sglang_kwargs:
+    quantization: w4afp8
+    disable_shared_experts_fusion: true
+
+eval:
+  enabled: true
+  log_samples: true
+  backend: sglang
+  apply_chat_template: true
+  baseline: null
+  tasks:
+    - name: wikitext
+      metric: word_perplexity,none
+      higher_is_better: false
+      num_fewshot: 0
+      limit: null
+    - name: mmlu
+      metric: acc,none
+      num_fewshot: 5
+      limit: null
+    - name: arc_challenge
+      metric: acc_norm,none
+      num_fewshot: 25
+      limit: null
+    - name: hellaswag
+      metric: acc_norm,none
+      num_fewshot: 10
+      limit: null
+    - name: winogrande
+      metric: acc,none
+      num_fewshot: 5
+      limit: null
+    - name: gsm8k
+      metric: exact_match,strict-match
+      num_fewshot: 5
+      limit: null
+    - name: truthfulqa_mc2
+      metric: acc,none
+      num_fewshot: 0
+      limit: null
+    - name: bbh
+      metric: exact_match,get-answer
+      num_fewshot: 3
+      limit: null
+
+agentic:
+  enabled: false
+
+quantization:
+  method: gptq
+  scheme: W4AFP8

@@ -1,20 +1,58 @@
-"""Shared lm-eval runner: one vLLM load for all configured tasks."""
+"""Shared lm-eval runner: one backend load for all configured tasks."""
 
 from __future__ import annotations
 
 from pipeline.config import EvalTask, PipelineConfig
 
 
-def model_args(cfg: PipelineConfig, model_path: str) -> str:
+def _arg_parts(parts: list[str]) -> str:
+    return ",".join(parts) + ","
+
+
+def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
     s = cfg.serve
-    return (
-        f"pretrained={model_path},"
-        f"tensor_parallel_size={s.tensor_parallel_size},"
-        f"max_model_len={s.max_model_len},"
-        f"gpu_memory_utilization={s.gpu_memory_utilization},"
-        f"trust_remote_code={cfg.model.trust_remote_code},"
-        f"enforce_eager={s.enforce_eager},"
-        f"dtype=auto,"
+    return _arg_parts(
+        [
+            f"pretrained={model_path}",
+            f"tensor_parallel_size={s.tensor_parallel_size}",
+            f"max_model_len={s.max_model_len}",
+            f"gpu_memory_utilization={s.gpu_memory_utilization}",
+            f"trust_remote_code={cfg.model.trust_remote_code}",
+            f"enforce_eager={s.enforce_eager}",
+            "dtype=auto",
+        ]
+    )
+
+
+def sglang_model_args(cfg: PipelineConfig, model_path: str) -> str:
+    """lm-eval ``SGLangLM`` arg string (maps ``serve.*`` to SGLang Engine knobs)."""
+    s = cfg.serve
+    parts = [
+        f"pretrained={model_path}",
+        f"tp_size={s.tensor_parallel_size}",
+        f"trust_remote_code={cfg.model.trust_remote_code}",
+        "dtype=auto",
+        f"context_length={s.max_model_len}",
+        f"mem_fraction_static={s.gpu_memory_utilization}",
+    ]
+    if s.kv_cache_dtype:
+        kv = s.kv_cache_dtype
+        if kv == "fp8":
+            kv = "fp8_e4m3"
+        parts.append(f"kv_cache_dtype={kv}")
+    for key, value in s.sglang_kwargs.items():
+        parts.append(f"{key}={value}")
+    return _arg_parts(parts)
+
+
+def model_args(cfg: PipelineConfig, model_path: str) -> str:
+    backend = cfg.eval.backend
+    if backend == "vllm":
+        return vllm_model_args(cfg, model_path)
+    if backend == "sglang":
+        return sglang_model_args(cfg, model_path)
+    raise ValueError(
+        f"unsupported eval.backend {backend!r}; valid: 'vllm', 'sglang'"
     )
 
 
@@ -50,7 +88,7 @@ def per_task_limit(tasks: list[EvalTask]) -> int | float | dict[str, int | float
 
 
 def _load_lm_model(cfg: PipelineConfig, model_path: str):
-    """Instantiate the lm-eval backend once (e.g. vLLM) for reuse across tasks."""
+    """Instantiate the lm-eval backend once for reuse across tasks."""
     from lm_eval.api.registry import get_model
     import lm_eval.models  # noqa: F401  (populates the model registry)
 
@@ -89,7 +127,10 @@ def evaluate_tasks(
 
     ev = cfg.eval
     names = ", ".join(t.name for t in tasks)
-    print(f"[lmeval] evaluating tasks ({names}) with a single model load")
+    print(
+        f"[lmeval] backend={ev.backend} evaluating tasks ({names}) "
+        "with a single model load"
+    )
 
     lm = _load_lm_model(cfg, model_path)
     merged: dict = {}

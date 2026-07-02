@@ -103,6 +103,10 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
 
     oneshot_kwargs: dict = dict(
         model=model,
+        # Text-only calibration: pass the loaded tokenizer so oneshot does not
+        # AutoProcessor.from_pretrained (M3 needs trust_remote_code for that).
+        processor=tokenizer,
+        trust_remote_code_model=cfg.model.trust_remote_code,
         dataset=ds,
         recipe=recipe,
         max_seq_length=cfg.calibration.max_seq_length,

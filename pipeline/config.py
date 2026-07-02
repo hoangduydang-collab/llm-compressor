@@ -85,6 +85,9 @@ class ServeConfig:
     enforce_eager: bool = False
     # Extra raw flags appended to ``vllm serve`` / passed to ``LLM(...)``.
     extra_args: list[str] = field(default_factory=list)
+    # SGLang-only kwargs forwarded to ``sgl.Engine`` when ``eval.backend: sglang``
+    # (e.g. ``quantization: w4afp8``, ``disable_shared_experts_fusion: true``).
+    sglang_kwargs: dict[str, Any] = field(default_factory=dict)
     prompt: str = "The capital of France is"
 
 
@@ -122,7 +125,7 @@ class EvalConfig:
     recovery_threshold: float = 0.94
     # For perplexity metrics: max allowed relative increase over baseline.
     max_ppl_increase: float = 0.10
-    backend: str = "vllm"  # lm-eval model backend
+    backend: str = "vllm"  # lm-eval backend: vllm | sglang
     apply_chat_template: bool = False
     # Per-sample logging for post-hoc flip-rate comparison (evalsuite).
     log_samples: bool = True

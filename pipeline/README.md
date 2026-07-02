@@ -117,14 +117,35 @@ eval. Cap KV with `serve.max_model_len` (→ SGLang `context_length`),
 `serve.sglang_kwargs.max_total_tokens`. Static lm-eval tasks fit in 2k context;
 `max_total_tokens=8192` and `max_running_requests=1` are enough.
 
-**DeepGEMM / NVCC:** If you see `NVCC compilation failed` during load (often
-misreported as a CUDA-graph OOM), the cluster likely has no working `nvcc`.
-Configs with `sglang_compat_fallbacks: true` set `SGLANG_ENABLE_JIT_DEEPGEMM=0`
-and `SGLANG_DG_USE_NVRTC=1` before SGLang imports. Keep `disable_cuda_graph: true`
-on H100. One-time alternative: `python3 -m sglang.compile_deep_gemm` with the
-same model/tp args on a node that has the CUDA toolkit.
+**DeepGEMM / NVCC:** GLM-5.2's DSA indexer always calls `deep_gemm.fp8_paged_mqa_logits`
+at runtime (not gated by `SGLANG_ENABLE_JIT_DEEPGEMM`). You need a working **nvcc
+>= 12.4** on `PATH` / `CUDA_HOME` — driver-only CUDA is not enough. Symptom:
 
-On **8× H200**, use `eval_glm52_w4afp8_sglang_h200.yaml` for Phala-like perf.
+```
+ld_st.cuh: st.shared.b128 ... constraint 'q' ... NVCC compilation failed
+```
+
+That means the toolkit nvcc is too old for DeepGEMM's `__int128` PTX. Fix:
+
+```bash
+module avail cuda          # cluster-specific
+module load cuda/12.6      # or whatever matches torch's CUDA
+export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
+export PATH=$CUDA_HOME/bin:$PATH
+nvcc --version             # must be >= 12.4
+
+rm -rf ~/.cache/deep_gemm/tmp   # drop failed JIT artifacts
+
+# optional but recommended: precompile once, then eval reuses cache
+python3 -m sglang.compile_deep_gemm \
+  --model-path /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8 \
+  --tp 8 --trust-remote-code --quantization w4afp8 \
+  --disable-shared-experts-fusion
+```
+
+Configs with `sglang_compat_fallbacks: true` still set FlashInfer + NVRTC env vars,
+but NVRTC does not replace nvcc for this kernel today. Keep `disable_cuda_graph:
+true` on H100. On **8× H200**, use `eval_glm52_w4afp8_sglang_h200.yaml`.
 
 Or override an existing config:
 

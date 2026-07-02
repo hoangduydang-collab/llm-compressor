@@ -68,3 +68,52 @@ def apply_sglang_compat_env() -> dict[str, str]:
     _set("DG_JIT_USE_NVRTC", "1")
 
     return applied
+
+
+def preflight_sglang_deepgemm() -> list[str]:
+    """Warn when nvcc is missing or likely too old for DeepGEMM DSA kernels."""
+    import re
+    import shutil
+    import subprocess
+
+    msgs: list[str] = []
+    nvcc = shutil.which("nvcc")
+    if not nvcc:
+        try:
+            from torch.utils.cpp_extension import CUDA_HOME
+
+            if CUDA_HOME:
+                candidate = Path(CUDA_HOME) / "bin" / "nvcc"
+                if candidate.is_file():
+                    nvcc = str(candidate)
+        except Exception:
+            pass
+    if not nvcc:
+        msgs.append(
+            "nvcc not found (GLM-5.2 DSA indexer JIT-compiles DeepGEMM at first forward). "
+            "Load a CUDA toolkit module and export CUDA_HOME, e.g. "
+            "module load cuda/12.6 && export CUDA_HOME=$CUDA_HOME."
+        )
+        return msgs
+    try:
+        proc = subprocess.run(
+            [nvcc, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        text = proc.stdout + proc.stderr
+        match = re.search(r"release (\d+)\.(\d+)", text)
+        if match:
+            major, minor = int(match.group(1)), int(match.group(2))
+            if major < 12 or (major == 12 and minor < 4):
+                msgs.append(
+                    f"nvcc {major}.{minor} at {nvcc} is likely too old for DeepGEMM "
+                    f"(__int128 PTX / st.shared.b128). Use CUDA toolkit >= 12.4 "
+                    f"(12.8+ recommended to match torch)."
+                )
+        msgs.append(f"DeepGEMM will JIT with nvcc: {nvcc}")
+    except Exception as exc:
+        msgs.append(f"could not run nvcc --version ({exc})")
+    return msgs

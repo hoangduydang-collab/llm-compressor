@@ -65,21 +65,40 @@ def probe_moe_support(model) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="probe MoE linearization support")
     parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--model-id",
+        default=None,
+        help="override model.id (e.g. local path after hf download)",
+    )
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
+    if args.model_id:
+        cfg.model.id = args.model_id
 
-    from transformers import AutoModelForCausalLM
-
+    import transformers
     from llmcompressor.utils import load_context
 
-    print(f"[probe] loading {cfg.model.id} (this may take a while)...")
+    model_cls = getattr(transformers, cfg.model.auto_class)
+    from_pretrained_kwargs: dict = {
+        "trust_remote_code": cfg.model.trust_remote_code,
+        "dtype": "auto",
+    }
+    if cfg.model.device_map is not None:
+        from_pretrained_kwargs["device_map"] = cfg.model.device_map
+    if cfg.model.offload_folder is not None:
+        from_pretrained_kwargs["offload_folder"] = cfg.model.offload_folder
+    if cfg.model.max_memory is not None:
+        from_pretrained_kwargs["max_memory"] = {
+            k: float(v) for k, v in cfg.model.max_memory.items()
+        }
+
+    print(
+        f"[probe] loading {cfg.model.id} via {cfg.model.auto_class} "
+        "(this may take a while)..."
+    )
     with load_context():
-        model = AutoModelForCausalLM.from_pretrained(
-            cfg.model.id,
-            trust_remote_code=cfg.model.trust_remote_code,
-            dtype="auto",
-        )
+        model = model_cls.from_pretrained(cfg.model.id, **from_pretrained_kwargs)
 
     report = probe_moe_support(model)
     print(json.dumps(report, indent=2))

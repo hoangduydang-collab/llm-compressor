@@ -119,7 +119,15 @@ def evaluate_tasks(
     if not tasks:
         raise ValueError("evaluate_tasks requires at least one task")
 
+    import os
+
     from pipeline._env import ensure_writable_caches
+
+    # SGLang pulls FlashInfer rmsnorm_cute (CuTe-DSL). Mixed torch/cutlass-dsl
+    # versions (e.g. from pip install -e llm-compressor) crash at JIT with
+    # "Expected an MLIR object". CUDA norm fallback is slower but stable.
+    if cfg.eval.backend == "sglang":
+        os.environ.setdefault("FLASHINFER_USE_CUDA_NORM", "1")
 
     ensure_writable_caches()
 

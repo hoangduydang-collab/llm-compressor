@@ -5,6 +5,9 @@
 # Memory notes:
 #   - Phala validated on 8x H200 (140GB). On 8x H100 (80GB) weights ~76GB/GPU;
 #     disable CUDA graphs and lower mem_fraction_static to fit.
+#   - venv: install sglang FIRST (pins torch 2.11 + flashinfer 0.6.12). Do NOT
+#     pip install -e llm-compressor into the same venv (pulls torch 2.12 and
+#     breaks FlashInfer CuTe kernels). Use PYTHONPATH for the pipeline module.
 #   - Prefer an H200 node if available; use eval_glm52_w4afp8_sglang_h200.yaml there.
 #
 #   python -m pipeline.evalsuite.cli run \

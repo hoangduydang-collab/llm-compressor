@@ -125,6 +125,18 @@ python -m pipeline.evalsuite.cli run \
   --set serve.sglang_kwargs.disable_shared_experts_fusion=true
 ```
 
+**sglang-eval venv** (do not mix with `pip install -e .` — it upgrades torch and
+breaks FlashInfer):
+
+```bash
+source /mnt/nfs/hoangduy/env.sh
+"$UV" venv --python 3.12 /mnt/nfs/hoangduy/venvs/sglang-eval
+source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
+"$UV" pip install "sglang==0.5.13.post1" --prerelease=allow
+"$UV" pip install "lm-eval>=0.4.5" pyyaml
+export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
+```
+
 ### Agentic (optional)
 
 Enable in YAML (`agentic.enabled: true`) and configure:

@@ -120,7 +120,7 @@ eval. Cap KV with `serve.max_model_len` (→ SGLang `context_length`),
 **DeepGEMM / NVCC:** If you see `NVCC compilation failed` during load (often
 misreported as a CUDA-graph OOM), the cluster likely has no working `nvcc`.
 Configs with `sglang_compat_fallbacks: true` set `SGLANG_ENABLE_JIT_DEEPGEMM=0`
-and `SGL_DG_USE_NVRTC=1` before SGLang imports. Keep `disable_cuda_graph: true`
+and `SGLANG_DG_USE_NVRTC=1` before SGLang imports. Keep `disable_cuda_graph: true`
 on H100. One-time alternative: `python3 -m sglang.compile_deep_gemm` with the
 same model/tp args on a node that has the CUDA toolkit.
 

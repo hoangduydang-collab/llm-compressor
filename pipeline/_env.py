@@ -64,7 +64,7 @@ def apply_sglang_compat_env() -> dict[str, str]:
     # SGLang 0.5.x env name (SGL_ENABLE_JIT_DEEPGEMM is not read).
     _set("SGLANG_ENABLE_JIT_DEEPGEMM", "0")
     # DSA indexer still calls deep_gemm directly; NVRTC avoids a broken nvcc.
-    _set("SGL_DG_USE_NVRTC", "1")
+    _set("SGLANG_DG_USE_NVRTC", "1")
     _set("DG_JIT_USE_NVRTC", "1")
 
     return applied

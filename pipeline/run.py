@@ -30,7 +30,11 @@ STAGES = ("quantize", "serve", "eval", "all")
 
 
 def _apply_overrides(cfg: PipelineConfig, overrides: list[str]) -> None:
-    """Apply ``a.b.c=value`` overrides onto the (nested dataclass) config."""
+    """Apply ``a.b.c=value`` overrides onto the (nested dataclass) config.
+
+    Intermediate dict fields (e.g. ``serve.sglang_kwargs.disable_cuda_graph``)
+    are supported; the leaf key is written into the dict.
+    """
     import yaml
 
     for item in overrides:
@@ -41,10 +45,15 @@ def _apply_overrides(cfg: PipelineConfig, overrides: list[str]) -> None:
         obj = cfg
         parts = key.split(".")
         for p in parts[:-1]:
-            obj = getattr(obj, p)
-        if not hasattr(obj, parts[-1]):
+            nxt = getattr(obj, p) if not isinstance(obj, dict) else obj[p]
+            obj = nxt
+        leaf = parts[-1]
+        if isinstance(obj, dict):
+            obj[leaf] = value
+        elif hasattr(obj, leaf):
+            setattr(obj, leaf, value)
+        else:
             raise AttributeError(f"unknown config field: {key}")
-        setattr(obj, parts[-1], value)
 
 
 def main(argv: list[str] | None = None) -> int:

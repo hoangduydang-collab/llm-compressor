@@ -123,11 +123,10 @@ def evaluate_tasks(
 
     from pipeline._env import ensure_writable_caches
 
-    # SGLang pulls FlashInfer rmsnorm_cute (CuTe-DSL). Mixed torch/cutlass-dsl
-    # versions (e.g. from pip install -e llm-compressor) crash at JIT with
-    # "Expected an MLIR object". CUDA norm fallback is slower but stable.
-    if cfg.eval.backend == "sglang":
+    # Optional fallbacks for broken FlashInfer CuTe / DeepGEMM JIT on the cluster.
+    if cfg.eval.backend == "sglang" and cfg.serve.sglang_compat_fallbacks:
         os.environ.setdefault("FLASHINFER_USE_CUDA_NORM", "1")
+        os.environ.setdefault("SGL_ENABLE_JIT_DEEPGEMM", "0")
 
     ensure_writable_caches()
 

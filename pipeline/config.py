@@ -88,6 +88,9 @@ class ServeConfig:
     # SGLang-only kwargs forwarded to ``sgl.Engine`` when ``eval.backend: sglang``
     # (e.g. ``quantization: w4afp8``, ``disable_shared_experts_fusion: true``).
     sglang_kwargs: dict[str, Any] = field(default_factory=dict)
+    # When True, set FLASHINFER_USE_CUDA_NORM=1 and SGL_ENABLE_JIT_DEEPGEMM=0
+    # before loading SGLang (slower but stable on mismatched deps / no nvcc).
+    sglang_compat_fallbacks: bool = False
     prompt: str = "The capital of France is"
 
 

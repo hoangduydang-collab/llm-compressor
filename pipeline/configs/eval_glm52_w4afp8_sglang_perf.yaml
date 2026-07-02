@@ -1,10 +1,20 @@
-# Default GLM-5.2-W4AFP8 SGLang eval config → points to perf settings.
-# See also:
-#   eval_glm52_w4afp8_sglang_perf.yaml  — full CUDA graphs + native kernels
-#   eval_glm52_w4afp8_sglang_safe.yaml  — H100 80GB / no-nvcc fallbacks
-#   eval_glm52_w4afp8_sglang_h200.yaml  — same as perf on H200 nodes
+# Full-performance GLM-5.2-W4AFP8 eval (Phala-like SGLang settings).
+#
+# Requires a clean sglang-eval venv (sglang==0.5.13.post1 first, torch 2.11.x).
+# Do NOT pip install -e llm-compressor into that venv.
+#
+#   source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
+#   export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
+#   python -c "import torch; print(torch.__version__)"   # expect 2.11.x
+#
+#   python -m pipeline.evalsuite.cli run \
+#     --config pipeline/configs/eval_glm52_w4afp8_sglang_perf.yaml \
+#     --out evals/glm52-w4afp8-phala
+#
+# On 8x H100 80GB this may still OOM during CUDA graph capture — use
+# eval_glm52_w4afp8_sglang_safe.yaml or an H200 node instead.
 
-name: eval-glm52-w4afp8-sglang
+name: eval-glm52-w4afp8-sglang-perf
 
 model:
   id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8

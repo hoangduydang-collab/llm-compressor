@@ -138,7 +138,7 @@ def ensure_deepgemm_nvcc(
     if best_path:
         if os.environ.get("DG_JIT_NVCC_COMPILER") != best_path:
             os.environ["DG_JIT_NVCC_COMPILER"] = best_path
-            applied["DG_JIT_NVCC_COMPILER"] = best_path
+        applied["DG_JIT_NVCC_COMPILER"] = best_path
         # Prefer nvcc 12.9+ over NVRTC for DSA paged_mqa kernels.
         for key, value in (
             ("DG_JIT_USE_NVRTC", "0"),
@@ -146,9 +146,18 @@ def ensure_deepgemm_nvcc(
         ):
             if os.environ.get(key) != value:
                 os.environ[key] = value
-                applied[key] = value
+            applied[key] = value
 
     return applied
+
+
+def _has_deepgemm_nvcc(min_version: tuple[int, int] = DEEPGEMM_MIN_NVCC) -> bool:
+    """True when ``DG_JIT_NVCC_COMPILER`` points at nvcc >= *min_version*."""
+    nvcc = os.environ.get("DG_JIT_NVCC_COMPILER", "")
+    if not nvcc:
+        return False
+    ver = _nvcc_version(nvcc)
+    return ver is not None and ver >= min_version
 
 
 def apply_sglang_compat_env() -> dict[str, str]:
@@ -167,7 +176,7 @@ def apply_sglang_compat_env() -> dict[str, str]:
     _set("FLASHINFER_USE_CUDA_NORM", "1")
     _set("SGLANG_ENABLE_JIT_DEEPGEMM", "0")
     applied.update(ensure_deepgemm_nvcc())
-    if "DG_JIT_NVCC_COMPILER" not in applied:
+    if not _has_deepgemm_nvcc():
         # Last resort when only an old system nvcc exists.
         _set("SGLANG_DG_USE_NVRTC", "1")
         _set("DG_JIT_USE_NVRTC", "1")

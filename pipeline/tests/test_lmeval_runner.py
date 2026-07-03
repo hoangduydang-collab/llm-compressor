@@ -134,3 +134,36 @@ def test_apply_sglang_compat_env_sets_sglang_keys(monkeypatch):
     applied = apply_sglang_compat_env()
     assert applied["SGLANG_ENABLE_JIT_DEEPGEMM"] == "0"
     assert os.environ["FLASHINFER_USE_CUDA_NORM"] == "1"
+
+
+def test_apply_sglang_compat_env_keeps_nvcc_when_preset(monkeypatch):
+    """env.sh may pre-set DG_JIT_NVCC_COMPILER; must not fall back to NVRTC."""
+    nvcc129 = "/mnt/nfs/hoangduy/cuda-12.9/bin/nvcc"
+    for key in (
+        "FLASHINFER_USE_CUDA_NORM",
+        "SGLANG_ENABLE_JIT_DEEPGEMM",
+        "SGLANG_DG_USE_NVRTC",
+        "DG_JIT_USE_NVRTC",
+        "DG_JIT_NVCC_COMPILER",
+        "CUDA_HOME",
+        "WORK_ROOT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("DG_JIT_NVCC_COMPILER", nvcc129)
+    monkeypatch.setenv("DG_JIT_USE_NVRTC", "0")
+    monkeypatch.setenv("SGLANG_DG_USE_NVRTC", "0")
+
+    def fake_version(path: str):
+        return (12, 9) if path == nvcc129 else (12, 4)
+
+    monkeypatch.setattr("pipeline._env._nvcc_version", fake_version)
+    monkeypatch.setattr(
+        "pipeline._env._iter_nvcc_candidates",
+        lambda: [nvcc129, "/usr/local/cuda-12.4/bin/nvcc"],
+    )
+
+    applied = apply_sglang_compat_env()
+    assert applied["DG_JIT_NVCC_COMPILER"] == nvcc129
+    assert applied["DG_JIT_USE_NVRTC"] == "0"
+    assert applied["SGLANG_DG_USE_NVRTC"] == "0"
+    assert "SGLANG_DG_USE_NVRTC" not in applied or applied["SGLANG_DG_USE_NVRTC"] == "0"

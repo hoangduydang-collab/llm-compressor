@@ -98,17 +98,18 @@ def _iter_nvcc_candidates() -> list[str]:
     except Exception:
         pass
 
-    try:
-        import site
+    for pattern in (
+        "/usr/local/cuda-12.9/bin/nvcc",
+        "/usr/local/cuda-12.8/bin/nvcc",
+        "/usr/local/cuda/bin/nvcc",
+    ):
+        add(pattern)
 
-        roots = list(site.getsitepackages())
-        user = site.getusersitepackages()
-        if user:
-            roots.append(user)
-        for root in roots:
-            add(Path(root) / "nvidia" / "cuda_nvcc" / "bin" / "nvcc")
-    except Exception:
-        pass
+    for prefix in (Path("/usr/local"), Path(os.environ.get("WORK_ROOT", ""))):
+        if not prefix or not prefix.is_dir():
+            continue
+        for nvcc_path in sorted(prefix.glob("cuda*/bin/nvcc")):
+            add(nvcc_path)
 
     return ordered
 
@@ -175,8 +176,7 @@ def preflight_sglang_deepgemm() -> list[str]:
     if not candidates:
         msgs.append(
             "nvcc not found. GLM-5.2 DSA needs DeepGEMM JIT with nvcc >= 12.9. "
-            "Install: source /mnt/nfs/hoangduy/env.sh && "
-            '"$UV" pip install "nvidia-cuda-nvcc-cu12==12.9.86"'
+            "Scan the node: find /usr/local -name nvcc 2>/dev/null"
         )
         return msgs
 
@@ -204,9 +204,10 @@ def preflight_sglang_deepgemm() -> list[str]:
 
     if best_path is None:
         msgs.append(
-            'Fix: source /mnt/nfs/hoangduy/env.sh && '
-            '"$UV" pip install \\"nvidia-cuda-nvcc-cu12==12.9.86\\" in sglang-eval, '
-            "then rm -rf ~/.cache/deep_gemm/tmp and re-run compile_deep_gemm / eval."
+            "Fix: point DG_JIT_NVCC_COMPILER at nvcc >= 12.9 on this GPU node "
+            "(e.g. /usr/local/cuda-12.9/bin/nvcc). The pip wheel "
+            "nvidia-cuda-nvcc-cu12 does NOT ship the nvcc binary — only ptxas/libs. "
+            "Then rm -rf ~/.cache/deep_gemm/tmp and re-run compile_deep_gemm."
         )
 
     return msgs

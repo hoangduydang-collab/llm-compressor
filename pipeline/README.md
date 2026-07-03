@@ -118,28 +118,43 @@ eval. Cap KV with `serve.max_model_len` (→ SGLang `context_length`),
 `max_total_tokens=8192` and `max_running_requests=1` are enough.
 
 **DeepGEMM / NVCC:** GLM-5.2's DSA indexer always calls `deep_gemm.fp8_paged_mqa_logits`
-at runtime. You need **nvcc >= 12.9** (12.4 on PATH is not enough). Symptom:
+at runtime. You need a real **nvcc >= 12.9** binary (the 12.4 on default `PATH` is
+too old). The pip wheel `nvidia-cuda-nvcc-cu12` does **not** ship `nvcc` — only
+`ptxas` and libraries ([NVIDIA/cuda-python#2100](https://github.com/NVIDIA/cuda-python/issues/2100)).
+
+Symptom:
 
 ```
 ld_st.cuh: st.shared.b128 ... constraint 'q' ... NVCC compilation failed
 Warning: please use at least NVCC 12.9 for the best DeepGEMM performance
 ```
 
-Install nvcc 12.9 into the venv (works when `module` is unavailable):
+On the **GPU node**, find a 12.9 toolkit (common paths below):
 
 ```bash
+find /usr/local -name nvcc 2>/dev/null
+for nvcc in /usr/local/cuda-12.9/bin/nvcc /usr/local/cuda-12.8/bin/nvcc; do
+  [ -x "$nvcc" ] && "$nvcc" --version
+done
+```
+
+When you find release **12.9.x**:
+
+```bash
+export CUDA_HOME=/usr/local/cuda-12.9    # adjust to your path
+export DG_JIT_NVCC_COMPILER=$CUDA_HOME/bin/nvcc
+export DG_JIT_USE_NVRTC=0
+export SGLANG_DG_USE_NVRTC=0
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
+"$DG_JIT_NVCC_COMPILER" --version   # must show release 12.9.x
+
+rm -rf ~/.cache/deep_gemm/tmp
+
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
 export HOME=/mnt/nfs/hoangduy
-
-"$UV" pip install "nvidia-cuda-nvcc-cu12==12.9.86"
-
-export DG_JIT_NVCC_COMPILER="$(python -c "import site; from pathlib import Path; print(Path(site.getsitepackages()[0]) / 'nvidia/cuda_nvcc/bin/nvcc')")"
-export DG_JIT_USE_NVRTC=0
-export SGLANG_DG_USE_NVRTC=0
-"$DG_JIT_NVCC_COMPILER" --version   # must show release 12.9
-
-rm -rf ~/.cache/deep_gemm/tmp
 
 python3 -m sglang.compile_deep_gemm \
   --model-path /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8 \
@@ -147,10 +162,12 @@ python3 -m sglang.compile_deep_gemm \
   --disable-shared-experts-fusion
 ```
 
-First compile can take 10–20 minutes; re-run until it finishes. With
-`sglang_compat_fallbacks: true`, eval auto-picks the venv nvcc when installed.
-Keep `disable_cuda_graph: true` on H100. On **8× H200**, use
-`eval_glm52_w4afp8_sglang_h200.yaml`.
+If the node only has 12.4: install CUDA 12.9 toolkit under `$WORK_ROOT` (runfile),
+use an **H200** node where Phala validated, or ask the cluster admin. First compile
+can take 10–20 minutes; re-run until it finishes.
+
+With `sglang_compat_fallbacks: true`, eval auto-picks the newest nvcc >= 12.9 it
+finds under `/usr/local/cuda*`. Keep `disable_cuda_graph: true` on H100.
 
 Or override an existing config:
 

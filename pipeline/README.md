@@ -138,23 +138,31 @@ for nvcc in /usr/local/cuda-12.9/bin/nvcc /usr/local/cuda-12.8/bin/nvcc; do
 done
 ```
 
-When you find release **12.9.x**:
+When you find release **12.9.x**, add this block at the **end** of
+`/mnt/nfs/hoangduy/env.sh` (after `WORK_ROOT` is set) so later `source env.sh`
+does not leave system nvcc 12.4 on `PATH`:
 
 ```bash
-export CUDA_HOME=/usr/local/cuda-12.9    # adjust to your path
-export DG_JIT_NVCC_COMPILER=$CUDA_HOME/bin/nvcc
-export DG_JIT_USE_NVRTC=0
-export SGLANG_DG_USE_NVRTC=0
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# CUDA 12.9 toolkit for DeepGEMM / SGLang (user-installed under $WORK_ROOT)
+export CUDA_HOME="${CUDA_HOME:-${WORK_ROOT}/cuda-12.9}"
+if [ -x "${CUDA_HOME}/bin/nvcc" ]; then
+  export DG_JIT_NVCC_COMPILER="${CUDA_HOME}/bin/nvcc"
+  export DG_JIT_USE_NVRTC=0
+  export SGLANG_DG_USE_NVRTC=0
+  export PATH="${CUDA_HOME}/bin:${PATH}"
+  export LD_LIBRARY_PATH="${CUDA_HOME}/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+```
 
-"$DG_JIT_NVCC_COMPILER" --version   # must show release 12.9.x
+Per session (order matters — `env.sh` last among env setup, then venv):
 
-rm -rf ~/.cache/deep_gemm/tmp
-
+```bash
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
 export HOME=/mnt/nfs/hoangduy
+"$DG_JIT_NVCC_COMPILER" --version   # must show release 12.9.x
+
+rm -rf ~/.cache/deep_gemm/tmp
 
 python3 -m sglang.compile_deep_gemm \
   --model-path /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8 \
@@ -166,8 +174,9 @@ If the node only has 12.4: install CUDA 12.9 toolkit under `$WORK_ROOT` (runfile
 use an **H200** node where Phala validated, or ask the cluster admin. First compile
 can take 10–20 minutes; re-run until it finishes.
 
-With `sglang_compat_fallbacks: true`, eval auto-picks the newest nvcc >= 12.9 it
-finds under `/usr/local/cuda*`. Keep `disable_cuda_graph: true` on H100.
+With `sglang_compat_fallbacks: true`, eval auto-picks nvcc >= 12.9 from
+`$CUDA_HOME`, `$WORK_ROOT/cuda-12.9`, or `/usr/local/cuda*`. Keep
+`disable_cuda_graph: true` on H100.
 
 Or override an existing config:
 

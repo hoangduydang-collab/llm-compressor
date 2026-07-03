@@ -89,6 +89,12 @@ def _iter_nvcc_candidates() -> list[str]:
             ordered.append(resolved)
 
     add(os.environ.get("DG_JIT_NVCC_COMPILER"))
+    cuda_home = os.environ.get("CUDA_HOME")
+    if cuda_home:
+        add(Path(cuda_home) / "bin" / "nvcc")
+    work_root = os.environ.get("WORK_ROOT")
+    if work_root:
+        add(Path(work_root) / "cuda-12.9" / "bin" / "nvcc")
     add(shutil.which("nvcc"))
     try:
         from torch.utils.cpp_extension import CUDA_HOME

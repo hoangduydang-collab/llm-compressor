@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
-CONFIG="${CONFIG:-pipeline/configs/eval_glm52_w4afp8_sglang_h100.yaml}"
+CONFIG="${CONFIG:-pipeline/configs/eval_glm52_w4afp8_sglang_h100_graphs.yaml}"
 OUT_DIR="${OUT_DIR:-evals/glm52-w4afp8-phala}"
 MODEL_PATH="${MODEL_PATH:-/mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8}"
 

@@ -1,17 +1,17 @@
-# GLM-5.2-W4AFP8 eval on 8x H100 80GB with minimal KV reservation.
+# GLM-5.2-W4AFP8 eval on 8x H100 80GB — CUDA graphs ON, minimal KV pool.
 #
-# Minimal KV (2k ctx, max_total_tokens=8192) + compat fallbacks (NVRTC, no JIT).
-# CUDA graphs stay off (slow eval). For graphs on + tight KV use:
-#   pipeline/configs/eval_glm52_w4afp8_sglang_h100_graphs.yaml
+# Keeps KV tiny (max_total_tokens=8192) so graph capture fits after weights.
+# Requires DeepGEMM precompiled (nvcc 12.9 in env.sh). Expect ~10 min graph
+# capture at startup, then much faster loglikelihood than graphs-off config.
 #
 #   python -m pipeline.evalsuite.cli run \
-#     --config pipeline/configs/eval_glm52_w4afp8_sglang_h100.yaml \
+#     --config pipeline/configs/eval_glm52_w4afp8_sglang_h100_graphs.yaml \
 #     --out evals/glm52-w4afp8-phala
 #
-# If DeepGEMM still fails, precompile once (needs nvcc on a build node):
-#   python3 -m sglang.compile_deep_gemm --model-path ... --tp 8 --trust-remote-code
+# If graph capture OOMs, lower gpu_memory_utilization to 0.65 or max_total_tokens
+# to 4096, or use eval_glm52_w4afp8_sglang_h100.yaml (graphs off).
 
-name: eval-glm52-w4afp8-sglang-h100
+name: eval-glm52-w4afp8-sglang-h100-graphs
 
 model:
   id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8
@@ -20,14 +20,12 @@ model:
 serve:
   tensor_parallel_size: 8
   max_model_len: 2048
-  gpu_memory_utilization: 0.72
+  gpu_memory_utilization: 0.68
   kv_cache_dtype: fp8_e4m3
   sglang_compat_fallbacks: true
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
-    disable_cuda_graph: true
-    disable_piecewise_cuda_graph: true
     max_total_tokens: 8192
     chunked_prefill_size: 1024
     max_running_requests: 1

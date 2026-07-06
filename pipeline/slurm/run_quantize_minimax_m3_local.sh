@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run MiniMax-M3 quantize interactively (no sbatch).
+# Prefer run_quantize_minimax_m3_detached.sh if SSH disconnect kills tmux jobs.
 #
 # Each method needs a DEDICATED node: ~428B BF16 loads to CPU RAM (~850GB+).
 # Do NOT run gptq + awq on the same host.

@@ -73,8 +73,8 @@ submit_method() {
     echo "sbatch failed for method=$method:"
     echo "$job_line"
     echo ""
-    echo "If you see NFS spool I/O errors, run interactively on two idle nodes:"
-    echo "  METHOD=$method tmux new -s m3-$method 'bash pipeline/slurm/run_quantize_minimax_m3_local.sh'"
+    echo "If you see NFS spool I/O errors, run detached on two idle nodes:"
+    echo "  METHOD=$method bash pipeline/slurm/run_quantize_minimax_m3_detached.sh"
     rm -f "$tmp_job" 2>/dev/null || true
     return 1
   fi

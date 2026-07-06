@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         f"[probe] loading {cfg.model.id} via {cfg.model.auto_class} "
         "(this may take a while)..."
     )
-    with load_context():
+    with load_context(model_cls):
         model = model_cls.from_pretrained(cfg.model.id, **from_pretrained_kwargs)
 
     report = probe_moe_support(model)

@@ -45,7 +45,7 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
 
     # load_context() patches from_pretrained so fused MoE experts load in a
     # linearized, quantizable layout (and handles offloaded loading).
-    with load_context():
+    with load_context(model_cls):
         model = model_cls.from_pretrained(m.id, **from_pretrained_kwargs)
     tokenizer = AutoTokenizer.from_pretrained(
         m.id, trust_remote_code=m.trust_remote_code

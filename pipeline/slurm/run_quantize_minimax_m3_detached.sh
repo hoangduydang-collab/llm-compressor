@@ -60,6 +60,7 @@ source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 cd /mnt/nfs/hoangduy/projects/llm-compressor
 export HOME=\${WORK_ROOT:-/mnt/nfs/hoangduy}
+export PYTHONUNBUFFERED=1
 export FLASHINFER_WORKSPACE_DIR=\${FLASHINFER_WORKSPACE_DIR:-\$HOME/cache/flashinfer}
 export TOKENIZERS_PARALLELISM=false
 mkdir -p "\$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true

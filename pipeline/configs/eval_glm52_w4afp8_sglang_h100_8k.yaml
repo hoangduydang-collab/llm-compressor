@@ -27,16 +27,16 @@ serve:
     disable_shared_experts_fusion: true
     # CUDA graphs ON (omit disable_cuda_graph / disable_piecewise_cuda_graph).
     # Pool ≈ max_running_requests × max_model_len at full length.
-    max_total_tokens: 16384
+    max_total_tokens: 32768
     chunked_prefill_size: 512
-    max_running_requests: 2
+    max_running_requests: 4
 
 eval:
   enabled: true
   log_samples: true
   backend: sglang
-  # Small lm-eval chunks reduce peak memory on long 25-shot arc prompts.
-  lm_eval_batch_size: 4
+  # Pairs with max_running_requests=4; drop to 4 if OOM on arc 25-shot prefill.
+  lm_eval_batch_size: 8
   apply_chat_template: true
   baseline: null
   tasks:

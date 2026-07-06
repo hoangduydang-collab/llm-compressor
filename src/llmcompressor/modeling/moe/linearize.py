@@ -27,6 +27,18 @@ from .conversion_mappings import (
 from .linear_experts import LinearExperts2D
 
 
+def _process_rss_gib() -> float | None:
+    """Current process RSS in GiB from /proc (Linux only)."""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1_048_576  # kB -> GiB
+    except OSError:
+        return None
+    return None
+
+
 @contextlib.contextmanager
 def load_quantizable_moe(model_cls: Type[PreTrainedModel] = AutoModelForCausalLM):
     """
@@ -119,15 +131,39 @@ def linearize_moe(model: PreTrainedModel):
         "https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support"  # noqa: E501
     )
 
-    for name, module in tqdm.tqdm(non_linearized_moes, desc="Linearizing experts"):
+    n_layers = len(non_linearized_moes)
+    rss_start = _process_rss_gib()
+    if rss_start is not None:
+        logger.info(f"linearize_moe start rss={rss_start:.2f}GiB layers={n_layers}")
+
+    for idx, (name, module) in enumerate(
+        tqdm.tqdm(non_linearized_moes, desc="Linearizing experts"), start=1
+    ):
         config = getattr(module, "config", model.config)
         linear_experts_cls = LinearExperts2D.get_linear_experts_cls(module.__class__)
-        logger.info(f"Linearizing experts at `{name}`")
+        rss_before = _process_rss_gib()
+        logger.info(f"Linearizing experts at `{name}` ({idx}/{n_layers})")
         linear_moe = linear_experts_cls.from_experts_module(module, config)
+        rss_peak = _process_rss_gib()
         model.set_submodule(name, linear_moe)
         del module
         del linear_moe
         gc.collect()
+        rss_after = _process_rss_gib()
+        if rss_before is not None and rss_peak is not None and rss_after is not None:
+            logger.info(
+                f"linearize_moe `{name}` rss "
+                f"before={rss_before:.2f}GiB peak={rss_peak:.2f}GiB "
+                f"after_gc={rss_after:.2f}GiB "
+                f"(delta_gc={rss_after - rss_peak:+.2f}GiB)"
+            )
+
+    rss_end = _process_rss_gib()
+    if rss_start is not None and rss_end is not None:
+        logger.info(
+            f"linearize_moe done rss={rss_end:.2f}GiB "
+            f"(net={rss_end - rss_start:+.2f}GiB from start)"
+        )
 
     return model
 

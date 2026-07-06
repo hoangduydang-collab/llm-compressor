@@ -1,11 +1,15 @@
-# Default GLM-5.2-W4AFP8 SGLang eval config (alias for H100 minimal-KV).
-# See also:
-#   eval_glm52_w4afp8_sglang_h100.yaml        — H100, 2k ctx, graphs off (legacy)
-#   eval_glm52_w4afp8_sglang_h100_graphs.yaml   — H100, 2k ctx, graphs on (fast)
-#   eval_glm52_w4afp8_sglang_h100_8k.yaml     — H100, 8k ctx, graphs on (standard acc)
-#   eval_glm52_w4afp8_sglang_h200.yaml        — H200, 8k ctx, Phala-like perf
+# GLM-5.2-W4AFP8 static eval on 8x H100 80GB with max_model_len=8192.
+#
+# Weights ~57 GiB/GPU leave ~20 GiB for KV, graph capture, and prefill peaks.
+# Tune order if OOM: lower max_running_requests → lower max_total_tokens →
+# lower lm_eval_batch_size → lower gpu_memory_utilization → smaller chunked_prefill_size.
+#
+#   bash pipeline/slurm/run_eval_glm52_sglang_detached.sh
+#   CONFIG=pipeline/configs/eval_glm52_w4afp8_sglang_h100_8k.yaml ...
+#
+# On 8x H200 141GB use eval_glm52_w4afp8_sglang_h200.yaml instead (more headroom).
 
-name: eval-glm52-w4afp8-sglang
+name: eval-glm52-w4afp8-sglang-h100-8k
 
 model:
   id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8
@@ -13,23 +17,26 @@ model:
 
 serve:
   tensor_parallel_size: 8
-  max_model_len: 2048
+  max_model_len: 8192
+  # Leave headroom for 8k prefill peaks + CUDA graph capture (avoid 0.85 on H100).
   gpu_memory_utilization: 0.72
   kv_cache_dtype: fp8_e4m3
   sglang_compat_fallbacks: true
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
-    disable_cuda_graph: true
-    disable_piecewise_cuda_graph: true
-    max_total_tokens: 8192
-    chunked_prefill_size: 1024
-    max_running_requests: 1
+    # CUDA graphs ON (omit disable_cuda_graph / disable_piecewise_cuda_graph).
+    # Pool ≈ max_running_requests × max_model_len at full length.
+    max_total_tokens: 16384
+    chunked_prefill_size: 512
+    max_running_requests: 2
 
 eval:
   enabled: true
   log_samples: true
   backend: sglang
+  # Small lm-eval chunks reduce peak memory on long 25-shot arc prompts.
+  lm_eval_batch_size: 4
   apply_chat_template: true
   baseline: null
   tasks:

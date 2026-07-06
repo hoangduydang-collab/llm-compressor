@@ -1,4 +1,5 @@
 import contextlib
+import gc
 from functools import wraps
 from typing import Type
 
@@ -121,8 +122,14 @@ def linearize_moe(model: PreTrainedModel):
     for name, module in tqdm.tqdm(non_linearized_moes, desc="Linearizing experts"):
         config = getattr(module, "config", model.config)
         linear_experts_cls = LinearExperts2D.get_linear_experts_cls(module.__class__)
+        logger.info(f"Linearizing experts at `{name}`")
         linear_moe = linear_experts_cls.from_experts_module(module, config)
         model.set_submodule(name, linear_moe)
+        del module
+        del linear_moe
+        gc.collect()
+
+    return model
 
 
 def get_non_linearized_moes(

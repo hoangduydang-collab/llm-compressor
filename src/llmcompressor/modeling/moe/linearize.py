@@ -39,6 +39,28 @@ def _process_rss_gib() -> float | None:
     return None
 
 
+def _mem_available_gib() -> float | None:
+    """System MemAvailable in GiB (Linux /proc/meminfo)."""
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / 1_048_576
+    except OSError:
+        return None
+    return None
+
+
+def _malloc_trim() -> None:
+    """Return freed heap pages to the OS (glibc). No-op if unavailable."""
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
 @contextlib.contextmanager
 def load_quantizable_moe(model_cls: Type[PreTrainedModel] = AutoModelForCausalLM):
     """
@@ -133,8 +155,10 @@ def linearize_moe(model: PreTrainedModel):
 
     n_layers = len(non_linearized_moes)
     rss_start = _process_rss_gib()
+    mem_avail = _mem_available_gib()
     if rss_start is not None:
-        logger.info(f"linearize_moe start rss={rss_start:.2f}GiB layers={n_layers}")
+        avail_s = f" mem_avail={mem_avail:.2f}GiB" if mem_avail is not None else ""
+        logger.info(f"linearize_moe start rss={rss_start:.2f}GiB{avail_s} layers={n_layers}")
 
     for idx, (name, module) in enumerate(
         tqdm.tqdm(non_linearized_moes, desc="Linearizing experts"), start=1
@@ -149,13 +173,16 @@ def linearize_moe(model: PreTrainedModel):
         del module
         del linear_moe
         gc.collect()
+        _malloc_trim()
         rss_after = _process_rss_gib()
+        mem_avail = _mem_available_gib()
         if rss_before is not None and rss_peak is not None and rss_after is not None:
+            avail_s = f" mem_avail={mem_avail:.2f}GiB" if mem_avail is not None else ""
             logger.info(
                 f"linearize_moe `{name}` rss "
                 f"before={rss_before:.2f}GiB peak={rss_peak:.2f}GiB "
                 f"after_gc={rss_after:.2f}GiB "
-                f"(delta_gc={rss_after - rss_peak:+.2f}GiB)"
+                f"(delta_gc={rss_after - rss_peak:+.2f}GiB){avail_s}"
             )
 
     rss_end = _process_rss_gib()

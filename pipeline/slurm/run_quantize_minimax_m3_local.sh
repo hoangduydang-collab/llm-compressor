@@ -17,6 +17,7 @@
 #   MODEL_ID   default: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
 #   CONFIG     default: pipeline/configs/minimax_m3.yaml
 #   SCHEME     default: W4AFP8
+#   LOG        default: /mnt/nfs/hoangduy/logs/quantize-m3-<method>.log
 #   EXTRA      extra --set flags for pipeline.run
 
 set -euo pipefail
@@ -43,7 +44,7 @@ if [[ ! -f "$MODEL_ID/config.json" ]]; then
 fi
 
 mkdir -p /mnt/nfs/hoangduy/logs
-LOG="/mnt/nfs/hoangduy/logs/quantize-m3-${METHOD}-$(hostname)-$(date +%Y%m%d-%H%M%S).log"
+LOG="${LOG:-/mnt/nfs/hoangduy/logs/quantize-m3-${METHOD}.log}"
 
 echo "host=$(hostname) method=$METHOD scheme=$SCHEME"
 echo "model=$MODEL_ID"

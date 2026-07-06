@@ -15,7 +15,8 @@
 #   CONFIG=pipeline/configs/minimax_m3.yaml METHOD=awq  sbatch pipeline/slurm/quantize.sbatch
 # Or submit both in parallel:
 #   bash pipeline/slurm/submit_quantize_minimax_m3.sh
-# Optional: SCHEME (default W4AFP8), MODEL_ID, EXTRA (extra --set overrides).
+# Optional: SCHEME (default W4AFP8), MODEL_ID, LOG, EXTRA (extra --set overrides).
+#   LOG=/mnt/nfs/hoangduy/logs/quantize-m3-gptq.log  (fixed path for tail -f)
 
 set -uo pipefail
 source /mnt/nfs/hoangduy/env.sh
@@ -38,8 +39,15 @@ echo "host=$(hostname) job=${SLURM_JOB_ID:-none} config=$CONFIG method=$METHOD s
 nvidia-smi --query-gpu=index,name,memory.total --format=csv || true
 free -g || true
 
+mkdir -p /mnt/nfs/hoangduy/logs
+LOG="${LOG:-/mnt/nfs/hoangduy/logs/quantize-m3-${METHOD}.log}"
+echo "log=$LOG"
+
 python -m pipeline.run --config "$CONFIG" --stage quantize \
   --set quantization.method="$METHOD" \
-  --set quantization.scheme="$SCHEME" $EXTRA
+  --set quantization.scheme="$SCHEME" $EXTRA \
+  2>&1 | tee "$LOG"
+rc=${PIPESTATUS[0]}
 
-echo "QUANTIZE DONE (rc=$?)"
+echo "QUANTIZE DONE (rc=$rc)"
+exit $rc

@@ -66,7 +66,7 @@ submit_job() {
     USER="${USER:-hoangduy}" \
     PATH="${PATH:-/usr/bin:/bin:/usr/local/bin}" \
     LANG="${LANG:-C.UTF-8}" \
-    sbatch --export=NONE $SBATCH_EXTRA "$TMP_JOB"
+    sbatch --export=NONE --chdir=/tmp $SBATCH_EXTRA "$TMP_JOB"
 }
 
 if ! JOB_LINE="$(submit_job 2>&1)"; then
@@ -82,7 +82,13 @@ if ! JOB_LINE="$(submit_job 2>&1)"; then
   echo "If GRES gpu:8 is unavailable, try pinning a known 8-GPU node:"
   echo "  SBATCH_EXTRA='--nodelist=h119-gpu-polaris' bash pipeline/slurm/submit_eval_glm52_sglang.sh"
   echo ""
-  echo "If NFS spool I/O error, the staged script is at: $TMP_JOB"
+  echo "If NFS spool I/O error (common when sbatch runs FROM a compute node):"
+  echo "  1) Submit from a Slurm/login head node, not h119; or"
+  echo "  2) You are already on an 8-GPU node — run detached locally:"
+  echo "       bash pipeline/slurm/run_eval_glm52_sglang_detached.sh"
+  echo "     then: tail -f $OUT_DIR/run.log"
+  echo ""
+  echo "Staged script kept at: $TMP_JOB"
   exit 1
 fi
 

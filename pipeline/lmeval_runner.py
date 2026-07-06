@@ -93,9 +93,10 @@ def _load_lm_model(cfg: PipelineConfig, model_path: str):
     import lm_eval.models  # noqa: F401  (populates the model registry)
 
     model_cls = get_model(cfg.eval.backend)
+    batch_size = cfg.eval.lm_eval_batch_size
     return model_cls.create_from_arg_string(
         model_args(cfg, model_path),
-        {"batch_size": "auto"},
+        {"batch_size": batch_size},
     )
 
 

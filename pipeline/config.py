@@ -130,6 +130,9 @@ class EvalConfig:
     max_ppl_increase: float = 0.10
     backend: str = "vllm"  # lm-eval backend: vllm | sglang
     apply_chat_template: bool = False
+    # lm-eval per-forward batch (SGLang). Use an int (e.g. 8) to avoid huge
+    # auto-detected chunks on MMLU; "auto" probes and can stall on first batch.
+    lm_eval_batch_size: str | int = "auto"
     # Per-sample logging for post-hoc flip-rate comparison (evalsuite).
     log_samples: bool = True
     samples_dir: str | None = None  # defaults to <out>/samples at runtime

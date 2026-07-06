@@ -20,20 +20,21 @@ model:
 serve:
   tensor_parallel_size: 8
   max_model_len: 2048
-  gpu_memory_utilization: 0.68
+  gpu_memory_utilization: 0.75
   kv_cache_dtype: fp8_e4m3
   sglang_compat_fallbacks: true
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
-    max_total_tokens: 8192
-    chunked_prefill_size: 1024
-    max_running_requests: 1
+    max_total_tokens: 16384
+    chunked_prefill_size: 2048
+    max_running_requests: 4
 
 eval:
   enabled: true
   log_samples: true
   backend: sglang
+  lm_eval_batch_size: 8
   apply_chat_template: true
   baseline: null
   tasks:

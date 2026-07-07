@@ -200,3 +200,58 @@ def patch_minimax_m3_for_text_calibration(model: Any) -> bool:
     vl_backbone.get_placeholder_mask = MethodType(get_placeholder_mask, vl_backbone)
     vl_backbone._llmc_text_calibration_mask_patch = True
     return True
+
+
+# Sparse decoder layers (minimax_m3_sparse attention + MoE MLP); layers 0-2 are dense.
+_M3_SPARSE_LAYER = r"(?:[3-9]|[1-5][0-9])"
+
+
+def get_minimax_m3_awq_mappings() -> list:
+    """Return AWQ smooth/balance mappings for MiniMax-M3 sparse layers (3-59).
+
+    Mirrors the keep-bf16 strategy from ``cyankiwi/MiniMax-M3-AWQ-INT4``, translated
+    to transformers 5.12.1 module names (``self_attn.indexer.*``, ``mlp.experts.N.*``).
+    Indexer, router, and shared experts stay bf16 via ``quantization.ignore`` but are
+    included as balance layers so smoothed activations stay consistent.
+    """
+    from llmcompressor.modifiers.transform.awq import AWQMapping
+
+    s = _M3_SPARSE_LAYER
+    return [
+        AWQMapping(
+            rf"re:.*layers[.]{s}[.]input_layernorm$",
+            [
+                rf"re:.*layers[.]{s}[.]self_attn[.]q_proj$",
+                rf"re:.*layers[.]{s}[.]self_attn[.]k_proj$",
+                rf"re:.*layers[.]{s}[.]self_attn[.]v_proj$",
+                rf"re:.*layers[.]{s}[.]self_attn[.]indexer[.]q_proj$",
+                rf"re:.*layers[.]{s}[.]self_attn[.]indexer[.]k_proj$",
+            ],
+        ),
+        AWQMapping(
+            rf"re:.*layers[.]{s}[.]self_attn[.]v_proj$",
+            [rf"re:.*layers[.]{s}[.]self_attn[.]o_proj$"],
+        ),
+        AWQMapping(
+            rf"re:.*layers[.]{s}[.]post_attention_layernorm$",
+            [
+                rf"re:.*layers[.]{s}[.]mlp[.]gate$",
+                rf"re:.*layers[.]{s}[.]mlp[.]shared_experts[.]gate_up_proj$",
+                rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
+                rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
+            ],
+        ),
+        AWQMapping(
+            rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
+            [rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]down_proj$"],
+        ),
+    ]
+
+
+def register_minimax_m3_awq_mappings() -> None:
+    """Register M3 AWQ mappings so ``AWQModifier`` auto-discovers them by arch name."""
+    from llmcompressor.modifiers.transform.awq import AWQ_MAPPING_REGISTRY
+
+    AWQ_MAPPING_REGISTRY["MiniMaxM3SparseForConditionalGeneration"] = (
+        get_minimax_m3_awq_mappings()
+    )

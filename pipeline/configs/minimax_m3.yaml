@@ -31,12 +31,17 @@ quantization:
   # Module paths verified against transformers 5.12.1 modeling_minimax_m3_vl.py.
   # Experts (MiniMaxM3VLExperts) carry @use_experts_implementation -> they
   # auto-linearize; no custom MoE calibration module is needed.
+  # Keep-bf16 strategy aligned with cyankiwi/MiniMax-M3-AWQ-INT4 (translated to
+  # transformers 5.12.1 module names). Only sparse MoE layers 3-59 are quantized.
   ignore:
     - "lm_head"
-    - "re:.*mlp.gate$"                # MoE router (MiniMaxM3VLTopKRouter)
-    - "re:.*vision_tower.*"           # vision encoder (MiniMaxM3VLVisionModel) - keep BF16
-    - "re:.*multi_modal_projector.*"  # VL projector (linear_1/2, merge_linear_1/2)
-    - "re:.*indexer.*"                # MSA sparse-attention indexer - keep high precision
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"                 # MoE router
+    - "re:.*mlp[.]shared_experts[.].*"   # shared experts
+    - "re:.*self_attn[.]indexer[.].*"     # MSA sparse indexer
+    - "re:.*layers[.][0-2][.].*"          # first 3 dense/full-attn layers
 
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k

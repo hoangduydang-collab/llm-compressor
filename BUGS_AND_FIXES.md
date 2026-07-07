@@ -74,3 +74,39 @@ print(c.image_token_index, c.image_token_id, c.video_token_index, c.video_token_
 **Fix applied (2026-07-07):** `pipeline/minimax_m3_config.py` — `patch_minimax_m3_for_text_calibration()` coerces non-tensor features to `None` before delegating to the original method. Called from `pipeline/quantize.py` after model load.
 
 **Long-term fix:** Multimodal calibration dataset (images + processor) like `examples/multimodal_vision/qwen3_vl_example.py`, if vision-tower quantization behavior must be validated under real inputs.
+
+## MiniMax-M3 AWQ fails on default smooth-layer mappings
+
+**Symptom:** After FX tracing succeeds, AWQ calibration fails with:
+
+`ValueError: AWQ needs to match a single smoothlayer for each mapping but got [layers.0..59 input_layernorm] for mapping: AWQMapping(smooth_layer='re:.*input_layernorm$', ...)`
+
+**Root cause:** `MiniMaxM3SparseForConditionalGeneration` is not in llm-compressor's `AWQ_MAPPING_REGISTRY`, so `AWQModifier` falls back to `default_mappings`. Those break on M3 because:
+
+1. Sparse layers add `self_attn.indexer.{q,k}_proj` — generic `re:.*q_proj$` / `re:.*k_proj$` match both attention and indexer, so `match_modules_set` cannot close per-layer groups.
+2. MLP is fused (`mlp.gate_up_proj` on dense layers) and mixed dense (layers 0-2) vs MoE (3-59) with `mlp.shared_experts` and per-expert `gate_proj`/`up_proj` after `linearize_moe`.
+
+**Community reference:** `cyankiwi/MiniMax-M3-AWQ-INT4` uses a keep-bf16 ignore list (dense layers 0-2, indexer, router, shared experts, vision) and W4A16 weights; module names differ on transformers 5.13 (`block_sparse_moe.*` vs our `mlp.*`).
+
+**Fix applied (2026-07-07):**
+
+1. `pipeline/minimax_m3_config.py` — `get_minimax_m3_awq_mappings()` + `register_minimax_m3_awq_mappings()` for sparse layers 3-59 only, anchored to `self_attn.*` and `mlp.experts.N.*`.
+2. `pipeline/quantize.py` — register mappings after M3 text-calibration patch.
+3. `pipeline/configs/minimax_m3.yaml` — translated keep-bf16 `quantization.ignore` list.
+
+**KV cache:** Leave `kv_cache_scheme` unset in the recipe (`null` in saved config). fp8 KV is applied at serve time via `serve.kv_cache_dtype: fp8` / vLLM `--kv-cache-dtype fp8` (same as community recipe).
+
+**Serve follow-up:** Stock vLLM may need the `toncao/vllm` `minimax-m3-compressed-tensors` branch to un-fuse the bf16 MSA indexer from quantized q/k/v projections for correct long-context output. W4AFP8 weight scheme is independent; validate on H100 with patched vLLM before production serve.
+
+**Verify:**
+
+```bash
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+python -m pytest pipeline/tests/test_minimax_m3_config.py -v
+
+METHOD=awq EXTRA='--set calibration.num_samples=8 --set calibration.max_seq_length=512' \
+  bash pipeline/slurm/run_quantize_minimax_m3_detached.sh
+# Expect: no "single smoothlayer" error; AWQ resolves mappings per sparse layer
+```

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Submit MiniMax-M3 W4AFP8 vLLM serve-verify (TP=8, EP, fp8 KV).
 #
+# VENV: jobs use venvs/quant (vLLM). Do NOT use sglang-eval here — that venv is
+# only for SGLang-backed eval (e.g. GLM-5.2) and requires nvcc >= 12.9 for
+# DeepGEMM; see pipeline/README.md.
+#
 # Usage (from repo root on a Slurm LOGIN/head node — NOT a gpu-h* compute node):
 #   bash pipeline/slurm/submit_serve_minimax_m3.sh
 #

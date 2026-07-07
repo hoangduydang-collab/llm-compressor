@@ -2,6 +2,8 @@
 # Run MiniMax-M3 vLLM serve-verify in the current shell (no sbatch).
 # Use when Slurm submission fails but you have an idle 8-GPU node (salloc / interactive).
 #
+# VENV: serve_minimax_m3.sbatch activates venvs/quant (vLLM), not sglang-eval.
+#
 #   bash pipeline/slurm/run_serve_minimax_m3_local.sh
 #
 # Options: CONFIG, OUT_DIR, CHECKPOINT (same as submit_serve_minimax_m3.sh)

@@ -8,7 +8,9 @@
 #SBATCH --output=/mnt/nfs/hoangduy/logs/m3-serve-%j.out
 #
 # vLLM serve-verify for MiniMax-M3 W4AFP8 checkpoint (TP=8, EP, fp8 KV).
-# Requires: quant venv with vLLM, 8x Hopper GPUs.
+# Requires: quant venv with vLLM (NOT sglang-eval — see pipeline/README.md
+# "DeepGEMM / NVCC" and "sglang-eval venv" for why the venvs are separate).
+# 8x Hopper GPUs.
 #
 # Submit:
 #   bash pipeline/slurm/submit_serve_minimax_m3.sh

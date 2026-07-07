@@ -101,6 +101,8 @@ print(c.image_token_index, c.image_token_id, c.video_token_index, c.video_token_
 
 **Serve follow-up:** Stock vLLM may need the `toncao/vllm` `minimax-m3-compressed-tensors` branch to un-fuse the bf16 MSA indexer from quantized q/k/v projections for correct long-context output. W4AFP8 weight scheme is independent; validate on H100 with patched vLLM before production serve.
 
+**Venv (do not mix):** M3 quantize + vLLM serve use `venvs/quant`. The separate `venvs/sglang-eval` is only for SGLang-backed eval (e.g. GLM-5.2): SGLang's DeepGEMM JIT needs a real **nvcc >= 12.9** (system 12.4 is too old), and `pip install -e .` in that venv upgrades torch and breaks FlashInfer. Launchers: `pipeline/slurm/run_serve_minimax_m3_detached.sh` (vLLM) vs `run_eval_glm52_sglang_detached.sh` (SGLang).
+
 **Verify:**
 
 ```bash

@@ -4,6 +4,13 @@
 #
 #   bash pipeline/slurm/run_serve_minimax_m3_detached.sh
 #
+# VENV: uses /mnt/nfs/hoangduy/venvs/quant (vLLM), NOT sglang-eval.
+# The two venvs are intentionally separate (see pipeline/README.md):
+#   - quant  -> llm-compressor + vLLM quantize/serve (this script)
+#   - sglang-eval -> SGLang eval only (GLM-5.2 etc.); needs nvcc >= 12.9 for
+#     DeepGEMM JIT; mixing "pip install -e ." into sglang-eval upgrades torch
+#     and breaks FlashInfer. Do NOT activate sglang-eval for M3 vLLM serve.
+#
 # Options: CONFIG, OUT_DIR, CHECKPOINT (same as submit_serve_minimax_m3.sh)
 #
 # Monitor:

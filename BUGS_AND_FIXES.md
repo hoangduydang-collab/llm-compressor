@@ -294,7 +294,15 @@ ValueError: Unsupported activation: silu. Only swigluoai is supported.
 
 **Root cause:** The public HF checkpoint declares `text_config.hidden_act: "swigluoai"`, but `MiniMaxM3VLTextConfig.__post_init__` in transformers 5.12+ rewrites it to `"silu"` (ACT2FN fallback; the real SwiGLU-OAI gate uses `swiglu_alpha` / `swiglu_limit`). Quantize load uses that coercion and `save_pretrained` persists `hidden_act: "silu"`. vLLM's `MiniMaxM3MLP` only wires `SiluAndMulWithClamp` when `hidden_act == "swigluoai"`.
 
-**Fix:** `ensure_minimax_m3_vllm_serve_config()` now also restores `text_config.hidden_act` and `swiglu_*` scalars from `model.id`. `serve_verify.py` applies this automatically before `LLM()`; re-run serve after `git pull`. No re-quantize needed.
+**Fix:** `ensure_minimax_m3_vllm_serve_config()` forces `text_config.hidden_act = "swigluoai"` for any `minimax_m3_vl` checkpoint and (re)copies `swiglu_*` scalars. `serve_verify.py` applies this automatically before `LLM()`. No re-quantize needed.
+
+**Why the first attempt silently failed (real root cause of the re-occurrence):** the original patch only restored `hidden_act` when it read the literal string `"swigluoai"` from the source, and it resolved a hub `model.id` via `AutoConfig.from_pretrained(...).to_dict()` — which runs the same `__post_init__` coercion and returns `"silu"`. So `src_act == "swigluoai"` was never true, the `hidden_act` line was skipped, and the checkpoint kept `silu` (only the plain `swiglu_*` scalars copied). The patch appeared to "run" (it printed changes for the scalars) but never fixed the activation. The patch now forces `swigluoai` unconditionally instead of trusting the coercion-prone source string. Regression test: `test_ensure_vllm_serve_config_forces_hidden_act_even_if_source_coerced`.
+
+**Verify after patching** (must show `swigluoai`):
+```bash
+venvs/quant/bin/python -c "import json;print(json.load(open('<ckpt>/config.json'))['text_config']['hidden_act'])"
+```
+If serve *still* aborts with `Unsupported activation: silu` after `config.json` shows `swigluoai`, then the transformers in `venvs/quant` re-coerces `hidden_act` on vLLM's own config load, and a JSON patch cannot fix it — escalate to a transformers-side fix (register `swigluoai` in `ACT2FN`, or override `MiniMaxM3VLTextConfig.__post_init__`) or a vLLM config hook.
 
 **Note:** Ton Cao's `minimax-m3-compressed-tensors` branch has the same `hidden_act` check — installing it alone does **not** fix this. You still need the config patch **and** that branch for indexer un-fuse + linearized MoE pack-quantized load.
 

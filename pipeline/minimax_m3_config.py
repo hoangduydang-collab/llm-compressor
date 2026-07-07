@@ -183,24 +183,31 @@ def ensure_minimax_m3_vllm_serve_config(ckpt: Path, source: str) -> list[str]:
                 "vision_config (restored img_token_compression_config from source)"
             )
 
-    src_tc = src.get("text_config")
-    if isinstance(src_tc, dict):
-        tc = data.setdefault("text_config", {})
-        if not isinstance(tc, dict):
-            tc = {}
-            data["text_config"] = tc
+    src_tc = src.get("text_config") if isinstance(src.get("text_config"), dict) else {}
+    tc = data.setdefault("text_config", {})
+    if not isinstance(tc, dict):
+        tc = {}
+        data["text_config"] = tc
 
-        src_act = src_tc.get("hidden_act")
-        if src_act == "swigluoai" and tc.get("hidden_act") != "swigluoai":
-            tc["hidden_act"] = "swigluoai"
-            changed.append(
-                'text_config.hidden_act ("silu" -> "swigluoai" for vLLM SwiGLU-OAI)'
-            )
+    # M3's language MLP is SwiGLU-OAI by architecture. transformers' config
+    # __post_init__ (native 5.x MiniMaxM3VLTextConfig or the remote-code module)
+    # rewrites hidden_act "swigluoai" -> "silu" on every load/save, and quantize
+    # persists that coercion. Reading the source via AutoConfig re-coerces too, so
+    # we must NOT gate on the source string. Force "swigluoai" unconditionally for
+    # minimax_m3_vl (model_type was checked above); vLLM's MiniMaxM3MLP requires it.
+    if tc.get("hidden_act") != "swigluoai":
+        tc["hidden_act"] = "swigluoai"
+        changed.append(
+            'text_config.hidden_act ("silu" -> "swigluoai" for vLLM SwiGLU-OAI)'
+        )
 
-        for key in _VLLM_TEXT_ACT_KEYS:
-            if key in src_tc and tc.get(key) != src_tc[key]:
-                tc[key] = src_tc[key]
-                changed.append(f"text_config.{key}")
+    # SiluAndMulWithClamp needs the swiglu_* scalars. Prefer source values (raw
+    # json is not coerced); fall back to whatever the checkpoint already carries.
+    for key in _VLLM_TEXT_ACT_KEYS:
+        val = src_tc.get(key, tc.get(key))
+        if val is not None and tc.get(key) != val:
+            tc[key] = val
+            changed.append(f"text_config.{key}")
 
     if not changed:
         return []

@@ -7,6 +7,11 @@ and nests ``temporal_patch_size`` / ``spatial_merge_size`` under
 ``from_pretrained`` builds a generic ``PreTrainedConfig`` and model init fails with::
 
     AttributeError: 'PreTrainedConfig' object has no attribute 'temporal_patch_size'
+
+``modeling_minimax_m3_vl.get_placeholder_mask`` reads ``config.image_token_id`` /
+``config.video_token_id``. The public checkpoint only defines ``*_token_index``;
+remote ``AutoConfig`` classes may omit transformers' ``attribute_map`` aliases,
+which breaks FX tracing during sequential calibration.
 """
 
 from __future__ import annotations
@@ -44,12 +49,30 @@ def _as_dict(obj: Any) -> dict[str, Any]:
     return {}
 
 
+def _ensure_token_id_aliases(config: Any) -> None:
+    """Expose image_token_id / video_token_id for modeling and FX trace paths."""
+    image_idx = getattr(config, "image_token_index", 200025)
+    video_idx = getattr(config, "video_token_index", 200026)
+    if not hasattr(config, "image_token_index"):
+        config.image_token_index = image_idx
+    if not hasattr(config, "video_token_index"):
+        config.video_token_index = video_idx
+    for attr, value in (("image_token_id", image_idx), ("video_token_id", video_idx)):
+        if getattr(config, attr, None) == value:
+            continue
+        try:
+            setattr(config, attr, value)
+        except (AttributeError, TypeError):
+            object.__setattr__(config, attr, value)
+
+
 def coerce_minimax_m3_vl_config(config: Any) -> Any:
     """Return *config* with M3 sub-configs coerced in place."""
     if getattr(config, "model_type", None) != "minimax_m3_vl":
         return config
 
     from transformers.models.minimax_m3_vl.configuration_minimax_m3_vl import (
+        MiniMaxM3VLConfig,
         MiniMaxM3VLTextConfig,
         MiniMaxM3VLVisionConfig,
     )
@@ -85,6 +108,19 @@ def coerce_minimax_m3_vl_config(config: Any) -> Any:
     target_dtype = getattr(config, "dtype", None) or torch.bfloat16
     config.text_config.dtype = target_dtype
     config.vision_config.dtype = target_dtype
+
+    _ensure_token_id_aliases(config)
+
+    # Remote AutoConfig may return a generic PreTrainedConfig; rebuild as the
+    # official transformers class so sub-config types are consistent.
+    if not isinstance(config, MiniMaxM3VLConfig):
+        top = _as_dict(config)
+        top["vision_config"] = config.vision_config.to_dict()
+        top["text_config"] = config.text_config.to_dict()
+        config = MiniMaxM3VLConfig.from_dict(top)
+        config.text_config.dtype = target_dtype
+        config.vision_config.dtype = target_dtype
+        _ensure_token_id_aliases(config)
 
     return config
 

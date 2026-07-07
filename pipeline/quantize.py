@@ -25,8 +25,8 @@ def _log_backbone_dtype(model) -> None:
     text_dtype = getattr(text_cfg, "dtype", None) if text_cfg is not None else None
     sample_param_dtype = None
     for name, module in model.named_modules():
-        if name.endswith(".mlp.experts") and hasattr(module, "down_proj"):
-            param = getattr(module.down_proj, "weight", None)
+        if ".mlp.experts." in name and name.endswith(".down_proj"):
+            param = getattr(module, "weight", None)
             if param is not None:
                 sample_param_dtype = param.dtype
                 break

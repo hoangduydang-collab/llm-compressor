@@ -38,3 +38,27 @@ grep -E 'backbone dtype|linearize_moe start' /mnt/nfs/hoangduy/logs/quantize-m3-
 ```
 
 **Related upstream issues:** [llm-compressor #2669](https://github.com/vllm-project/llm-compressor/issues/2669) (progressive MoE replacement OOM on other models; different code path but similar symptom).
+
+## MiniMax-M3 sequential calibration fails on `image_token_id`
+
+**Symptom:** After `linearize_moe` completes, `SequentialPipeline` FX tracing fails with:
+
+`AttributeError: 'MiniMaxM3VLConfig' object has no attribute 'image_token_id'. Did you mean: 'image_token_index'?`
+
+**Root cause:** `modeling_minimax_m3_vl.get_placeholder_mask` reads `config.image_token_id` / `config.video_token_id`. The public checkpoint defines `image_token_index` / `video_token_index` only. Transformers' `attribute_map` alias does not satisfy strict `__getattribute__` during FX tracing.
+
+**Fix applied (2026-07-07):** `pipeline/minimax_m3_config.py` — `_ensure_token_id_aliases()` sets `image_token_id` and `video_token_id` explicitly after coercion.
+
+**Verify:**
+
+```bash
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+python -c "
+from pipeline.minimax_m3_config import load_minimax_m3_vl_config
+c = load_minimax_m3_vl_config('/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3')
+print(c.image_token_index, c.image_token_id, c.video_token_index, c.video_token_id)
+"
+# Expect: 200025 200025 200026 200026
+```

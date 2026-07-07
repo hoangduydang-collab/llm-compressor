@@ -18,3 +18,14 @@ def test_coerce_propagates_bfloat16_to_sub_configs():
     coerced = coerce_minimax_m3_vl_config(config)
     assert coerced.text_config.dtype == torch.bfloat16
     assert coerced.vision_config.dtype == torch.bfloat16
+
+
+def test_coerce_exposes_image_and_video_token_id_aliases():
+    from transformers import AutoConfig
+
+    from pipeline.minimax_m3_config import coerce_minimax_m3_vl_config
+
+    config = AutoConfig.for_model("minimax_m3_vl")
+    coerced = coerce_minimax_m3_vl_config(config)
+    assert coerced.image_token_index == coerced.image_token_id
+    assert coerced.video_token_index == coerced.video_token_id

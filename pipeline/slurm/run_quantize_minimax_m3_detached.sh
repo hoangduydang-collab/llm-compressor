@@ -20,7 +20,9 @@
 #   tail -f /mnt/nfs/hoangduy/logs/quantize-m3-gptq.log
 #   pgrep -af 'pipeline.run.*quantize'
 # Stop:
-#   kill "$(cat /mnt/nfs/hoangduy/logs/quantize-m3-gptq.pid)"
+#   kill "$(cat /mnt/nfs/hoangduy/logs/quantize-m3-gptq.pid)"           # graceful
+#   kill -9 -"$(cat /mnt/nfs/hoangduy/logs/quantize-m3-gptq.pid)"       # hard, whole group
+#   pkill -9 -f 'pipeline\.run .*--stage quantize'                       # fallback
 
 set -euo pipefail
 
@@ -59,6 +61,10 @@ set -uo pipefail
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 cd /mnt/nfs/hoangduy/projects/llm-compressor
+# Record the REAL worker pid: this bash exec's into python below (same pid), so \$\$
+# is the python process. \`setsid\` may fork, making the launcher's \$! stale/parent;
+# writing here means \`kill \$(cat PID_FILE)\` always targets the actual worker.
+echo \$\$ > $(printf '%q' "$PID_FILE")
 export HOME=\${WORK_ROOT:-/mnt/nfs/hoangduy}
 export PYTHONUNBUFFERED=1
 export FLASHINFER_WORKSPACE_DIR=\${FLASHINFER_WORKSPACE_DIR:-\$HOME/cache/flashinfer}
@@ -97,6 +103,7 @@ nvidia-smi --query-gpu=index,name,memory.total --format=csv 2>/dev/null || true
 : > "$LOG"
 nohup setsid bash "$RUN_SCRIPT" >> "$LOG" 2>&1 &
 echo $! > "$PID_FILE"
-echo "started pid=$(cat "$PID_FILE")"
+echo "started launcher; worker pid written by run script -> $PID_FILE"
 echo "  tail -f $LOG"
-echo "  kill \$(cat $PID_FILE)   # to stop"
+echo "  kill \$(cat $PID_FILE)        # graceful stop"
+echo "  kill -9 -\$(cat $PID_FILE)    # hard stop (whole process group)"

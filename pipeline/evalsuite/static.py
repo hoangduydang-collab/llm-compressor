@@ -8,7 +8,11 @@ from pathlib import Path
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 from pipeline.eval_gate import _gate_metric
 from pipeline.lmeval_runner import evaluate_tasks
-from pipeline.metrics_lmeval import metric_base, resolve_task_metric
+from pipeline.metrics_lmeval import (
+    metric_base,
+    require_task_results,
+    resolve_task_metric,
+)
 
 
 def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
@@ -120,6 +124,33 @@ def pending_eval_tasks(
     return [t for t in tasks if t.name not in completed]
 
 
+def _collect_task_samples(batch: dict, task_name: str) -> list[dict]:
+    """Collect logged samples for a leaf task or lm-eval group (e.g. mmlu, bbh).
+
+    Group tasks store per-document samples under subtask keys
+    (``mmlu_abstract_algebra``, …), not the group name.
+    """
+    samples_map = batch.get("samples") or {}
+    direct = samples_map.get(task_name)
+    if direct:
+        return list(direct)
+
+    subtasks = (batch.get("group_subtasks") or {}).get(task_name)
+    if subtasks:
+        merged: list[dict] = []
+        for subtask in subtasks:
+            merged.extend(samples_map.get(subtask) or [])
+        if merged:
+            return merged
+
+    prefix = f"{task_name}_"
+    merged = []
+    for key, vals in samples_map.items():
+        if key.startswith(prefix) and vals:
+            merged.extend(vals)
+    return merged
+
+
 def checkpoint_task_result(
     *,
     task: EvalTask,
@@ -130,19 +161,17 @@ def checkpoint_task_result(
     log_samples: bool,
 ) -> list[dict]:
     """Persist one task's metrics (and optional samples) immediately after eval."""
-    task_results = batch.get("results", {}).get(task.name)
-    if not isinstance(task_results, dict):
-        raise KeyError(f"lm-eval batch missing results for task {task.name!r}")
-
+    task_results = require_task_results(batch, task.name)
     aggregate[task.name] = _numeric_metrics(task_results)
     aggregate_path.parent.mkdir(parents=True, exist_ok=True)
     aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
 
     rows: list[dict] = []
-    if log_samples and batch.get("samples"):
-        raw = batch["samples"].get(task.name) or []
-        rows = [_extract_sample_row(s, task) for s in raw]
-        _write_samples(samples_dir / f"{task.name}.jsonl", rows)
+    if log_samples:
+        raw = _collect_task_samples(batch, task.name)
+        if raw:
+            rows = [_extract_sample_row(s, task) for s in raw]
+            _write_samples(samples_dir / f"{task.name}.jsonl", rows)
 
     print(
         f"[evalsuite] checkpoint: {task.name} "

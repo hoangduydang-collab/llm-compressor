@@ -10,6 +10,36 @@ def metric_base(metric: str) -> str:
     return metric.split(",")[0]
 
 
+def task_results_from_batch(batch: dict, task_name: str) -> dict | None:
+    """Resolve an lm-eval task's metrics from a ``simple_evaluate`` batch.
+
+    Group tasks (``mmlu``, ``bbh``, …) may store their aggregate under
+    ``groups`` rather than ``results``, so both are checked.
+    """
+    results = batch.get("results") or {}
+    task_results = results.get(task_name)
+    if isinstance(task_results, dict):
+        return task_results
+    groups = batch.get("groups") or {}
+    group_results = groups.get(task_name)
+    if isinstance(group_results, dict):
+        return group_results
+    return None
+
+
+def require_task_results(batch: dict, task_name: str) -> dict:
+    """Like :func:`task_results_from_batch` but raises if the task is absent."""
+    task_results = task_results_from_batch(batch, task_name)
+    if not isinstance(task_results, dict):
+        results_keys = sorted((batch.get("results") or {}).keys())
+        groups_keys = sorted((batch.get("groups") or {}).keys())
+        raise KeyError(
+            f"lm-eval batch missing results for task {task_name!r}; "
+            f"results keys: {results_keys}; groups keys: {groups_keys}"
+        )
+    return task_results
+
+
 def resolve_task_metric(task: EvalTask, task_results: dict) -> tuple[float, str]:
     """Return ``(value, resolved_metric_key)`` from lm-eval task results."""
     base = metric_base(task.metric)

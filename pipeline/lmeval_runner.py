@@ -108,8 +108,14 @@ def _merge_eval_results(merged: dict, batch: dict) -> None:
     merged.setdefault("results", {}).update(batch.get("results", {}))
     if batch.get("samples"):
         merged.setdefault("samples", {}).update(batch["samples"])
+    # Group tasks (mmlu, bbh) put their aggregate under ``groups`` and their
+    # subtask mapping under ``group_subtasks``; accumulate both so no task's
+    # aggregate is lost when several tasks share one model load.
+    for accumulated_key in ("groups", "group_subtasks"):
+        if batch.get(accumulated_key):
+            merged.setdefault(accumulated_key, {}).update(batch[accumulated_key])
     for key, value in batch.items():
-        if key not in ("results", "samples"):
+        if key not in ("results", "samples", "groups", "group_subtasks"):
             merged[key] = value
 
 

@@ -41,6 +41,10 @@ set -uo pipefail
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
 cd /mnt/nfs/hoangduy/projects/llm-compressor
+# Record the REAL worker pid: this bash exec's into python below (same pid), so \$\$
+# is the python process. \`setsid\` may fork, making the launcher's \$! stale/parent;
+# writing here means \`kill \$(cat PID_FILE)\` always targets the actual worker.
+echo \$\$ > $(printf '%q' "$PID_FILE")
 export HOME=\${WORK_ROOT:-/mnt/nfs/hoangduy}
 export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -62,6 +66,7 @@ nvidia-smi --query-gpu=index,name,memory.total --format=csv 2>/dev/null || true
 # setsid + nohup: survive SSH disconnect (unlike foreground tmux attach).
 nohup setsid bash "$RUN_SCRIPT" >> "$OUT_DIR/run.log" 2>&1 &
 echo $! > "$PID_FILE"
-echo "started pid=$(cat "$PID_FILE")"
+echo "started launcher; worker pid written by run script -> $PID_FILE"
 echo "  tail -f $OUT_DIR/run.log"
-echo "  kill \$(cat $PID_FILE)   # to stop"
+echo "  kill \$(cat $PID_FILE)        # graceful stop"
+echo "  kill -9 -\$(cat $PID_FILE)    # hard stop (whole process group)"

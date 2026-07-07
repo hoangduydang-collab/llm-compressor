@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 from pipeline.lmeval_runner import evaluate_tasks
-from pipeline.metrics_lmeval import resolve_task_metric
+from pipeline.metrics_lmeval import require_task_results, resolve_task_metric
 
 
 def _gate_metric(task: EvalTask, value: float, baseline: float | None, ev: EvalConfig) -> dict:
@@ -84,7 +84,9 @@ def _build_report(
 def run_eval_gate(cfg: PipelineConfig, ckpt: Path) -> dict:
     """Evaluate ``ckpt`` and gate against the baseline. Returns a report dict."""
     results = evaluate_tasks(str(ckpt), cfg, cfg.eval.tasks)
-    task_results_by_name = {task.name: results["results"][task.name] for task in cfg.eval.tasks}
+    task_results_by_name = {
+        task.name: require_task_results(results, task.name) for task in cfg.eval.tasks
+    }
     return _build_report(cfg, ckpt, task_results_by_name)
 
 
@@ -93,7 +95,7 @@ def make_baseline(cfg: PipelineConfig, model_path: str, out_path: Path) -> dict:
     results = evaluate_tasks(model_path, cfg, cfg.eval.tasks)
     baseline: dict = {}
     for task in cfg.eval.tasks:
-        task_results = results["results"][task.name]
+        task_results = require_task_results(results, task.name)
         baseline[task.name] = {task.metric: _task_metric_value(task, task_results)}
     with out_path.open("w", encoding="utf-8") as fh:
         json.dump(baseline, fh, indent=2)

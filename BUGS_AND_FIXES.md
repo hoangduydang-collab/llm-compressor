@@ -151,3 +151,60 @@ METHOD=awq EXTRA='--set calibration.num_samples=8 --set calibration.max_seq_leng
 3. `pipeline/configs/minimax_m3.yaml` — `quantization.sample_generation: false` (validate via `serve_verify.py` on vLLM/H100 instead of offloaded HF generate).
 
 **Removal criteria:** None; saving before an optional sanity check is the correct ordering. Re-enable `sample_generation` for small models that fit on GPU.
+
+## Detached launcher `kill $(cat PID_FILE)` misses the worker (stale `$!`)
+
+**Symptom:** `kill "$(cat …/quantize-m3-awq.pid)"` returns success but the run keeps going; relaunch reports `Quantize already running (pid=…)`. `Ctrl-C` only kills the foreground `tail`.
+
+**Root cause:** `run_quantize_minimax_m3_detached.sh` (and `run_eval_glm52_sglang_detached.sh`) recorded `$!` — the PID of the `nohup setsid …` launcher — into `PID_FILE`. `setsid` may fork a new session leader for the actual python, so the recorded PID is a stale/parent process; `kill` then targets the wrong PID.
+
+**Fix applied (2026-07-07):** both detached scripts now `echo $$ > PID_FILE` **inside** the generated run script, just before `exec python …`. Because that bash `exec`s into python (same PID), `PID_FILE` holds the real worker PID. Stop hints updated to include `kill -9 -"$(cat PID_FILE)"` (process-group hard kill) and `pkill -9 -f 'pipeline\.run .*--stage quantize'`.
+
+**Removal criteria:** None.
+
+## MiniMax-M3 quantization correctness audit (Qwen3-informed)
+
+Cross-checked the M3 W4AFP8 run against the documented Qwen3 MoE failure modes
+(ModelOpt `BUGS_AND_FIXES.md` bug #1: wrong expert layout -> ~56k vs ~13k
+quantizers; `pipeline/README.md`: MoE gate pruned from saved `ignore` -> vLLM
+garbage; W4A8 MoE expert width multiple-of-256).
+
+**Findings (static audit):**
+
+- **Scheme:** `W4AFP8` = INT4 weights, GROUP `group_size=128`, symmetric + FP8
+  (E4M3) dynamic per-token activations. Note this is **more aggressive than the
+  community `cyankiwi/MiniMax-M3-AWQ-INT4` (W4A16, weight-only)** — FP8 activations
+  on attention + experts are an added accuracy risk to watch in eval.
+- **AWQ scale invariance (correct):** the `post_attention_layernorm` balance set
+  MUST include *every* consumer of that norm — router (`mlp.gate`), `shared_experts`,
+  and routed `experts.*.{gate,up}_proj` — else the smoothing scale is not invariant
+  and routing/shared output is corrupted. Our mappings include all of them (even the
+  bf16-ignored router/shared, which get the scale folded into their bf16 weights).
+  Same for `input_layernorm` -> q/k/v + indexer q/k. This is why the router/shared
+  appear as AWQ balance layers despite being in `ignore`.
+- **Expected quantized Linears:** sparse layers 3-59 (57) x (128 experts x 3 +
+  4 attn) = **22,116**. Dense layers 0-2, router, shared_experts, indexer, vision,
+  projector, patch_merge, lm_head stay bf16.
+- **Geometry:** routed-expert `intermediate_size=3072 = 12 x 256` and `= 24 x 128`
+  -> satisfies the vLLM CUTLASS W4A8 256 constraint **only at full/EP width**. Serve
+  with `enable_expert_parallel: true` (config does). Plain TP would divide 3072 and
+  can break the multiple-of-256 rule.
+- **`ignore` persistence:** `_persist_ignore_to_config()` re-adds all recipe ignore
+  patterns to saved `config.json` (fixes the Qwen3 gate-pruning bug).
+
+**Open risk (serve-side, not quantization):** M3 has **no 2D save-conversion
+mapping** (`conversion_mappings.py` only covers deepseek_v4 / qwen2_moe / qwen3_moe),
+so the checkpoint is saved with **per-expert linearized** experts
+(`mlp.experts.N.{gate,up,down}_proj` + `weight_packed`/`weight_scale`), not the fused
+3D `mlp.experts.gate_up_proj` the HF modeling expects. Stock vLLM M3 support must be
+able to load this per-expert compressed layout (see the `toncao/vllm`
+`minimax-m3-compressed-tensors` branch note); validate load before trusting eval.
+
+**Tooling:** `pipeline/verify_quant_checkpoint.py` runs all of the above structural
+checks on checkpoint metadata (fast, no model load); `--check-tensors` adds sampled
+finiteness + group-scale-shape checks:
+
+```bash
+python -m pipeline.verify_quant_checkpoint --ckpt artifacts/MiniMax-M3-awq-W4AFP8/<ts>/checkpoint
+python -m pipeline.verify_quant_checkpoint --ckpt <dir> --check-tensors   # opens shards
+```

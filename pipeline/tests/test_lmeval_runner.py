@@ -54,6 +54,35 @@ def test_merge_eval_results():
     assert merged["config"] == {"model": "vllm"}
 
 
+def test_merge_eval_results_accumulates_groups():
+    """Group aggregates (mmlu, bbh) must survive across multiple task batches."""
+    from pipeline.lmeval_runner import _merge_eval_results
+    from pipeline.metrics_lmeval import task_results_from_batch
+
+    merged: dict = {}
+    _merge_eval_results(
+        merged,
+        {
+            "results": {"mmlu_anatomy": {"acc,none": 0.6}},
+            "groups": {"mmlu": {"acc,none": 0.65}},
+            "group_subtasks": {"mmlu": ["mmlu_anatomy"]},
+        },
+    )
+    _merge_eval_results(
+        merged,
+        {
+            "results": {"bbh_boolean_expressions": {"exact_match,none": 0.7}},
+            "groups": {"bbh": {"exact_match,none": 0.72}},
+            "group_subtasks": {"bbh": ["bbh_boolean_expressions"]},
+        },
+    )
+    assert set(merged["groups"]) == {"mmlu", "bbh"}
+    assert set(merged["group_subtasks"]) == {"mmlu", "bbh"}
+    # Both group aggregates remain resolvable from the merged dict.
+    assert task_results_from_batch(merged, "mmlu") == {"acc,none": 0.65}
+    assert task_results_from_batch(merged, "bbh") == {"exact_match,none": 0.72}
+
+
 def test_per_task_limit_omitted_when_all_unlimited():
     tasks = [
         EvalTask(name="wikitext", limit=None),

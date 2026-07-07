@@ -65,3 +65,45 @@ def test_checkpoint_task_result_writes_aggregate_and_samples(tmp_path: Path):
     assert json.loads((tmp_path / "aggregate.json").read_text(encoding="utf-8")) == aggregate
     assert len(rows) == 1
     assert (tmp_path / "samples" / "gsm8k.jsonl").is_file()
+
+
+def test_collect_task_samples_merges_group_subtasks():
+    from pipeline.evalsuite.static import _collect_task_samples
+
+    batch = {
+        "group_subtasks": {
+            "mmlu": ["mmlu_abstract_algebra", "mmlu_anatomy"],
+        },
+        "samples": {
+            "mmlu_abstract_algebra": [{"doc_id": 0}],
+            "mmlu_anatomy": [{"doc_id": 1}, {"doc_id": 2}],
+        },
+    }
+    assert len(_collect_task_samples(batch, "mmlu")) == 3
+    assert len(_collect_task_samples(batch, "gsm8k")) == 0
+
+
+def test_checkpoint_task_result_mmlu_group_samples(tmp_path: Path):
+    task = EvalTask(name="mmlu", metric="acc,none", num_fewshot=5)
+    aggregate: dict[str, dict[str, float]] = {}
+    batch = {
+        "results": {"mmlu": {"acc,none": 0.65}},
+        "group_subtasks": {"mmlu": ["mmlu_abstract_algebra"]},
+        "samples": {
+            "mmlu_abstract_algebra": [
+                {"doc_id": 0, "acc,none": 1.0, "target": "A", "resps": ["A"]},
+            ],
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate=aggregate,
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert len(rows) == 1
+    assert (tmp_path / "samples" / "mmlu.jsonl").is_file()

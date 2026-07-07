@@ -16,6 +16,7 @@ model:
   # M3 is a VL (image-text-to-text) MoE; load the full model so the language
   # backbone is quantized while the vision tower is kept (ignored) and saved.
   auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
   # ~428B params: load to CPU/disk and let the sequential pipeline onload
   # one decoder layer at a time onto the GPU during calibration.
   device_map: null

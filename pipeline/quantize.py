@@ -19,6 +19,24 @@ from pipeline import metrics, versioning
 _PACK_QUANTIZED_SCHEMES = {"W4AFP8", "W4A8", "W4A16", "W4A16_ASYM"}
 
 
+def _log_backbone_dtype(model) -> None:
+    """Log resolved backbone dtype so fp32 linearize regressions are visible in logs."""
+    text_cfg = getattr(model.config, "text_config", None)
+    text_dtype = getattr(text_cfg, "dtype", None) if text_cfg is not None else None
+    sample_param_dtype = None
+    for name, module in model.named_modules():
+        if name.endswith(".mlp.experts") and hasattr(module, "down_proj"):
+            param = getattr(module.down_proj, "weight", None)
+            if param is not None:
+                sample_param_dtype = param.dtype
+                break
+    print(
+        "[pipeline] backbone dtype: "
+        f"text_config.dtype={text_dtype} "
+        f"sample_expert_weight.dtype={sample_param_dtype}"
+    )
+
+
 def _load_model_and_tokenizer(cfg: PipelineConfig):
     import transformers
     from transformers import AutoTokenizer
@@ -47,6 +65,7 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
     # linearized, quantizable layout (and handles offloaded loading).
     with load_context(model_cls):
         model = model_cls.from_pretrained(m.id, **from_pretrained_kwargs)
+    _log_backbone_dtype(model)
     tokenizer = AutoTokenizer.from_pretrained(
         m.id, trust_remote_code=m.trust_remote_code
     )

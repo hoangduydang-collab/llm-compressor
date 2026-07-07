@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import torch
+
 
 _VISION_KEYS = frozenset(
     {
@@ -77,6 +79,13 @@ def coerce_minimax_m3_vl_config(config: Any) -> Any:
     config.merged_hidden_size = config.text_config.hidden_size * (
         config.vision_config.spatial_merge_size**2
     )
+
+    # M3 only sets torch_dtype at the top level; sub-configs default to float32.
+    # linearize_moe reads text_config.dtype when building 2D expert Linears.
+    target_dtype = getattr(config, "dtype", None) or torch.bfloat16
+    config.text_config.dtype = target_dtype
+    config.vision_config.dtype = target_dtype
+
     return config
 
 

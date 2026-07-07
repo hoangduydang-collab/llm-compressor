@@ -45,6 +45,33 @@ def _build_meta_model(cfg):
     return model
 
 
+def _simulate_linearized_experts(model, n_experts: int) -> int:
+    """Replace fused ``mlp.experts`` with a ModuleList mimicking ``linearize_moe``.
+
+    ``linearize_moe`` turns the fused 3D experts into a ``ModuleList`` of per-expert
+    modules exposing split ``gate_proj`` / ``up_proj`` / ``down_proj`` Linears. That only
+    happens on the real load, so this stubs the same *names* (tiny Linears) on the meta
+    model to validate mapping 3/4 grouping without a full load. Expert count does not
+    affect grouping, so a small N is used for speed.
+    """
+    from torch import nn
+
+    replaced = 0
+    for name, _module in list(model.named_modules()):
+        if not name.endswith(".mlp.experts") or "language_model" not in name:
+            continue
+        experts = nn.ModuleList()
+        for _ in range(n_experts):
+            expert = nn.Module()
+            expert.gate_proj = nn.Linear(1, 1)
+            expert.up_proj = nn.Linear(1, 1)
+            expert.down_proj = nn.Linear(1, 1)
+            experts.append(expert)
+        model.set_submodule(name, experts)
+        replaced += 1
+    return replaced
+
+
 def _report_indexer_coverage(module_names: list[str]) -> None:
     layer_re = re.compile(r"\.layers\.(\d+)\.")
     all_layers: set[int] = set()
@@ -102,6 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="probe AWQ mapping resolution (meta)")
     parser.add_argument("--config", required=True)
     parser.add_argument("--model-id", default=None)
+    parser.add_argument(
+        "--simulate-linearized",
+        type=int,
+        default=0,
+        metavar="N",
+        help="stub N per-expert Linears (gate/up/down) to validate mapping 3/4 "
+        "grouping on meta (mimics linearize_moe). 0 disables (default).",
+    )
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -110,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[probe] building meta model for {cfg.model.id} ...")
     model = _build_meta_model(cfg)
+    if args.simulate_linearized > 0:
+        n = _simulate_linearized_experts(model, args.simulate_linearized)
+        print(f"[probe] simulated linearized experts on {n} MoE layers "
+              f"({args.simulate_linearized} experts each)")
     module_names = [name for name, _ in model.named_modules()]
     print(f"[probe] total modules: {len(module_names)}\n")
 

@@ -204,6 +204,10 @@ def patch_minimax_m3_for_text_calibration(model: Any) -> bool:
 
 # Sparse decoder layers (minimax_m3_sparse attention + MoE MLP); layers 0-2 are dense.
 _M3_SPARSE_LAYER = r"(?:[3-9]|[1-5][0-9])"
+# Anchor to the language backbone: the vision tower ALSO has `layers.N.self_attn.*`,
+# so an unanchored `.*layers[.]` matches vision q/k/v (breaks per-layer grouping since
+# vision has no matching `input_layernorm`, collapsing all smooth layers into one set).
+_M3_LM = r".*language_model[.]layers[.]"
 
 
 def get_minimax_m3_awq_mappings() -> list:
@@ -212,38 +216,40 @@ def get_minimax_m3_awq_mappings() -> list:
     Mirrors the keep-bf16 strategy from ``cyankiwi/MiniMax-M3-AWQ-INT4``, translated
     to transformers 5.12.1 module names (``self_attn.indexer.*``, ``mlp.experts.N.*``).
     Indexer, router, and shared experts stay bf16 via ``quantization.ignore`` but are
-    included as balance layers so smoothed activations stay consistent.
+    included as balance layers so smoothed activations stay consistent. Routed-expert
+    patterns match only after ``linearize_moe`` splits the fused experts on load.
     """
     from llmcompressor.modifiers.transform.awq import AWQMapping
 
     s = _M3_SPARSE_LAYER
+    lm = _M3_LM
     return [
         AWQMapping(
-            rf"re:.*layers[.]{s}[.]input_layernorm$",
+            rf"re:{lm}{s}[.]input_layernorm$",
             [
-                rf"re:.*layers[.]{s}[.]self_attn[.]q_proj$",
-                rf"re:.*layers[.]{s}[.]self_attn[.]k_proj$",
-                rf"re:.*layers[.]{s}[.]self_attn[.]v_proj$",
-                rf"re:.*layers[.]{s}[.]self_attn[.]indexer[.]q_proj$",
-                rf"re:.*layers[.]{s}[.]self_attn[.]indexer[.]k_proj$",
+                rf"re:{lm}{s}[.]self_attn[.]q_proj$",
+                rf"re:{lm}{s}[.]self_attn[.]k_proj$",
+                rf"re:{lm}{s}[.]self_attn[.]v_proj$",
+                rf"re:{lm}{s}[.]self_attn[.]indexer[.]q_proj$",
+                rf"re:{lm}{s}[.]self_attn[.]indexer[.]k_proj$",
             ],
         ),
         AWQMapping(
-            rf"re:.*layers[.]{s}[.]self_attn[.]v_proj$",
-            [rf"re:.*layers[.]{s}[.]self_attn[.]o_proj$"],
+            rf"re:{lm}{s}[.]self_attn[.]v_proj$",
+            [rf"re:{lm}{s}[.]self_attn[.]o_proj$"],
         ),
         AWQMapping(
-            rf"re:.*layers[.]{s}[.]post_attention_layernorm$",
+            rf"re:{lm}{s}[.]post_attention_layernorm$",
             [
-                rf"re:.*layers[.]{s}[.]mlp[.]gate$",
-                rf"re:.*layers[.]{s}[.]mlp[.]shared_experts[.]gate_up_proj$",
-                rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
-                rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
+                rf"re:{lm}{s}[.]mlp[.]gate$",
+                rf"re:{lm}{s}[.]mlp[.]shared_experts[.]gate_up_proj$",
+                rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
+                rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
             ],
         ),
         AWQMapping(
-            rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
-            [rf"re:.*layers[.]{s}[.]mlp[.]experts[.][0-9]+[.]down_proj$"],
+            rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
+            [rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]down_proj$"],
         ),
     ]
 

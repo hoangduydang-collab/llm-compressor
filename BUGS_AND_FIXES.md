@@ -88,11 +88,14 @@ print(c.image_token_index, c.image_token_id, c.video_token_index, c.video_token_
 
 **Community reference:** `cyankiwi/MiniMax-M3-AWQ-INT4` uses a keep-bf16 ignore list (dense layers 0-2, indexer, router, shared experts, vision) and W4A16 weights; module names differ on transformers 5.13 (`block_sparse_moe.*` vs our `mlp.*`).
 
+**Second root cause (vision-tower name collision):** An initial scoped mapping still collapsed layers 3-59 into one group. A meta-device probe (`pipeline/probe_awq_mappings.py`) showed the balance targets `re:.*layers[.]<n>[.]self_attn[.]{q,k,v}_proj` matched **86** modules, not 57: `model.vision_tower.layers.N.self_attn.{q,k,v}_proj` also match. The vision layers have no matching `input_layernorm` (smooth matched only the 57 language layers), so `match_modules_set` never closes a per-layer group and collapses all smooth layers. Fix: anchor every pattern to `.*language_model[.]layers[.]` so the vision tower is excluded. The indexer was NOT the problem (present on all 57 sparse layers).
+
 **Fix applied (2026-07-07):**
 
-1. `pipeline/minimax_m3_config.py` — `get_minimax_m3_awq_mappings()` + `register_minimax_m3_awq_mappings()` for sparse layers 3-59 only, anchored to `self_attn.*` and `mlp.experts.N.*`.
+1. `pipeline/minimax_m3_config.py` — `get_minimax_m3_awq_mappings()` + `register_minimax_m3_awq_mappings()` for sparse layers 3-59, anchored to `language_model.layers` (excludes vision tower), `self_attn.*`, and `mlp.experts.N.*`.
 2. `pipeline/quantize.py` — register mappings after M3 text-calibration patch.
 3. `pipeline/configs/minimax_m3.yaml` — translated keep-bf16 `quantization.ignore` list.
+4. `pipeline/probe_awq_mappings.py` — meta-device probe that replicates `match_modules_set` grouping (indexer coverage, per-target match counts, groups yielded) to diagnose mapping issues in seconds without a full model load. Routed-expert (split) patterns only resolve after `linearize_moe`, so mappings 3/4 are validated in the smoke run, not on meta.
 
 **KV cache:** Leave `kv_cache_scheme` unset in the recipe (`null` in saved config). fp8 KV is applied at serve time via `serve.kv_cache_dtype: fp8` / vLLM `--kv-cache-dtype fp8` (same as community recipe).
 

@@ -115,6 +115,18 @@ def main(argv: list[str] | None = None) -> int:
 
     _report_indexer_coverage(module_names)
 
+    fused_experts = [n for n in module_names if re.search(r"\.mlp\.experts\.gate_up_proj$", n)]
+    if fused_experts:
+        print("== routed experts (meta) ==")
+        print(f"  fused experts modules present: {len(fused_experts)} "
+              f"e.g. {fused_experts[:2]}")
+        print("  NOTE: mappings 3/4 target split `mlp.experts.N.{gate,up,down}_proj`, "
+              "which exist only AFTER linearize_moe on the real load. 0 matches / an "
+              "'incomplete set' here for those mappings is EXPECTED on the meta model; "
+              "validate mappings 3/4 in the smoke run. Mappings 1/2 (attention) are "
+              "authoritative here.")
+        print()
+
     for mapping in get_minimax_m3_awq_mappings():
         _report_mapping(model, mapping, module_names)
 

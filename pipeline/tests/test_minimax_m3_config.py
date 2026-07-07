@@ -103,6 +103,16 @@ def test_minimax_m3_awq_mapping_regexes():
         "model.language_model.layers.3.self_attn.o_proj",
         qkv_smooth.balance_layers[0],
     )
+    # Vision tower also has layers.N.self_attn.q_proj; it must NOT match (bf16, and
+    # matching it collapses per-layer grouping -> "single smoothlayer" error).
+    assert not match_name(
+        "model.vision_tower.layers.3.self_attn.q_proj",
+        qkv_smooth.balance_layers[0],
+    )
+    assert not match_name(
+        "model.vision_tower.layers.3.input_layernorm",
+        qkv_smooth.smooth_layer,
+    )
 
     assert match_name(
         "model.language_model.layers.10.self_attn.v_proj",

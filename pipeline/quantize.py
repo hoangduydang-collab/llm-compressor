@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pipeline.calibration import build_calibration_dataset
 from pipeline.config import PipelineConfig
-from pipeline.minimax_m3_config import apply_minimax_m3_config
+from pipeline.minimax_m3_config import apply_minimax_m3_config, patch_minimax_m3_for_text_calibration
 from pipeline.recipe import build_recipe, describe_recipe
 from pipeline import metrics, versioning
 
@@ -116,6 +116,8 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     from llmcompressor import oneshot
 
     model, tokenizer = _load_model_and_tokenizer(cfg)
+    if patch_minimax_m3_for_text_calibration(model):
+        print("[pipeline] patched MiniMax-M3 get_placeholder_mask for text-only calibration")
 
     ds = build_calibration_dataset(cfg.calibration, tokenizer)
     recipe = build_recipe(cfg.quantization)

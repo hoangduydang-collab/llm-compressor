@@ -29,3 +29,32 @@ def test_coerce_exposes_image_and_video_token_id_aliases():
     coerced = coerce_minimax_m3_vl_config(config)
     assert coerced.image_token_index == coerced.image_token_id
     assert coerced.video_token_index == coerced.video_token_id
+
+
+def test_patch_text_calibration_coerces_non_tensor_features():
+    from pipeline.minimax_m3_config import patch_minimax_m3_for_text_calibration
+
+    class _VL:
+        def __init__(self):
+            self.calls = []
+
+        def get_placeholder_mask(
+            self, input_ids, inputs_embeds, image_features=None, video_features=None
+        ):
+            self.calls.append((image_features, video_features))
+            return "ok"
+
+    class _Model:
+        config = type("Cfg", (), {"model_type": "minimax_m3_vl"})()
+
+        def __init__(self):
+            self.model = _VL()
+
+    model = _Model()
+    assert patch_minimax_m3_for_text_calibration(model) is True
+    assert patch_minimax_m3_for_text_calibration(model) is True  # idempotent
+
+    sentinel = object()
+    result = model.model.get_placeholder_mask(None, None, image_features=sentinel, video_features=sentinel)
+    assert result == "ok"
+    assert model.model.calls[-1] == (None, None)

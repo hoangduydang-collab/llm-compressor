@@ -62,3 +62,15 @@ print(c.image_token_index, c.image_token_id, c.video_token_index, c.video_token_
 "
 # Expect: 200025 200025 200026 200026
 ```
+
+## MiniMax-M3 AWQ/GPTQ FX trace fails on `image_features.numel()`
+
+**Symptom:** After `linearize_moe`, sequential AWQ/GPTQ tracing fails with:
+
+`'NoneType' object has no attribute 'numel'` in `get_placeholder_mask` when `image_features` is absent (text-only calibration).
+
+**Root cause:** Text-only calibration passes no `pixel_values`. FX tracing still runs the VL forward; absent `image_features` / `video_features` are represented as non-`None` proxies, so `get_placeholder_mask` enters the feature-count validation and calls `.numel()` on `None`.
+
+**Fix applied (2026-07-07):** `pipeline/minimax_m3_config.py` — `patch_minimax_m3_for_text_calibration()` coerces non-tensor features to `None` before delegating to the original method. Called from `pipeline/quantize.py` after model load.
+
+**Long-term fix:** Multimodal calibration dataset (images + processor) like `examples/multimodal_vision/qwen3_vl_example.py`, if vision-tower quantization behavior must be validated under real inputs.

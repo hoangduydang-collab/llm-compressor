@@ -12,10 +12,14 @@ and nests ``temporal_patch_size`` / ``spatial_merge_size`` under
 ``config.video_token_id``. The public checkpoint only defines ``*_token_index``;
 remote ``AutoConfig`` classes may omit transformers' ``attribute_map`` aliases,
 which breaks FX tracing during sequential calibration.
+
+Text-only calibration (no ``pixel_values``) still enters ``get_placeholder_mask`` during FX
+trace; absent features appear as non-``None`` proxies, so ``image_features.numel()`` raises.
 """
 
 from __future__ import annotations
 
+from types import MethodType
 from typing import Any
 
 import torch
@@ -153,3 +157,46 @@ def apply_minimax_m3_config(
     out = dict(from_pretrained_kwargs)
     out["config"] = config
     return out
+
+
+def _find_minimax_m3_vl_backbone(model: Any) -> Any | None:
+    backbone = getattr(model, "model", None)
+    if backbone is not None and hasattr(backbone, "get_placeholder_mask"):
+        return backbone
+    return None
+
+
+def patch_minimax_m3_for_text_calibration(model: Any) -> bool:
+    """Patch placeholder-mask validation for text-only AWQ/GPTQ FX tracing.
+
+    Sequential tracing calls the full VL forward without images. FX represents absent
+    ``image_features`` / ``video_features`` as non-None proxies, so the stock
+    ``get_placeholder_mask`` path can call ``.numel()`` on None.
+    """
+    if getattr(getattr(model, "config", None), "model_type", None) != "minimax_m3_vl":
+        return False
+
+    vl_backbone = _find_minimax_m3_vl_backbone(model)
+    if vl_backbone is None:
+        return False
+    if getattr(vl_backbone, "_llmc_text_calibration_mask_patch", False):
+        return True
+
+    original = vl_backbone.get_placeholder_mask
+
+    def get_placeholder_mask(
+        self,
+        input_ids,
+        inputs_embeds,
+        image_features=None,
+        video_features=None,
+    ):
+        if not isinstance(image_features, torch.Tensor):
+            image_features = None
+        if not isinstance(video_features, torch.Tensor):
+            video_features = None
+        return original(input_ids, inputs_embeds, image_features=image_features, video_features=video_features)
+
+    vl_backbone.get_placeholder_mask = MethodType(get_placeholder_mask, vl_backbone)
+    vl_backbone._llmc_text_calibration_mask_patch = True
+    return True

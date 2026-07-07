@@ -234,6 +234,30 @@ print(ensure_vl_processor_artifacts(ckpt, src, trust_remote_code=True))
 "
 ```
 
+## MiniMax-M3 vLLM worker init fails (`EngineCore failed to start`)
+
+**Symptom:** vLLM gets past config/processor init, then worker ranks die:
+
+```
+Exception: WorkerProc initialization failed due to an exception in a background process.
+RuntimeError: EngineCore initialization failed.
+WARNING: destroy_process_group() was not called before program exit
+```
+
+**Root cause (usual):** Stock vLLM tries to load sparse layers with a **fused q/k/v + indexer** packed GEMM, but our checkpoint **quantizes q/k/v and keeps the MSA indexer in bf16** (`ignore: re:.*self_attn[.]indexer[.].*`). MoE weights are also saved as **per-expert linearized** `block_sparse_moe.experts.N.{gate,up,down}_proj` pack-quantized tensors. Ton Cao's vLLM branch un-fuses the indexer and plumbs M3 SwiGLU clamp params:
+
+```bash
+bash pipeline/slurm/install_vllm_m3_serve.sh   # toncao/vllm minimax-m3-compressed-tensors
+```
+
+**Diagnose:** the parent traceback hides the worker error. Grep the serve log:
+
+```bash
+grep -E 'Worker|ERROR|Error|OOM|out of memory|KeyError|size mismatch' serves/m3-awq-w4afp8/run.log | tail -40
+```
+
+**If OOM:** retry with `MAX_MODEL_LEN=2048 GPU_UTIL=0.85` (and optionally `--set serve.enforce_eager=true`).
+
 **Tooling:** `pipeline/verify_quant_checkpoint.py` runs all of the above structural
 checks on checkpoint metadata (fast, no model load); `--check-tensors` adds sampled
 finiteness + group-scale-shape checks:

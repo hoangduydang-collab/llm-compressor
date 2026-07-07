@@ -124,6 +124,44 @@ def preflight_serve_check(cfg: PipelineConfig, ckpt: Path) -> tuple[bool, dict]:
     return info["preflight_ok"], info
 
 
+def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
+    """Actionable hints when vLLM worker init fails (error is often in worker logs)."""
+    import vllm
+
+    print(f"vllm version: {getattr(vllm, '__version__', 'unknown')}")
+    print(
+        "The destroy_process_group() warnings are benign; the real error is usually "
+        "a few hundred lines earlier from a worker rank."
+    )
+    print("On the cluster, grep the serve log for the worker root cause:")
+    print("  grep -E 'Worker|ERROR|Error|OOM|out of memory|KeyError|size mismatch' \\")
+    print("    serves/m3-awq-w4afp8/run.log | tail -40")
+    print()
+    print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
+    print(
+        "  1) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
+        "checkpoint keeps indexer bf16 (see quantization_config.ignore). Install the "
+        "patched vLLM branch:"
+    )
+    print("       bash pipeline/slurm/install_vllm_m3_serve.sh")
+    print(
+        "  2) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
+        "smoke config:"
+    )
+    print(
+        "       MAX_MODEL_LEN=2048 GPU_UTIL=0.85 bash pipeline/slurm/run_serve_minimax_m3_detached.sh"
+    )
+    print(
+        "  3) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
+        "requires compressed-tensors pack-quantized support in vLLM (same patch)."
+    )
+    if cfg.model.auto_class == "AutoModelForImageTextToText":
+        print(
+            f"  4) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
+            "(serve_verify auto-copies from model.id)."
+        )
+
+
 def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     """Boot vLLM on ``ckpt`` and return a verification report dict."""
     report: dict = {
@@ -191,7 +229,15 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     if s.kv_cache_dtype is not None:
         llm_kwargs["kv_cache_dtype"] = s.kv_cache_dtype
 
-    llm = LLM(**llm_kwargs)
+    try:
+        llm = LLM(**llm_kwargs)
+    except Exception as exc:
+        report["load_error"] = repr(exc)
+        print("\n========== vLLM LOAD FAILED ==========")
+        print(repr(exc))
+        _print_serve_failure_hints(ckpt, cfg)
+        print("======================================\n")
+        return report
     report["loaded"] = True
 
     out = llm.generate(

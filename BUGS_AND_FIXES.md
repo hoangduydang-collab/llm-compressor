@@ -19,6 +19,10 @@
 **Verify on cluster:**
 
 ```bash
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+
 python -c "
 from pipeline.minimax_m3_config import load_minimax_m3_vl_config
 c = load_minimax_m3_vl_config('/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3')
@@ -26,8 +30,11 @@ print(c.dtype, c.text_config.dtype, c.vision_config.dtype)
 "
 # Expect: torch.bfloat16 for all three
 
-grep 'linearize_moe start' /mnt/nfs/hoangduy/logs/quantize-m3-*.log
-# Expect: rss ~600–850 GiB (not ~1980), per-layer drain ~14 GiB (not ~27)
+# Re-run quantize (detached script activates venv automatically):
+# METHOD=awq bash pipeline/slurm/run_quantize_minimax_m3_detached.sh
+
+grep -E 'backbone dtype|linearize_moe start' /mnt/nfs/hoangduy/logs/quantize-m3-*.log
+# Expect: text_config.dtype=torch.bfloat16; rss ~600–850 GiB (not ~1980)
 ```
 
 **Related upstream issues:** [llm-compressor #2669](https://github.com/vllm-project/llm-compressor/issues/2669) (progressive MoE replacement OOM on other models; different code path but similar symptom).

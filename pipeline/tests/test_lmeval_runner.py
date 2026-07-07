@@ -3,7 +3,7 @@
 import os
 
 from pipeline.config import EvalTask, PipelineConfig, ServeConfig
-from pipeline._env import apply_sglang_compat_env
+from pipeline._env import apply_lm_eval_sglang_compat, apply_sglang_compat_env
 from pipeline.lmeval_runner import (
     model_args,
     per_task_limit,
@@ -167,3 +167,14 @@ def test_apply_sglang_compat_env_keeps_nvcc_when_preset(monkeypatch):
     assert applied["DG_JIT_USE_NVRTC"] == "0"
     assert applied["SGLANG_DG_USE_NVRTC"] == "0"
     assert "SGLANG_DG_USE_NVRTC" not in applied or applied["SGLANG_DG_USE_NVRTC"] == "0"
+
+
+def test_apply_lm_eval_sglang_compat_maps_max_tokens():
+    try:
+        from sglang.srt.sampling.sampling_params import SamplingParams
+    except ImportError:
+        return
+
+    apply_lm_eval_sglang_compat()
+    params = SamplingParams(max_tokens=32, temperature=0.0)
+    assert params.max_new_tokens == 32

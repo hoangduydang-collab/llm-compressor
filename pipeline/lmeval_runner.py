@@ -128,12 +128,19 @@ def evaluate_tasks(
         preflight_sglang_deepgemm,
     )
 
-    if cfg.eval.backend == "sglang" and cfg.serve.sglang_compat_fallbacks:
-        applied = apply_sglang_compat_env()
-        if applied:
-            print(f"[lmeval] sglang compat env: {applied}")
-        for note in preflight_sglang_deepgemm():
-            print(f"[lmeval] WARNING: {note}")
+    if cfg.eval.backend == "sglang":
+        if cfg.serve.sglang_compat_fallbacks:
+            applied = apply_sglang_compat_env()
+            if applied:
+                print(f"[lmeval] sglang compat env: {applied}")
+            for note in preflight_sglang_deepgemm():
+                print(f"[lmeval] WARNING: {note}")
+        else:
+            from pipeline._env import apply_lm_eval_sglang_compat
+
+            applied = apply_lm_eval_sglang_compat()
+            if applied:
+                print(f"[lmeval] sglang sampling compat: {applied}")
 
     ensure_writable_caches()
 

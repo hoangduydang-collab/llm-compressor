@@ -160,6 +160,50 @@ def _has_deepgemm_nvcc(min_version: tuple[int, int] = DEEPGEMM_MIN_NVCC) -> bool
     return ver is not None and ver >= min_version
 
 
+# HF / vLLM kwargs that lm-eval may forward but SGLang SamplingParams rejects.
+_SGLANG_UNSUPPORTED_SAMPLING_KEYS = frozenset(
+    {
+        "do_sample",
+        "max_length",
+        "spaces_between_special_tokens",
+        "min_tokens",
+        "include_stop_str_in_output",
+    }
+)
+
+
+def apply_lm_eval_sglang_compat() -> dict[str, str]:
+    """Patch SGLang SamplingParams for lm-eval sampling kwargs.
+
+    Older lm-eval SGLang backends (and some task ``generation_kwargs``) pass
+    ``max_tokens`` and other vLLM/HF keys. SGLang 0.5.x ``SamplingParams``
+    only accepts ``max_new_tokens``. Must run before ``import lm_eval`` /
+    ``import sglang`` when the SGLang engine is constructed.
+    """
+    applied: dict[str, str] = {}
+    try:
+        from sglang.srt.sampling.sampling_params import SamplingParams
+    except ImportError:
+        return applied
+
+    if getattr(SamplingParams, "_pipeline_lm_eval_compat", False):
+        return applied
+
+    _orig_init = SamplingParams.__init__
+
+    def _patched_init(self, *args, **kwargs):
+        if "max_tokens" in kwargs:
+            kwargs.setdefault("max_new_tokens", kwargs.pop("max_tokens"))
+        for key in _SGLANG_UNSUPPORTED_SAMPLING_KEYS:
+            kwargs.pop(key, None)
+        return _orig_init(self, *args, **kwargs)
+
+    SamplingParams.__init__ = _patched_init  # type: ignore[method-assign]
+    SamplingParams._pipeline_lm_eval_compat = True
+    applied["sglang_SamplingParams"] = "max_tokens->max_new_tokens"
+    return applied
+
+
 def apply_sglang_compat_env() -> dict[str, str]:
     """SGLang eval fallbacks for clusters without a working NVCC toolkit.
 
@@ -181,6 +225,7 @@ def apply_sglang_compat_env() -> dict[str, str]:
         _set("SGLANG_DG_USE_NVRTC", "1")
         _set("DG_JIT_USE_NVRTC", "1")
 
+    applied.update(apply_lm_eval_sglang_compat())
     return applied
 
 

@@ -1,0 +1,58 @@
+# Resume GLM-5.2 8k eval after gsm8k/bbh generate_until crash (lm-eval max_tokens bug).
+# Assumes wikitext..winogrande already finished in evals/glm52-w4afp8-phala-8k/.
+#
+#   git pull   # needs pipeline/_env.py apply_lm_eval_sglang_compat fix
+#   pkill -9 -f 'pipeline.evalsuite|sglang::' || true
+#   rm -f evals/glm52-w4afp8-phala-8k/eval.pid
+#   CONFIG=pipeline/configs/eval_glm52_w4afp8_sglang_h100_8k_remainder.yaml \
+#   OUT_DIR=evals/glm52-w4afp8-phala-8k-remainder \
+#     bash pipeline/slurm/run_eval_glm52_sglang_detached.sh
+#
+# Merge aggregate.json from both OUT_DIRs manually when done.
+
+name: eval-glm52-w4afp8-sglang-h100-8k-remainder
+
+model:
+  id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8
+  trust_remote_code: true
+
+serve:
+  tensor_parallel_size: 8
+  max_model_len: 8192
+  gpu_memory_utilization: 0.72
+  kv_cache_dtype: fp8_e4m3
+  sglang_compat_fallbacks: true
+  sglang_kwargs:
+    quantization: w4afp8
+    disable_shared_experts_fusion: true
+    max_total_tokens: 32768
+    chunked_prefill_size: 512
+    max_running_requests: 4
+
+eval:
+  enabled: true
+  log_samples: true
+  backend: sglang
+  lm_eval_batch_size: 8
+  apply_chat_template: true
+  baseline: null
+  tasks:
+    - name: gsm8k
+      metric: exact_match,strict-match
+      num_fewshot: 5
+      limit: null
+    - name: truthfulqa_mc2
+      metric: acc,none
+      num_fewshot: 0
+      limit: null
+    - name: bbh
+      metric: exact_match,get-answer
+      num_fewshot: 3
+      limit: null
+
+agentic:
+  enabled: false
+
+quantization:
+  method: gptq
+  scheme: W4AFP8

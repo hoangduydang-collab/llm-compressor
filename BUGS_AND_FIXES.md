@@ -283,6 +283,21 @@ print(ensure_minimax_m3_vllm_serve_config(
 
 Then rerun serve. Ton Cao's vLLM branch may still be needed **after** this for quantized q/k/v + indexer un-fuse.
 
+## MiniMax-M3 vLLM serve fails: `Unsupported activation: silu. Only swigluoai is supported.`
+
+**Symptom:** All TP workers die during language-model layer init (before weight load completes):
+
+```
+ValueError: Unsupported activation: silu. Only swigluoai is supported.
+  File ".../vllm/models/minimax_m3/nvidia/model.py", line 168, in MiniMaxM3MLP.__init__
+```
+
+**Root cause:** The public HF checkpoint declares `text_config.hidden_act: "swigluoai"`, but `MiniMaxM3VLTextConfig.__post_init__` in transformers 5.12+ rewrites it to `"silu"` (ACT2FN fallback; the real SwiGLU-OAI gate uses `swiglu_alpha` / `swiglu_limit`). Quantize load uses that coercion and `save_pretrained` persists `hidden_act: "silu"`. vLLM's `MiniMaxM3MLP` only wires `SiluAndMulWithClamp` when `hidden_act == "swigluoai"`.
+
+**Fix:** `ensure_minimax_m3_vllm_serve_config()` now also restores `text_config.hidden_act` and `swiglu_*` scalars from `model.id`. `serve_verify.py` applies this automatically before `LLM()`; re-run serve after `git pull`. No re-quantize needed.
+
+**Note:** Ton Cao's `minimax-m3-compressed-tensors` branch has the same `hidden_act` check — installing it alone does **not** fix this. You still need the config patch **and** that branch for indexer un-fuse + linearized MoE pack-quantized load.
+
 **Tooling:** `pipeline/verify_quant_checkpoint.py` runs all of the above structural
 checks on checkpoint metadata (fast, no model load); `--check-tensors` adds sampled
 finiteness + group-scale-shape checks:

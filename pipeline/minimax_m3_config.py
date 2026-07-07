@@ -130,20 +130,27 @@ def coerce_minimax_m3_vl_config(config: Any) -> Any:
     return config
 
 
+# vLLM's MiniMaxM3MLP only accepts hidden_act == "swigluoai". Transformers 5.12+
+# normalizes the checkpoint's "swigluoai" to "silu" in MiniMaxM3VLTextConfig.__post_init__
+# (ACT2FN fallback); quantize save persists that coercion.
+_VLLM_TEXT_ACT_KEYS = ("swiglu_alpha", "swiglu_limit", "swiglu_beta")
+
+
 def ensure_minimax_m3_vllm_serve_config(ckpt: Path, source: str) -> list[str]:
-    """Patch a quantized checkpoint's ``config.json`` for vLLM M3 vision init.
+    """Patch a quantized checkpoint's ``config.json`` for vLLM M3 load.
 
-    ``coerce_minimax_m3_vl_config()`` (used during quantize load) hoists
-    ``img_token_compression_config`` fields onto ``MiniMaxM3VLVisionConfig`` and
-    drops the nested dict. vLLM's ``MiniMaxVLVisionModel`` still reads
-    ``config.img_token_compression_config`` and fails with::
+  1. **Vision:** ``coerce_minimax_m3_vl_config()`` hoists
+     ``img_token_compression_config`` onto ``MiniMaxM3VLVisionConfig`` and drops the
+     nested dict. vLLM's ``MiniMaxVLVisionModel`` still reads
+     ``config.img_token_compression_config``.
 
-        AttributeError: 'PreTrainedConfig' object has no attribute
-        'img_token_compression_config'
+  2. **Text MLP activation:** transformers rewrites ``text_config.hidden_act`` from
+     ``"swigluoai"`` to ``"silu"`` on load/save. vLLM's ``MiniMaxM3MLP`` requires
+     ``hidden_act == "swigluoai"`` and wires ``SiluAndMulWithClamp`` from the
+     ``swiglu_*`` scalars.
 
-    Vision weights are kept bf16 and unchanged by quantization, so we restore the
-    source model's ``vision_config`` (with the nested compression block) while
-    leaving ``quantization_config`` on the checkpoint untouched.
+    Vision weights are bf16/unchanged; restoring source ``vision_config`` and
+    ``text_config.hidden_act`` is numerically safe. ``quantization_config`` is untouched.
     """
     import json
 
@@ -163,17 +170,43 @@ def ensure_minimax_m3_vllm_serve_config(ckpt: Path, source: str) -> list[str]:
 
         src = AutoConfig.from_pretrained(source, trust_remote_code=True).to_dict()
 
+    changed: list[str] = []
+
     src_vc = src.get("vision_config")
-    if not isinstance(src_vc, dict) or "img_token_compression_config" not in src_vc:
+    if isinstance(src_vc, dict) and "img_token_compression_config" in src_vc:
+        cur_vc = data.get("vision_config") or {}
+        if cur_vc.get("img_token_compression_config") != src_vc.get(
+            "img_token_compression_config"
+        ):
+            data["vision_config"] = src_vc
+            changed.append(
+                "vision_config (restored img_token_compression_config from source)"
+            )
+
+    src_tc = src.get("text_config")
+    if isinstance(src_tc, dict):
+        tc = data.setdefault("text_config", {})
+        if not isinstance(tc, dict):
+            tc = {}
+            data["text_config"] = tc
+
+        src_act = src_tc.get("hidden_act")
+        if src_act == "swigluoai" and tc.get("hidden_act") != "swigluoai":
+            tc["hidden_act"] = "swigluoai"
+            changed.append(
+                'text_config.hidden_act ("silu" -> "swigluoai" for vLLM SwiGLU-OAI)'
+            )
+
+        for key in _VLLM_TEXT_ACT_KEYS:
+            if key in src_tc and tc.get(key) != src_tc[key]:
+                tc[key] = src_tc[key]
+                changed.append(f"text_config.{key}")
+
+    if not changed:
         return []
 
-    cur_vc = data.get("vision_config") or {}
-    if cur_vc.get("img_token_compression_config") == src_vc.get("img_token_compression_config"):
-        return []
-
-    data["vision_config"] = src_vc
     cfg_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return ["vision_config (restored img_token_compression_config from source)"]
+    return changed
 
 
 def load_minimax_m3_vl_config(model_id: str, *, trust_remote_code: bool = True) -> Any:

@@ -139,28 +139,32 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
-        "  1) Missing vision_config.img_token_compression_config in saved config.json "
+        '  1) text_config.hidden_act is "silu" but vLLM requires "swigluoai" '
+        "(transformers normalizes on load; serve_verify auto-restores from model.id)"
+    )
+    print(
+        "  2) Missing vision_config.img_token_compression_config in saved config.json "
         "(quantize coercion hoists it; serve_verify auto-restores from model.id)"
     )
     print(
-        "  2) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
+        "  3) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
         "checkpoint keeps indexer bf16 (see quantization_config.ignore). Install:"
     )
     print("       bash pipeline/slurm/install_vllm_m3_serve.sh")
     print(
-        "  3) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
+        "  4) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
         "smoke config:"
     )
     print(
         "       MAX_MODEL_LEN=2048 GPU_UTIL=0.85 bash pipeline/slurm/run_serve_minimax_m3_detached.sh"
     )
     print(
-        "  4) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
-        "requires compressed-tensors pack-quantized support in vLLM (same patch as 2)."
+        "  5) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
+        "requires compressed-tensors pack-quantized support in vLLM (same patch as 3)."
     )
     if cfg.model.auto_class == "AutoModelForImageTextToText":
         print(
-            f"  5) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
+            f"  6) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
             "(serve_verify auto-copies from model.id)."
         )
 

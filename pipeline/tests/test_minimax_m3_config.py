@@ -183,3 +183,39 @@ def test_ensure_vllm_serve_config_restores_vision_compression(tmp_path):
     saved = json.loads((ckpt / "config.json").read_text(encoding="utf-8"))
     assert saved["vision_config"]["img_token_compression_config"] == compression
     assert saved["quantization_config"]["format"] == "pack-quantized"
+
+
+def test_ensure_vllm_serve_config_restores_text_hidden_act(tmp_path):
+    import json
+
+    from pipeline.minimax_m3_config import ensure_minimax_m3_vllm_serve_config
+
+    source = tmp_path / "source"
+    ckpt = tmp_path / "ckpt"
+    source.mkdir()
+    ckpt.mkdir()
+
+    src_cfg = {
+        "model_type": "minimax_m3_vl",
+        "text_config": {
+            "hidden_act": "swigluoai",
+            "swiglu_alpha": 1.702,
+            "swiglu_limit": 7.0,
+        },
+    }
+    (source / "config.json").write_text(json.dumps(src_cfg), encoding="utf-8")
+
+    ckpt_cfg = {
+        "model_type": "minimax_m3_vl",
+        "text_config": {"hidden_act": "silu"},
+        "quantization_config": {"format": "pack-quantized"},
+    }
+    (ckpt / "config.json").write_text(json.dumps(ckpt_cfg), encoding="utf-8")
+
+    changed = ensure_minimax_m3_vllm_serve_config(ckpt, str(source))
+    assert any("hidden_act" in item for item in changed)
+    saved = json.loads((ckpt / "config.json").read_text(encoding="utf-8"))
+    assert saved["text_config"]["hidden_act"] == "swigluoai"
+    assert saved["text_config"]["swiglu_alpha"] == 1.702
+    assert saved["text_config"]["swiglu_limit"] == 7.0
+    assert saved["quantization_config"]["format"] == "pack-quantized"

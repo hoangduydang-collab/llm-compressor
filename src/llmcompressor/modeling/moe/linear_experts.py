@@ -19,6 +19,24 @@ from .helpers import (
 )
 
 
+def _carry_over_gate_scalars(
+    target: torch.nn.Module, source: torch.nn.Module
+) -> None:
+    """Copy plain scalar attributes from ``source`` onto ``target`` if unset.
+
+    The generic linearized experts reuse the source module's ``_apply_gate`` method,
+    which may read config-derived scalars (e.g. MiniMax-M3's ``swiglu_limit`` /
+    ``swiglu_alpha``). Only bool/int/float attributes that are not already present on
+    ``target`` are copied, so structural fields (``num_experts``, ``intermediate_size``,
+    ...) and parameters/buffers/submodules are left untouched.
+    """
+    for key, value in vars(source).items():
+        if key.startswith("_"):
+            continue
+        if isinstance(value, (bool, int, float)) and not hasattr(target, key):
+            setattr(target, key, value)
+
+
 class ExpertMLP(torch.nn.Module, ABC):
     @abstractmethod
     def copy_from_experts_module(self, experts: FusedExpertsProtocol, index: int):
@@ -200,6 +218,14 @@ class LinearExperts2D(torch.nn.ModuleList):
         for index in range(self.num_experts):
             expert: ExpertMLP = self[index]
             expert.copy_from_experts_module(experts, index)
+
+        # Carry over plain scalar attributes (e.g. MiniMax-M3's `swiglu_limit` /
+        # `swiglu_alpha`) that the reused `_apply_gate` method reads off `self`.
+        # `MoEConfig` only captures the generic `limit`/`alpha`; models with a custom
+        # `_apply_gate` may reference other config-derived scalars. Copying them from the
+        # source module keeps the linearized forward numerically identical to the fused
+        # experts and avoids an AttributeError during calibration.
+        _carry_over_gate_scalars(self, experts)
 
         # copy offloading from original
         offload_kwargs = get_cache_init_kwargs(experts)

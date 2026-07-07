@@ -5,7 +5,45 @@ from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeExperts
 
 from llmcompressor.modeling.moe.context import moe_calibration_context
 from llmcompressor.modeling.moe.helpers import MoEConfig
-from llmcompressor.modeling.moe.linear_experts import LinearExperts2D
+from llmcompressor.modeling.moe.linear_experts import (
+    LinearExperts2D,
+    _carry_over_gate_scalars,
+)
+
+
+def test_carry_over_gate_scalars():
+    """Custom `_apply_gate` scalars (e.g. MiniMax-M3 swiglu params) survive linearize.
+
+    The generic linearized experts reuse the source module's `_apply_gate`, which may
+    read config-derived scalars off `self`. `from_experts_module` must copy those scalars
+    so calibration does not hit `AttributeError`, while leaving structural fields and
+    parameters/buffers/submodules untouched.
+    """
+
+    class _Source(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.num_experts = 8  # structural: must NOT overwrite target's value
+            self.swiglu_limit = 7.0  # custom gate scalar: must be copied
+            self.swiglu_alpha = 1.702  # custom gate scalar: must be copied
+            self.use_bias = False  # bool scalar: must be copied
+            self.name = "src"  # non-scalar: must be ignored
+            self.weight = torch.nn.Parameter(torch.zeros(2))  # param: ignored
+
+    class _Target(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.num_experts = 4  # pre-existing: must be preserved
+
+    source, target = _Source(), _Target()
+    _carry_over_gate_scalars(target, source)
+
+    assert target.swiglu_limit == 7.0
+    assert target.swiglu_alpha == 1.702
+    assert target.use_bias is False
+    assert target.num_experts == 4  # not clobbered by source's 8
+    assert not hasattr(target, "name")  # non-scalar skipped
+    assert "weight" not in target._parameters  # parameter not copied
 
 
 @torch.no_grad()

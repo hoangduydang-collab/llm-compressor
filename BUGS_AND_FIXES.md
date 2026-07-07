@@ -113,3 +113,27 @@ METHOD=awq EXTRA='--set calibration.num_samples=8 --set calibration.max_seq_leng
   bash pipeline/slurm/run_quantize_minimax_m3_detached.sh
 # Expect: no "single smoothlayer" error; AWQ resolves mappings per sparse layer
 ```
+
+## MiniMax-M3 calibration fails: `LinearExperts2D` has no attribute `swiglu_limit`
+
+**Symptom:** AWQ mappings resolve and calibration begins, but around sequential layer 5 the forward crashes:
+
+```
+File ".../transformers/models/minimax_m3_vl/modeling_minimax_m3_vl.py", line 212, in _apply_gate
+    gate = gate.clamp(max=self.swiglu_limit)
+AttributeError: 'LinearExperts2D' object has no attribute 'swiglu_limit'
+```
+
+**Root cause:** `MiniMaxM3VLExperts._apply_gate` reads `self.swiglu_limit` / `self.swiglu_alpha` (config-derived scalars the original fused module sets in its `__init__`). M3 has no registered 2D load mapping, so it takes the post-load `linearize_moe` path via the generic `LinearExperts2D`. That path **reuses M3's `_apply_gate` verbatim** (bound to the new `LinearExperts2D` instance) but `MoEConfig` only captures the generic `limit`/`alpha` names — `swiglu_limit`/`swiglu_alpha` are never set on the linearized module, so the reused method raises at calibration forward time. (`limit`/`alpha` are set but M3's method doesn't read them.)
+
+**Long-term fix (applied 2026-07-07):** `src/llmcompressor/modeling/moe/linear_experts.py` — `LinearExperts2D.from_experts_module()` now calls `_carry_over_gate_scalars(self, experts)`, copying plain bool/int/float attributes from the source experts module onto the linearized module when not already set. This keeps the reused `_apply_gate` numerically identical to the fused experts and is general for any model whose custom gate reads config-derived scalars (not M3-specific). Structural fields and parameters/buffers/submodules are left untouched (skips `_`-prefixed and existing attrs).
+
+**Removal criteria:** None; carrying over the scalars the reused `_apply_gate` depends on is the correct contract. Registering a dedicated `MiniMaxM3LinearExperts` subclass (like `Llama4LinearExperts`) with a 2D load mapping would supersede this path but is a larger change tracked separately.
+
+**Verify:**
+
+```bash
+METHOD=awq EXTRA='--set calibration.num_samples=8 --set calibration.max_seq_length=512' \
+  bash pipeline/slurm/run_quantize_minimax_m3_detached.sh
+# Expect: calibration proceeds past layer 5 through all 61 subgraphs -> checkpoint save
+```

@@ -58,11 +58,19 @@ _EXPECTED_IGNORE_SUBSTR = [
     "layers[.][0-2]",
 ]
 
-# Naming-agnostic: capture whatever projection leaf name the checkpoint uses
-# (post-linearize per-expert layouts vary: gate_proj/up_proj/down_proj, gate_up_proj,
-# w1/w2/w3, ...). We assert per-layer consistency rather than hard-coding names.
-_EXPERT_PROJ = re.compile(r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\.([A-Za-z0-9_]+)$")
+# Naming-agnostic classification. Post-linearize the routed experts become a
+# ``ModuleList`` that replaces the original fused-experts submodule *in place*, so the
+# saved key is ``<layer-prefix>.<container>.<expert_idx>.<proj>`` where ``<container>``
+# depends on the model (``mlp.experts``, ``block_sparse_moe.experts``, ``feed_forward``
+# ...). Rather than hard-code the container we:
+#   * find the layer index via the ``.layers.N.`` segment,
+#   * treat any ``.self_attn.`` module as attention,
+#   * treat any *other* quantized module whose path has a numeric segment followed by a
+#     projection leaf as a routed expert (expert index = that numeric segment).
+_LAYER = re.compile(r"\.layers\.(\d+)\.")
 _ATTN_PROJ = re.compile(r"\.layers\.(\d+)\.self_attn\.([A-Za-z0-9_]+)$")
+# ``...<expert_idx>.<proj_leaf>`` at the end of the path (container-agnostic).
+_EXPERT_PROJ = re.compile(r"\.(\d+)\.([A-Za-z0-9_]+)$")
 
 
 def _module_prefix(key: str) -> str | None:
@@ -166,6 +174,15 @@ def verify(ckpt: Path, check_tensors: bool) -> int:
     for leaf, c in sorted(leaf_counts.items(), key=lambda kv: -kv[1]):
         print(f"    {c:>6}  *.{leaf}")
 
+    # Show a few full module paths so the real (container) layout is visible -- this is
+    # exactly the naming vLLM must load the experts under.
+    print("  sample quantized module paths:")
+    for m in sorted(quantized)[:4]:
+        print(f"    {m}")
+    non_attn = sorted(m for m in quantized if ".self_attn." not in m)
+    for m in non_attn[:4]:
+        print(f"    {m}")
+
     # every quantized module must also have a scale
     missing_scale = quantized - scale_keys
     if missing_scale:
@@ -189,20 +206,30 @@ def verify(ckpt: Path, check_tensors: bool) -> int:
     # experts_by_layer[layer][expert_idx] = {proj names present}
     experts_by_layer: dict[int, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
     attn_by_layer: dict[int, set[str]] = defaultdict(set)
+    expert_container: set[str] = set()
     for m in quantized:
-        em = _EXPERT_PROJ.search(m)
-        if em:
-            experts_by_layer[int(em.group(1))][int(em.group(2))].add(em.group(3))
+        lm = _LAYER.search(m)
+        if lm is None:
             continue
+        layer = int(lm.group(1))
         am = _ATTN_PROJ.search(m)
         if am:
-            attn_by_layer[int(am.group(1))].add(am.group(2))
+            attn_by_layer[layer].add(am.group(2))
+            continue
+        # non-attention quantized module in a decoder layer => routed expert.
+        em = _EXPERT_PROJ.search(m)
+        if em:
+            idx, leaf = em.group(1), em.group(2)
+            experts_by_layer[layer][int(idx)].add(leaf)
+            # container = path segment between ".layers.N." and ".<idx>.<leaf>"
+            tail = m[lm.end():]  # e.g. "mlp.experts.0.gate_proj"
+            expert_container.add(tail[: -len(f".{idx}.{leaf}")])
 
     sparse_layers = sorted(experts_by_layer)
     if not sparse_layers:
-        _fail("no routed-expert projections detected under any "
-              "'.layers.N.mlp.experts.E.*' key -- inspect the quantized leaf names "
-              "above; the checkpoint may store experts fused (mlp.experts.gate_up_proj)",
+        _fail("no routed-expert projections detected -- inspect the 'sample quantized "
+              "module paths' above; experts may be stored fused (single "
+              "experts.gate_up_proj) rather than per-expert Linears",
               errors)
         return _summary(errors, warnings)
 
@@ -214,6 +241,7 @@ def verify(ckpt: Path, check_tensors: bool) -> int:
             proj_names |= projs
             n_experts = max(n_experts, e + 1)
     attn_names = set().union(*attn_by_layer.values()) if attn_by_layer else set()
+    print(f"  expert container path segment(s): {sorted(expert_container)}")
     print(f"  detected sparse layers with experts: {sparse_layers[0]}..{sparse_layers[-1]} "
           f"({len(sparse_layers)} layers)")
     print(f"  detected experts per layer: {n_experts}")

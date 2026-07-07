@@ -32,6 +32,10 @@ source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export HOME=${WORK_ROOT:-/mnt/nfs/hoangduy}
 export FLASHINFER_WORKSPACE_DIR=${FLASHINFER_WORKSPACE_DIR:-$HOME/cache/flashinfer}
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true
+# Weka reads at ~2.5GB/s; default single-threaded HF load is CPU-bound. Parallelize
+# safetensors materialization. Disable with HF_ENABLE_PARALLEL_LOADING=false.
+export HF_ENABLE_PARALLEL_LOADING=${HF_ENABLE_PARALLEL_LOADING:-true}
+export HF_PARALLEL_LOADING_WORKERS=${HF_PARALLEL_LOADING_WORKERS:-16}
 
 export CONFIG="${CONFIG:-pipeline/configs/minimax_m3.yaml}"
 export METHOD="${METHOD:?set METHOD=gptq or awq}"

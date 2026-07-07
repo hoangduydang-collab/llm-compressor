@@ -63,6 +63,12 @@ export HOME=\${WORK_ROOT:-/mnt/nfs/hoangduy}
 export PYTHONUNBUFFERED=1
 export FLASHINFER_WORKSPACE_DIR=\${FLASHINFER_WORKSPACE_DIR:-\$HOME/cache/flashinfer}
 export TOKENIZERS_PARALLELISM=false
+# Weka backing store reads at ~2.5GB/s; the default single-threaded HF loader is
+# CPU-bound and can't saturate it. Parallelize safetensors materialization so
+# the ~850GB load is limited by storage, not by one Python thread. Override/
+# disable with HF_ENABLE_PARALLEL_LOADING=false if the custom loader misbehaves.
+export HF_ENABLE_PARALLEL_LOADING=\${HF_ENABLE_PARALLEL_LOADING:-true}
+export HF_PARALLEL_LOADING_WORKERS=\${HF_PARALLEL_LOADING_WORKERS:-16}
 mkdir -p "\$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true
 export CONFIG=$(printf '%q' "$CONFIG")
 export METHOD=$(printf '%q' "$METHOD")

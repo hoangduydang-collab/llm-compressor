@@ -139,25 +139,28 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
-        "  1) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
-        "checkpoint keeps indexer bf16 (see quantization_config.ignore). Install the "
-        "patched vLLM branch:"
+        "  1) Missing vision_config.img_token_compression_config in saved config.json "
+        "(quantize coercion hoists it; serve_verify auto-restores from model.id)"
+    )
+    print(
+        "  2) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
+        "checkpoint keeps indexer bf16 (see quantization_config.ignore). Install:"
     )
     print("       bash pipeline/slurm/install_vllm_m3_serve.sh")
     print(
-        "  2) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
+        "  3) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
         "smoke config:"
     )
     print(
         "       MAX_MODEL_LEN=2048 GPU_UTIL=0.85 bash pipeline/slurm/run_serve_minimax_m3_detached.sh"
     )
     print(
-        "  3) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
-        "requires compressed-tensors pack-quantized support in vLLM (same patch)."
+        "  4) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
+        "requires compressed-tensors pack-quantized support in vLLM (same patch as 2)."
     )
     if cfg.model.auto_class == "AutoModelForImageTextToText":
         print(
-            f"  4) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
+            f"  5) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
             "(serve_verify auto-copies from model.id)."
         )
 
@@ -201,7 +204,12 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     # VL checkpoints need preprocessor_config.json for vLLM multimodal init even
     # when running a text-only smoke prompt. Older quant runs may lack these files.
     if cfg.model.auto_class == "AutoModelForImageTextToText":
+        from pipeline.minimax_m3_config import ensure_minimax_m3_vllm_serve_config
         from pipeline.vl_artifacts import ensure_vl_processor_artifacts
+
+        cfg_patches = ensure_minimax_m3_vllm_serve_config(ckpt, cfg.model.id)
+        if cfg_patches:
+            print(f"[pipeline] patched checkpoint config for vLLM: {cfg_patches}")
 
         added = ensure_vl_processor_artifacts(
             ckpt, cfg.model.id, trust_remote_code=cfg.model.trust_remote_code

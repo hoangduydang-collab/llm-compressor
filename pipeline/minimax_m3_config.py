@@ -19,6 +19,7 @@ trace; absent features appear as non-``None`` proxies, so ``image_features.numel
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import MethodType
 from typing import Any
 
@@ -127,6 +128,52 @@ def coerce_minimax_m3_vl_config(config: Any) -> Any:
         _ensure_token_id_aliases(config)
 
     return config
+
+
+def ensure_minimax_m3_vllm_serve_config(ckpt: Path, source: str) -> list[str]:
+    """Patch a quantized checkpoint's ``config.json`` for vLLM M3 vision init.
+
+    ``coerce_minimax_m3_vl_config()`` (used during quantize load) hoists
+    ``img_token_compression_config`` fields onto ``MiniMaxM3VLVisionConfig`` and
+    drops the nested dict. vLLM's ``MiniMaxVLVisionModel`` still reads
+    ``config.img_token_compression_config`` and fails with::
+
+        AttributeError: 'PreTrainedConfig' object has no attribute
+        'img_token_compression_config'
+
+    Vision weights are kept bf16 and unchanged by quantization, so we restore the
+    source model's ``vision_config`` (with the nested compression block) while
+    leaving ``quantization_config`` on the checkpoint untouched.
+    """
+    import json
+
+    cfg_path = ckpt / "config.json"
+    if not cfg_path.exists():
+        return []
+
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if data.get("model_type") != "minimax_m3_vl":
+        return []
+
+    src_path = Path(source)
+    if (src_path / "config.json").exists():
+        src = json.loads((src_path / "config.json").read_text(encoding="utf-8"))
+    else:
+        from transformers import AutoConfig
+
+        src = AutoConfig.from_pretrained(source, trust_remote_code=True).to_dict()
+
+    src_vc = src.get("vision_config")
+    if not isinstance(src_vc, dict) or "img_token_compression_config" not in src_vc:
+        return []
+
+    cur_vc = data.get("vision_config") or {}
+    if cur_vc.get("img_token_compression_config") == src_vc.get("img_token_compression_config"):
+        return []
+
+    data["vision_config"] = src_vc
+    cfg_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return ["vision_config (restored img_token_compression_config from source)"]
 
 
 def load_minimax_m3_vl_config(model_id: str, *, trust_remote_code: bool = True) -> Any:

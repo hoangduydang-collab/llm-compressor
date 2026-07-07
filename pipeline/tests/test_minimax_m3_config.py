@@ -142,3 +142,44 @@ def test_minimax_m3_awq_mapping_regexes():
         "model.language_model.layers.5.mlp.experts.12.down_proj",
         up_to_down.balance_layers[0],
     )
+
+
+def test_ensure_vllm_serve_config_restores_vision_compression(tmp_path):
+    import json
+
+    from pipeline.minimax_m3_config import ensure_minimax_m3_vllm_serve_config
+
+    source = tmp_path / "source"
+    ckpt = tmp_path / "ckpt"
+    source.mkdir()
+    ckpt.mkdir()
+
+    compression = {"spatial_merge_size": 2, "temporal_patch_size": 2}
+    src_cfg = {
+        "model_type": "minimax_m3_vl",
+        "vision_config": {
+            "model_type": "clip_vision_model",
+            "hidden_size": 64,
+            "img_token_compression_config": compression,
+        },
+    }
+    (source / "config.json").write_text(json.dumps(src_cfg), encoding="utf-8")
+
+    coerced_vc = {
+        "model_type": "minimax_m3_vl_vision",
+        "hidden_size": 64,
+        "spatial_merge_size": 2,
+        "temporal_patch_size": 2,
+    }
+    ckpt_cfg = {
+        "model_type": "minimax_m3_vl",
+        "vision_config": coerced_vc,
+        "quantization_config": {"format": "pack-quantized"},
+    }
+    (ckpt / "config.json").write_text(json.dumps(ckpt_cfg), encoding="utf-8")
+
+    changed = ensure_minimax_m3_vllm_serve_config(ckpt, str(source))
+    assert changed
+    saved = json.loads((ckpt / "config.json").read_text(encoding="utf-8"))
+    assert saved["vision_config"]["img_token_compression_config"] == compression
+    assert saved["quantization_config"]["format"] == "pack-quantized"

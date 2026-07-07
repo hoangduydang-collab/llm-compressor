@@ -11,6 +11,7 @@ from pipeline.calibration import build_calibration_dataset
 from pipeline.config import PipelineConfig
 from pipeline.minimax_m3_config import (
     apply_minimax_m3_config,
+    ensure_minimax_m3_vllm_serve_config,
     patch_minimax_m3_for_text_calibration,
     register_minimax_m3_awq_mappings,
 )
@@ -170,6 +171,11 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
         )
         if added:
             print(f"[pipeline] saved VL processor artifacts: {added}")
+
+    if cfg.model.auto_class == "AutoModelForImageTextToText":
+        cfg_patches = ensure_minimax_m3_vllm_serve_config(ckpt, cfg.model.id)
+        if cfg_patches:
+            print(f"[pipeline] patched saved config for vLLM serve: {cfg_patches}")
 
     # Re-add intended ignore patterns that llm-compressor pruned from the saved
     # config (e.g. the MoE router gate), so loaders treat them as unquantized.

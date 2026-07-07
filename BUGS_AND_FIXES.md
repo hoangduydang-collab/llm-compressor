@@ -258,6 +258,31 @@ grep -E 'Worker|ERROR|Error|OOM|out of memory|KeyError|size mismatch' serves/m3-
 
 **If OOM:** retry with `MAX_MODEL_LEN=2048 GPU_UTIL=0.85` (and optionally `--set serve.enforce_eager=true`).
 
+## MiniMax-M3 vLLM serve fails: `img_token_compression_config` missing
+
+**Symptom:** Worker dies during vision tower init (before weight load):
+
+```
+AttributeError: 'PreTrainedConfig' object has no attribute 'img_token_compression_config'
+```
+
+**Root cause:** `coerce_minimax_m3_vl_config()` (quantize load path) hoists compression fields onto `MiniMaxM3VLVisionConfig` and drops the nested `img_token_compression_config` dict. vLLM's `MiniMaxVLVisionModel` still reads that attribute. Vision weights are bf16/unchanged, so restoring the source model's `vision_config` is safe.
+
+**Fix:** `ensure_minimax_m3_vllm_serve_config()` in `serve_verify.py` (and `quantize.py` on save) copies `vision_config` from `model.id` back into the checkpoint `config.json`.
+
+```bash
+python -c "
+from pathlib import Path
+from pipeline.minimax_m3_config import ensure_minimax_m3_vllm_serve_config
+print(ensure_minimax_m3_vllm_serve_config(
+    Path('artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint'),
+    '/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3',
+))
+"
+```
+
+Then rerun serve. Ton Cao's vLLM branch may still be needed **after** this for quantized q/k/v + indexer un-fuse.
+
 **Tooling:** `pipeline/verify_quant_checkpoint.py` runs all of the above structural
 checks on checkpoint metadata (fast, no model load); `--check-tensors` adds sampled
 finiteness + group-scale-shape checks:

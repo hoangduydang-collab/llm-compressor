@@ -202,6 +202,38 @@ so the checkpoint is saved with **per-expert linearized** experts
 able to load this per-expert compressed layout (see the `toncao/vllm`
 `minimax-m3-compressed-tensors` branch note); validate load before trusting eval.
 
+## MiniMax-M3 vLLM serve fails: missing `preprocessor_config.json`
+
+**Symptom:** vLLM init crashes before weight load:
+
+```
+OSError: Can't load image processor for '.../checkpoint'. ...
+make sure '.../checkpoint' is the correct path to a directory containing a preprocessor_config.json file
+```
+
+**Root cause:** Quantize saved `model` + `tokenizer` only. vLLM still boots the VL multimodal stack (encoder budget / image processor) even for a text-only smoke prompt, and needs image-processor configs that `tokenizer.save_pretrained` does not write.
+
+**Fix (long-term):** `pipeline/quantize.py` now calls `ensure_vl_processor_artifacts()` after save for `AutoModelForImageTextToText` models.
+
+**Fix (existing checkpoints):** `serve_verify.py` auto-copies processor files from `model.id` (original HF path) into the checkpoint before vLLM load. Re-run serve with:
+
+```bash
+MODEL_ID=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3 \
+  bash pipeline/slurm/run_serve_minimax_m3_detached.sh
+```
+
+Or one-shot manual copy:
+
+```bash
+python -c "
+from pathlib import Path
+from pipeline.vl_artifacts import ensure_vl_processor_artifacts
+ckpt = Path('artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint')
+src = '/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3'
+print(ensure_vl_processor_artifacts(ckpt, src, trust_remote_code=True))
+"
+```
+
 **Tooling:** `pipeline/verify_quant_checkpoint.py` runs all of the above structural
 checks on checkpoint metadata (fast, no model load); `--check-tensors` adds sampled
 finiteness + group-scale-shape checks:

@@ -160,6 +160,19 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     if changed:
         print(f"[pipeline] redirected caches: {changed}")
 
+    # VL checkpoints need preprocessor_config.json for vLLM multimodal init even
+    # when running a text-only smoke prompt. Older quant runs may lack these files.
+    if cfg.model.auto_class == "AutoModelForImageTextToText":
+        from pipeline.vl_artifacts import ensure_vl_processor_artifacts
+
+        added = ensure_vl_processor_artifacts(
+            ckpt, cfg.model.id, trust_remote_code=cfg.model.trust_remote_code
+        )
+        if added:
+            print(
+                f"[pipeline] copied VL processor artifacts from {cfg.model.id!r}: {added}"
+            )
+
     from vllm import LLM, SamplingParams
 
     s = cfg.serve

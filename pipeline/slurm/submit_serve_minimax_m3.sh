@@ -12,6 +12,7 @@
 #   CONFIG      default: pipeline/configs/minimax_m3.yaml
 #   OUT_DIR     default: serves/m3-awq-w4afp8
 #   CHECKPOINT  default: artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint
+#   MODEL_ID    default: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3 (processor source)
 #   MAX_MODEL_LEN  default: 8192 (raise to 32768 after smoke passes)
 #   SBATCH_EXTRA  extra sbatch flags, e.g. '--nodelist=gpu-h118'
 #
@@ -40,6 +41,7 @@ export USER="${USER:-hoangduy}"
 CONFIG="${CONFIG:-pipeline/configs/minimax_m3.yaml}"
 OUT_DIR="${OUT_DIR:-serves/m3-awq-w4afp8}"
 CHECKPOINT="${CHECKPOINT:-artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint}"
+MODEL_ID="${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 GPU_UTIL="${GPU_UTIL:-0.9}"
 SBATCH_EXTRA="${SBATCH_EXTRA:-}"
@@ -72,6 +74,7 @@ echo "  user:       $USER (uid=$(id -u))"
 echo "  home:       $HOME"
 echo "  config:     $CONFIG"
 echo "  checkpoint: $CHECKPOINT"
+echo "  processor:  $MODEL_ID"
 echo "  out:        $OUT_DIR"
 echo "  max_model_len: $MAX_MODEL_LEN"
 echo "  gpus:       8 (gres=gpu:8)"
@@ -83,6 +86,7 @@ cp pipeline/slurm/serve_minimax_m3.sbatch "$TMP_JOB"
 inject=$'export CONFIG='"$(printf '%q' "$CONFIG")"$'\n'
 inject+=$'export OUT_DIR='"$(printf '%q' "$OUT_DIR")"$'\n'
 inject+=$'export CHECKPOINT='"$(printf '%q' "$CHECKPOINT")"$'\n'
+inject+=$'export MODEL_ID='"$(printf '%q' "$MODEL_ID")"$'\n'
 inject+=$'export MAX_MODEL_LEN='"$(printf '%q' "$MAX_MODEL_LEN")"$'\n'
 inject+=$'export GPU_UTIL='"$(printf '%q' "$GPU_UTIL")"$'\n'
 

@@ -17,6 +17,7 @@ cd "$REPO_ROOT"
 export CONFIG="${CONFIG:-pipeline/configs/minimax_m3.yaml}"
 export OUT_DIR="${OUT_DIR:-serves/m3-awq-w4afp8}"
 export CHECKPOINT="${CHECKPOINT:-artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint}"
+export MODEL_ID="${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}"
 export MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 export GPU_UTIL="${GPU_UTIL:-0.9}"
 

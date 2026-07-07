@@ -15,6 +15,7 @@ from pipeline.minimax_m3_config import (
     register_minimax_m3_awq_mappings,
 )
 from pipeline.recipe import build_recipe, describe_recipe
+from pipeline.vl_artifacts import ensure_vl_processor_artifacts
 from pipeline import metrics, versioning
 
 
@@ -160,6 +161,15 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
         save_kwargs["quantization_format"] = "pack-quantized"
     model.save_pretrained(str(ckpt), **save_kwargs)
     tokenizer.save_pretrained(str(ckpt))
+
+    # vLLM VL load needs image-processor configs; tokenizer.save_pretrained alone
+    # does not write preprocessor_config.json.
+    if cfg.model.auto_class == "AutoModelForImageTextToText":
+        added = ensure_vl_processor_artifacts(
+            ckpt, cfg.model.id, trust_remote_code=cfg.model.trust_remote_code
+        )
+        if added:
+            print(f"[pipeline] saved VL processor artifacts: {added}")
 
     # Re-add intended ignore patterns that llm-compressor pruned from the saved
     # config (e.g. the MoE router gate), so loaders treat them as unquantized.

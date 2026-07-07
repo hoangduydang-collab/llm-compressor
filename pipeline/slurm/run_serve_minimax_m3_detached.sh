@@ -11,7 +11,7 @@
 #     DeepGEMM JIT; mixing "pip install -e ." into sglang-eval upgrades torch
 #     and breaks FlashInfer. Do NOT activate sglang-eval for M3 vLLM serve.
 #
-# Options: CONFIG, OUT_DIR, CHECKPOINT (same as submit_serve_minimax_m3.sh)
+# Options: CONFIG, OUT_DIR, CHECKPOINT, MODEL_ID (same as submit_serve_minimax_m3.sh)
 #
 # Monitor:
 #   tail -f serves/m3-awq-w4afp8/run.log
@@ -69,16 +69,19 @@ mkdir -p "\$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true
 export CONFIG=$(printf '%q' "$CONFIG")
 export OUT_DIR=$(printf '%q' "$OUT_DIR")
 export CHECKPOINT=$(printf '%q' "$CHECKPOINT")
+export MODEL_ID=$(printf '%q' "${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}")
 export MAX_MODEL_LEN=$(printf '%q' "$MAX_MODEL_LEN")
 export GPU_UTIL=$(printf '%q' "$GPU_UTIL")
 
 echo "host=\$(hostname) serve-verify started=\$(date -Is)"
 echo "checkpoint=\$CHECKPOINT"
+echo "processor_source=\$MODEL_ID"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv 2>/dev/null || true
 
 exec python -m pipeline.run --config "\$CONFIG" --stage serve \\
   --checkpoint "\$CHECKPOINT" \\
+  --set model.id="\$MODEL_ID" \\
   --set serve.tensor_parallel_size=8 \\
   --set serve.enable_expert_parallel=true \\
   --set serve.block_size=128 \\

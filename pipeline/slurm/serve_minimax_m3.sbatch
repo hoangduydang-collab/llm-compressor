@@ -40,12 +40,14 @@ mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
 CONFIG=${CONFIG:-pipeline/configs/minimax_m3.yaml}
 OUT_DIR=${OUT_DIR:-serves/m3-awq-w4afp8}
 CHECKPOINT=${CHECKPOINT:-artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint}
+MODEL_ID=${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 GPU_UTIL=${GPU_UTIL:-0.9}
 
 echo "host=$(hostname) job=${SLURM_JOB_ID:-none}"
 echo "config=$CONFIG"
 echo "checkpoint=$CHECKPOINT"
+echo "processor_source=$MODEL_ID"
 echo "out=$OUT_DIR"
 echo "max_model_len=$MAX_MODEL_LEN gpu_util=$GPU_UTIL"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
@@ -62,6 +64,7 @@ echo "tee log -> $OUT_DIR/run.log and $LOG"
 
 python -m pipeline.run --config "$CONFIG" --stage serve \
   --checkpoint "$CHECKPOINT" \
+  --set model.id="$MODEL_ID" \
   --set serve.tensor_parallel_size=8 \
   --set serve.enable_expert_parallel=true \
   --set serve.block_size=128 \

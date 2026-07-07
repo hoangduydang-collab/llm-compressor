@@ -137,3 +137,17 @@ METHOD=awq EXTRA='--set calibration.num_samples=8 --set calibration.max_seq_leng
   bash pipeline/slurm/run_quantize_minimax_m3_detached.sh
 # Expect: calibration proceeds past layer 5 through all 61 subgraphs -> checkpoint save
 ```
+
+## MiniMax-M3 post-quant `SAMPLE GENERATION` appears to hang (offloaded generation gates the save)
+
+**Symptom:** After `Compression lifecycle finalized`, the run prints `SAMPLE GENERATION` then `dispatch_model | WARNING - Forced to offload modules due to insufficient gpu resources` and sits for many minutes with no further output.
+
+**Root cause:** Two issues. (1) `_sample_generation()` runs `model.generate(max_new_tokens=64)` on the 428B model, which is dispatched with CPU/disk offload — each token streams expert weights off CPU/disk, so 64 tokens take tens of minutes to hours. It is slow, not hung. (2) Worse, the sanity generation ran *before* `model.save_pretrained`, so interrupting it lost the quantized weights.
+
+**Fix applied (2026-07-07):**
+
+1. `pipeline/quantize.py` — reordered `run_quantize()` to `save_pretrained` (+ `_persist_ignore_to_config`, `write_recipe`) **before** the sanity generation, so a slow/interrupted generation can never lose the checkpoint. Generation is now safe to Ctrl-C.
+2. `pipeline/config.py` — added `QuantizationConfig.sample_generation: bool = True`.
+3. `pipeline/configs/minimax_m3.yaml` — `quantization.sample_generation: false` (validate via `serve_verify.py` on vLLM/H100 instead of offloaded HF generate).
+
+**Removal criteria:** None; saving before an optional sanity check is the correct ordering. Re-enable `sample_generation` for small models that fit on GPU.

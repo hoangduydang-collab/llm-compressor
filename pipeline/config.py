@@ -54,6 +54,9 @@ class QuantizationConfig:
     smoothquant_strength: float = 0.8
     awq_duo_scaling: bool = True
     gptq_dampening_frac: float | None = None
+    # Post-quant sanity generation. Disable for very large offloaded models, where
+    # autoregressive generation runs on CPU/disk (~minutes per token) and adds hours.
+    sample_generation: bool = True
 
 
 @dataclass

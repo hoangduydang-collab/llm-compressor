@@ -151,14 +151,9 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     with metrics.capture_quant_metrics(metrics_path):
         oneshot(**oneshot_kwargs)
 
-    # Sanity check: a quantized model should still produce coherent text.
-    print("\n========== SAMPLE GENERATION ==========")
-    try:
-        print(_sample_generation(model, tokenizer, cfg.serve.prompt))
-    except Exception as exc:  # generation issues should not lose the checkpoint
-        print(f"[warn] sample generation failed: {exc}")
-    print("=======================================\n")
-
+    # Save FIRST: for very large models the sanity generation below runs offloaded
+    # (CPU/disk, ~minutes per token), so it must never gate or risk the quantized
+    # weights. A slow or interrupted generation then cannot lose the checkpoint.
     ckpt = versioning.checkpoint_dir(run_dir)
     save_kwargs: dict = {"save_compressed": True}
     if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
@@ -171,6 +166,18 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
 
     versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
+    print(f"[pipeline] saved checkpoint to {ckpt}")
+
+    # Sanity check (after save; safe to interrupt): a quantized model should still
+    # produce coherent text. Skipped for large offloaded models where generation is
+    # impractically slow (see `quantization.sample_generation`).
+    if cfg.quantization.sample_generation:
+        print("\n========== SAMPLE GENERATION ==========")
+        try:
+            print(_sample_generation(model, tokenizer, cfg.serve.prompt))
+        except Exception as exc:  # generation issues should not lose the checkpoint
+            print(f"[warn] sample generation failed: {exc}")
+        print("=======================================\n")
 
     # Summarize the captured internal metrics into metadata.json.
     summary = metrics.summarize_quant_metrics(metrics_path)

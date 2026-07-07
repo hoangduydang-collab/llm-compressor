@@ -42,6 +42,9 @@ quantization:
     - "re:.*mlp[.]shared_experts[.].*"   # shared experts
     - "re:.*self_attn[.]indexer[.].*"     # MSA sparse indexer
     - "re:.*layers[.][0-2][.].*"          # first 3 dense/full-attn layers
+  # 428B model calibrates offloaded (CPU/disk); autoregressive generation is ~minutes
+  # per token. Skip the post-quant sanity gen and validate via serve_verify instead.
+  sample_generation: false
 
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k

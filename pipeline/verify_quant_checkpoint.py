@@ -58,10 +58,11 @@ _EXPECTED_IGNORE_SUBSTR = [
     "layers[.][0-2]",
 ]
 
-_EXPERT_PROJ = re.compile(
-    r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\.(gate_proj|up_proj|down_proj)$"
-)
-_ATTN_PROJ = re.compile(r"\.layers\.(\d+)\.self_attn\.(q_proj|k_proj|v_proj|o_proj)$")
+# Naming-agnostic: capture whatever projection leaf name the checkpoint uses
+# (post-linearize per-expert layouts vary: gate_proj/up_proj/down_proj, gate_up_proj,
+# w1/w2/w3, ...). We assert per-layer consistency rather than hard-coding names.
+_EXPERT_PROJ = re.compile(r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\.([A-Za-z0-9_]+)$")
+_ATTN_PROJ = re.compile(r"\.layers\.(\d+)\.self_attn\.([A-Za-z0-9_]+)$")
 
 
 def _module_prefix(key: str) -> str | None:
@@ -156,6 +157,15 @@ def verify(ckpt: Path, check_tensors: bool) -> int:
     print(f"  quantized (weight_packed) modules: {len(quantized)}")
     print(f"  plain (.weight) modules:           {len(plain)}")
 
+    # Self-diagnosing: show the actual leaf (proj) names of quantized modules so a
+    # naming mismatch is obvious rather than silently reported as "nothing quantized".
+    leaf_counts: dict[str, int] = defaultdict(int)
+    for m in quantized:
+        leaf_counts[m.rsplit(".", 1)[-1]] += 1
+    print("  quantized leaf names:")
+    for leaf, c in sorted(leaf_counts.items(), key=lambda kv: -kv[1]):
+        print(f"    {c:>6}  *.{leaf}")
+
     # every quantized module must also have a scale
     missing_scale = quantized - scale_keys
     if missing_scale:
@@ -176,45 +186,58 @@ def verify(ckpt: Path, check_tensors: bool) -> int:
 
     # ---- 4. routed experts + sparse attention must BE quantized ------------
     print("\n== expected-quantized coverage (sparse layers 3-59) ==")
-    experts_by_layer: dict[int, set[tuple[int, str]]] = defaultdict(set)
+    # experts_by_layer[layer][expert_idx] = {proj names present}
+    experts_by_layer: dict[int, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
     attn_by_layer: dict[int, set[str]] = defaultdict(set)
     for m in quantized:
         em = _EXPERT_PROJ.search(m)
         if em:
-            experts_by_layer[int(em.group(1))].add((int(em.group(2)), em.group(3)))
+            experts_by_layer[int(em.group(1))][int(em.group(2))].add(em.group(3))
+            continue
         am = _ATTN_PROJ.search(m)
         if am:
             attn_by_layer[int(am.group(1))].add(am.group(2))
 
     sparse_layers = sorted(experts_by_layer)
     if not sparse_layers:
-        _fail("no routed-expert projections were quantized at all", errors)
+        _fail("no routed-expert projections detected under any "
+              "'.layers.N.mlp.experts.E.*' key -- inspect the quantized leaf names "
+              "above; the checkpoint may store experts fused (mlp.experts.gate_up_proj)",
+              errors)
         return _summary(errors, warnings)
 
-    n_experts = 1 + max(e for l in experts_by_layer.values() for e, _ in l)
+    # discover the projection-name set and expert count from the data itself
+    proj_names: set[str] = set()
+    n_experts = 0
+    for lyr in sparse_layers:
+        for e, projs in experts_by_layer[lyr].items():
+            proj_names |= projs
+            n_experts = max(n_experts, e + 1)
+    attn_names = set().union(*attn_by_layer.values()) if attn_by_layer else set()
     print(f"  detected sparse layers with experts: {sparse_layers[0]}..{sparse_layers[-1]} "
           f"({len(sparse_layers)} layers)")
     print(f"  detected experts per layer: {n_experts}")
+    print(f"  detected expert projections: {sorted(proj_names)}")
+    print(f"  detected sparse-attn projections: {sorted(attn_names)}")
 
-    # every sparse layer should have all experts x 3 projections + 4 attn projections
     for lyr in sparse_layers:
-        got = experts_by_layer[lyr]
-        exp = {(e, p) for e in range(n_experts) for p in ("gate_proj", "up_proj", "down_proj")}
-        missing = exp - got
-        if missing:
-            _fail(f"layer {lyr}: {len(missing)} expert projections not quantized, "
-                  f"e.g. {sorted(missing)[:3]}", errors)
-        attn = attn_by_layer.get(lyr, set())
-        attn_missing = {"q_proj", "k_proj", "v_proj", "o_proj"} - attn
+        layer_experts = experts_by_layer[lyr]
+        # every expert index present with the full projection set
+        for e in range(n_experts):
+            got = layer_experts.get(e, set())
+            missing = proj_names - got
+            if missing:
+                _fail(f"layer {lyr} expert {e}: missing quantized projections {sorted(missing)}", errors)
+        attn_missing = attn_names - attn_by_layer.get(lyr, set())
         if attn_missing:
             _fail(f"layer {lyr}: attention projections not quantized: {sorted(attn_missing)}", errors)
-    if not any("layer" in e for e in errors):
+    if not any(e.startswith("layer ") for e in errors):
         _ok(f"all {len(sparse_layers)} sparse layers fully quantized "
-            f"({n_experts} experts x 3 proj + 4 attn each)")
+            f"({n_experts} experts x {len(proj_names)} proj + {len(attn_names)} attn each)")
 
-    expected_q = len(sparse_layers) * (n_experts * 3 + 4)
-    print(f"  expected quantized Linears = {len(sparse_layers)} x ({n_experts}*3 + 4) "
-          f"= {expected_q}")
+    expected_q = len(sparse_layers) * (n_experts * len(proj_names) + len(attn_names))
+    print(f"  expected quantized Linears = {len(sparse_layers)} x "
+          f"({n_experts}*{len(proj_names)} + {len(attn_names)}) = {expected_q}")
     print(f"  actual quantized Linears   = {len(quantized)}")
     if len(quantized) != expected_q:
         warnings.append(

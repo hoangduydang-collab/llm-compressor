@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pipeline.config import EvalTask, PipelineConfig
+
+TaskBatchCallback = Callable[[EvalTask, dict], None]
 
 
 def _arg_parts(parts: list[str]) -> str:
@@ -115,8 +119,13 @@ def evaluate_tasks(
     tasks: list[EvalTask],
     *,
     log_samples: bool = False,
+    on_task_complete: TaskBatchCallback | None = None,
 ) -> dict:
-    """Evaluate ``tasks`` with one model load; returns merged ``simple_evaluate`` dict."""
+    """Evaluate ``tasks`` with one model load; returns merged ``simple_evaluate`` dict.
+
+    If ``on_task_complete`` is set, it is called after each task with that task's
+    raw ``simple_evaluate`` batch (for incremental checkpointing).
+    """
     if not tasks:
         raise ValueError("evaluate_tasks requires at least one task")
 
@@ -175,6 +184,8 @@ def evaluate_tasks(
 
             batch = lm_eval.simple_evaluate(**kwargs)
             _merge_eval_results(merged, batch)
+            if on_task_complete is not None:
+                on_task_complete(task, batch)
     finally:
         cleanup = getattr(lm, "clean", None) or getattr(lm, "cleanup", None)
         if callable(cleanup):

@@ -1,14 +1,21 @@
-# Resume GLM-5.2 8k eval after gsm8k/bbh generate_until crash (lm-eval max_tokens bug).
-# Assumes wikitext..winogrande already finished in evals/glm52-w4afp8-phala-8k/.
+# Resume GLM-5.2 8k eval after gsm8k crash (lm-eval max_tokens fixed in 0.4.13.dev0).
+# With per-task checkpointing, re-run the FULL config into the same OUT_DIR;
+# tasks already in aggregate.json are skipped automatically.
 #
-#   git pull   # needs pipeline/_env.py apply_lm_eval_sglang_compat fix
+#   source /mnt/nfs/hoangduy/env.sh
+#   source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
+#   cd /mnt/nfs/hoangduy/projects/llm-compressor && git pull
 #   pkill -9 -f 'pipeline.evalsuite|sglang::' || true
 #   rm -f evals/glm52-w4afp8-phala-8k/eval.pid
+#
+#   CONFIG=pipeline/configs/eval_glm52_w4afp8_sglang_h100_8k.yaml \
+#   OUT_DIR=evals/glm52-w4afp8-phala-8k \
+#     bash pipeline/slurm/run_eval_glm52_sglang_detached.sh
+#
+# Or run only remaining tasks (if you have no aggregate.json yet):
 #   CONFIG=pipeline/configs/eval_glm52_w4afp8_sglang_h100_8k_remainder.yaml \
 #   OUT_DIR=evals/glm52-w4afp8-phala-8k-remainder \
 #     bash pipeline/slurm/run_eval_glm52_sglang_detached.sh
-#
-# Merge aggregate.json from both OUT_DIRs manually when done.
 
 name: eval-glm52-w4afp8-sglang-h100-8k-remainder
 

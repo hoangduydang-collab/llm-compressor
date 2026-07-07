@@ -1,5 +1,12 @@
 # Pipeline runtime deps beyond llm-compressor's own install_requires.
-# Install on the 8xH100 cluster after `pip install -e .` of llm-compressor.
+# Install on the cluster with uv (env.sh sets $UV); do not use bare pip.
+#
+#   source /mnt/nfs/hoangduy/env.sh
+#   "$UV" pip install -e .
+#   "$UV" pip install -r pipeline/requirements.txt
+#
+# sglang-eval venv: install sglang first, then lm-eval from git (see README).
+# PyPI lm-eval<=0.4.12 passes max_tokens to SGLang and breaks gsm8k/bbh.
 vllm>=0.11.0
 lm-eval>=0.4.5
 pyyaml>=6.0.1

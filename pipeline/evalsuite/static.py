@@ -92,6 +92,65 @@ def _write_samples(path: Path, rows: list[dict]) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _numeric_metrics(task_results: dict) -> dict[str, float]:
+    return {
+        k: float(v)
+        for k, v in task_results.items()
+        if isinstance(v, (int, float))
+    }
+
+
+def load_aggregate_checkpoint(path: Path) -> dict[str, dict[str, float]]:
+    """Load per-task metrics from a prior partial run, if present."""
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, dict[str, float]] = {}
+    for task_name, metrics in data.items():
+        if isinstance(metrics, dict):
+            out[task_name] = _numeric_metrics(metrics)
+    return out
+
+
+def pending_eval_tasks(
+    tasks: list[EvalTask], completed: set[str]
+) -> list[EvalTask]:
+    return [t for t in tasks if t.name not in completed]
+
+
+def checkpoint_task_result(
+    *,
+    task: EvalTask,
+    batch: dict,
+    aggregate: dict[str, dict[str, float]],
+    aggregate_path: Path,
+    samples_dir: Path,
+    log_samples: bool,
+) -> list[dict]:
+    """Persist one task's metrics (and optional samples) immediately after eval."""
+    task_results = batch.get("results", {}).get(task.name)
+    if not isinstance(task_results, dict):
+        raise KeyError(f"lm-eval batch missing results for task {task.name!r}")
+
+    aggregate[task.name] = _numeric_metrics(task_results)
+    aggregate_path.parent.mkdir(parents=True, exist_ok=True)
+    aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
+
+    rows: list[dict] = []
+    if log_samples and batch.get("samples"):
+        raw = batch["samples"].get(task.name) or []
+        rows = [_extract_sample_row(s, task) for s in raw]
+        _write_samples(samples_dir / f"{task.name}.jsonl", rows)
+
+    print(
+        f"[evalsuite] checkpoint: {task.name} "
+        f"({len(rows)} samples) -> {aggregate_path}"
+    )
+    return rows
+
+
 def _build_gate_report(
     cfg: PipelineConfig,
     ckpt: Path,
@@ -106,17 +165,19 @@ def _build_gate_report(
     report: dict = {"checkpoint": str(ckpt), "tasks": {}, "passed": True}
     task_by_name = {t.name: t for t in ev.tasks}
 
-    for task_name, metrics in aggregate.items():
-        task = task_by_name[task_name]
+    for task in ev.tasks:
+        metrics = aggregate.get(task.name)
+        if metrics is None:
+            continue
         value, resolved = resolve_task_metric(task, metrics)
-        base_val = baseline.get(task_name, {}).get(task.metric)
-        if base_val is None and task_name in baseline:
-            base_val = baseline[task_name].get(resolved)
+        base_val = baseline.get(task.name, {}).get(task.metric)
+        if base_val is None and task.name in baseline:
+            base_val = baseline[task.name].get(resolved)
             if base_val is None:
-                base_val = baseline[task_name].get(metric_base(task.metric))
+                base_val = baseline[task.name].get(metric_base(task.metric))
         entry = _gate_metric(task, value, base_val, ev)
         entry["resolved_metric"] = resolved
-        report["tasks"][task_name] = entry
+        report["tasks"][task.name] = entry
         if entry["passed"] is False:
             report["passed"] = False
 
@@ -130,7 +191,11 @@ def run_static_eval(
     model_path: str | Path,
     out_dir: str | Path,
 ) -> dict:
-    """Run all static lm-eval tasks; write aggregate + per-sample JSONL.
+    """Run static lm-eval tasks with per-task checkpointing.
+
+    After each task, writes ``aggregate.json`` and ``samples/<task>.jsonl``
+    (when ``log_samples`` is enabled). Re-running the same ``out_dir`` skips
+    tasks already present in ``aggregate.json``.
 
     Returns ``{"gate": eval_report, "aggregate": {...}, "samples_dir": Path}``.
     """
@@ -141,35 +206,65 @@ def run_static_eval(
 
     ev = cfg.eval
     log_samples = ev.log_samples
-    aggregate: dict[str, dict[str, float]] = {}
+    aggregate_path = out_dir / "aggregate.json"
+    aggregate = load_aggregate_checkpoint(aggregate_path)
+    completed = set(aggregate)
+    pending = pending_eval_tasks(ev.tasks, completed)
     all_samples: dict[str, list[dict]] = {}
 
-    results = evaluate_tasks(str(model_path), cfg, ev.tasks, log_samples=log_samples)
-
-    for task in ev.tasks:
-        print(f"[evalsuite] static task: {task.name} (limit={task.limit})")
-        task_results = results["results"][task.name]
-        aggregate[task.name] = {
-            k: float(v) if isinstance(v, (int, float)) else v
-            for k, v in task_results.items()
-            if isinstance(v, (int, float))
-        }
-
-        if log_samples and results.get("samples"):
-            raw = results["samples"].get(task.name) or []
-            rows = [_extract_sample_row(s, task) for s in raw]
-            all_samples[task.name] = rows
-            _write_samples(samples_dir / f"{task.name}.jsonl", rows)
-
-    with (out_dir / "aggregate.json").open("w", encoding="utf-8") as fh:
-        json.dump(aggregate, fh, indent=2)
+    if completed:
+        print(
+            f"[evalsuite] resuming: {len(completed)} task(s) already in "
+            f"{aggregate_path}: {', '.join(sorted(completed))}"
+        )
+    if pending:
+        pending_names = ", ".join(t.name for t in pending)
+        print(f"[evalsuite] pending: {pending_names}")
 
     meta = {
         "model_path": str(model_path),
         "backend": ev.backend,
         "tasks": [t.name for t in ev.tasks],
+        "completed_tasks": sorted(completed),
+        "pending_tasks": [t.name for t in pending],
         "log_samples": log_samples,
+        "checkpoint_after_each_task": True,
     }
+    with (out_dir / "eval_meta.json").open("w", encoding="utf-8") as fh:
+        json.dump(meta, fh, indent=2)
+
+    if pending:
+
+        def _on_task_complete(task: EvalTask, batch: dict) -> None:
+            rows = checkpoint_task_result(
+                task=task,
+                batch=batch,
+                aggregate=aggregate,
+                aggregate_path=aggregate_path,
+                samples_dir=samples_dir,
+                log_samples=log_samples,
+            )
+            all_samples[task.name] = rows
+
+        evaluate_tasks(
+            str(model_path),
+            cfg,
+            pending,
+            log_samples=log_samples,
+            on_task_complete=_on_task_complete,
+        )
+
+    for task in ev.tasks:
+        if task.name not in all_samples and log_samples:
+            sample_path = samples_dir / f"{task.name}.jsonl"
+            if sample_path.is_file():
+                with sample_path.open(encoding="utf-8") as fh:
+                    all_samples[task.name] = [
+                        json.loads(line) for line in fh if line.strip()
+                    ]
+
+    meta["completed_tasks"] = sorted(aggregate)
+    meta["pending_tasks"] = [t.name for t in ev.tasks if t.name not in aggregate]
     with (out_dir / "eval_meta.json").open("w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=2)
 

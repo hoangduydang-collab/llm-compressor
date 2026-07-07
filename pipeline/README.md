@@ -71,11 +71,14 @@ When `eval.log_samples: true` (default), `pipeline.run --stage eval` writes:
 
 ```
 artifacts/<run_slug>/<ts>/evalsuite/
-  aggregate.json           # task-level metrics
-  samples/<task>.jsonl     # per-doc correctness (for flip-rate)
+  aggregate.json           # updated after each task (resume-safe)
+  samples/<task>.jsonl     # written after each task completes
+  eval_meta.json             # completed vs pending tasks
   agentic_samples.jsonl    # if agentic.enabled
-  eval_meta.json
 ```
+
+Re-running eval into the same output directory skips tasks already listed in
+`aggregate.json` (useful after a mid-run crash on gsm8k/bbh).
 
 ### Standalone usage
 
@@ -192,15 +195,18 @@ python -m pipeline.evalsuite.cli run \
   --set serve.sglang_kwargs.disable_shared_experts_fusion=true
 ```
 
-**sglang-eval venv** (do not mix with `pip install -e .` — it upgrades torch and
-breaks FlashInfer):
+**sglang-eval venv** (do not mix with `"$UV" pip install -e .` — it upgrades torch and
+breaks FlashInfer). Use **`$UV`** from `env.sh`; do not use bare `pip`.
 
 ```bash
 source /mnt/nfs/hoangduy/env.sh
 "$UV" venv --python 3.12 /mnt/nfs/hoangduy/venvs/sglang-eval
 source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
 "$UV" pip install "sglang==0.5.13.post1" --prerelease=allow
-"$UV" pip install "lm-eval>=0.4.5" pyyaml
+# PyPI lm-eval<=0.4.12 uses max_tokens with SGLang and breaks generate_until (gsm8k, bbh).
+# Install the upstream fix (PR #3817) via git; pipeline/_env.py also patches SamplingParams.
+"$UV" pip install "lm-eval @ git+https://github.com/EleutherAI/lm-evaluation-harness.git@8a5dec7"
+"$UV" pip install pyyaml
 export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
 ```
 

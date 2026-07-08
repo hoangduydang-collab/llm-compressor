@@ -209,35 +209,52 @@ def patch_vllm_m3_moe_router_for_cudagraph() -> list[str]:
     memory access at specific capture sizes (vLLM #39288 / #39391).
     ``nan_to_num`` is a no-op on valid logits.
 
-    Patches ``FusedMoE.select_experts`` (the shared static routing entry the W4A8
-    **modular** kernel calls via ``fused_topk``). The previous target
+    Patches ``RouterBase._select_experts`` (``fused_moe/router/base_router.py``) —
+    the template method every router subclass funnels through — sanitizing
+    ``router_logits`` before ``_compute_routing``. The previous target
     ``MoERunner._apply_quant_method`` is a **dead path** for M3 W4AFP8 (it uses
-    ``FusedMoEModularKernel``, not ``MoERunner``) — patching it verified but never
-    ran on the router logits feeding the CUTLASS grouped GEMM, so the capture IMA
-    persisted. NOTE: this runtime hook only affects the current process; vLLM
-    ``Worker_TP*`` are spawned fresh and need the persistent site-packages edit
-    (``pipeline/slurm/patch_vllm_m3_serve.py``).
+    ``FusedMoEModularKernel`` / ``router/*``, not ``MoERunner``) — patching it
+    verified but never ran on the router logits feeding the CUTLASS grouped GEMM,
+    so the capture IMA persisted. NOTE: this runtime hook only affects the current
+    process; vLLM ``Worker_TP*`` are spawned fresh and need the persistent
+    site-packages edit (``pipeline/slurm/patch_vllm_m3_serve.py``).
     """
     changes: list[str] = []
     try:
-        from vllm.model_executor.layers.fused_moe.layer import FusedMoE
+        from vllm.model_executor.layers.fused_moe.router import base_router
     except ImportError:
         return changes
 
-    if getattr(FusedMoE, _CG_MOE_PATCH_FLAG, False):
+    # Find the class that defines the template method `_select_experts` (its name
+    # may differ across vLLM builds; discover it rather than hardcode).
+    import inspect
+
+    router_cls = None
+    for _, obj in inspect.getmembers(base_router, inspect.isclass):
+        if "_select_experts" in obj.__dict__:
+            router_cls = obj
+            break
+    if router_cls is None:
         return changes
 
-    original = FusedMoE.select_experts.__func__  # unwrap staticmethod
+    if getattr(router_cls, _CG_MOE_PATCH_FLAG, False):
+        return changes
 
-    def select_experts(hidden_states, router_logits, *args, **kwargs):
+    original = router_cls._select_experts
+
+    def _select_experts(
+        self, hidden_states, router_logits, topk_indices_dtype=None, **kwargs
+    ):
         import torch
 
         router_logits = torch.nan_to_num(
             router_logits, nan=0.0, posinf=0.0, neginf=0.0
         )
-        return original(hidden_states, router_logits, *args, **kwargs)
+        return original(
+            self, hidden_states, router_logits, topk_indices_dtype, **kwargs
+        )
 
-    FusedMoE.select_experts = staticmethod(select_experts)
-    setattr(FusedMoE, _CG_MOE_PATCH_FLAG, True)
-    changes.append("FusedMoE.select_experts: nan_to_num router_logits")
+    router_cls._select_experts = _select_experts
+    setattr(router_cls, _CG_MOE_PATCH_FLAG, True)
+    changes.append(f"{router_cls.__name__}._select_experts: nan_to_num router_logits")
     return changes

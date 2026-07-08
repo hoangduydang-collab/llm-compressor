@@ -45,11 +45,11 @@ ranks (shutdown cascade, **not** root cause).
 | E | Runtime monkeypatches in ``serve_verify`` / ``vllm_m3_patches.py`` | In-process hook before ``LLM()`` | **Ineffective for capture** — ``Worker_TP*`` are **spawned subprocesses**; they load site-packages only. Documented; launcher now auto-runs persistent patch script. |
 | F | ``fuse_allreduce_rms=false`` (compile config) | Disable fused AR via inductor | **No effect** — M3 calls fused path directly in ``model.py`` forward. |
 | G | ``SERVE_PERF=1`` / re-enable FlashInfer fused AR | Official recipe perf path | Not tested for graphs; eager serve works with FlashInfer trtllm (slow init). |
-| **H** | **Repoint router ``nan_to_num`` from ``MoERunner._apply_quant_method`` → ``FusedMoE.select_experts`` (new patch 4)** | **Old patch 4 was dead code**: the migrate commit [#42680](https://github.com/vllm-project/vllm/commit/4438b6e7dc480dd59e5edabfcc939c15321a129a) moved W4A8 to the **modular** ``FusedMoEModularKernel``, whose routing entry is ``FusedMoE.select_experts`` → ``fused_topk`` — it **never calls** ``MoERunner``. So the NaN clamp verified as applied but never ran on the logits feeding the CUTLASS grouped GEMM, which is exactly why 16/51 never moved. | **To verify on cluster** (patch relocated 2026-07-08). |
+| **H** | **Repoint router ``nan_to_num`` from ``MoERunner._apply_quant_method`` → ``RouterBase._select_experts`` (new patch 4)** | **Old patch 4 was dead code**: the migrate commit [#42680](https://github.com/vllm-project/vllm/commit/4438b6e7dc480dd59e5edabfcc939c15321a129a) moved W4A8 to the **modular** ``FusedMoEModularKernel``; in vLLM 0.24.0 routing lives in ``fused_moe/router/`` and funnels through ``RouterBase._select_experts`` → ``_compute_routing`` — it **never calls** ``MoERunner``. So the NaN clamp verified as applied but never ran on the logits feeding the CUTLASS grouped GEMM, which is exactly why 16/51 never moved. | **To verify on cluster** (patch relocated 2026-07-08). |
 
 **Root-cause diagnosis (2026-07-08): the two prior "cudagraph" patches were both misdirected.**
 
-1. **Patch 4 was on a dead path** (attempt H above). Fixed by moving the ``nan_to_num`` to ``FusedMoE.select_experts`` — the shared static routing entry vLLM maintainers themselves pointed to for the #39288 IMA class, and the one the W4A8 modular kernel actually uses.
+1. **Patch 4 was on a dead path** (attempt H above). Fixed by moving the ``nan_to_num`` to ``RouterBase._select_experts`` (``fused_moe/router/base_router.py``) — the template method every router funnels through, and the routing entry vLLM maintainers pointed to for the #39288 IMA class. (vLLM 0.24.0 refactored routing out of ``layer.py`` into the ``router/`` package.)
 2. **Patch 3 (fused-AR NCCL fallback) targets a cross-node-only failure.** [#46253](https://github.com/vllm-project/vllm/issues/46253) states single-node NVLink fused AR **is** graph-capturable; h118 is single-node. That patch not moving 16/51 confirms the fused AR is **not** the faulting kernel here. Kept (harmless, needed for future multi-node) but not the h118 fix.
 
 **Secondary suspect (separate mechanism): flashinfer finalize bounds check.**
@@ -87,7 +87,7 @@ Sets ``CUDA_LAUNCH_BLOCKING=1 TORCH_USE_CUDA_DSA=1`` so the crash names the **re
   prior router patch (patch 4) sanitized ``MoERunner._apply_quant_method``, which the
   W4A8 **modular** kernel never calls (dead path); patch 3 (fused AR) targets a
   cross-node-only failure absent on single-node h118. **Fix applied in repo:** router
-  ``nan_to_num`` relocated to ``FusedMoE.select_experts``; flashinfer-version guard
+  ``nan_to_num`` relocated to ``RouterBase._select_experts``; flashinfer-version guard
   (#42906) + ``CUDA_LAUNCH_BLOCKING`` diagnostic added. **Pending cluster re-run** on h118.
 - **Serve without graphs:** **OK** — ``ENFORCE_EAGER=1``.
 - **Production path:** re-run ``debug_cudagraph_ima.sh`` to confirm the faulting kernel,
@@ -128,11 +128,12 @@ Often fails at a **fixed graph index** (e.g. 16/51) — batch-size-dependent.
 1. **Fused AR:** ``fused_allreduce_gemma_rms_norm`` NCCL fallback when
    ``enforce_eager=false`` (skip FlashInfer in ``_can_use_flashinfer``).
 
-2. **MoE router:** ``torch.nan_to_num(router_logits)`` at the top of
-   ``FusedMoE.select_experts`` (``fused_moe/layer.py``) — the shared routing entry
-   the W4A8 **modular** kernel calls (same mechanism as #39391). **Corrected
-   2026-07-08** from the earlier dead target ``MoERunner._apply_quant_method``
-   (the modular W4A8 path never calls ``MoERunner``; see chronicle attempt H).
+2. **MoE router:** ``torch.nan_to_num(router_logits)`` in
+   ``RouterBase._select_experts`` (``fused_moe/router/base_router.py``, before
+   ``_compute_routing``) — the routing entry every subclass funnels through (same
+   mechanism as #39391). **Corrected 2026-07-08** from the earlier dead target
+   ``MoERunner._apply_quant_method`` (the modular W4A8 path never calls
+   ``MoERunner``; see chronicle attempt H).
 
 - **Persistent:** ``pipeline/slurm/patch_vllm_m3_serve.py`` (4 edits); **required**
   for ``Worker_TP*`` subprocesses (spawned fresh — runtime monkeypatches in
@@ -148,9 +149,9 @@ Often fails at a **fixed graph index** (e.g. 16/51) — batch-size-dependent.
 python pipeline/slurm/patch_vllm_m3_serve.py --check   # all 4 patches + flashinfer version
 python pipeline/slurm/patch_vllm_m3_serve.py            # apply if needed
 grep -rl 'llmc M3' "$(python -c 'import vllm, pathlib; print(pathlib.Path(vllm.__file__).parent)')"
-# confirm the router patch is now in layer.py (NOT moe_runner.py):
-grep -n 'nan_to_num router_logits in select_experts' \
-  "$(python -c 'import vllm, pathlib; print(pathlib.Path(vllm.__file__).parent)')/model_executor/layers/fused_moe/layer.py"
+# confirm the router patch is now in router/base_router.py (NOT moe_runner.py):
+grep -n 'nan_to_num router_logits in _select_experts' \
+  "$(python -c 'import vllm, pathlib; print(pathlib.Path(vllm.__file__).parent)')/model_executor/layers/fused_moe/router/base_router.py"
 
 # 1) get the REAL faulting kernel (decisive):
 bash pipeline/slurm/debug_cudagraph_ima.sh 2>&1 | tee /mnt/nfs/hoangduy/logs/m3-cudagraph-debug.log
@@ -163,7 +164,8 @@ ENFORCE_EAGER=0 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
 old patch 4 sanitized ``MoERunner._apply_quant_method``, a **dead path** for the
 W4A8 modular kernel; patch 3 (fused AR) addresses a cross-node-only failure not
 present on single-node h118. **Fix applied:** router ``nan_to_num`` relocated to
-``FusedMoE.select_experts`` (the live routing entry), plus a flashinfer-version
+``RouterBase._select_experts`` (``fused_moe/router/base_router.py``, the live routing
+entry in vLLM 0.24.0), plus a flashinfer-version
 guard (#42906) and a ``CUDA_LAUNCH_BLOCKING`` diagnostic to confirm the faulting
 kernel. **Awaiting cluster verification** (needs h118). Patches 1–2 +
 ``ENFORCE_EAGER=1`` remain the known-good serve path meanwhile.

@@ -13,6 +13,16 @@ def _arg_parts(parts: list[str]) -> str:
     return ",".join(parts) + ","
 
 
+def _thinking_model_arg_parts(ev) -> list[str]:
+    """Optional lm-eval model_args for reasoning / thinking chat models."""
+    parts: list[str] = []
+    if ev.enable_thinking is not None:
+        parts.append(f"enable_thinking={ev.enable_thinking}")
+    if ev.think_end_token:
+        parts.append(f"think_end_token={ev.think_end_token}")
+    return parts
+
+
 def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
     s = cfg.serve
     return _arg_parts(
@@ -25,6 +35,7 @@ def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
             f"enforce_eager={s.enforce_eager}",
             f"disable_custom_all_reduce={s.disable_custom_all_reduce}",
             "dtype=auto",
+            *_thinking_model_arg_parts(cfg.eval),
         ]
     )
 
@@ -47,6 +58,7 @@ def sglang_model_args(cfg: PipelineConfig, model_path: str) -> str:
         parts.append(f"kv_cache_dtype={kv}")
     for key, value in s.sglang_kwargs.items():
         parts.append(f"{key}={value}")
+    parts.extend(_thinking_model_arg_parts(cfg.eval))
     return _arg_parts(parts)
 
 
@@ -168,6 +180,14 @@ def evaluate_tasks(
         f"[lmeval] backend={ev.backend} evaluating tasks ({names}) "
         "with a single model load"
     )
+    if ev.apply_chat_template or ev.fewshot_as_multiturn or ev.enable_thinking:
+        print(
+            f"[lmeval] harness: apply_chat_template={ev.apply_chat_template} "
+            f"fewshot_as_multiturn={ev.fewshot_as_multiturn} "
+            f"enable_thinking={ev.enable_thinking} "
+            f"think_end_token={ev.think_end_token!r} "
+            f"gen_kwargs={ev.gen_kwargs}"
+        )
 
     lm = _load_lm_model(cfg, model_path)
     merged: dict = {}
@@ -184,6 +204,10 @@ def evaluate_tasks(
                 "num_fewshot": task.num_fewshot,
                 "apply_chat_template": ev.apply_chat_template,
             }
+            if ev.fewshot_as_multiturn:
+                kwargs["fewshot_as_multiturn"] = True
+            if ev.gen_kwargs:
+                kwargs["gen_kwargs"] = ev.gen_kwargs
             if task.limit is not None:
                 kwargs["limit"] = task.limit
             if log_samples:

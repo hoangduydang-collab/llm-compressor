@@ -144,6 +144,17 @@ def test_sglang_model_args_maps_serve_knobs():
     assert "disable_shared_experts_fusion=True" in args
 
 
+def test_sglang_model_args_thinking_harness():
+    cfg = PipelineConfig()
+    cfg.model.trust_remote_code = True
+    cfg.eval.backend = "sglang"
+    cfg.eval.enable_thinking = True
+    cfg.eval.think_end_token = "</think>"
+    args = sglang_model_args(cfg, "/models/glm")
+    assert "enable_thinking=True" in args
+    assert 'think_end_token=</think>' in args
+
+
 def test_model_args_dispatches_on_backend():
     cfg = PipelineConfig()
     cfg.eval.backend = "sglang"

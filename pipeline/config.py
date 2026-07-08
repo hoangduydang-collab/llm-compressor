@@ -136,6 +136,14 @@ class EvalConfig:
     max_ppl_increase: float = 0.10
     backend: str = "vllm"  # lm-eval backend: vllm | sglang
     apply_chat_template: bool = False
+    # Format few-shot demos as multi-turn chat (recommended with apply_chat_template
+    # on instruct / reasoning models; Open LLM Leaderboard style).
+    fewshot_as_multiturn: bool = False
+    # Reasoning-model knobs (generation tasks only; passed via lm-eval model_args).
+    enable_thinking: bool | None = None
+    think_end_token: str | None = None
+    # Override task generation_kwargs (e.g. ``max_gen_toks`` for long CoT).
+    gen_kwargs: dict[str, Any] | None = None
     # lm-eval per-forward batch (SGLang). Use an int (e.g. 8) to avoid huge
     # auto-detected chunks on MMLU; "auto" probes and can stall on first batch.
     lm_eval_batch_size: str | int = "auto"

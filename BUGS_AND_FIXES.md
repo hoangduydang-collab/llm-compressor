@@ -329,6 +329,47 @@ grep -E 'backbone dtype|linearize_moe start' /mnt/nfs/hoangduy/logs/quantize-m3-
 
 **Related upstream issues:** [llm-compressor #2669](https://github.com/vllm-project/llm-compressor/issues/2669) (progressive MoE replacement OOM on other models; different code path but similar symptom).
 
+## MiniMax-M3 AWQ full calibration OOM during `pin_memory` (VMA exhaustion)
+
+**Symptom:** Full-calibration AWQ (`pipeline/configs/minimax_m3_full_calib.yaml`, 512 samples × 2048 seq) dies during sequential calibration, typically layer 5/61 around sample 451/512, with:
+
+`torch.AcceleratorError: CUDA error: out of memory` at `IntermediatesCache._offload_value` → `offloaded.pin_memory()` (`cache.py:331`), inside `AWQModifier.cache_parent_kwargs_hook` while caching MoE expert `down_proj` parent inputs. Host RSS ~1960 GiB with hundreds of GiB `mem_avail` — not a GPU VRAM or ordinary RAM shortage.
+
+**Root cause:** Upstream prefetch PR [#2392](https://github.com/vllm-project/llm-compressor/pull/2392) added unconditional `pin_memory()` in `IntermediatesCache._offload_value()` when offloading to CPU. Each `pin_memory()` → `cudaMallocHost()` → `mmap()` consumes one process VMA. AWQ caches every parent-module input per calibration sample; with `moe_calibrate_all_experts: true` on MiniMax-M3 (57 routed experts × many mappings × 512 samples), VMA count exceeds the kernel per-process `vm.max_map_count` default (65536). `mmap` returns ENOMEM; the CUDA driver surfaces it as `CUDA_ERROR_OUT_OF_MEMORY`. Confirmed upstream in [llm-compressor #2790](https://github.com/vllm-project/llm-compressor/issues/2790).
+
+**Long-term fix (preferred):** Upgrade to an llm-compressor release containing [PR #2813](https://github.com/vllm-project/llm-compressor/pull/2813) once merged. Upstream's final form removes offload-path pinning and may re-pin per-parent only immediately before AWQ smoothing (grid-search reuse).
+
+**Fix applied (2026-07-08):** Remove the `pin_memory()` block from `_offload_value()` in `src/llmcompressor/pipelines/cache.py` (equivalent to PR #2813 HEAD, "drop pinning entirely"). `_onload_value` / `iter_prefetch` fall back to blocking H2D copies (`is_pinned()` is false). Trade-off: <5% calibration throughput on small models (upstream benchmark); **no numerical impact** on AWQ scales or quantized weights.
+
+**Removal criteria:** Drop this local patch once the quant venv upgrades to an llm-compressor release that includes #2813 (or equivalent upstream fix).
+
+**Optional non-code mitigation (node admin):** `sudo sysctl -w vm.max_map_count=1048576` raises the VMA ceiling; masks the bug, does not persist across reboot without `/etc/sysctl.d/`. Not a substitute for the code fix.
+
+**Verify on cluster:**
+
+```bash
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+
+# Confirm patch is present (no pin_memory in offload path):
+grep -n pin_memory src/llmcompressor/pipelines/cache.py
+# Expect: only iter_prefetch / _onload_value comments or is_pinned checks — NOT pin_memory() in _offload_value
+
+# Unit tests (fast):
+python -m pytest tests/llmcompressor/pipelines/test_cache.py -q
+
+# Re-run full calibration (detached):
+CONFIG=pipeline/configs/minimax_m3_full_calib.yaml METHOD=awq \
+  bash pipeline/slurm/run_quantize_minimax_m3_full_calib.sh
+
+# Expect: passes layer 5/61 calibration; no pin_memory OOM in log
+grep -E 'pin_memory|CUDA error: out of memory|\(5/61\): Calibrating' \
+  /mnt/nfs/hoangduy/logs/quantize-m3-full-*.log
+```
+
+**Related upstream issues:** [#2790](https://github.com/vllm-project/llm-compressor/issues/2790), [#2813](https://github.com/vllm-project/llm-compressor/pull/2813).
+
 ## MiniMax-M3 sequential calibration fails on `image_token_id`
 
 **Symptom:** After `linearize_moe` completes, `SequentialPipeline` FX tracing fails with:

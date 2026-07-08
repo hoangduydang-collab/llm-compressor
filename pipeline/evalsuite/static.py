@@ -10,7 +10,7 @@ from pipeline.eval_gate import _gate_metric
 from pipeline.lmeval_runner import evaluate_tasks
 from pipeline.metrics_lmeval import (
     metric_base,
-    require_task_results,
+    require_task_results_or_aggregate,
     resolve_task_metric,
 )
 
@@ -161,7 +161,7 @@ def checkpoint_task_result(
     log_samples: bool,
 ) -> list[dict]:
     """Persist one task's metrics (and optional samples) immediately after eval."""
-    task_results = require_task_results(batch, task.name)
+    task_results = require_task_results_or_aggregate(batch, task)
     aggregate[task.name] = _numeric_metrics(task_results)
     aggregate_path.parent.mkdir(parents=True, exist_ok=True)
     aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")

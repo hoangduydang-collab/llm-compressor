@@ -1,12 +1,21 @@
-# GLM-5.2-W4AFP8 — generation tasks with lm-eval standard instruct harness.
+# GLM-5.2-W4AFP8 — gsm8k CoT capability run (thinking instruct harness).
 #
-# Use this to re-run gsm8k/bbh after the original 8k static suite under-reported
-# scores on thinking models (missing fewshot_as_multiturn + think_end_token strip).
+# Re-run gsm8k after the original 8k static suite under-reported scores on
+# thinking models (missing fewshot_as_multiturn + think_end_token strip).
 #
-# Harness (lm-eval / Open LLM Leaderboard style for instruct models):
+# This is NOT a leaderboard-identical gsm8k config: max_gen_toks is raised to
+# 4096 so GLM-5.2 can finish CoT before writing #### <answer>. Comparable to
+# third-party CoT gsm8k reports that use chat template + thinking strip.
+#
+# For HF Open LLM Leaderboard v2 BBH, use eval_glm52_w4afp8_leaderboard_bbh.yaml
+# (leaderboard_bbh, multichoice acc_norm — incompatible with enable_thinking).
+#
+# Harness:
 #   - apply_chat_template + fewshot_as_multiturn
 #   - enable_thinking + think_end_token (GLM-5.2 </think>)
-#   - greedy generation (task default) with higher max_gen_toks for CoT
+#   - greedy generation with max_gen_toks=4096 for long CoT
+#
+# Requires lm-eval >= c1c4bea in sglang-eval venv (see pipeline/README.md).
 #
 # Run (cluster):
 #   source /mnt/nfs/hoangduy/env.sh
@@ -14,15 +23,15 @@
 #   cd /mnt/nfs/hoangduy/projects/llm-compressor && git pull
 #
 #   CONFIG=pipeline/configs/eval_glm52_w4afp8_sglang_gen_standard.yaml \
-#   OUT_DIR=evals/glm52-w4afp8-phala-8k-gen-standard \
+#   OUT_DIR=evals/glm52-w4afp8-gsm8k-cot \
 #     bash pipeline/slurm/run_eval_glm52_sglang_detached.sh
 #
 # Compare to prior run:
 #   python -m pipeline.evalsuite.cli compare \
-#     --a evals/glm52-w4afp8-phala-8k --b evals/glm52-w4afp8-phala-8k-gen-standard \
-#     --out evals/compare-8k-vs-gen-standard \
+#     --a evals/glm52-w4afp8-phala-8k --b evals/glm52-w4afp8-gsm8k-cot \
+#     --out evals/compare-8k-vs-gsm8k-cot \
 #     --config pipeline/configs/eval_glm52_w4afp8_sglang_gen_standard.yaml \
-#     --label-a harness-old --label-b harness-standard
+#     --label-a harness-old --label-b gsm8k-cot
 
 name: eval-glm52-w4afp8-sglang-gen-standard
 
@@ -32,9 +41,7 @@ model:
 
 serve:
   tensor_parallel_size: 8
-  # 8k is enough for gsm8k/bbh; matches original static suite context cap.
   max_model_len: 8192
-  # Phala-like mem fraction (H200 card uses 0.85; H100 8k suite used 0.72).
   gpu_memory_utilization: 0.85
   kv_cache_dtype: fp8_e4m3
   sglang_compat_fallbacks: true
@@ -53,7 +60,6 @@ eval:
   apply_chat_template: true
   fewshot_as_multiturn: true
   enable_thinking: true
-  # GLM-5.2 chat template (zai-org/GLM-5.2 chat_template.jinja).
   think_end_token: "</think>"
   gen_kwargs:
     max_gen_toks: 4096
@@ -62,10 +68,6 @@ eval:
     - name: gsm8k
       metric: exact_match,strict-match
       num_fewshot: 5
-      limit: null
-    - name: bbh
-      metric: exact_match,get-answer
-      num_fewshot: 3
       limit: null
 
 agentic:

@@ -40,6 +40,60 @@ def require_task_results(batch: dict, task_name: str) -> dict:
     return task_results
 
 
+def aggregate_group_metric(
+    batch: dict, task_name: str, metric: str
+) -> dict | None:
+    """Macro-average ``metric`` across lm-eval group subtasks.
+
+    Some leaderboard groups (e.g. ``leaderboard_bbh``) report ``N/A`` at the
+    group level; only per-subtask scores exist under ``results``.
+    """
+    results = batch.get("results") or {}
+    subtasks = (batch.get("group_subtasks") or {}).get(task_name)
+    if not subtasks:
+        prefix = f"{task_name}_"
+        subtasks = sorted(k for k in results if k.startswith(prefix))
+    if not subtasks:
+        return None
+
+    values: list[float] = []
+    resolved_key: str | None = None
+    for subtask in subtasks:
+        sub_results = results.get(subtask)
+        if not isinstance(sub_results, dict):
+            continue
+        try:
+            val, key = resolve_task_metric(
+                EvalTask(name=subtask, metric=metric), sub_results
+            )
+        except KeyError:
+            continue
+        values.append(val)
+        resolved_key = key
+
+    if not values:
+        return None
+
+    return {resolved_key or metric: sum(values) / len(values)}
+
+
+def require_task_results_or_aggregate(batch: dict, task: EvalTask) -> dict:
+    """Resolve metrics from group aggregate, subtask macro-average, or raise."""
+    direct = task_results_from_batch(batch, task.name)
+    if isinstance(direct, dict):
+        try:
+            resolve_task_metric(task, direct)
+            return direct
+        except KeyError:
+            pass
+
+    aggregated = aggregate_group_metric(batch, task.name, task.metric)
+    if aggregated is not None:
+        return aggregated
+
+    return require_task_results(batch, task.name)
+
+
 def resolve_task_metric(task: EvalTask, task_results: dict) -> tuple[float, str]:
     """Return ``(value, resolved_metric_key)`` from lm-eval task results."""
     base = metric_base(task.metric)

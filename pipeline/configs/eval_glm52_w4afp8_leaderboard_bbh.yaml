@@ -1,0 +1,63 @@
+# GLM-5.2-W4AFP8 — Open LLM Leaderboard v2 BBH (leaderboard_bbh).
+#
+# Matches the HF Open LLM Leaderboard v2 BBH task: 3-shot multichoice,
+# apply_chat_template + fewshot_as_multiturn, metric acc_norm.
+#
+# Do NOT set enable_thinking here — leaderboard_bbh is loglikelihood /
+# multiple_choice; lm-eval raises if enable_thinking is used on such tasks.
+#
+# aggregate.json reports the macro-average of per-subtask acc_norm,none.
+# The exact leaderboard display score additionally applies per-subtask
+# random-baseline normalization (see HF leaderboard normalization docs).
+#
+# Run (cluster):
+#   source /mnt/nfs/hoangduy/env.sh
+#   source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
+#   cd /mnt/nfs/hoangduy/projects/llm-compressor && git pull
+#
+#   CONFIG=pipeline/configs/eval_glm52_w4afp8_leaderboard_bbh.yaml \
+#   OUT_DIR=evals/glm52-w4afp8-leaderboard-bbh \
+#     bash pipeline/slurm/run_eval_glm52_sglang_detached.sh
+
+name: eval-glm52-w4afp8-leaderboard-bbh
+
+model:
+  id: /mnt/nfs/hoangduy/hf_assets/PhalaCloud/GLM-5.2-W4AFP8
+  trust_remote_code: true
+
+serve:
+  tensor_parallel_size: 8
+  max_model_len: 8192
+  gpu_memory_utilization: 0.85
+  kv_cache_dtype: fp8_e4m3
+  sglang_compat_fallbacks: true
+  sglang_kwargs:
+    quantization: w4afp8
+    disable_shared_experts_fusion: true
+    max_total_tokens: 32768
+    chunked_prefill_size: 512
+    max_running_requests: 4
+
+eval:
+  enabled: true
+  log_samples: true
+  backend: sglang
+  lm_eval_batch_size: auto
+  apply_chat_template: true
+  fewshot_as_multiturn: true
+  enable_thinking: null
+  think_end_token: null
+  gen_kwargs: null
+  baseline: null
+  tasks:
+    - name: leaderboard_bbh
+      metric: acc_norm,none
+      num_fewshot: 3
+      limit: null
+
+agentic:
+  enabled: false
+
+quantization:
+  method: gptq
+  scheme: W4AFP8

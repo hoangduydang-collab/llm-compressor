@@ -4,7 +4,9 @@ import pytest
 
 from pipeline.config import EvalTask
 from pipeline.metrics_lmeval import (
+    aggregate_group_metric,
     require_task_results,
+    require_task_results_or_aggregate,
     resolve_task_metric,
     task_results_from_batch,
 )
@@ -47,3 +49,42 @@ def test_require_task_results_raises_when_missing():
     batch = {"results": {"mmlu_anatomy": {"acc,none": 0.6}}, "groups": {}}
     with pytest.raises(KeyError):
         require_task_results(batch, "mmlu")
+
+
+def test_aggregate_group_metric_macro_average():
+    batch = {
+        "results": {
+            "leaderboard_bbh_boolean_expressions": {"acc_norm,none": 0.8},
+            "leaderboard_bbh_causal_judgement": {"acc_norm,none": 0.6},
+        },
+        "group_subtasks": {
+            "leaderboard_bbh": [
+                "leaderboard_bbh_boolean_expressions",
+                "leaderboard_bbh_causal_judgement",
+            ]
+        },
+    }
+    agg = aggregate_group_metric(batch, "leaderboard_bbh", "acc_norm,none")
+    assert agg == {"acc_norm,none": pytest.approx(0.7)}
+
+
+def test_require_task_results_or_aggregate_leaderboard_bbh_shape():
+    """Group row N/A; only per-subtask acc_norm — macro-average is used."""
+    batch = {
+        "results": {
+            "leaderboard_bbh_boolean_expressions": {"acc_norm,none": 0.8},
+            "leaderboard_bbh_causal_judgement": {"acc_norm,none": 0.6},
+        },
+        "groups": {"leaderboard_bbh": "N/A"},
+        "group_subtasks": {
+            "leaderboard_bbh": [
+                "leaderboard_bbh_boolean_expressions",
+                "leaderboard_bbh_causal_judgement",
+            ]
+        },
+    }
+    task = EvalTask(name="leaderboard_bbh", metric="acc_norm,none", num_fewshot=3)
+    metrics = require_task_results_or_aggregate(batch, task)
+    value, key = resolve_task_metric(task, metrics)
+    assert key == "acc_norm,none"
+    assert value == pytest.approx(0.7)

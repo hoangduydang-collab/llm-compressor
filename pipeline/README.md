@@ -203,9 +203,10 @@ source /mnt/nfs/hoangduy/env.sh
 "$UV" venv --python 3.12 /mnt/nfs/hoangduy/venvs/sglang-eval
 source /mnt/nfs/hoangduy/venvs/sglang-eval/bin/activate
 "$UV" pip install "sglang==0.5.13.post1" --prerelease=allow
-# PyPI lm-eval<=0.4.12 uses max_tokens with SGLang and breaks generate_until (gsm8k, bbh).
-# Install the upstream fix (PR #3817) via git; pipeline/_env.py also patches SamplingParams.
-"$UV" pip install "lm-eval @ git+https://github.com/EleutherAI/lm-evaluation-harness.git@8a5dec7"
+# PyPI lm-eval<=0.4.12 uses max_tokens with SGLang and breaks generate_until (gsm8k).
+# sglang-eval needs git lm-eval >= c1c4bea (PR #3675: enable_thinking/think_end_token
+# on sglang; PR #3817 max_tokens fix is included). pipeline/_env.py also patches SamplingParams.
+"$UV" pip install "lm-eval @ git+https://github.com/EleutherAI/lm-evaluation-harness.git@c1c4bea"
 "$UV" pip install pyyaml
 export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
 ```

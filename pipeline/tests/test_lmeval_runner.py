@@ -1,8 +1,9 @@
 """Unit tests for per-task lm-eval kwargs (no GPU)."""
 
 import os
+from pathlib import Path
 
-from pipeline.config import EvalTask, PipelineConfig, ServeConfig
+from pipeline.config import EvalTask, PipelineConfig, ServeConfig, load_config
 from pipeline._env import apply_lm_eval_sglang_compat, apply_sglang_compat_env
 from pipeline.lmeval_runner import (
     model_args,
@@ -153,6 +154,35 @@ def test_sglang_model_args_thinking_harness():
     args = sglang_model_args(cfg, "/models/glm")
     assert "enable_thinking=True" in args
     assert 'think_end_token=</think>' in args
+
+
+def test_sglang_model_args_no_thinking_when_unset():
+    cfg = PipelineConfig()
+    cfg.model.trust_remote_code = True
+    cfg.eval.backend = "sglang"
+    cfg.eval.enable_thinking = None
+    cfg.eval.think_end_token = None
+    args = sglang_model_args(cfg, "/models/glm")
+    assert "enable_thinking" not in args
+    assert "think_end_token" not in args
+
+
+def test_leaderboard_bbh_config_loads_without_thinking():
+    cfg_path = (
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "eval_glm52_w4afp8_leaderboard_bbh.yaml"
+    )
+    cfg = load_config(cfg_path)
+    assert len(cfg.eval.tasks) == 1
+    assert cfg.eval.tasks[0].name == "leaderboard_bbh"
+    assert cfg.eval.tasks[0].metric == "acc_norm,none"
+    assert cfg.eval.enable_thinking is None
+    assert cfg.eval.think_end_token is None
+    assert cfg.eval.fewshot_as_multiturn is True
+    args = sglang_model_args(cfg, "/models/glm")
+    assert "enable_thinking" not in args
+    assert "think_end_token" not in args
 
 
 def test_model_args_dispatches_on_backend():

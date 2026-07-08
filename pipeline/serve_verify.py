@@ -139,6 +139,11 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
+        '  0) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not '
+        'support MoEActivation.SWIGLUOAI_UNINTERLEAVE"). No vLLM build wires this '
+        "up; serve_verify patches it in-process via pipeline/vllm_m3_patches.py."
+    )
+    print(
         '  1) text_config.hidden_act is "silu" but vLLM requires "swigluoai" '
         "(transformers normalizes on load; serve_verify auto-restores from model.id)"
     )
@@ -222,6 +227,21 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
             print(
                 f"[pipeline] copied VL processor artifacts from {cfg.model.id!r}: {added}"
             )
+
+        # W4A8 MoE + SwiGLU-OAI (uninterleaved) is not wired up in stock/NVIDIA/
+        # toncao vLLM builds. Patch the in-process vLLM before LLM() so the CUTLASS
+        # W4A8 MoE kernel accepts M3's SWIGLUOAI_UNINTERLEAVE activation. No-op if
+        # the checkpoint is not a W4A8 MoE scheme or the build lacks W4A8 MoE.
+        if _is_w4a8_moe_scheme(_read_quant_config(ckpt)):
+            from pipeline.vllm_m3_patches import (
+                patch_vllm_w4a8_swigluoai_uninterleave,
+                read_swiglu_params,
+            )
+
+            limit, alpha, beta = read_swiglu_params(ckpt, cfg.model.id)
+            moe_patches = patch_vllm_w4a8_swigluoai_uninterleave(limit, alpha, beta)
+            if moe_patches:
+                print(f"[pipeline] patched vLLM W4A8 MoE for M3 SwiGLU-OAI: {moe_patches}")
 
     from vllm import LLM, SamplingParams
 

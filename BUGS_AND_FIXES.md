@@ -306,6 +306,27 @@ If serve *still* aborts with `Unsupported activation: silu` after `config.json` 
 
 **Note:** Ton Cao's `minimax-m3-compressed-tensors` branch has the same `hidden_act` check — installing it alone does **not** fix this. You still need the config patch **and** that branch for indexer un-fuse + linearized MoE pack-quantized load.
 
+## MiniMax-M3 vLLM serve fails: `W4A8 MoE backend CUTLASS does not support ... SWIGLUOAI_UNINTERLEAVE`
+
+**Symptom:** After the `hidden_act` fix, all TP workers die during MoE layer init:
+
+```
+NotImplementedError: W4A8 MoE backend CUTLASS does not support the deployment
+configuration: kernel does not support MoEActivation.SWIGLUOAI_UNINTERLEAVE activation.
+  File ".../fused_moe/oracle/w4a8.py", line 76, in select_w4a8_moe_backend
+```
+
+**Root cause (a real vLLM gap, NOT a checkpoint problem):** M3's routed experts store `w13` as `[all gates; all ups]` (the `MergedColumnParallelLinear` layout `llm-compressor` produces), so the M3 model requests `MoEActivation.SWIGLUOAI_UNINTERLEAVE`. The W4A8 CUTLASS MoE path applies the activation *generically* via `apply_moe_activation` **after** GEMM1 (not fused in the epilogue), and `apply_moe_activation` **already implements** `SWIGLUOAI_UNINTERLEAVE` (its docstring literally names MiniMax-M3). Two plumbing gaps block it in **every** build checked (stock 0.24.0, the NVIDIA `vllm/models/minimax_m3/nvidia` build, and toncao's branch):
+
+1. `CutlassExpertsW4A8Fp8._supports_activation` omits `SWIGLUOAI_UNINTERLEAVE` (the gate that raises).
+2. The W4A8 call site `apply_moe_activation(activation, act_out, mm1_out)` passes no `clamp_limit`/`alpha`/`beta`, but `SWIGLUOAI_UNINTERLEAVE` asserts `clamp_limit is not None`.
+
+Reinstalling toncao's branch does **not** help (verified: its `_supports_activation` is identical). The only W4A8 MoE backend is CUTLASS — there is no Triton/Marlin fallback to route to.
+
+**Fix (tactical, in-process; ships in our repo, applied at serve time):** `pipeline/vllm_m3_patches.py::patch_vllm_w4a8_swigluoai_uninterleave()` (1) adds `SWIGLUOAI_UNINTERLEAVE` to `CutlassExpertsW4A8Fp8._supports_activation` and (2) wraps `cutlass_moe.apply_moe_activation` to inject `clamp_limit`/`alpha`/`beta`. The scalars are read from the checkpoint's **resolved** config (`read_swiglu_params`) so the MoE path is numerically identical to the dense `MiniMaxM3MLP` (`SiluAndMulWithClamp`: `gate*sigmoid(alpha*gate)*(up+beta)`, clamped). M3 uses the gpt-oss constants `alpha=1.702`, `limit=7.0`; `swiglu_beta` is `null` in raw json but transformers resolves it to a concrete float at load (the dense MLP relies on the same). `serve_verify.py` applies this automatically for W4A8-MoE M3 checkpoints before `LLM()`.
+
+**Root-cause / long-term fix (preferred):** upstream the two-line capability into vLLM — add the enum to `CutlassExpertsW4A8Fp8._supports_activation` and thread the swiglu scalars into the W4A8 `apply_moe_activation` call. **Removal criteria:** delete `pipeline/vllm_m3_patches.py` and the `serve_verify` hook once a vLLM release serves M3 W4A8 (SwiGLU-OAI uninterleaved) natively.
+
 **Tooling:** `pipeline/verify_quant_checkpoint.py` runs all of the above structural
 checks on checkpoint metadata (fast, no model load); `--check-tensors` adds sampled
 finiteness + group-scale-shape checks:

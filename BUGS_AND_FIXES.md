@@ -13,17 +13,17 @@ Reference run: smoke AWQ **W4AFP8** checkpoint
 | Configuration | Outcome | Notes |
 |---------------|---------|-------|
 | **``ENFORCE_EAGER=1``** (CUDA graphs off) | **PASS** — ``overall_ok=True`` | Load, KV init, generation complete. First token ~2–3 min (FlashInfer trtllm workspace + Triton autotune). Output garbage expected (smoke quant). |
-| Persistent patches 1–2 (W4A8 SwiGLU-OAI) | Required for any serve | Without: ``NotImplementedError: SWIGLUOAI_UNINTERLEAVE``. |
+| Persistent patches 1–2 (W4A8 SwiGLU-OAI **uninterleaved**) | **Resolved** | ``llm-compressor`` saves MoE ``w13`` as ``[all gates; all ups]`` (natural ``MergedColumnParallelLinear`` layout). vLLM's W4A8 CUTLASS path expected **interleaved** SwiGLU-OAI and omitted ``SWIGLUOAI_UNINTERLEAVE`` from ``_supports_activation``. Fixed by patches 1–2 — **not** a stock-vLLM vs toncao issue (toncao's branch has the same gap; reinstall alone does not help). |
 | ``FLASHINFER_USE_CUDA_NORM=1`` | Required on Hopper | Without: CuTe-DSL ``gemma_rmsnorm`` nanobind abort at KV init. |
 | ``hidden_act=swigluoai`` in checkpoint | Required | Transformers coerces to ``silu``; ``serve_verify`` restores from ``model.id``. |
-| toncao vLLM branch + install script | Required | Stock vLLM lacks M3 compressed-tensors + W4A8 MoE wiring. |
+| ``toncao/vllm@minimax-m3-compressed-tensors`` | Team serve build | M3 compressed-tensors layout (e.g. bf16 MSA indexer separate from quant q/k/v, per-expert linearized weights). Separate from the uninterleaved w13 / SwiGLU-OAI patch above. |
 
 ### Prerequisites fixed (to reach graph capture at all)
 
 Each was a **hard blocker** before CUDA-graph capture could start:
 
 1. **``hidden_act`` → ``swigluoai``** — ``ensure_minimax_m3_vllm_serve_config()`` (no re-quant).
-2. **W4A8 ``SWIGLUOAI_UNINTERLEAVE``** — persistent patches 1–2 in ``patch_vllm_m3_serve.py``.
+2. **W4A8 uninterleaved w13 + ``SWIGLUOAI_UNINTERLEAVE``** — patches 1–2 (weight layout / activation enum plumbing; **resolved**).
 3. **FlashInfer CuTe-DSL RMSNorm JIT** — ``FLASHINFER_USE_CUDA_NORM=1`` in launchers + ``serve_verify``.
 4. **Vision ``img_token_compression_config``** — restored from ``model.id`` into checkpoint ``config.json``.
 5. **VL processor artifacts** — copied into checkpoint dir before ``LLM()``.

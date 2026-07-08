@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Install the patched vLLM build for MiniMax-M3 compressed-tensors checkpoints.
+# Install the team vLLM build for MiniMax-M3 compressed-tensors serve.
 #
 # Our W4AFP8 checkpoint keeps the MSA indexer in bf16 while quantizing q/k/v, and
-# saves per-expert linearized MoE weights (block_sparse_moe.experts.N.*). Stock
-# vLLM may fail worker init without Ton Cao's branch:
+# saves per-expert linearized MoE weights (block_sparse_moe.experts.N.*). The
+# toncao branch handles that compressed-tensors layout:
 #   https://github.com/toncao/vllm/tree/minimax-m3-compressed-tensors
+#
+# MoE w13 uninterleaved layout + SWIGLUOAI_UNINTERLEAVE is a separate gap — fixed
+# by patch_vllm_m3_serve.py patches 1–2 (not by switching branches).
 #
 # Uses venvs/quant (NOT sglang-eval). Re-run serve after install.
 #

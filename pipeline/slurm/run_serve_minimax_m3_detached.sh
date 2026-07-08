@@ -54,6 +54,17 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
+# Preflight GPU guard: kill OUR leftover vLLM/pipeline procs from a prior crashed
+# run and verify the GPUs are actually free before launching. Prevents the recurring
+# startup OOM ("Free memory on device cuda:X ... less than gpu_memory_utilization").
+# Set SKIP_GPU_PREFLIGHT=1 to bypass (e.g. intentionally sharing GPUs).
+if [[ "${SKIP_GPU_PREFLIGHT:-0}" != "1" ]]; then
+  MIN_FREE_GIB="${MIN_FREE_GIB:-70}" bash "$SCRIPT_DIR/free_gpus.sh" || {
+    echo "ERROR: GPUs are not free; refusing to start serve (see free_gpus output)."
+    exit 1
+  }
+fi
+
 RUN_SCRIPT="$(mktemp /tmp/m3_serve_run_XXXXXX.sh)"
 cat > "$RUN_SCRIPT" <<EOF
 #!/usr/bin/env bash

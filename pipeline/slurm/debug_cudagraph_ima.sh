@@ -54,6 +54,15 @@ export PYTHONFAULTHANDLER=1
 
 echo "host=$(hostname) cudagraph IMA diagnostic started=$(date -Is)"
 echo "checkpoint=$CHECKPOINT max_model_len=$MAX_MODEL_LEN gpu_util=$GPU_UTIL"
+
+# Preflight: never proceed until the GPUs are actually free. A prior crashed run
+# routinely leaks EngineCore/VllmWorker procs (~70 GiB/GPU) -> startup OOM that
+# masquerades as a serve failure. This kills OUR leftovers, verifies they are dead,
+# and aborts if GPUs are still held (by us or a teammate).
+MIN_FREE_GIB="${MIN_FREE_GIB:-70}" bash "$SCRIPT_DIR/free_gpus.sh" || {
+  echo "[FAIL] GPUs are not free; aborting before launch (see free_gpus output above)."
+  exit 1
+}
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 # Confirm the persistent patches (incl. the corrected select_experts NaN patch)
 # and report the flashinfer version (finalize bounds-check suspect, #42906).

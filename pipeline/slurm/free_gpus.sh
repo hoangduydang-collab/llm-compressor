@@ -31,7 +31,11 @@ set -uo pipefail
 FORCE="${FORCE:-1}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-70}"
 WAIT_SECS="${WAIT_SECS:-45}"
-KILL_PATTERN="${KILL_PATTERN:-pipeline\.run|EngineCore|VllmWorker|pt_main_thread|from multiprocessing|vllm}"
+# NOTE: vLLM renames workers via setproctitle to "VLLM::Worker_TP0_EP0", so a
+# lowercase "vllm" pattern (pkill -f is case-sensitive) will MISS them. Match the
+# real process titles explicitly. This is only a secondary sweep; the primary kill
+# targets GPU-resident PIDs owned by $USER regardless of name.
+KILL_PATTERN="${KILL_PATTERN:-pipeline\.run|EngineCore|VLLM::Worker|Worker_TP[0-9]|VllmWorker|pt_main_thread|[Vv][Ll][Ll][Mm]}"
 
 _min_free_mib=$(( MIN_FREE_GIB * 1024 ))
 

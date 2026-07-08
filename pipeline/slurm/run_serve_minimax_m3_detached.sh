@@ -31,6 +31,10 @@ OUT_DIR="${OUT_DIR:-serves/m3-awq-w4afp8}"
 CHECKPOINT="${CHECKPOINT:-artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 GPU_UTIL="${GPU_UTIL:-0.9}"
+# Disable CUDA-graph capture. M3's custom sparse-attn/indexer/W4A8-MoE kernels
+# can deadlock cross-rank graph capture (workers hang on shm_broadcast). Set
+# ENFORCE_EAGER=1 for a working bring-up serve; capture is a separate perf task.
+ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
 
 mkdir -p "$OUT_DIR" /mnt/nfs/hoangduy/logs
 PID_FILE="$OUT_DIR/serve.pid"
@@ -77,6 +81,7 @@ export CHECKPOINT=$(printf '%q' "$CHECKPOINT")
 export MODEL_ID=$(printf '%q' "${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}")
 export MAX_MODEL_LEN=$(printf '%q' "$MAX_MODEL_LEN")
 export GPU_UTIL=$(printf '%q' "$GPU_UTIL")
+export ENFORCE_EAGER=$(printf '%q' "$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)")
 
 echo "host=\$(hostname) serve-verify started=\$(date -Is)"
 echo "checkpoint=\$CHECKPOINT"
@@ -93,6 +98,7 @@ exec python -m pipeline.run --config "\$CONFIG" --stage serve \\
   --set serve.kv_cache_dtype=fp8 \\
   --set serve.max_model_len="\$MAX_MODEL_LEN" \\
   --set serve.gpu_memory_utilization="\$GPU_UTIL" \\
+  --set serve.enforce_eager="\$ENFORCE_EAGER" \\
   --set eval.enabled=false
 EOF
 chmod +x "$RUN_SCRIPT"

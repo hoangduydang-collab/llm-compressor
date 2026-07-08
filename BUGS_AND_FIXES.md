@@ -1,5 +1,38 @@
 # Bugs and fixes (llm-compressor pipeline)
 
+## MiniMax-M3 vLLM serve aborts: FlashInfer `gemma_rmsnorm` CuTe-DSL JIT (nanobind "Expected an MLIR object")
+
+**Symptom:** After the W4A8-MoE and `hidden_act` fixes, the model loads all shards and reaches KV-cache profiling, then **all 8 workers die simultaneously** with a bare C++ abort (no Python traceback):
+
+```
+terminate called after throwing an instance of 'nanobind::builtin_exception'
+  what():  Expected an MLIR object (got <cutlass._mlir._mlir_libs._cutlass_ir._mlir.ir.OpResultList object at 0x...>).
+```
+
+The engine then reports the misleading downstream `RuntimeError: cancelled` / `Engine core initialization failed` from `determine_available_memory`.
+
+**Root cause (a FlashInfer × cutlass-dsl JIT gap — NOT flash attention, NOT the checkpoint):** `PYTHONFAULTHANDLER=1` reveals the real stack:
+
+```
+vllm/models/minimax_m3/nvidia/model.py  forward   (MiniMAXGemmaRMSNorm)
+  -> flashinfer/norm/__init__.py  gemma_rmsnorm -> _gemma_rmsnorm_impl
+    -> flashinfer/norm/kernels/rmsnorm.py  rmsnorm_cute -> _get_compiled_rmsnorm_kernel
+      -> nvidia_cutlass_dsl/.../base_dsl/compiler.py  generate_mlir   <-- nanobind abort
+(under gpu_worker.determine_available_memory -> profile_run -> _dummy_run)
+```
+
+M3 uses Gemma-style RMSNorm everywhere (`MiniMAXGemmaRMSNorm.forward` hardcodes `from flashinfer.norm import gemma_rmsnorm, gemma_fused_add_rmsnorm`). This build routes that to FlashInfer's **CuTe-DSL** kernel (`rmsnorm_cute`), which fails to JIT-compile against the pinned `nvidia-cutlass-dsl==4.5.2` on Hopper (SM90). This is the same class of failure as [vllm #45392](https://github.com/vllm-project/vllm/issues/45392) (a CuTe-DSL JIT abort validated-fixed only on Blackwell), but the aborting kernel here is FlashInfer RMSNorm, not FA4 — the flash-attention path is FA3 the whole time (`head_dim=128`, no FA3->FA4 upgrade; ViT `head_dim=80`).
+
+**Fix (preferred — FlashInfer's own documented fallback, no source patch):** set `FLASHINFER_USE_CUDA_NORM=1` so FlashInfer uses its **CUDA-JIT** norm kernels instead of CuTe-DSL (`flashinfer/norm/__init__.py` reads it at import time; the same flag is auto-enabled when cutlass-dsl is absent/incompatible). Numerically identical Gemma RMSNorm, just a different backend.
+
+Wired in three places so every launch path is covered:
+- `pipeline/serve_verify.py` — `os.environ.setdefault("FLASHINFER_USE_CUDA_NORM", "1")` at import (before vLLM/FlashInfer import); covers `python -m pipeline.run --stage serve`.
+- `pipeline/slurm/serve_minimax_m3.sbatch` and `run_serve_minimax_m3_detached.sh` — `export FLASHINFER_USE_CUDA_NORM=1` (plus `PYTHONFAULTHANDLER=1` so future kernel aborts self-diagnose).
+
+For a raw `vllm serve`, export `FLASHINFER_USE_CUDA_NORM=1` before launch.
+
+**Root-cause / long-term fix:** upgrade FlashInfer / `nvidia-cutlass-dsl` to a combination whose CuTe-DSL RMSNorm JIT-compiles on Hopper, or an M3 model rev that doesn't hard-depend on FlashInfer's cute norm. **Removal criteria:** drop the env toggle once FlashInfer's CuTe-DSL RMSNorm compiles cleanly with the pinned DSL on SM90 (re-test by unsetting `FLASHINFER_USE_CUDA_NORM` and serving).
+
 ## MiniMax-M3 OOM during `linearize_moe` (fp32 expert materialization)
 
 **Symptom:** Quantization (GPTQ/AWQ) dies around MoE layer 45–47 of 57 on 2 TB RAM nodes. Process RSS ~1980 GiB at `linearize_moe` start; `mem_avail` drops ~27 GiB per layer with no recovery. OS OOM-kill, no Python traceback.

@@ -33,6 +33,13 @@ export HOME=${WORK_ROOT:-/mnt/nfs/hoangduy}
 export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
+# Dump native stacks of all threads on a C++ abort (e.g. CuTe-DSL JIT SIGABRT)
+# so kernel crashes are self-diagnosing instead of a bare "RuntimeError: cancelled".
+export PYTHONFAULTHANDLER=1
+# Force FlashInfer's CUDA-JIT norm kernels; its CuTe-DSL gemma_rmsnorm fails to
+# JIT-compile against nvidia-cutlass-dsl 4.5.2 on Hopper. Must be set before
+# flashinfer.norm import. See BUGS_AND_FIXES.md "FlashInfer gemma_rmsnorm CuTe-DSL".
+export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR=${FLASHINFER_WORKSPACE_DIR:-$HOME/cache/flashinfer}
 export TOKENIZERS_PARALLELISM=false
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs

@@ -13,9 +13,19 @@ are failed fast with an actionable message instead of after a full model load.
 """
 
 import json
+import os
 from pathlib import Path
 
 from pipeline.config import PipelineConfig
+
+# FlashInfer routes MiniMax-M3's Gemma RMSNorm to a CuTe-DSL kernel
+# (``rmsnorm_cute``) that fails to JIT-compile against nvidia-cutlass-dsl 4.5.2
+# on Hopper (nanobind "Expected an MLIR object (got OpResultList)"), aborting all
+# vLLM workers during profile_run. FlashInfer exposes a documented CUDA-JIT
+# fallback via this env var; it is read at ``flashinfer.norm`` *import* time, so
+# it must be set before vLLM imports FlashInfer. ``setdefault`` keeps any explicit
+# override. See BUGS_AND_FIXES.md "FlashInfer gemma_rmsnorm CuTe-DSL".
+os.environ.setdefault("FLASHINFER_USE_CUDA_NORM", "1")
 
 # CUTLASS W4A8 MoE grouped-GEMM kernel constraint.
 W4A8_MOE_INTERMEDIATE_MULTIPLE = 256

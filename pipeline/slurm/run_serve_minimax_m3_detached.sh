@@ -63,6 +63,11 @@ export HOME=\${WORK_ROOT:-/mnt/nfs/hoangduy}
 export PYTHONPATH=/mnt/nfs/hoangduy/projects/llm-compressor
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
+# Native thread stacks on a C++ abort (CuTe-DSL JIT SIGABRT self-diagnoses).
+export PYTHONFAULTHANDLER=1
+# FlashInfer CuTe-DSL gemma_rmsnorm fails to JIT-compile vs cutlass-dsl 4.5.2 on
+# Hopper; force its CUDA-JIT norm fallback (read at flashinfer.norm import time).
+export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR=\${FLASHINFER_WORKSPACE_DIR:-\$HOME/cache/flashinfer}
 export TOKENIZERS_PARALLELISM=false
 mkdir -p "\$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true

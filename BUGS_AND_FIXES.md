@@ -246,6 +246,17 @@ For raw `vllm serve`: `--disable-custom-all-reduce`.
 **Removal criteria:** drop the flag once the node has full P2P (NVLink/NVSwitch all-to-all)
 or vLLM's custom all-reduce P2P capability check correctly disables itself on this topology.
 
+**Validated (2026-07-08, h118):** with `disable_custom_all_reduce=true` and graphs on
+(`enforce_eager=false`), serve-verify no longer stalls — generation completes at
+~17.8 tok/s, `overall_ok=True`, `rc=0`. The `TCPStore ... Broken pipe` /
+`recvValue failed` lines during shutdown are benign teardown noise after `SIGTERM`.
+
+> Note: the smoke checkpoint (`MiniMax-M3-awq-W4AFP8/…`) still emits degenerate text
+> (`"arringarring…"` repetition). That is a **quantization-quality** artifact of the
+> quick/smoke calibration, not an infra bug — the serve path (W4A8 MoE, CUDA graphs,
+> TP all-reduce) is now healthy. A full-calibration checkpoint is required for coherent
+> output.
+
 ## MiniMax-M3 vLLM serve aborts: FlashInfer `gemma_rmsnorm` CuTe-DSL JIT (nanobind "Expected an MLIR object")
 
 **Symptom:** After the W4A8-MoE and `hidden_act` fixes, the model loads all shards and reaches KV-cache profiling, then **all 8 workers die simultaneously** with a bare C++ abort (no Python traceback):

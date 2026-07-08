@@ -207,17 +207,44 @@ symptom, not the root cause.
 **Optional escape hatch (partial for M3):** `disable_custom_all_reduce=True` disables
 vLLM's **custom** all-reduce kernel only. It does **not** disable M3's FlashInfer
 `fused_allreduce_gemma_rms_norm` forward path or `fuse_allreduce_rms` compile fusion
-— logs may still show `Auto-selected flashinfer allreduce backend: trtllm`. On h118
-serve-verify succeeded without setting this flag; **not enabled by default**.
-
-To try explicitly: `--set serve.disable_custom_all_reduce=true` or
-`ServeConfig.disable_custom_all_reduce` in yaml.
-
-For raw `vllm serve`: `--disable-custom-all-reduce` (and keep
-`FLASHINFER_USE_CUDA_NORM=1` on Hopper). Unlikely to change M3 behavior.
+— logs may still show `Auto-selected flashinfer allreduce backend: trtllm`.
 
 **Root-cause / long-term fix:** topology-aware FlashInfer backend selection in vLLM;
 M3 model should fall back cleanly when `_can_use_flashinfer()` fails.
+
+### Update (2026-07-08): the *decode* hang after the IMA fix IS the custom all-reduce deadlock
+
+Once the CUDA-graph IMA was fixed (router `nan_to_num` + flashinfer 0.6.12), the run
+progressed to generation and then hung with the same `shm_broadcast` timeout. Capturing
+live worker stacks (`dump_hang_stacks.sh` → `SIGABRT` + `PYTHONFAULTHANDLER=1`, because
+`py-spy` is blocked by the node's `ptrace_scope`) gave the decisive signal. **All 8
+workers** were parked at the identical frame:
+
+```
+vocab_parallel_embedding.py:491   forward                  (input embedding)
+communication_op.py:14            tensor_model_parallel_all_reduce
+parallel_state.py:642/649         all_reduce / _all_reduce_out_place
+cuda_communicator.py:289          all_reduce
+custom_all_reduce.py:280          custom_all_reduce        <-- vLLM CUSTOM all-reduce
+custom_all_reduce.py:259          all_reduce               <-- HUNG
+  via minimax_m3/nvidia/model.py:955/798  embed_input_ids
+  via gpu_model_runner.py:3497 _preprocess -> execute_model
+```
+
+This is **not** FlashInfer, **not** NCCL, **not** MoE. The hang is the **first TP
+collective** of the forward — the vocab-embedding all-reduce — inside vLLM's custom
+P2P/IPC all-reduce, which deadlocks on the h118 2×4 topology (`disable_custom_all_reduce=False`
+in the engine config). Because the stack is literally in `custom_all_reduce.py`, the
+`disable_custom_all_reduce` flag (previously dismissed for the *FlashInfer* hang) is now
+the **correct, targeted fix**: it routes these collectives through NCCL.
+
+**Fix (enabled by default for M3):** `serve.disable_custom_all_reduce: true` in
+`pipeline/configs/minimax_m3.yaml`, and `--set serve.disable_custom_all_reduce=true` in
+`debug_cudagraph_ima.sh`, `run_serve_minimax_m3_detached.sh`, `serve_minimax_m3.sbatch`.
+For raw `vllm serve`: `--disable-custom-all-reduce`.
+
+**Removal criteria:** drop the flag once the node has full P2P (NVLink/NVSwitch all-to-all)
+or vLLM's custom all-reduce P2P capability check correctly disables itself on this topology.
 
 ## MiniMax-M3 vLLM serve aborts: FlashInfer `gemma_rmsnorm` CuTe-DSL JIT (nanobind "Expected an MLIR object")
 

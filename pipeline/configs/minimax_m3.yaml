@@ -71,6 +71,13 @@ serve:
   # CUDA graphs on by default. FlashInfer fused AR is skipped during capture via
   # patch_vllm_m3_serve.py (NCCL fallback). ENFORCE_EAGER=1 if graph capture fails.
   enforce_eager: false
+  # vLLM's custom (P2P/IPC) all-reduce deadlocks on this 2x4 H100 topology: all 8
+  # workers hang in custom_all_reduce.py at the FIRST TP collective (the vocab
+  # embedding all_reduce in VocabParallelEmbedding.forward), which surfaces as the
+  # decode-time "No available shared memory broadcast block found in 60s" ->
+  # sample_tokens timeout. Route TP all-reduce through NCCL instead. See
+  # BUGS_AND_FIXES.md ("custom all-reduce deadlock").
+  disable_custom_all_reduce: true
   prompt: "The capital of France is"
   # The HTTP server additionally needs (not used by offline serve-verify):
   #   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3

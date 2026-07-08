@@ -88,6 +88,7 @@ python -m pipeline.run --config "$CONFIG" --stage serve \
   --set serve.max_model_len="$MAX_MODEL_LEN" \
   --set serve.gpu_memory_utilization="$GPU_UTIL" \
   --set serve.enforce_eager=false \
+  --set serve.disable_custom_all_reduce=true \
   --set eval.enabled=false \
   2>&1 | tee "$OUT_DIR/cudagraph-debug.log"
 rc=${PIPESTATUS[0]}

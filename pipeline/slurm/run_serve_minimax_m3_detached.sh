@@ -114,6 +114,7 @@ exec python -m pipeline.run --config "\$CONFIG" --stage serve \\
   --set serve.max_model_len="\$MAX_MODEL_LEN" \\
   --set serve.gpu_memory_utilization="\$GPU_UTIL" \\
   --set serve.enforce_eager="\$ENFORCE_EAGER" \\
+  --set serve.disable_custom_all_reduce=true \\
   --set eval.enabled=false
 EOF
 chmod +x "$RUN_SCRIPT"

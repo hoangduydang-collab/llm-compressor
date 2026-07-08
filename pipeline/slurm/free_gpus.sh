@@ -25,12 +25,16 @@
 #   MIN_FREE_GIB  (default 70) per-GPU free memory required to declare "free"
 #   KILL_PATTERN  process cmdline regex to match own leftovers
 #   WAIT_SECS     (default 45) max seconds to wait for procs to die / mem to free
+#   TERM_GRACE    (default 6)  seconds to wait after SIGTERM before escalating to
+#                              SIGKILL. vLLM workers deadlocked in NCCL/CUDA ignore
+#                              SIGTERM, so keep this short and let SIGKILL do it.
 
 set -uo pipefail
 
 FORCE="${FORCE:-1}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-70}"
 WAIT_SECS="${WAIT_SECS:-45}"
+TERM_GRACE="${TERM_GRACE:-6}"
 # NOTE: vLLM renames workers via setproctitle to "VLLM::Worker_TP0_EP0", so a
 # lowercase "vllm" pattern (pkill -f is case-sensitive) will MISS them. Match the
 # real process titles explicitly. This is only a secondary sweep; the primary kill
@@ -117,12 +121,14 @@ free_gpus_main() {
   # shellcheck disable=SC2086
   kill -TERM $mine 2>/dev/null || true
 
+  # Short grace only: deadlocked NCCL/CUDA workers never honor SIGTERM, so don't
+  # waste the full WAIT_SECS here — escalate to SIGKILL quickly.
   local waited=0
-  while [ "$waited" -lt "$WAIT_SECS" ]; do
-    sleep 3; waited=$((waited + 3))
+  while [ "$waited" -lt "$TERM_GRACE" ]; do
+    sleep 2; waited=$((waited + 2))
     mine="$(_gpu_pids_mine | tr '\n' ' ')"
     if [ -z "${mine// }" ]; then break; fi
-    echo "[free_gpus]   still alive after ${waited}s: $mine"
+    echo "[free_gpus]   still alive after ${waited}s (SIGTERM), will SIGKILL: $mine"
   done
 
   # Escalate to SIGKILL for anything that ignored SIGTERM.

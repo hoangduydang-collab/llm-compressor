@@ -71,8 +71,6 @@ serve:
   # CUDA graphs enabled (enforce_eager=false). Bring-up on h118 used ENFORCE_EAGER=1;
   # re-enable only if graph capture hangs (see BUGS_AND_FIXES.md).
   enforce_eager: false
-  # Optional; does not gate M3's FlashInfer fused AR path (see BUGS_AND_FIXES.md).
-  disable_custom_all_reduce: true
   prompt: "The capital of France is"
   # The HTTP server additionally needs (not used by offline serve-verify):
   #   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3

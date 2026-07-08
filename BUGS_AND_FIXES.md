@@ -48,30 +48,20 @@ incompatible with the deployment topology (e.g. cross-NUMA SYS links on 2×4 H10
 non-MNNVL multi-node). The rendezvous deadlocks; `shm_broadcast` timeouts are a
 symptom, not the root cause.
 
-**Tactical fix (documented vLLM escape hatch — partial for M3):** set
-`disable_custom_all_reduce=True` disables vLLM's **custom** all-reduce kernel (NCCL
-fallback for that path). It does **not** disable M3's FlashInfer
-`fused_allreduce_gemma_rms_norm` forward path or `fuse_allreduce_rms` compile fusion —
-logs may still show `Auto-selected flashinfer allreduce backend: trtllm`. On h118
-single-node, serve-verify succeeded with or without relying on this flag; keep as
-optional defensive default in `minimax_m3.yaml`.
+**Optional escape hatch (partial for M3):** `disable_custom_all_reduce=True` disables
+vLLM's **custom** all-reduce kernel only. It does **not** disable M3's FlashInfer
+`fused_allreduce_gemma_rms_norm` forward path or `fuse_allreduce_rms` compile fusion
+— logs may still show `Auto-selected flashinfer allreduce backend: trtllm`. On h118
+serve-verify succeeded without setting this flag; **not enabled by default**.
 
-Wired in:
-- `pipeline/config.py` — `ServeConfig.disable_custom_all_reduce`
-- `pipeline/configs/minimax_m3.yaml` — default `true` for bring-up
-- `pipeline/serve_verify.py` — passed to `LLM(...)`; failure hints updated
-- `pipeline/lmeval_runner.py` — forwarded to lm-eval vLLM backend
-- `pipeline/slurm/run_serve_minimax_m3_detached.sh` and `serve_minimax_m3.sbatch` —
-  default NCCL fallback; `SERVE_PERF=1` sets `disable_custom_all_reduce=false` to
-  retry the official fused path; `DISABLE_CUSTOM_ALL_REDUCE=true|false` overrides.
+To try explicitly: `--set serve.disable_custom_all_reduce=true` or
+`ServeConfig.disable_custom_all_reduce` in yaml.
 
-For raw `vllm serve`: add `--disable-custom-all-reduce` (and keep
-`FLASHINFER_USE_CUDA_NORM=1` on Hopper).
+For raw `vllm serve`: `--disable-custom-all-reduce` (and keep
+`FLASHINFER_USE_CUDA_NORM=1` on Hopper). Unlikely to change M3 behavior.
 
 **Root-cause / long-term fix:** topology-aware FlashInfer backend selection in vLLM;
-M3 model should fall back cleanly when `_can_use_flashinfer()` fails. **Removal
-criteria:** unset the flag and serve successfully on h118 (and peer nodes) with fused
-AR enabled; benchmark shows acceptable perf vs NCCL fallback.
+M3 model should fall back cleanly when `_can_use_flashinfer()` fails.
 
 ## MiniMax-M3 vLLM serve aborts: FlashInfer `gemma_rmsnorm` CuTe-DSL JIT (nanobind "Expected an MLIR object")
 

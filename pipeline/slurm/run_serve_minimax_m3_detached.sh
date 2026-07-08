@@ -15,8 +15,6 @@
 #
 # Env toggles:
 #   ENFORCE_EAGER=1     escape hatch: disable CUDA graphs if capture hangs
-#   SERVE_PERF=1        re-enable FlashInfer fused all-reduce (official perf path)
-#   DISABLE_CUSTOM_ALL_REDUCE=true|false  overrides SERVE_PERF when set explicitly
 #
 # Monitor:
 #   tail -f serves/m3-awq-w4afp8/run.log
@@ -39,20 +37,6 @@ GPU_UTIL="${GPU_UTIL:-0.9}"
 # CUDA graph capture is ON by default (enforce_eager=false). M3 bring-up on h118
 # used ENFORCE_EAGER=1 temporarily; set ENFORCE_EAGER=1 only if capture deadlocks.
 ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
-# SERVE_PERF=1: official-recipe fused FlashInfer all-reduce. Default (0): NCCL
-# fallback via serve.disable_custom_all_reduce=true (see BUGS_AND_FIXES.md).
-SERVE_PERF="${SERVE_PERF:-0}"
-if [[ -n "${DISABLE_CUSTOM_ALL_REDUCE+x}" ]]; then
-  case "${DISABLE_CUSTOM_ALL_REDUCE,,}" in
-    1|true|yes) DISABLE_CUSTOM_AR=true ;;
-    0|false|no) DISABLE_CUSTOM_AR=false ;;
-    *) echo "ERROR: DISABLE_CUSTOM_ALL_REDUCE must be true/false (got $DISABLE_CUSTOM_ALL_REDUCE)"; exit 1 ;;
-  esac
-elif [[ "$SERVE_PERF" == "1" || "$SERVE_PERF" == "true" ]]; then
-  DISABLE_CUSTOM_AR=false
-else
-  DISABLE_CUSTOM_AR=true
-fi
 
 mkdir -p "$OUT_DIR" /mnt/nfs/hoangduy/logs
 PID_FILE="$OUT_DIR/serve.pid"
@@ -100,7 +84,6 @@ export MODEL_ID=$(printf '%q' "${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI
 export MAX_MODEL_LEN=$(printf '%q' "$MAX_MODEL_LEN")
 export GPU_UTIL=$(printf '%q' "$GPU_UTIL")
 export ENFORCE_EAGER=$(printf '%q' "$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)")
-export DISABLE_CUSTOM_AR=$(printf '%q' "$DISABLE_CUSTOM_AR")
 
 echo "host=\$(hostname) serve-verify started=\$(date -Is)"
 echo "checkpoint=\$CHECKPOINT"
@@ -118,7 +101,6 @@ exec python -m pipeline.run --config "\$CONFIG" --stage serve \\
   --set serve.max_model_len="\$MAX_MODEL_LEN" \\
   --set serve.gpu_memory_utilization="\$GPU_UTIL" \\
   --set serve.enforce_eager="\$ENFORCE_EAGER" \\
-  --set serve.disable_custom_all_reduce="\$DISABLE_CUSTOM_AR" \\
   --set eval.enabled=false
 EOF
 chmod +x "$RUN_SCRIPT"
@@ -129,7 +111,6 @@ echo "  checkpoint: $CHECKPOINT"
 echo "  out:        $OUT_DIR"
 echo "  max_model_len: $MAX_MODEL_LEN"
 echo "  enforce_eager: $([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)"
-echo "  disable_custom_all_reduce: $DISABLE_CUSTOM_AR (SERVE_PERF=$SERVE_PERF)"
 nvidia-smi --query-gpu=index,name,memory.total --format=csv 2>/dev/null || true
 
 # setsid + nohup: survive SSH disconnect (unlike foreground tmux attach).

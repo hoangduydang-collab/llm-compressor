@@ -86,9 +86,8 @@ class ServeConfig:
     # Disable CUDA graphs. Useful to sidestep CUDA-graph/stream issues (e.g. the
     # W4A8 MoE stream-race in older vLLM) and for debugging.
     enforce_eager: bool = False
-    # Skip FlashInfer fused all-reduce; fall back to NCCL (PYNCCL). Required for
-    # MiniMax-M3 on many topologies until FlashInfer backend auto-selection is fixed
-    # (see BUGS_AND_FIXES.md). Set SERVE_PERF=1 on launchers to re-enable fusion.
+    # Skip vLLM custom all-reduce (NCCL fallback for that path only). Optional
+    # escape hatch — does not disable M3's FlashInfer fused AR (BUGS_AND_FIXES.md).
     disable_custom_all_reduce: bool = False
     # Extra raw flags appended to ``vllm serve`` / passed to ``LLM(...)``.
     extra_args: list[str] = field(default_factory=list)

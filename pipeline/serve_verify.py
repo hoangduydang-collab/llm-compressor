@@ -149,10 +149,10 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
-        "  0) Hang / shm_broadcast timeout during generation — FlashInfer fused "
-        "all-reduce (model.py fused_allreduce_gemma_rms_norm). Retry with "
-        "serve.disable_custom_all_reduce=true (default in minimax_m3.yaml; "
-        "SERVE_PERF=1 disables the fallback for perf experiments)."
+        "  0) Hang / shm_broadcast timeout — often first-token FlashInfer workspace "
+        "init or Triton autotune (minutes, then progress). True deadlock: 5+ min "
+        "with no new logs. Optional: --set serve.disable_custom_all_reduce=true "
+        "(does not gate M3 FlashInfer fused AR; see BUGS_AND_FIXES.md)."
     )
     print(
         '  1) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not '
@@ -263,11 +263,6 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     from vllm import LLM, SamplingParams
 
     s = cfg.serve
-    if s.disable_custom_all_reduce:
-        print(
-            "[pipeline] disable_custom_all_reduce=True (NCCL all-reduce fallback; "
-            "set SERVE_PERF=1 or serve.disable_custom_all_reduce=false for fused AR)"
-        )
     llm_kwargs: dict = dict(
         model=str(ckpt),
         tensor_parallel_size=s.tensor_parallel_size,

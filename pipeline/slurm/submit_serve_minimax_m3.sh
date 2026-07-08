@@ -15,7 +15,6 @@
 #   MODEL_ID    default: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3 (processor source)
 #   MAX_MODEL_LEN  default: 8192 (raise to 32768 after smoke passes)
 #   ENFORCE_EAGER  default: 0 (CUDA graphs on); set 1 if graph capture hangs
-#   SERVE_PERF     default: 0 (set 1 to re-enable FlashInfer fused all-reduce)
 #   SBATCH_EXTRA  extra sbatch flags, e.g. '--nodelist=gpu-h118'
 #
 # Examples:
@@ -92,10 +91,6 @@ inject+=$'export MODEL_ID='"$(printf '%q' "$MODEL_ID")"$'\n'
 inject+=$'export MAX_MODEL_LEN='"$(printf '%q' "$MAX_MODEL_LEN")"$'\n'
 inject+=$'export GPU_UTIL='"$(printf '%q' "$GPU_UTIL")"$'\n'
 inject+=$'export ENFORCE_EAGER='"$(printf '%q' "${ENFORCE_EAGER:-0}")"$'\n'
-inject+=$'export SERVE_PERF='"$(printf '%q' "${SERVE_PERF:-0}")"$'\n'
-if [[ -n "${DISABLE_CUSTOM_ALL_REDUCE+x}" ]]; then
-  inject+=$'export DISABLE_CUSTOM_ALL_REDUCE='"$(printf '%q' "$DISABLE_CUSTOM_ALL_REDUCE")"$'\n'
-fi
 
 awk -v inject="$inject" '
   /^set -uo pipefail/ { print; print inject; next }

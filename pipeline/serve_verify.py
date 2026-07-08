@@ -149,37 +149,43 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
-        '  0) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not '
+        "  0) Hang / shm_broadcast timeout during generation — FlashInfer fused "
+        "all-reduce (model.py fused_allreduce_gemma_rms_norm). Retry with "
+        "serve.disable_custom_all_reduce=true (default in minimax_m3.yaml; "
+        "SERVE_PERF=1 disables the fallback for perf experiments)."
+    )
+    print(
+        '  1) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not '
         'support MoEActivation.SWIGLUOAI_UNINTERLEAVE"). No vLLM build wires this '
         "up; serve_verify patches it in-process via pipeline/vllm_m3_patches.py."
     )
     print(
-        '  1) text_config.hidden_act is "silu" but vLLM requires "swigluoai" '
+        '  2) text_config.hidden_act is "silu" but vLLM requires "swigluoai" '
         "(transformers normalizes on load; serve_verify auto-restores from model.id)"
     )
     print(
-        "  2) Missing vision_config.img_token_compression_config in saved config.json "
+        "  3) Missing vision_config.img_token_compression_config in saved config.json "
         "(quantize coercion hoists it; serve_verify auto-restores from model.id)"
     )
     print(
-        "  3) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
+        "  4) Stock vLLM fuses quantized q/k/v with bf16 MSA indexer in one GEMM; our "
         "checkpoint keeps indexer bf16 (see quantization_config.ignore). Install:"
     )
     print("       bash pipeline/slurm/install_vllm_m3_serve.sh")
     print(
-        "  4) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
+        "  5) GPU OOM during weight load / KV init on 8xH100 — retry with a smaller "
         "smoke config:"
     )
     print(
         "       MAX_MODEL_LEN=2048 GPU_UTIL=0.85 bash pipeline/slurm/run_serve_minimax_m3_detached.sh"
     )
     print(
-        "  5) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
+        "  6) Per-expert linearized MoE layout (block_sparse_moe.experts.N.gate_proj) — "
         "requires compressed-tensors pack-quantized support in vLLM (same patch as 3)."
     )
     if cfg.model.auto_class == "AutoModelForImageTextToText":
         print(
-            f"  6) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
+            f"  7) VL processor files — ensure preprocessor_config.json exists in {ckpt} "
             "(serve_verify auto-copies from model.id)."
         )
 
@@ -191,6 +197,7 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         "loaded": False,
         "ok": False,
         "quantization_config": _read_quant_config(ckpt),
+        "disable_custom_all_reduce": cfg.serve.disable_custom_all_reduce,
     }
 
     try:
@@ -256,6 +263,11 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     from vllm import LLM, SamplingParams
 
     s = cfg.serve
+    if s.disable_custom_all_reduce:
+        print(
+            "[pipeline] disable_custom_all_reduce=True (NCCL all-reduce fallback; "
+            "set SERVE_PERF=1 or serve.disable_custom_all_reduce=false for fused AR)"
+        )
     llm_kwargs: dict = dict(
         model=str(ckpt),
         tensor_parallel_size=s.tensor_parallel_size,
@@ -263,6 +275,7 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         gpu_memory_utilization=s.gpu_memory_utilization,
         trust_remote_code=cfg.model.trust_remote_code,
         enforce_eager=s.enforce_eager,
+        disable_custom_all_reduce=s.disable_custom_all_reduce,
     )
     if s.enable_expert_parallel:
         llm_kwargs["enable_expert_parallel"] = True

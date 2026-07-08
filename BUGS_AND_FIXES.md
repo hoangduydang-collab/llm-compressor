@@ -1,5 +1,51 @@
 # Bugs and fixes (llm-compressor pipeline)
 
+## MiniMax-M3 vLLM serve hangs: FlashInfer fused all-reduce (`shm_broadcast` timeout)
+
+**Symptom:** Model loads, KV profiling completes, then generation hangs with repeating:
+
+```
+[shm_broadcast.py:705] No available shared memory broadcast block found in 60 seconds.
+```
+
+Often preceded by:
+
+```
+[flashinfer_all_reduce.py:111] Auto-selected flashinfer allreduce backend: trtllm
+```
+
+(or `mnnvl` on multi-node). `enforce_eager=true` does **not** fix it — M3 calls
+`fused_allreduce_gemma_rms_norm` directly in `model.py` forward, not via CUDA graphs
+or inductor `fuse_allreduce_rms`. See [vLLM #45604](https://github.com/vllm-project/vllm/issues/45604),
+[vLLM #45800](https://github.com/vllm-project/vllm/issues/45800).
+
+**Root cause:** FlashInfer auto-selects a fused all-reduce + Gemma RMSNorm backend
+incompatible with the deployment topology (e.g. cross-NUMA SYS links on 2×4 H100,
+non-MNNVL multi-node). The rendezvous deadlocks; `shm_broadcast` timeouts are a
+symptom, not the root cause.
+
+**Tactical fix (documented vLLM escape hatch — not a perf path):** set
+`disable_custom_all_reduce=True` so vLLM uses NCCL (PYNCCL) all-reduce instead of
+FlashInfer fused AR. Numerically correct; typically ~5–15% slower on comm-heavy
+layers vs a working fused path.
+
+Wired in:
+- `pipeline/config.py` — `ServeConfig.disable_custom_all_reduce`
+- `pipeline/configs/minimax_m3.yaml` — default `true` for bring-up
+- `pipeline/serve_verify.py` — passed to `LLM(...)`; failure hints updated
+- `pipeline/lmeval_runner.py` — forwarded to lm-eval vLLM backend
+- `pipeline/slurm/run_serve_minimax_m3_detached.sh` and `serve_minimax_m3.sbatch` —
+  default NCCL fallback; `SERVE_PERF=1` sets `disable_custom_all_reduce=false` to
+  retry the official fused path; `DISABLE_CUSTOM_ALL_REDUCE=true|false` overrides.
+
+For raw `vllm serve`: add `--disable-custom-all-reduce` (and keep
+`FLASHINFER_USE_CUDA_NORM=1` on Hopper).
+
+**Root-cause / long-term fix:** topology-aware FlashInfer backend selection in vLLM;
+M3 model should fall back cleanly when `_can_use_flashinfer()` fails. **Removal
+criteria:** unset the flag and serve successfully on h118 (and peer nodes) with fused
+AR enabled; benchmark shows acceptable perf vs NCCL fallback.
+
 ## MiniMax-M3 vLLM serve aborts: FlashInfer `gemma_rmsnorm` CuTe-DSL JIT (nanobind "Expected an MLIR object")
 
 **Symptom:** After the W4A8-MoE and `hidden_act` fixes, the model loads all shards and reaches KV-cache profiling, then **all 8 workers die simultaneously** with a bare C++ abort (no Python traceback):

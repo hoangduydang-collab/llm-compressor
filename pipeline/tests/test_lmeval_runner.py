@@ -112,11 +112,13 @@ def test_vllm_model_args():
     cfg.model.trust_remote_code = True
     cfg.serve.tensor_parallel_size = 2
     cfg.serve.max_model_len = 4096
+    cfg.serve.disable_custom_all_reduce = True
     args = vllm_model_args(cfg, "/models/qwen")
     assert "pretrained=/models/qwen" in args
     assert "tensor_parallel_size=2" in args
     assert "max_model_len=4096" in args
     assert "trust_remote_code=True" in args
+    assert "disable_custom_all_reduce=True" in args
 
 
 def test_sglang_model_args_maps_serve_knobs():

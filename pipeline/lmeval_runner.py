@@ -23,6 +23,7 @@ def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
             f"gpu_memory_utilization={s.gpu_memory_utilization}",
             f"trust_remote_code={cfg.model.trust_remote_code}",
             f"enforce_eager={s.enforce_eager}",
+            f"disable_custom_all_reduce={s.disable_custom_all_reduce}",
             "dtype=auto",
         ]
     )

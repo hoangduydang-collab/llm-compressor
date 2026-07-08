@@ -68,6 +68,11 @@ serve:
   kv_cache_dtype: fp8
   max_model_len: 32768
   gpu_memory_utilization: 0.9
+  # NCCL all-reduce fallback: M3's fused FlashInfer AR+RMSNorm deadlocks on many
+  # single-node topologies (shm_broadcast / bad backend auto-select). Bring-up
+  # default; set SERVE_PERF=1 on launchers or serve.disable_custom_all_reduce=false
+  # to retry the official fused path after upstream fixes.
+  disable_custom_all_reduce: true
   prompt: "The capital of France is"
   # The HTTP server additionally needs (not used by offline serve-verify):
   #   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3

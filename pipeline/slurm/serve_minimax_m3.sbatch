@@ -50,6 +50,19 @@ CHECKPOINT=${CHECKPOINT:-artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpo
 MODEL_ID=${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 GPU_UTIL=${GPU_UTIL:-0.9}
+ENFORCE_EAGER=${ENFORCE_EAGER:-0}
+SERVE_PERF=${SERVE_PERF:-0}
+if [[ -n "${DISABLE_CUSTOM_ALL_REDUCE+x}" ]]; then
+  case "${DISABLE_CUSTOM_ALL_REDUCE,,}" in
+    1|true|yes) DISABLE_CUSTOM_AR=true ;;
+    0|false|no) DISABLE_CUSTOM_AR=false ;;
+    *) echo "ERROR: DISABLE_CUSTOM_ALL_REDUCE must be true/false (got $DISABLE_CUSTOM_ALL_REDUCE)"; exit 1 ;;
+  esac
+elif [[ "$SERVE_PERF" == "1" || "$SERVE_PERF" == "true" ]]; then
+  DISABLE_CUSTOM_AR=false
+else
+  DISABLE_CUSTOM_AR=true
+fi
 
 echo "host=$(hostname) job=${SLURM_JOB_ID:-none}"
 echo "config=$CONFIG"
@@ -57,6 +70,8 @@ echo "checkpoint=$CHECKPOINT"
 echo "processor_source=$MODEL_ID"
 echo "out=$OUT_DIR"
 echo "max_model_len=$MAX_MODEL_LEN gpu_util=$GPU_UTIL"
+echo "enforce_eager=$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)"
+echo "disable_custom_all_reduce=$DISABLE_CUSTOM_AR (SERVE_PERF=$SERVE_PERF)"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv || true
 
@@ -78,6 +93,8 @@ python -m pipeline.run --config "$CONFIG" --stage serve \
   --set serve.kv_cache_dtype=fp8 \
   --set serve.max_model_len="$MAX_MODEL_LEN" \
   --set serve.gpu_memory_utilization="$GPU_UTIL" \
+  --set serve.enforce_eager="$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)" \
+  --set serve.disable_custom_all_reduce="$DISABLE_CUSTOM_AR" \
   --set eval.enabled=false \
   2>&1 | tee -a "$OUT_DIR/run.log" "$LOG"
 rc=${PIPESTATUS[0]}

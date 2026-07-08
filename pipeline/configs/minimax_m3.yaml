@@ -50,10 +50,9 @@ calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
   dataset_split: train_sft
   # SMOKE settings: tiny calibration to validate the full pipeline end-to-end
-  # (load -> linearize -> FX trace -> quantize -> save) quickly. Restore the
-  # production values below for a real quantization run:
-  #   num_samples: 512
-  #   max_seq_length: 2048
+  # (load -> linearize -> FX trace -> quantize -> save) quickly. For production
+  # calibration use pipeline/configs/minimax_m3_full_calib.yaml (512 x 2048):
+  #   bash pipeline/slurm/run_quantize_minimax_m3_full_calib.sh
   num_samples: 8
   max_seq_length: 512
   moe_calibrate_all_experts: true

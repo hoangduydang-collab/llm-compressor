@@ -1,0 +1,66 @@
+# MiniMax-M3 production calibration (512 samples x 2048 seq).
+#
+# Same recipe as pipeline/configs/minimax_m3.yaml but with full calibration
+# settings instead of the 8-sample / 512-token smoke defaults. Use this for
+# checkpoints intended for quality validation and serve.
+#
+# Launch (detached, SSH-safe):
+#   bash pipeline/slurm/run_quantize_minimax_m3_full_calib.sh
+#
+# Or via Slurm (if spool works; allow 96h+ wall time):
+#   CONFIG=pipeline/configs/minimax_m3_full_calib.yaml METHOD=awq \
+#     sbatch --time=96:00:00 pipeline/slurm/quantize.sbatch
+name: minimax_m3_full_calib
+
+model:
+  id: MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
+  device_map: null
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.]indexer[.].*"
+    - "re:.*layers[.][0-2][.].*"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 512
+  max_seq_length: 2048
+  moe_calibrate_all_experts: true
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
+
+serve:
+  enabled: true
+  tensor_parallel_size: 8
+  enable_expert_parallel: true
+  block_size: 128
+  kv_cache_dtype: fp8
+  max_model_len: 32768
+  gpu_memory_utilization: 0.9
+  enforce_eager: false
+  disable_custom_all_reduce: true
+  prompt: "The capital of France is"
+  extra_args:
+    - "--tool-call-parser=minimax_m3"
+    - "--reasoning-parser=minimax_m3"
+    - "--enable-auto-tool-choice"
+
+eval:
+  enabled: true
+  baseline: null
+  recovery_threshold: 0.94
+  max_ppl_increase: 0.10
+
+output_dir: ./artifacts

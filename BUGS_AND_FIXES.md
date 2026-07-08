@@ -1,5 +1,29 @@
 # Bugs and fixes (llm-compressor pipeline)
 
+## MiniMax-M3 vLLM serve: CUDA graph capture (`enforce_eager`)
+
+**Default (post bring-up):** `enforce_eager: false` in `pipeline/configs/minimax_m3.yaml`
+and launchers — vLLM 0.24 captures `FULL_AND_PIECEWISE` CUDA graphs for throughput.
+
+**Bring-up (2026-07-08):** first h118 debug runs used `ENFORCE_EAGER=1` to bypass graph
+capture while fixing load/patch issues. Serve-verify succeeded with eager mode.
+
+**Re-enable graphs:** run without `ENFORCE_EAGER=1`:
+
+```bash
+bash pipeline/slurm/run_serve_minimax_m3_detached.sh
+```
+
+Expect a long first capture pass (sparse-attn / W4A8 MoE / FlashInfer workspace init);
+`shm_broadcast` warnings during compilation are normal if progress continues.
+
+**Escape hatch:** if capture deadlocks (repeating `shm_broadcast` with no progress for
+5+ minutes):
+
+```bash
+ENFORCE_EAGER=1 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
+```
+
 ## MiniMax-M3 vLLM serve hangs: FlashInfer fused all-reduce (`shm_broadcast` timeout)
 
 **Symptom:** Model loads, KV profiling completes, then generation hangs with repeating:
@@ -24,10 +48,13 @@ incompatible with the deployment topology (e.g. cross-NUMA SYS links on 2×4 H10
 non-MNNVL multi-node). The rendezvous deadlocks; `shm_broadcast` timeouts are a
 symptom, not the root cause.
 
-**Tactical fix (documented vLLM escape hatch — not a perf path):** set
-`disable_custom_all_reduce=True` so vLLM uses NCCL (PYNCCL) all-reduce instead of
-FlashInfer fused AR. Numerically correct; typically ~5–15% slower on comm-heavy
-layers vs a working fused path.
+**Tactical fix (documented vLLM escape hatch — partial for M3):** set
+`disable_custom_all_reduce=True` disables vLLM's **custom** all-reduce kernel (NCCL
+fallback for that path). It does **not** disable M3's FlashInfer
+`fused_allreduce_gemma_rms_norm` forward path or `fuse_allreduce_rms` compile fusion —
+logs may still show `Auto-selected flashinfer allreduce backend: trtllm`. On h118
+single-node, serve-verify succeeded with or without relying on this flag; keep as
+optional defensive default in `minimax_m3.yaml`.
 
 Wired in:
 - `pipeline/config.py` — `ServeConfig.disable_custom_all_reduce`

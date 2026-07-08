@@ -14,7 +14,7 @@
 #   CHECKPOINT  default: artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint
 #   MODEL_ID    default: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3 (processor source)
 #   MAX_MODEL_LEN  default: 8192 (raise to 32768 after smoke passes)
-#   ENFORCE_EAGER  default: 0 (set 1 if hang during CUDA graph capture)
+#   ENFORCE_EAGER  default: 0 (CUDA graphs on); set 1 if graph capture hangs
 #   SERVE_PERF     default: 0 (set 1 to re-enable FlashInfer fused all-reduce)
 #   SBATCH_EXTRA  extra sbatch flags, e.g. '--nodelist=gpu-h118'
 #

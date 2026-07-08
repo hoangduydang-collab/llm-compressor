@@ -14,7 +14,7 @@
 # Options: CONFIG, OUT_DIR, CHECKPOINT, MODEL_ID (same as submit_serve_minimax_m3.sh)
 #
 # Env toggles:
-#   ENFORCE_EAGER=1     disable CUDA graphs (bring-up default if hang at capture)
+#   ENFORCE_EAGER=1     escape hatch: disable CUDA graphs if capture hangs
 #   SERVE_PERF=1        re-enable FlashInfer fused all-reduce (official perf path)
 #   DISABLE_CUSTOM_ALL_REDUCE=true|false  overrides SERVE_PERF when set explicitly
 #
@@ -36,9 +36,8 @@ OUT_DIR="${OUT_DIR:-serves/m3-awq-w4afp8}"
 CHECKPOINT="${CHECKPOINT:-artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 GPU_UTIL="${GPU_UTIL:-0.9}"
-# Disable CUDA-graph capture. M3's custom sparse-attn/indexer/W4A8-MoE kernels
-# can deadlock cross-rank graph capture (workers hang on shm_broadcast). Set
-# ENFORCE_EAGER=1 for a working bring-up serve; capture is a separate perf task.
+# CUDA graph capture is ON by default (enforce_eager=false). M3 bring-up on h118
+# used ENFORCE_EAGER=1 temporarily; set ENFORCE_EAGER=1 only if capture deadlocks.
 ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
 # SERVE_PERF=1: official-recipe fused FlashInfer all-reduce. Default (0): NCCL
 # fallback via serve.disable_custom_all_reduce=true (see BUGS_AND_FIXES.md).

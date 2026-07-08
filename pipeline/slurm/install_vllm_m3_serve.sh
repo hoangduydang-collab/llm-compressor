@@ -30,4 +30,12 @@ echo "  before: $(python -c 'import vllm; print(vllm.__version__)' 2>/dev/null |
   "vllm @ git+https://github.com/toncao/vllm.git@${VLLM_M3_REF}"
 
 echo "  after:  $(python -c 'import vllm; print(vllm.__version__)')"
+
+# Re-apply the persistent W4A8 MoE + SwiGLU-OAI (uninterleave) source patch, which a
+# fresh install overwrites. Idempotent; see BUGS_AND_FIXES.md for the root cause.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python "${SCRIPT_DIR}/patch_vllm_m3_serve.py" || {
+  echo "WARNING: W4A8 SwiGLU-OAI patch did not apply; M3 W4A8 serve will fail until fixed." >&2
+}
+
 echo "Done. Re-run: bash pipeline/slurm/run_serve_minimax_m3_detached.sh"

@@ -323,7 +323,12 @@ configuration: kernel does not support MoEActivation.SWIGLUOAI_UNINTERLEAVE acti
 
 Reinstalling toncao's branch does **not** help (verified: its `_supports_activation` is identical). The only W4A8 MoE backend is CUTLASS — there is no Triton/Marlin fallback to route to.
 
-**Fix (tactical, in-process; ships in our repo, applied at serve time):** `pipeline/vllm_m3_patches.py::patch_vllm_w4a8_swigluoai_uninterleave()` (1) adds `SWIGLUOAI_UNINTERLEAVE` to `CutlassExpertsW4A8Fp8._supports_activation` and (2) wraps `cutlass_moe.apply_moe_activation` to inject `clamp_limit`/`alpha`/`beta`. The scalars are read from the checkpoint's **resolved** config (`read_swiglu_params`) so the MoE path is numerically identical to the dense `MiniMaxM3MLP` (`SiluAndMulWithClamp`: `gate*sigmoid(alpha*gate)*(up+beta)`, clamped). M3 uses the gpt-oss constants `alpha=1.702`, `limit=7.0`; `swiglu_beta` is `null` in raw json but transformers resolves it to a concrete float at load (the dense MLP relies on the same). `serve_verify.py` applies this automatically for W4A8-MoE M3 checkpoints before `LLM()`.
+**Fix — two options, same two edits:**
+
+- **In-process (offline serve-verify):** `pipeline/vllm_m3_patches.py::patch_vllm_w4a8_swigluoai_uninterleave()` (1) adds `SWIGLUOAI_UNINTERLEAVE` to `CutlassExpertsW4A8Fp8._supports_activation` and (2) wraps `cutlass_moe.apply_moe_activation` to inject `clamp_limit`/`alpha`/`beta` read from the checkpoint's **resolved** config (`read_swiglu_params`). Applied automatically by `serve_verify.py` before `LLM()`. Only affects the `serve_verify` process — **not** a standalone `vllm serve`.
+- **Persistent (production `vllm serve`):** `python pipeline/slurm/patch_vllm_m3_serve.py` edits the two installed vLLM source files once (idempotent), so every launch path works with no runtime hook. `install_vllm_m3_serve.sh` re-applies it after a (re)install. Use `--check` to verify status.
+
+Both make the MoE path numerically identical to the dense `MiniMaxM3MLP` (`SiluAndMulWithClamp`: `gate*sigmoid(alpha*gate)*(up+beta)`, clamped). M3 uses the gpt-oss constants `alpha=1.702`, `limit=7.0`, `beta=1.0` (`swiglu_beta` is `null` in raw json but transformers resolves it to a float at load; the dense MLP relies on the same).
 
 **Root-cause / long-term fix (preferred):** upstream the two-line capability into vLLM — add the enum to `CutlassExpertsW4A8Fp8._supports_activation` and thread the swiglu scalars into the W4A8 `apply_moe_activation` call. **Removal criteria:** delete `pipeline/vllm_m3_patches.py` and the `serve_verify` hook once a vLLM release serves M3 W4A8 (SwiGLU-OAI uninterleaved) natively.
 

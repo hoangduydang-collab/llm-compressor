@@ -60,6 +60,7 @@ echo "out=$OUT_DIR"
 echo "max_model_len=$MAX_MODEL_LEN gpu_util=$GPU_UTIL"
 echo "enforce_eager=$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
+python pipeline/slurm/patch_vllm_m3_serve.py
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv || true
 
 if [[ ! -d "$CHECKPOINT" || ! -f "$CHECKPOINT/config.json" ]]; then

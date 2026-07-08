@@ -35,11 +35,12 @@ Often fails at a **fixed graph index** (e.g. 16/51) — batch-size-dependent.
 2. **MoE router:** ``torch.nan_to_num(router_logits)`` in
    ``MoERunner._apply_quant_method`` before routing (same mechanism as #39391).
 
-- **Persistent:** ``pipeline/slurm/patch_vllm_m3_serve.py`` (4 edits); re-run after
-  vLLM reinstall.
-- **Runtime:** ``patch_vllm_m3_fused_ar_for_cudagraph()`` +
-  ``patch_vllm_m3_moe_router_for_cudagraph()`` in ``serve_verify`` when
-  ``enforce_eager=false``.
+- **Persistent:** ``pipeline/slurm/patch_vllm_m3_serve.py`` (4 edits); **required**
+  for ``Worker_TP*`` subprocesses (spawned fresh — runtime monkeypatches in
+  ``serve_verify`` do not apply). Launcher auto-runs this script; re-run after
+  any vLLM reinstall.
+- **Runtime:** removed for cudagraph (ineffective on workers). ``ensure_vllm_m3_patches()``
+  in ``serve_verify`` verifies site-packages before ``LLM()``.
 
 **Verify on cluster:**
 

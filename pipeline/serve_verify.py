@@ -149,9 +149,12 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
-        "  0) CUDA graph capture illegal memory access — apply all 4 vLLM patches: "
-        "python pipeline/slurm/patch_vllm_m3_serve.py (fused AR + MoE router; "
-        "see BUGS_AND_FIXES.md). Escape: ENFORCE_EAGER=1."
+        "  0) CUDA graph capture IMA — vLLM **site-packages** must have all 4 patches "
+        "(Worker_TP* are spawned; runtime hooks do not apply):\n"
+        "       python pipeline/slurm/patch_vllm_m3_serve.py --check\n"
+        "       grep -r 'llmc M3' \"$(python -c 'import vllm, pathlib; "
+        "print(pathlib.Path(vllm.__file__).parent)')\" | head\n"
+        "     See BUGS_AND_FIXES.md. Escape: ENFORCE_EAGER=1."
     )
     print(
         '  1) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not '
@@ -249,6 +252,12 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         # W4A8 MoE kernel accepts M3's SWIGLUOAI_UNINTERLEAVE activation. No-op if
         # the checkpoint is not a W4A8 MoE scheme or the build lacks W4A8 MoE.
         if _is_w4a8_moe_scheme(_read_quant_config(ckpt)):
+            # Persistent site-packages patches (required for Worker_TP* subprocesses).
+            from pipeline.slurm.patch_vllm_m3_serve import ensure_vllm_m3_patches
+
+            ensure_vllm_m3_patches()
+            print("[pipeline] verified vLLM M3 serve patches in site-packages (4/4)")
+
             from pipeline.vllm_m3_patches import (
                 patch_vllm_w4a8_swigluoai_uninterleave,
                 read_swiglu_params,
@@ -257,21 +266,15 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
             limit, alpha, beta = read_swiglu_params(ckpt, cfg.model.id)
             moe_patches = patch_vllm_w4a8_swigluoai_uninterleave(limit, alpha, beta)
             if moe_patches:
-                print(f"[pipeline] patched vLLM W4A8 MoE for M3 SwiGLU-OAI: {moe_patches}")
+                print(
+                    f"[pipeline] runtime vLLM W4A8 shim (main proc only): {moe_patches}"
+                )
 
         if not cfg.serve.enforce_eager:
-            from pipeline.vllm_m3_patches import (
-                patch_vllm_m3_fused_ar_for_cudagraph,
-                patch_vllm_m3_moe_router_for_cudagraph,
+            print(
+                "[pipeline] CUDA graphs ON — cudagraph patches 3–4 must be in "
+                "site-packages (ensure_vllm_m3_patches above)"
             )
-
-            ar_patches = patch_vllm_m3_fused_ar_for_cudagraph()
-            moe_cg_patches = patch_vllm_m3_moe_router_for_cudagraph()
-            if ar_patches or moe_cg_patches:
-                print(
-                    f"[pipeline] patched vLLM for M3 CUDA graphs: "
-                    f"{ar_patches + moe_cg_patches}"
-                )
 
     from vllm import LLM, SamplingParams
 

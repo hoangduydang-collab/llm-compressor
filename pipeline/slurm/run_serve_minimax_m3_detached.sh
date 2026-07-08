@@ -89,6 +89,8 @@ echo "host=\$(hostname) serve-verify started=\$(date -Is)"
 echo "checkpoint=\$CHECKPOINT"
 echo "processor_source=\$MODEL_ID"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
+# Workers are spawned subprocesses — patches MUST be in site-packages, not runtime hooks.
+python pipeline/slurm/patch_vllm_m3_serve.py
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv 2>/dev/null || true
 
 exec python -m pipeline.run --config "\$CONFIG" --stage serve \\

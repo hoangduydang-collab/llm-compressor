@@ -1,5 +1,77 @@
 # Bugs and fixes (llm-compressor pipeline)
 
+## MiniMax-M3 vLLM serve stage chronicle (h118, 2026-07-07/08)
+
+Reference run: smoke AWQ **W4AFP8** checkpoint
+``artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint`` (8 calibration samples),
+**vLLM 0.24.0** (``toncao/vllm@minimax-m3-compressed-tensors``), **TP=8 + EP**,
+``block_size=128``, ``kv_cache_dtype=fp8``, ``max_model_len=8192``, node **h118**
+(8×H100 80GB, 2×4 NV18 + cross-socket SYS).
+
+### What works (verified)
+
+| Configuration | Outcome | Notes |
+|---------------|---------|-------|
+| **``ENFORCE_EAGER=1``** (CUDA graphs off) | **PASS** — ``overall_ok=True`` | Load, KV init, generation complete. First token ~2–3 min (FlashInfer trtllm workspace + Triton autotune). Output garbage expected (smoke quant). |
+| Persistent patches 1–2 (W4A8 SwiGLU-OAI) | Required for any serve | Without: ``NotImplementedError: SWIGLUOAI_UNINTERLEAVE``. |
+| ``FLASHINFER_USE_CUDA_NORM=1`` | Required on Hopper | Without: CuTe-DSL ``gemma_rmsnorm`` nanobind abort at KV init. |
+| ``hidden_act=swigluoai`` in checkpoint | Required | Transformers coerces to ``silu``; ``serve_verify`` restores from ``model.id``. |
+| toncao vLLM branch + install script | Required | Stock vLLM lacks M3 compressed-tensors + W4A8 MoE wiring. |
+
+### Prerequisites fixed (to reach graph capture at all)
+
+Each was a **hard blocker** before CUDA-graph capture could start:
+
+1. **``hidden_act`` → ``swigluoai``** — ``ensure_minimax_m3_vllm_serve_config()`` (no re-quant).
+2. **W4A8 ``SWIGLUOAI_UNINTERLEAVE``** — persistent patches 1–2 in ``patch_vllm_m3_serve.py``.
+3. **FlashInfer CuTe-DSL RMSNorm JIT** — ``FLASHINFER_USE_CUDA_NORM=1`` in launchers + ``serve_verify``.
+4. **Vision ``img_token_compression_config``** — restored from ``model.id`` into checkpoint ``config.json``.
+5. **VL processor artifacts** — copied into checkpoint dir before ``LLM()``.
+6. **Orphaned ``Worker_TP*`` processes** — kill via ``nvidia-smi`` before restart (else OOM / Broken pipe noise).
+
+### CUDA graph capture (``enforce_eager=false``) — still failing
+
+**Symptom:** PIECEWISE capture progresses to **16/51** (deterministic), then
+``CUDA illegal memory access`` in ``breakable_cudagraph._capture`` (reported at
+``empty_cache()`` — async). EngineCore dies → **``TCPStore Broken pipe``** on all
+ranks (shutdown cascade, **not** root cause).
+
+| # | Attempt | Hypothesis | Result on h118 |
+|---|---------|------------|----------------|
+| A | ``disable_custom_all_reduce=true`` | FlashInfer / custom AR incompatible with 2×4 topology | **Wrong lever** — does not gate M3's ``fused_allreduce_gemma_rms_norm`` ([vLLM #45800](https://github.com/vllm-project/vllm/issues/45800)). Logs still show ``Auto-selected flashinfer allreduce backend: trtllm``. Removed as default. |
+| B | ``ENFORCE_EAGER=1`` | Skip graph capture entirely | **WORKS** — full serve-verify pass. Not a graph fix. |
+| C | Fused-AR patch (#46253) — skip FlashInfer in ``_can_use_flashinfer`` when graphs on (patch 3) | FlashInfer fused AR+RMSNorm not graph-capturable on TP8 | **Still IMA at 16/51** after persistent patch applied. |
+| D | MoE ``nan_to_num(router_logits)`` (patch 4, [vLLM #39288](https://github.com/vllm-project/vllm/issues/39288) class) | Padding tokens → NaN logits → duplicate expert IDs → W4A8 CUTLASS OOB | **Still IMA at 16/51** with ``patch_vllm_m3_serve.py --check`` → **STATUS: patched** (all 4). |
+| E | Runtime monkeypatches in ``serve_verify`` / ``vllm_m3_patches.py`` | In-process hook before ``LLM()`` | **Ineffective for capture** — ``Worker_TP*`` are **spawned subprocesses**; they load site-packages only. Documented; launcher now auto-runs persistent patch script. |
+| F | ``fuse_allreduce_rms=false`` (compile config) | Disable fused AR via inductor | **No effect** — M3 calls fused path directly in ``model.py`` forward. |
+| G | ``SERVE_PERF=1`` / re-enable FlashInfer fused AR | Official recipe perf path | Not tested for graphs; eager serve works with FlashInfer trtllm (slow init). |
+
+**Not yet run on cluster (next debug steps):**
+
+- ``CUDA_LAUNCH_BLOCKING=1 ENFORCE_EAGER=0`` — get synchronous stack trace for the kernel that actually faults (before EngineCore cascade).
+- Map **graph index 16 → token batch size** in ``gpu_model_runner._capture_cudagraphs`` (likely a specific padded batch triggers W4A8 CUTLASS or sparse-attn kernel bug).
+- Confirm patch 4 body in site-packages (not just marker): ``grep -A3 'nan_to_num router_logits' …/moe_runner.py``.
+- Patch ``csrc/moe/topk_softmax_kernels.cu`` NaN clamp ([#39391](https://github.com/vllm-project/vllm/pull/39391)) if toncao 0.24.0 lacks it — Python ``nan_to_num`` may be insufficient for **monolithic** W4A8 path where top-k runs inside CUTLASS.
+- Zero-init **padding hidden states** at MoE layer entry ([#40047](https://github.com/vllm-project/vllm/issues/40047) class) if router logits are clean but upstream activations are NaN.
+- Segment ``breakable_cudagraph`` at NCCL collectives (upstream [#46253](https://github.com/vllm-project/vllm/issues/46253) long-term fix).
+
+### Commits (``duy-branch``, graph-capture work)
+
+| Commit | Summary |
+|--------|---------|
+| ``3fd893ed`` | Fused-AR NCCL fallback when graphs on (patch 3) |
+| ``39c3d6e5`` | MoE router ``nan_to_num`` (patch 4) |
+| ``0199a48e`` | ``ensure_vllm_m3_patches()`` — workers need site-packages edits |
+| ``f45667b5`` | Launcher/sbatch auto-run ``patch_vllm_m3_serve.py`` |
+
+### Current status (2026-07-08)
+
+- **Serve with graphs:** **BLOCKED** — IMA at capture **16/51** despite all 4 persistent patches verified.
+- **Serve without graphs:** **OK** — ``ENFORCE_EAGER=1``.
+- **Production path:** fix graph capture (above next steps) or upstream vLLM/FlashInfer fixes; do not ship with ``enforce_eager`` as the only solution if graph perf is required.
+
+---
+
 ## MiniMax-M3 vLLM serve: CUDA graph capture (`enforce_eager`)
 
 **Symptom (graphs on, `enforce_eager=false`):** KV init / graph capture dies with
@@ -47,9 +119,14 @@ Often fails at a **fixed graph index** (e.g. 16/51) — batch-size-dependent.
 ```bash
 python pipeline/slurm/patch_vllm_m3_serve.py --check   # all 4 patches
 python pipeline/slurm/patch_vllm_m3_serve.py            # apply if needed
+grep -r 'llmc M3' "$(python -c 'import vllm, pathlib; print(pathlib.Path(vllm.__file__).parent)')"
 ENFORCE_EAGER=0 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
-# log should show both cudagraph patches applied; capture reaches 51/51
+# success = 51/51 capture; as of 2026-07-08 still fails at 16/51 with patches applied
 ```
+
+**Status (2026-07-08):** Patches 3–4 apply and verify, but **IMA at 16/51 persists**.
+Patches 1–2 + ``ENFORCE_EAGER=1`` remain the known-good serve path. See chronicle
+above for full attempt log.
 
 **Escape hatch:** ``ENFORCE_EAGER=1`` disables graphs entirely (confirmed working
 2026-07-08). Use only while debugging if the fused-AR patch is insufficient

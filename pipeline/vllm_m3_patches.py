@@ -202,46 +202,42 @@ def patch_vllm_m3_fused_ar_for_cudagraph() -> list[str]:
 
 
 def patch_vllm_m3_moe_router_for_cudagraph() -> list[str]:
-    """Sanitize NaN/Inf router logits before MoE routing during graph capture.
+    """Sanitize NaN/Inf router logits at the real MoE routing entry.
 
     Padded tokens in CUDA-graph dummy runs produce NaN gating logits; top-k then
-    returns duplicate expert IDs and W4A8 CUTLASS MoE hits illegal memory access
-    at specific capture sizes (vLLM #39288 / #39391). ``nan_to_num`` is a no-op
-    on valid logits.
+    returns duplicate/garbage expert IDs and the W4A8 CUTLASS MoE hits illegal
+    memory access at specific capture sizes (vLLM #39288 / #39391).
+    ``nan_to_num`` is a no-op on valid logits.
+
+    Patches ``FusedMoE.select_experts`` (the shared static routing entry the W4A8
+    **modular** kernel calls via ``fused_topk``). The previous target
+    ``MoERunner._apply_quant_method`` is a **dead path** for M3 W4AFP8 (it uses
+    ``FusedMoEModularKernel``, not ``MoERunner``) — patching it verified but never
+    ran on the router logits feeding the CUTLASS grouped GEMM, so the capture IMA
+    persisted. NOTE: this runtime hook only affects the current process; vLLM
+    ``Worker_TP*`` are spawned fresh and need the persistent site-packages edit
+    (``pipeline/slurm/patch_vllm_m3_serve.py``).
     """
     changes: list[str] = []
     try:
-        from vllm.model_executor.layers.fused_moe.runner import moe_runner
+        from vllm.model_executor.layers.fused_moe.layer import FusedMoE
     except ImportError:
         return changes
 
-    runner_cls = moe_runner.MoERunner
-    if getattr(runner_cls, _CG_MOE_PATCH_FLAG, False):
+    if getattr(FusedMoE, _CG_MOE_PATCH_FLAG, False):
         return changes
 
-    original = runner_cls._apply_quant_method
+    original = FusedMoE.select_experts.__func__  # unwrap staticmethod
 
-    def _apply_quant_method(
-        self,
-        hidden_states,
-        router_logits,
-        shared_experts_input,
-        input_ids=None,
-    ):
+    def select_experts(hidden_states, router_logits, *args, **kwargs):
         import torch
 
         router_logits = torch.nan_to_num(
             router_logits, nan=0.0, posinf=0.0, neginf=0.0
         )
-        return original(
-            self,
-            hidden_states,
-            router_logits,
-            shared_experts_input,
-            input_ids=input_ids,
-        )
+        return original(hidden_states, router_logits, *args, **kwargs)
 
-    runner_cls._apply_quant_method = _apply_quant_method
-    setattr(runner_cls, _CG_MOE_PATCH_FLAG, True)
-    changes.append("MoERunner._apply_quant_method: nan_to_num router_logits")
+    FusedMoE.select_experts = staticmethod(select_experts)
+    setattr(FusedMoE, _CG_MOE_PATCH_FLAG, True)
+    changes.append("FusedMoE.select_experts: nan_to_num router_logits")
     return changes

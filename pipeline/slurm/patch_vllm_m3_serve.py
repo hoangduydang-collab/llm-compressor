@@ -23,9 +23,16 @@ Two edits (see BUGS_AND_FIXES.md "W4A8 MoE ... SWIGLUOAI_UNINTERLEAVE"):
      ``_can_use_flashinfer`` (NCCL fallback — graph-capturable). See BUGS_AND_FIXES.md
      "CUDA graph capture".
 
-  4. model_executor/layers/fused_moe/runner/moe_runner.py
-     ``nan_to_num`` on ``router_logits`` in ``MoERunner._apply_quant_method`` before
-     routing (padding NaNs → duplicate expert IDs → W4A8 MoE IMA; vLLM #39288).
+  4. model_executor/layers/fused_moe/layer.py
+     ``nan_to_num`` on ``router_logits`` at the top of ``FusedMoE.select_experts``
+     (the shared routing entry point the W4A8 *modular* kernel actually calls;
+     padding NaNs → duplicate expert IDs → W4A8 MoE IMA; vLLM #39288 / #39391).
+
+     NOTE: this replaced an earlier edit to ``MoERunner._apply_quant_method`` — a
+     **dead path** for M3 W4AFP8 (it uses the modular ``FusedMoEModularKernel``
+     via ``select_experts``, not ``MoERunner``), which is why the IMA at capture
+     16/51 never moved despite that patch verifying as applied. See
+     BUGS_AND_FIXES.md "CUDA graph capture".
 
 Idempotent: re-running is a no-op. Fails loudly if the expected code is not found
 (so a vLLM upgrade that changes these files can't silently leave a broken serve).
@@ -52,13 +59,43 @@ SWIGLU_BETA = 1.0
 
 _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
 _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
-_CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits"
+_CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in select_experts"
 
 
 def _vllm_dir() -> Path:
     import vllm
 
     return Path(vllm.__file__).resolve().parent
+
+
+# FlashInfer >= 0.6.10 restored the finalizeMoeRoutingKernel bounds check that was
+# dropped in 0.5.3 (flashinfer#2762). Missing it => padding tokens during CUDA
+# graph capture index out-of-bounds in the MoE finalize -> deterministic IMA
+# (vLLM #35706 / #42906). This is a *separate* suspect from the router NaN patch:
+# it affects the flashinfer-backed MoE finalize, not vLLM's native W4A8 grouped
+# GEMM. Report it so a stale quant-venv flashinfer is caught immediately.
+_FLASHINFER_MIN_SAFE = (0, 6, 10)
+
+
+def _report_flashinfer_version() -> None:
+    try:
+        import flashinfer  # type: ignore
+
+        ver = getattr(flashinfer, "__version__", "?")
+        print(f"flashinfer {ver}")
+        parts = re.findall(r"\d+", str(ver))[:3]
+        if len(parts) == 3:
+            tup = tuple(int(p) for p in parts)
+            if tup < _FLASHINFER_MIN_SAFE:
+                print(
+                    f"  WARNING: flashinfer {ver} < 0.6.10 lacks the "
+                    "finalizeMoeRoutingKernel bounds-check fix (flashinfer#2762 / "
+                    "vLLM #42906). If the CUDA-graph IMA is in a flashinfer MoE "
+                    "finalize (confirm with CUDA_LAUNCH_BLOCKING=1), upgrade: "
+                    '"$UV" pip install -U "flashinfer-python>=0.6.11.post2"'
+                )
+    except Exception as exc:  # noqa: BLE001
+        print(f"flashinfer: not importable ({exc})")
 
 
 def _patch_supports_activation(text: str) -> tuple[str, bool, bool]:
@@ -145,31 +182,45 @@ def _patch_fused_ar_cudagraph(text: str) -> tuple[str, bool, bool]:
 
 
 def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
-    """Sanitize NaN router logits before MoE routing (cudagraph padding bug)."""
+    """Sanitize NaN router logits at the real MoE routing entry (cudagraph padding).
+
+    Injects ``router_logits = torch.nan_to_num(...)`` at the top of
+    ``FusedMoE.select_experts`` — the shared static routing entry that the W4A8
+    **modular** kernel (``FusedMoEModularKernel``) calls via ``fused_topk``. This
+    is where vLLM maintainers pointed for the #39288 class of IMA (padding tokens
+    → NaN logits → duplicate/garbage expert IDs → CUTLASS MoE out-of-bounds).
+
+    The anchor is the ``fused_topk, fused_topk_bias`` import that appears once,
+    inside ``select_experts``. Insert the sanitizer right after it, preserving the
+    method-body indentation, so every routing branch (grouped_topk / fused_topk /
+    custom / bias) sees clean logits.
+    """
     if _CG_MOE_MARK in text:
         return text, False, True
 
-    anchor = (
-        '        """Run expert routing and the fused MoE kernel via the quant method.\n'
-        "\n"
-        "        Orchestrates shared expert execution (before/after), expert selection\n"
-        "        via the router, and the actual fused MoE computation. Returns\n"
-        "        (shared_expert_output, fused_expert_output).\n"
-        '        """\n'
-        "        self._maybe_apply_shared_experts("
+    # Match the import block inside select_experts, tolerant of formatting
+    # (single-line vs one-name-per-line, trailing commas, ruff/black). Capture the
+    # leading indentation so the injected line lines up with the method body.
+    pattern = re.compile(
+        r"(?P<block>(?P<ind>[ \t]+)from vllm\.model_executor\.layers\.fused_moe"
+        r"\.fused_moe import \((?:[^)]*?fused_topk_bias[^)]*?)\)[ \t]*\n)",
+        re.DOTALL,
     )
-    if anchor not in text:
+    m = pattern.search(text)
+    if m is None:
         return text, False, False
 
+    ind = m.group("ind")
     injection = (
-        "        # llmc M3 cudagraph: padding tokens → NaN router logits → duplicate\n"
-        "        # expert IDs → W4A8 CUTLASS MoE IMA (vLLM #39288 / #39391).\n"
-        f"        # {_CG_MOE_MARK}\n"
-        "        router_logits = torch.nan_to_num(\n"
-        "            router_logits, nan=0.0, posinf=0.0, neginf=0.0\n"
-        "        )\n"
+        f"{ind}# llmc M3 cudagraph: padding tokens -> NaN router logits -> duplicate/\n"
+        f"{ind}# garbage expert IDs -> W4A8 CUTLASS MoE illegal memory access during\n"
+        f"{ind}# graph capture (vLLM #39288 / #39391). nan_to_num is a no-op on real\n"
+        f"{ind}# logits. {_CG_MOE_MARK}\n"
+        f"{ind}router_logits = torch.nan_to_num(\n"
+        f"{ind}    router_logits, nan=0.0, posinf=0.0, neginf=0.0\n"
+        f"{ind})\n"
     )
-    new_text = text.replace(anchor, anchor.replace("self._maybe_apply_shared_experts(", injection + "        self._maybe_apply_shared_experts(", 1), 1)
+    new_text = text[: m.end()] + injection + text[m.end() :]
     return new_text, True, True
 
 
@@ -199,7 +250,7 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
         ("W4A8 SWIGLU support", vllm_dir / "model_executor/layers/fused_moe/experts/cutlass_moe.py", _patch_supports_activation),
         ("W4A8 SWIGLU clamp", vllm_dir / "model_executor/layers/fused_moe/activation.py", _patch_apply_activation),
         ("cudagraph fused AR", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_cudagraph),
-        ("cudagraph MoE router", vllm_dir / "model_executor/layers/fused_moe/runner/moe_runner.py", _patch_moe_router_cudagraph),
+        ("cudagraph MoE router", vllm_dir / "model_executor/layers/fused_moe/layer.py", _patch_moe_router_cudagraph),
     ]
 
 
@@ -250,6 +301,7 @@ def main() -> int:
     import vllm
 
     print(f"vLLM {getattr(vllm, '__version__', '?')} at {vllm_dir}")
+    _report_flashinfer_version()
     results = [
         _apply(path, patch_fn, args.check)
         for _, path, patch_fn in _patch_targets(vllm_dir)

@@ -5,31 +5,49 @@
 **Symptom (graphs on, `enforce_eager=false`):** KV init / graph capture dies with
 worker ``CUDA error: an illegal memory access was encountered``; EngineCore
 cascades with ``TCPStore Broken pipe`` on all ranks (shutdown noise, not root cause).
+Often fails at a **fixed graph index** (e.g. 16/51) — batch-size-dependent.
 
-**Root cause:** M3's forward calls ``fused_allreduce_gemma_rms_norm`` directly
-(``model.py``). With ``VLLM_USE_BREAKABLE_CUDAGRAPH=1`` (auto-enabled for M3),
-that FlashInfer **fused** all-reduce+RMSNorm kernel is captured inside the CUDA
-graph. On TP8 H100 it is **not graph-capturable** → illegal memory access at
-``capture_end`` ([vLLM #46253](https://github.com/vllm-project/vllm/issues/46253)).
-``fuse_allreduce_rms=false`` in compile config does **not** gate this path
+**Root causes (two layers, both must be fixed for graphs on):**
+
+1. **Fused all-reduce + RMSNorm in graph** — M3's forward calls
+   ``fused_allreduce_gemma_rms_norm`` directly (``model.py``). With
+   ``VLLM_USE_BREAKABLE_CUDAGRAPH=1`` (auto-enabled for M3), FlashInfer's fused
+   all-reduce+RMSNorm kernel is captured inside the CUDA graph. On TP8 H100 it is
+   **not graph-capturable** → illegal memory access at ``capture_end``
+   ([vLLM #46253](https://github.com/vllm-project/vllm/issues/46253)).
+
+2. **MoE padding NaNs during capture** — PIECEWISE graph dummy runs pad to fixed
+   batch sizes. Padding tokens produce **NaN router logits**; top-k returns
+   **duplicate expert IDs**; W4A8 CUTLASS MoE finalize dereferences bad rows →
+   IMA at a deterministic capture step (e.g. 16/51)
+   ([vLLM #39288](https://github.com/vllm-project/vllm/issues/39288),
+   fixed upstream in [#39391](https://github.com/vllm-project/vllm/pull/39391) —
+   our toncao 0.24.0 build may lack it).
+
+``fuse_allreduce_rms=false`` in compile config does **not** gate the fused AR path
 ([vLLM #45800](https://github.com/vllm-project/vllm/issues/45800)).
 
-**Fix:** ``fused_allreduce_gemma_rms_norm`` already has a numerically identical
-**NCCL fallback** (``tensor_model_parallel_all_reduce`` + ``GemmaRMSNorm``). When
-``cudagraph_mode != NONE``, skip FlashInfer in ``_can_use_flashinfer`` so capture
-and replay use the same NCCL path:
+**Fix:**
 
-- **Persistent:** ``pipeline/slurm/patch_vllm_m3_serve.py`` (3rd edit on
-  ``fused_allreduce_gemma_rms_norm.py``); re-run after vLLM reinstall.
-- **Runtime:** ``pipeline/vllm_m3_patches.py::patch_vllm_m3_fused_ar_for_cudagraph()``
-  (auto-applied by ``serve_verify`` when ``enforce_eager=false``).
+1. **Fused AR:** ``fused_allreduce_gemma_rms_norm`` NCCL fallback when
+   ``enforce_eager=false`` (skip FlashInfer in ``_can_use_flashinfer``).
+
+2. **MoE router:** ``torch.nan_to_num(router_logits)`` in
+   ``MoERunner._apply_quant_method`` before routing (same mechanism as #39391).
+
+- **Persistent:** ``pipeline/slurm/patch_vllm_m3_serve.py`` (4 edits); re-run after
+  vLLM reinstall.
+- **Runtime:** ``patch_vllm_m3_fused_ar_for_cudagraph()`` +
+  ``patch_vllm_m3_moe_router_for_cudagraph()`` in ``serve_verify`` when
+  ``enforce_eager=false``.
 
 **Verify on cluster:**
 
 ```bash
-python pipeline/slurm/patch_vllm_m3_serve.py --check   # all 3 patches
+python pipeline/slurm/patch_vllm_m3_serve.py --check   # all 4 patches
+python pipeline/slurm/patch_vllm_m3_serve.py            # apply if needed
 ENFORCE_EAGER=0 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
-# log should NOT show "Auto-selected flashinfer allreduce backend" during capture
+# log should show both cudagraph patches applied; capture reaches 51/51
 ```
 
 **Escape hatch:** ``ENFORCE_EAGER=1`` disables graphs entirely (confirmed working
@@ -37,9 +55,10 @@ ENFORCE_EAGER=0 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
 (e.g. separate W4A8 MoE padding bug — run with ``CUDA_LAUNCH_BLOCKING=1``).
 
 **Long-term fix:** upstream vLLM ``breakable_cudagraph`` segments at
-``fused_allreduce_gemma_rms_norm`` (compute–comm–compute), or FlashInfer makes
-the fused kernel graph-safe. **Removal criteria:** delete the 3rd patch once
-stock vLLM serves M3 W4AFP8 with graphs and no IMA on h118.
+``fused_allreduce_gemma_rms_norm`` (compute–comm–compute), FlashInfer makes
+the fused kernel graph-safe, and #39391-class ``topk_softmax`` NaN clamp ships in
+the toncao/M3 serve build. **Removal criteria:** delete patches 3–4 once stock
+vLLM serves M3 W4AFP8 with graphs and no IMA on h118.
 
 ## MiniMax-M3 vLLM serve hangs: FlashInfer fused all-reduce (`shm_broadcast` timeout)
 

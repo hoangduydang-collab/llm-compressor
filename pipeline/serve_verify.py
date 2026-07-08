@@ -149,9 +149,9 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
     print()
     print("Common causes for MiniMax-M3 W4AFP8 checkpoints:")
     print(
-        "  0) CUDA graph capture illegal memory access — apply fused-AR cudagraph patch: "
-        "python pipeline/slurm/patch_vllm_m3_serve.py (see BUGS_AND_FIXES.md). "
-        "Escape: ENFORCE_EAGER=1."
+        "  0) CUDA graph capture illegal memory access — apply all 4 vLLM patches: "
+        "python pipeline/slurm/patch_vllm_m3_serve.py (fused AR + MoE router; "
+        "see BUGS_AND_FIXES.md). Escape: ENFORCE_EAGER=1."
     )
     print(
         '  1) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not '
@@ -260,11 +260,18 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
                 print(f"[pipeline] patched vLLM W4A8 MoE for M3 SwiGLU-OAI: {moe_patches}")
 
         if not cfg.serve.enforce_eager:
-            from pipeline.vllm_m3_patches import patch_vllm_m3_fused_ar_for_cudagraph
+            from pipeline.vllm_m3_patches import (
+                patch_vllm_m3_fused_ar_for_cudagraph,
+                patch_vllm_m3_moe_router_for_cudagraph,
+            )
 
             ar_patches = patch_vllm_m3_fused_ar_for_cudagraph()
-            if ar_patches:
-                print(f"[pipeline] patched vLLM for M3 CUDA graphs: {ar_patches}")
+            moe_cg_patches = patch_vllm_m3_moe_router_for_cudagraph()
+            if ar_patches or moe_cg_patches:
+                print(
+                    f"[pipeline] patched vLLM for M3 CUDA graphs: "
+                    f"{ar_patches + moe_cg_patches}"
+                )
 
     from vllm import LLM, SamplingParams
 

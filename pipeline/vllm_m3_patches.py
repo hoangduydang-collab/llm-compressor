@@ -157,6 +157,7 @@ def patch_vllm_w4a8_swigluoai_uninterleave(
 
 
 _CG_AR_PATCH_FLAG = "_llmc_m3_cudagraph_fused_ar_patched"
+_CG_MOE_PATCH_FLAG = "_llmc_m3_cudagraph_moe_router_patched"
 
 
 def patch_vllm_m3_fused_ar_for_cudagraph() -> list[str]:
@@ -182,13 +183,12 @@ def patch_vllm_m3_fused_ar_for_cudagraph() -> list[str]:
     def _can_use_flashinfer(hidden_states, tp_size: int) -> tuple[bool, int]:
         try:
             from vllm.config import get_current_vllm_config
-            from vllm.config.compilation import CUDAGraphMode
 
             vc = get_current_vllm_config()
+            # When CUDA graphs are on (enforce_eager=false), always use the NCCL
+            # fallback so capture and replay share the same graph-capturable path.
             if vc is not None and not vc.enforce_eager:
-                mode = vc.compilation_config.cudagraph_mode
-                if mode is not None and mode != CUDAGraphMode.NONE:
-                    return False, 0
+                return False, 0
         except Exception:
             pass
         return original(hidden_states, tp_size)
@@ -198,4 +198,50 @@ def patch_vllm_m3_fused_ar_for_cudagraph() -> list[str]:
     changes.append(
         "fused_allreduce_gemma_rms_norm: NCCL fallback when CUDA graphs enabled"
     )
+    return changes
+
+
+def patch_vllm_m3_moe_router_for_cudagraph() -> list[str]:
+    """Sanitize NaN/Inf router logits before MoE routing during graph capture.
+
+    Padded tokens in CUDA-graph dummy runs produce NaN gating logits; top-k then
+    returns duplicate expert IDs and W4A8 CUTLASS MoE hits illegal memory access
+    at specific capture sizes (vLLM #39288 / #39391). ``nan_to_num`` is a no-op
+    on valid logits.
+    """
+    changes: list[str] = []
+    try:
+        from vllm.model_executor.layers.fused_moe.runner import moe_runner
+    except ImportError:
+        return changes
+
+    runner_cls = moe_runner.MoERunner
+    if getattr(runner_cls, _CG_MOE_PATCH_FLAG, False):
+        return changes
+
+    original = runner_cls._apply_quant_method
+
+    def _apply_quant_method(
+        self,
+        hidden_states,
+        router_logits,
+        shared_experts_input,
+        input_ids=None,
+    ):
+        import torch
+
+        router_logits = torch.nan_to_num(
+            router_logits, nan=0.0, posinf=0.0, neginf=0.0
+        )
+        return original(
+            self,
+            hidden_states,
+            router_logits,
+            shared_experts_input,
+            input_ids=input_ids,
+        )
+
+    runner_cls._apply_quant_method = _apply_quant_method
+    setattr(runner_cls, _CG_MOE_PATCH_FLAG, True)
+    changes.append("MoERunner._apply_quant_method: nan_to_num router_logits")
     return changes

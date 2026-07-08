@@ -23,6 +23,10 @@ Two edits (see BUGS_AND_FIXES.md "W4A8 MoE ... SWIGLUOAI_UNINTERLEAVE"):
      ``_can_use_flashinfer`` (NCCL fallback — graph-capturable). See BUGS_AND_FIXES.md
      "CUDA graph capture".
 
+  4. model_executor/layers/fused_moe/runner/moe_runner.py
+     ``nan_to_num`` on ``router_logits`` in ``MoERunner._apply_quant_method`` before
+     routing (padding NaNs → duplicate expert IDs → W4A8 MoE IMA; vLLM #39288).
+
 Idempotent: re-running is a no-op. Fails loudly if the expected code is not found
 (so a vLLM upgrade that changes these files can't silently leave a broken serve).
 
@@ -48,6 +52,7 @@ SWIGLU_BETA = 1.0
 
 _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
 _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
+_CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits"
 
 
 def _vllm_dir() -> Path:
@@ -128,17 +133,43 @@ def _patch_fused_ar_cudagraph(text: str) -> tuple[str, bool, bool]:
         f"    # {_CG_AR_MARK}\n"
         "    try:\n"
         "        from vllm.config import get_current_vllm_config\n"
-        "        from vllm.config.compilation import CUDAGraphMode\n"
         "\n"
         "        vc = get_current_vllm_config()\n"
         "        if vc is not None and not vc.enforce_eager:\n"
-        "            mode = vc.compilation_config.cudagraph_mode\n"
-        "            if mode is not None and mode != CUDAGraphMode.NONE:\n"
-        "                return False, 0\n"
+        "            return False, 0\n"
         "    except Exception:\n"
         "        pass\n"
     )
     new_text = text.replace(anchor, anchor + "\n" + injection, 1)
+    return new_text, True, True
+
+
+def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
+    """Sanitize NaN router logits before MoE routing (cudagraph padding bug)."""
+    if _CG_MOE_MARK in text:
+        return text, False, True
+
+    anchor = (
+        '        """Run expert routing and the fused MoE kernel via the quant method.\n'
+        "\n"
+        "        Orchestrates shared expert execution (before/after), expert selection\n"
+        "        via the router, and the actual fused MoE computation. Returns\n"
+        "        (shared_expert_output, fused_expert_output).\n"
+        '        """\n'
+        "        self._maybe_apply_shared_experts("
+    )
+    if anchor not in text:
+        return text, False, False
+
+    injection = (
+        "        # llmc M3 cudagraph: padding tokens → NaN router logits → duplicate\n"
+        "        # expert IDs → W4A8 CUTLASS MoE IMA (vLLM #39288 / #39391).\n"
+        f"        # {_CG_MOE_MARK}\n"
+        "        router_logits = torch.nan_to_num(\n"
+        "            router_logits, nan=0.0, posinf=0.0, neginf=0.0\n"
+        "        )\n"
+    )
+    new_text = text.replace(anchor, anchor.replace("self._maybe_apply_shared_experts(", injection + "        self._maybe_apply_shared_experts(", 1), 1)
     return new_text, True, True
 
 
@@ -168,7 +199,8 @@ def main() -> int:
     cutlass = vllm_dir / "model_executor/layers/fused_moe/experts/cutlass_moe.py"
     activation = vllm_dir / "model_executor/layers/fused_moe/activation.py"
     fused_ar = vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py"
-    for p in (cutlass, activation, fused_ar):
+    moe_runner = vllm_dir / "model_executor/layers/fused_moe/runner/moe_runner.py"
+    for p in (cutlass, activation, fused_ar, moe_runner):
         if not p.exists():
             print(f"ERROR: {p} not found; is this the W4A8-MoE vLLM build?")
             return 2
@@ -179,9 +211,10 @@ def main() -> int:
     ok1 = _apply(cutlass, _patch_supports_activation, args.check)
     ok2 = _apply(activation, _patch_apply_activation, args.check)
     ok3 = _apply(fused_ar, _patch_fused_ar_cudagraph, args.check)
+    ok4 = _apply(moe_runner, _patch_moe_router_cudagraph, args.check)
 
     if args.check:
-        already = ok1 and ok2 and ok3
+        already = ok1 and ok2 and ok3 and ok4
         print("STATUS:", "patched" if already else "NOT patched")
         return 0 if already else 1
 

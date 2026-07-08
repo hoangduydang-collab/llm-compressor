@@ -18,6 +18,11 @@ Two edits (see BUGS_AND_FIXES.md "W4A8 MoE ... SWIGLUOAI_UNINTERLEAVE"):
      clamp scalars to the M3/gpt-oss SwiGLU-OAI constants when the W4A8 call site
      passes none (it does), instead of asserting.
 
+  3. model_executor/layers/fused_allreduce_gemma_rms_norm.py
+     When CUDA graphs are enabled, skip FlashInfer fused AR in
+     ``_can_use_flashinfer`` (NCCL fallback — graph-capturable). See BUGS_AND_FIXES.md
+     "CUDA graph capture".
+
 Idempotent: re-running is a no-op. Fails loudly if the expected code is not found
 (so a vLLM upgrade that changes these files can't silently leave a broken serve).
 
@@ -42,6 +47,7 @@ SWIGLU_ALPHA = 1.702
 SWIGLU_BETA = 1.0
 
 _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
+_CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
 
 
 def _vllm_dir() -> Path:
@@ -104,6 +110,38 @@ def _patch_apply_activation(text: str) -> tuple[str, bool, bool]:
     return text[: m.start()] + replacement + text[m.end() :], True, True
 
 
+def _patch_fused_ar_cudagraph(text: str) -> tuple[str, bool, bool]:
+    """Skip FlashInfer fused AR when CUDA graphs are on; use NCCL fallback."""
+    if _CG_AR_MARK in text:
+        return text, False, True
+
+    anchor = (
+        'def _can_use_flashinfer(hidden_states: torch.Tensor, tp_size: int) -> tuple[bool, int]:\n'
+        '    """Whether the flashinfer fused path applies; returns (ok, max_token_num)."""'
+    )
+    if anchor not in text:
+        return text, False, False
+
+    injection = (
+        "    # llmc M3 cudagraph: FlashInfer fused AR+RMSNorm is not capturable on TP8\n"
+        "    # (illegal memory access at capture_end; vLLM #46253). Use NCCL fallback.\n"
+        f"    # {_CG_AR_MARK}\n"
+        "    try:\n"
+        "        from vllm.config import get_current_vllm_config\n"
+        "        from vllm.config.compilation import CUDAGraphMode\n"
+        "\n"
+        "        vc = get_current_vllm_config()\n"
+        "        if vc is not None and not vc.enforce_eager:\n"
+        "            mode = vc.compilation_config.cudagraph_mode\n"
+        "            if mode is not None and mode != CUDAGraphMode.NONE:\n"
+        "                return False, 0\n"
+        "    except Exception:\n"
+        "        pass\n"
+    )
+    new_text = text.replace(anchor, anchor + "\n" + injection, 1)
+    return new_text, True, True
+
+
 def _apply(path: Path, patch_fn, check_only: bool) -> bool:
     """Return True if the file is patched (already or newly)."""
     text = path.read_text(encoding="utf-8")
@@ -129,7 +167,8 @@ def main() -> int:
     vllm_dir = _vllm_dir()
     cutlass = vllm_dir / "model_executor/layers/fused_moe/experts/cutlass_moe.py"
     activation = vllm_dir / "model_executor/layers/fused_moe/activation.py"
-    for p in (cutlass, activation):
+    fused_ar = vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py"
+    for p in (cutlass, activation, fused_ar):
         if not p.exists():
             print(f"ERROR: {p} not found; is this the W4A8-MoE vLLM build?")
             return 2
@@ -139,9 +178,10 @@ def main() -> int:
     print(f"vLLM {getattr(vllm, '__version__', '?')} at {vllm_dir}")
     ok1 = _apply(cutlass, _patch_supports_activation, args.check)
     ok2 = _apply(activation, _patch_apply_activation, args.check)
+    ok3 = _apply(fused_ar, _patch_fused_ar_cudagraph, args.check)
 
     if args.check:
-        already = ok1 and ok2
+        already = ok1 and ok2 and ok3
         print("STATUS:", "patched" if already else "NOT patched")
         return 0 if already else 1
 

@@ -68,8 +68,8 @@ serve:
   kv_cache_dtype: fp8
   max_model_len: 32768
   gpu_memory_utilization: 0.9
-  # CUDA graphs enabled (enforce_eager=false). Bring-up on h118 used ENFORCE_EAGER=1;
-  # re-enable only if graph capture hangs (see BUGS_AND_FIXES.md).
+  # CUDA graphs on by default. FlashInfer fused AR is skipped during capture via
+  # patch_vllm_m3_serve.py (NCCL fallback). ENFORCE_EAGER=1 if graph capture fails.
   enforce_eager: false
   prompt: "The capital of France is"
   # The HTTP server additionally needs (not used by offline serve-verify):

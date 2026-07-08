@@ -2,27 +2,44 @@
 
 ## MiniMax-M3 vLLM serve: CUDA graph capture (`enforce_eager`)
 
-**Default (post bring-up):** `enforce_eager: false` in `pipeline/configs/minimax_m3.yaml`
-and launchers — vLLM 0.24 captures `FULL_AND_PIECEWISE` CUDA graphs for throughput.
+**Symptom (graphs on, `enforce_eager=false`):** KV init / graph capture dies with
+worker ``CUDA error: an illegal memory access was encountered``; EngineCore
+cascades with ``TCPStore Broken pipe`` on all ranks (shutdown noise, not root cause).
 
-**Bring-up (2026-07-08):** first h118 debug runs used `ENFORCE_EAGER=1` to bypass graph
-capture while fixing load/patch issues. Serve-verify succeeded with eager mode.
+**Root cause:** M3's forward calls ``fused_allreduce_gemma_rms_norm`` directly
+(``model.py``). With ``VLLM_USE_BREAKABLE_CUDAGRAPH=1`` (auto-enabled for M3),
+that FlashInfer **fused** all-reduce+RMSNorm kernel is captured inside the CUDA
+graph. On TP8 H100 it is **not graph-capturable** → illegal memory access at
+``capture_end`` ([vLLM #46253](https://github.com/vllm-project/vllm/issues/46253)).
+``fuse_allreduce_rms=false`` in compile config does **not** gate this path
+([vLLM #45800](https://github.com/vllm-project/vllm/issues/45800)).
 
-**Re-enable graphs:** run without `ENFORCE_EAGER=1`:
+**Fix:** ``fused_allreduce_gemma_rms_norm`` already has a numerically identical
+**NCCL fallback** (``tensor_model_parallel_all_reduce`` + ``GemmaRMSNorm``). When
+``cudagraph_mode != NONE``, skip FlashInfer in ``_can_use_flashinfer`` so capture
+and replay use the same NCCL path:
+
+- **Persistent:** ``pipeline/slurm/patch_vllm_m3_serve.py`` (3rd edit on
+  ``fused_allreduce_gemma_rms_norm.py``); re-run after vLLM reinstall.
+- **Runtime:** ``pipeline/vllm_m3_patches.py::patch_vllm_m3_fused_ar_for_cudagraph()``
+  (auto-applied by ``serve_verify`` when ``enforce_eager=false``).
+
+**Verify on cluster:**
 
 ```bash
-bash pipeline/slurm/run_serve_minimax_m3_detached.sh
+python pipeline/slurm/patch_vllm_m3_serve.py --check   # all 3 patches
+ENFORCE_EAGER=0 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
+# log should NOT show "Auto-selected flashinfer allreduce backend" during capture
 ```
 
-Expect a long first capture pass (sparse-attn / W4A8 MoE / FlashInfer workspace init);
-`shm_broadcast` warnings during compilation are normal if progress continues.
+**Escape hatch:** ``ENFORCE_EAGER=1`` disables graphs entirely (confirmed working
+2026-07-08). Use only while debugging if the fused-AR patch is insufficient
+(e.g. separate W4A8 MoE padding bug — run with ``CUDA_LAUNCH_BLOCKING=1``).
 
-**Escape hatch:** if capture deadlocks (repeating `shm_broadcast` with no progress for
-5+ minutes):
-
-```bash
-ENFORCE_EAGER=1 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
-```
+**Long-term fix:** upstream vLLM ``breakable_cudagraph`` segments at
+``fused_allreduce_gemma_rms_norm`` (compute–comm–compute), or FlashInfer makes
+the fused kernel graph-safe. **Removal criteria:** delete the 3rd patch once
+stock vLLM serves M3 W4AFP8 with graphs and no IMA on h118.
 
 ## MiniMax-M3 vLLM serve hangs: FlashInfer fused all-reduce (`shm_broadcast` timeout)
 

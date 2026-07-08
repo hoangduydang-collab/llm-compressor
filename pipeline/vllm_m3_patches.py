@@ -154,3 +154,48 @@ def patch_vllm_w4a8_swigluoai_uninterleave(
 
     setattr(kernel_cls, _PATCH_FLAG, True)
     return changes
+
+
+_CG_AR_PATCH_FLAG = "_llmc_m3_cudagraph_fused_ar_patched"
+
+
+def patch_vllm_m3_fused_ar_for_cudagraph() -> list[str]:
+    """Use NCCL all-reduce + GemmaRMSNorm when CUDA graphs are enabled.
+
+    FlashInfer's fused AR+RMSNorm is invoked directly from M3's forward
+    (``fused_allreduce_gemma_rms_norm``). ``breakable_cudagraph`` captures it
+    whole; on TP8 H100 this triggers ``cudaErrorIllegalAddress`` at
+    ``capture_end`` (vLLM #46253). The module already has a numerically identical
+    NCCL fallback — we force that path whenever ``cudagraph_mode != NONE``.
+    """
+    changes: list[str] = []
+    try:
+        import vllm.model_executor.layers.fused_allreduce_gemma_rms_norm as far
+    except ImportError:
+        return changes
+
+    if getattr(far, _CG_AR_PATCH_FLAG, False):
+        return changes
+
+    original = far._can_use_flashinfer
+
+    def _can_use_flashinfer(hidden_states, tp_size: int) -> tuple[bool, int]:
+        try:
+            from vllm.config import get_current_vllm_config
+            from vllm.config.compilation import CUDAGraphMode
+
+            vc = get_current_vllm_config()
+            if vc is not None and not vc.enforce_eager:
+                mode = vc.compilation_config.cudagraph_mode
+                if mode is not None and mode != CUDAGraphMode.NONE:
+                    return False, 0
+        except Exception:
+            pass
+        return original(hidden_states, tp_size)
+
+    far._can_use_flashinfer = _can_use_flashinfer
+    setattr(far, _CG_AR_PATCH_FLAG, True)
+    changes.append(
+        "fused_allreduce_gemma_rms_norm: NCCL fallback when CUDA graphs enabled"
+    )
+    return changes

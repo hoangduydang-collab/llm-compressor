@@ -94,12 +94,23 @@ LANGUAGE_MODEL_ONLY="${LANGUAGE_MODEL_ONLY:-1}"
 # Setting these was a suspected HTTP-vs-offline divergence for graph capture.
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-}"
 MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-}"
-# Graphs on by default (offline cyankiwi PASS). ENFORCE_EAGER=1 is escape hatch.
+# Graphs on by default (offline cyankiwi LLM() PASS at 8192). HTTP AsyncLLM has
+# still IMA'd at capture with patches live — ENFORCE_EAGER=1 unblocks chat smoke
+# while we name the kernel (DEBUG_CUDAGRAPH=1). Do not treat eager as the fix.
 ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
 # Same preflight serve_verify runs before LLM() — required for raw vllm serve.
 PATCH_CKPT_CONFIG="${PATCH_CKPT_CONFIG:-1}"
+# When 1: force sync CUDA + DSA so the IMA names the real kernel (not empty_cache).
+DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-0}"
 LOG="${LOG:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.log}"
 PID_FILE="${PID_FILE:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.pid}"
+
+if [[ "$DEBUG_CUDAGRAPH" == "1" || "$DEBUG_CUDAGRAPH" == "true" ]]; then
+  export CUDA_LAUNCH_BLOCKING=1
+  export TORCH_USE_CUDA_DSA=1
+  export PYTHONFAULTHANDLER=1
+  echo "[http-smoke] DEBUG_CUDAGRAPH=1 — CUDA_LAUNCH_BLOCKING=1 TORCH_USE_CUDA_DSA=1"
+fi
 
 test -f "$MODEL_CKPT/config.json" || {
   echo "ERROR: missing config.json at $MODEL_CKPT"
@@ -175,10 +186,20 @@ fi
 
 # Compressed-tensors / Marlin M3 path: site-packages patches must exist before
 # Worker_TP* spawn (same requirement as offline serve-verify).
+# Fail loud if patches are missing — otherwise we re-debug a "fixed" bug under
+# graphs-on while the real issue is an unpatched venv.
 if [[ "$APPLY_M3_PATCHES" == "1" || "$APPLY_M3_PATCHES" == "true" ]]; then
-  python "$SCRIPT_DIR/patch_vllm_m3_serve.py" || {
-    echo "WARNING: patch_vllm_m3_serve.py failed; continuing (may be fine for non-M3)."
-  }
+  if ! python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --check; then
+    echo "[http-smoke] patches incomplete; applying..."
+    python "$SCRIPT_DIR/patch_vllm_m3_serve.py" || {
+      echo "ERROR: patch_vllm_m3_serve.py failed"
+      exit 1
+    }
+    python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --check || {
+      echo "ERROR: vLLM M3 patches still incomplete after apply"
+      exit 1
+    }
+  fi
 fi
 
 ARGS=(
@@ -234,6 +255,7 @@ echo "  max-num-seqs:        ${MAX_NUM_SEQS:-<vllm default>}"
 echo "  max-num-batched-tok: ${MAX_NUM_BATCHED_TOKENS:-<vllm default>}"
 echo "  language-model-only: $LANGUAGE_MODEL_ONLY"
 echo "  enforce_eager:       $ENFORCE_EAGER"
+echo "  debug_cudagraph:     $DEBUG_CUDAGRAPH"
 echo "  log:                 $LOG"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv 2>/dev/null || true

@@ -61,6 +61,91 @@ SWIGLU_BETA = 1.0
 _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
 _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
 _CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in _select_experts"
+_PROBE_MARK = "llmc M3 MoE quality probe"
+
+# Optional, env-gated (M3_MOE_PROBE=1) diagnostic appended to the vLLM M3 model
+# module so it runs inside the spawned Worker_TP* processes (in-process
+# monkeypatches in serve_verify do NOT reach workers). It confirms/rules out the
+# serve-side "arring" garbage root cause (shared expert dropped in every MoE
+# layer) by logging, for the first few real-prefill MoE forwards, the shared-
+# expert output norm and the combined MoE output norm. shared_norm~=0 / missing
+# module (or, with M3_MOE_PROBE_RECOMPUTE=1, moe_out ~= routed*2) => the shared
+# expert is dropped -> residual collapse -> garbage (aquaman164
+# m3_official_loader.py "M3_FIX_SHARED"; see BUGS_AND_FIXES.md "full-calib AWQ
+# garbage output"). No runtime cost unless M3_MOE_PROBE=1.
+_PROBE_BLOCK = '''
+
+# === {mark} (BUGS_AND_FIXES.md "full-calib AWQ garbage output") ===
+try:  # gated diagnostic; never break model import
+    import os as _llmc_os
+    if _llmc_os.environ.get("M3_MOE_PROBE") == "1":
+        from vllm.logger import init_logger as _llmc_init_logger
+        _llmc_probe_log = _llmc_init_logger("llmc.m3_moe_probe")
+        _llmc_probe_moe_cls = globals().get("MiniMaxM3MoE")
+        _llmc_probe_state = {{"n": 0}}
+        _llmc_probe_max = int(_llmc_os.environ.get("M3_MOE_PROBE_LAYERS", "6"))
+        _llmc_probe_recompute = _llmc_os.environ.get("M3_MOE_PROBE_RECOMPUTE") == "1"
+
+        def _llmc_probe_norm(_t):
+            try:
+                return float(_t.float().norm().item())
+            except Exception:
+                return -1.0
+
+        if _llmc_probe_moe_cls is not None and not getattr(
+            _llmc_probe_moe_cls, "_llmc_probed", False
+        ):
+            _llmc_probe_orig_forward = _llmc_probe_moe_cls.forward
+
+            def _llmc_probe_forward(self, hidden_states, *args, **kwargs):
+                out = _llmc_probe_orig_forward(self, hidden_states, *args, **kwargs)
+                try:
+                    n = int(hidden_states.shape[0])
+                    if _llmc_probe_state["n"] < _llmc_probe_max and 2 <= n <= 64:
+                        _llmc_probe_state["n"] += 1
+                        hs = hidden_states.view(-1, hidden_states.shape[-1])
+                        shared_mod = getattr(self, "shared_experts", None)
+                        shared_norm = (
+                            _llmc_probe_norm(shared_mod(hs))
+                            if shared_mod is not None else -1.0
+                        )
+                        out_norm = _llmc_probe_norm(out)
+                        routed_norm = -1.0
+                        ratio = -1.0
+                        if _llmc_probe_recompute:
+                            _rl, _ = self.gate(hs)
+                            _routed = self.experts(hidden_states=hs, router_logits=_rl)
+                            routed_norm = _llmc_probe_norm(_routed)
+                            ratio = out_norm / routed_norm if routed_norm > 0 else -1.0
+                        dropped = (
+                            shared_mod is None
+                            or (0.0 <= shared_norm <= 1e-4)
+                            or (0.0 <= ratio and abs(ratio - 2.0) < 0.05)
+                        )
+                        _llmc_probe_log.warning(
+                            "M3_MOE_PROBE#%d tokens=%d shared_present=%s "
+                            "shared_norm=%.3f moe_out_norm=%.3f routed_norm=%.3f "
+                            "out/routed=%.3f%s",
+                            _llmc_probe_state["n"], n, shared_mod is not None,
+                            shared_norm, out_norm, routed_norm, ratio,
+                            "  <-- SHARED EXPERT DROPPED (garbage root cause)"
+                            if dropped else "",
+                        )
+                except Exception as _llmc_e:
+                    _llmc_probe_log.warning("M3_MOE_PROBE forward failed: %r", _llmc_e)
+                return out
+
+            _llmc_probe_moe_cls.forward = _llmc_probe_forward
+            _llmc_probe_moe_cls._llmc_probed = True
+            _llmc_probe_log.warning(
+                "llmc M3 MoE probe active on %s.forward (M3_MOE_PROBE=1, "
+                "recompute=%s, max_layers=%d)",
+                _llmc_probe_moe_cls.__name__, _llmc_probe_recompute, _llmc_probe_max,
+            )
+except Exception:
+    pass
+# === end {mark} ===
+'''.format(mark=_PROBE_MARK)
 
 
 def _vllm_dir() -> Path:
@@ -221,6 +306,69 @@ def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
     return new_text, True, True
 
 
+def _find_m3_moe_model_files(vllm_dir: Path) -> list[Path]:
+    """Locate the vLLM module(s) that define ``class MiniMaxM3MoE``.
+
+    The module path differs across builds (``vllm/models/minimax_m3/nvidia/model.py``
+    on some, ``vllm/model_executor/models/minimax_m3*.py`` on others), so discover
+    it by content instead of hard-coding.
+    """
+    needle = "class MiniMaxM3MoE"
+    hits: list[Path] = []
+    for p in vllm_dir.rglob("*.py"):
+        try:
+            if needle in p.read_text(encoding="utf-8"):
+                hits.append(p)
+        except Exception:
+            continue
+    return hits
+
+
+def _patch_append_probe(text: str) -> tuple[str, bool, bool]:
+    """Append the env-gated MoE quality probe to the M3 model module.
+
+    Appending at end-of-module (after the class defs) means we do not depend on
+    any internal code layout — only that ``MiniMaxM3MoE`` is defined in this
+    module's globals, which it is by construction (this file was selected because
+    it contains ``class MiniMaxM3MoE``).
+    """
+    if _PROBE_MARK in text:
+        return text, False, True
+    if "class MiniMaxM3MoE" not in text:
+        return text, False, False
+    new_text = text.rstrip("\n") + "\n" + _PROBE_BLOCK
+    return new_text, True, True
+
+
+def ensure_m3_moe_probe(*, apply: bool = True) -> str:
+    """Inject (idempotently) the env-gated MoE quality probe into site-packages.
+
+    Best-effort and separate from ``ensure_vllm_m3_patches`` (the required serve
+    patches): a missing/relocated M3 model file must never block serve. Returns a
+    short human-readable status string. The probe is dormant unless the worker
+    env has ``M3_MOE_PROBE=1``.
+    """
+    vllm_dir = _vllm_dir()
+    files = _find_m3_moe_model_files(vllm_dir)
+    if not files:
+        return "skipped (no 'class MiniMaxM3MoE' found; build layout differs)"
+    statuses: list[str] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        new_text, changed, found = _patch_append_probe(text)
+        if not found:
+            statuses.append(f"{path.name}: no MoE class")
+            continue
+        if changed and apply:
+            path.write_text(new_text, encoding="utf-8")
+            statuses.append(f"{path.name}: injected")
+        elif changed and not apply:
+            statuses.append(f"{path.name}: NOT injected")
+        else:
+            statuses.append(f"{path.name}: already injected")
+    return "; ".join(statuses)
+
+
 def _apply(path: Path, patch_fn, check_only: bool, *, fatal: bool = True) -> bool:
     """Return True if the file is patched (already or newly)."""
     text = path.read_text(encoding="utf-8")
@@ -287,6 +435,11 @@ def ensure_vllm_m3_patches(*, apply: bool = True) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="report only; exit 1 if unpatched")
+    ap.add_argument(
+        "--probe",
+        action="store_true",
+        help="also inject the env-gated MoE quality probe (M3_MOE_PROBE=1 at serve)",
+    )
     args = ap.parse_args()
 
     vllm_dir = _vllm_dir()
@@ -305,9 +458,18 @@ def main() -> int:
     ]
 
     if args.check:
+        probe_status = ensure_m3_moe_probe(apply=False)
+        print(f"MoE quality probe: {probe_status}")
         already = all(results)
         print("STATUS:", "patched" if already else "NOT patched")
         return 0 if already else 1
+
+    if args.probe:
+        print(f"MoE quality probe: {ensure_m3_moe_probe(apply=True)}")
+        print(
+            "  Enable at serve time with: M3_MOE_PROBE=1 (optional "
+            "M3_MOE_PROBE_RECOMPUTE=1 to also log routed-only norm)."
+        )
 
     print(
         "\nDone. Recompile of C++/CUDA is NOT required (pure-Python edits).\n"

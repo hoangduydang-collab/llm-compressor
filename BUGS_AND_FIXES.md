@@ -29,12 +29,23 @@ Each was a **hard blocker** before CUDA-graph capture could start:
 5. **VL processor artifacts** — copied into checkpoint dir before ``LLM()``.
 6. **Orphaned ``Worker_TP*`` processes** — kill via ``nvidia-smi`` before restart (else OOM / Broken pipe noise).
 
-### CUDA graph capture (``enforce_eager=false``) — still failing
+### CUDA graph capture (``enforce_eager=false``) — status update 2026-07-09
 
-**Symptom:** PIECEWISE capture progresses to **16/51** (deterministic), then
-``CUDA illegal memory access`` in ``breakable_cudagraph._capture`` (reported at
-``empty_cache()`` — async). EngineCore dies → **``TCPStore Broken pipe``** on all
-ranks (shutdown cascade, **not** root cause).
+**Earlier (2026-07-07/08):** PIECEWISE capture progressed to **16/51**, then
+``CUDA illegal memory access`` (async report at ``empty_cache()``). Attempts A–G
+below did not move that failure under detached-script defaults.
+
+**Update (2026-07-09):** with ``debug_cudagraph_ima.sh`` settings
+(``MAX_MODEL_LEN=2048``, ``GPU_UTIL=0.85``, ``CUDA_LAUNCH_BLOCKING=1``,
+``TORCH_USE_CUDA_DSA=1``, ``disable_custom_all_reduce=true``) and patches 1–4
+applied, **graphs-on serve-verify PASSes** on both smoke
+(``20260707-082218``) and full-calib (``20260708-093642``) checkpoints.
+Detached defaults (``MAX_MODEL_LEN=8192``, ``GPU_UTIL=0.9``) still reproduced
+IMA @ 16/51 on a re-run — treat that as a **memory-envelope / launch-flag**
+sensitivity, not “graphs fundamentally broken.” Quality remains garbage; see
+**“MiniMax-M3 full-calib AWQ garbage output”** below.
+
+Historical attempt table (kept for the 16/51 investigation):
 
 | # | Attempt | Hypothesis | Result on h118 |
 |---|---------|------------|----------------|
@@ -251,11 +262,13 @@ or vLLM's custom all-reduce P2P capability check correctly disables itself on th
 ~17.8 tok/s, `overall_ok=True`, `rc=0`. The `TCPStore ... Broken pipe` /
 `recvValue failed` lines during shutdown are benign teardown noise after `SIGTERM`.
 
-> Note: the smoke checkpoint (`MiniMax-M3-awq-W4AFP8/…`) still emits degenerate text
-> (`"arringarring…"` repetition). That is a **quantization-quality** artifact of the
-> quick/smoke calibration, not an infra bug — the serve path (W4A8 MoE, CUDA graphs,
-> TP all-reduce) is now healthy. A full-calibration checkpoint is required for coherent
-> output.
+> Note: the smoke checkpoint (`MiniMax-M3-awq-W4AFP8/20260707-082218/…`) still emits
+> degenerate text (`"arringarring…"` repetition). That is a **quantization-quality**
+> artifact, not an infra bug — the serve path (W4A8 MoE, CUDA graphs, TP all-reduce)
+> is healthy. **Update 2026-07-09:** the full-calibration checkpoint
+> (`20260708-093642`) also emits the same `"arringarring…"` garbage under a known-good
+> graphs-on serve. See **“MiniMax-M3 full-calib AWQ garbage output (quality ablation)”**
+> below — FP8 activations have been ruled out; recipe / weight-scope work remains.
 
 ## MiniMax-M3 vLLM serve aborts: FlashInfer `gemma_rmsnorm` CuTe-DSL JIT (nanobind "Expected an MLIR object")
 
@@ -369,6 +382,263 @@ grep -E 'pin_memory|CUDA error: out of memory|\(5/61\): Calibrating' \
 ```
 
 **Related upstream issues:** [#2790](https://github.com/vllm-project/llm-compressor/issues/2790), [#2813](https://github.com/vllm-project/llm-compressor/pull/2813).
+
+**Validated (2026-07-09):** after the `pin_memory` removal (`e3dff4ed` on `duy-branch`), full calibration completed on h118:
+
+- Compressing model: **22116/22116** modules (matches expected sparse-layer Linear count)
+- Checkpoint: `artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint`
+- Config patches on save: vision `img_token_compression_config` restored; `hidden_act` forced `swigluoai`; recipe `ignore` patterns persisted
+
+## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
+
+**Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ
+W4AFP8 checkpoints answer the smoke prompt with the same degenerate repetition:
+
+```
+prompt: 'The capital of France is'
+output: 'arringarringarringarring…'
+```
+
+Serve itself is healthy (`overall_ok=True`, `rc=0`, CUDA graphs capture, no IMA).
+This is a **quantization-quality** failure, not load/serve infra.
+
+### Checkpoints under test
+
+| Label | Path | Calib | Scheme (as quantized) |
+|-------|------|-------|------------------------|
+| Smoke | `artifacts/MiniMax-M3-awq-W4AFP8/20260707-082218/checkpoint` | 8 × 512 (`minimax_m3.yaml`) | W4AFP8 |
+| Full-calib | `artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint` | 512 × 2048 (`minimax_m3_full_calib.yaml`) | W4AFP8 |
+| Full-calib W4A16-serve | `…/20260708-093642/checkpoint-w4a16-serve` | same weights as full-calib | config-only: `input_activations: null` |
+
+Smoke and full-calib share the **same ignore list** (dense 0–2, vision, projector,
+patch_merge, MoE gate, shared experts, MSA indexer, `lm_head`). Full-calib only
+increases sample count / seq length; it does **not** change which modules are INT4.
+
+### Serve path that works (infra baseline)
+
+Earlier chronicle entries assumed graphs-on was still broken at 16/51. On 2026-07-09
+that was clarified:
+
+| Attempt | Command / settings | Smoke | Full-calib |
+|---------|--------------------|-------|------------|
+| Detached defaults | `run_serve_minimax_m3_detached.sh` (`MAX_MODEL_LEN=8192`, `GPU_UTIL=0.9`) | IMA @ 16/51 (reproduced) | IMA @ 16/51 |
+| Known-good graphs-on | `debug_cudagraph_ima.sh` (`MAX_MODEL_LEN=2048`, `GPU_UTIL=0.85`, `CUDA_LAUNCH_BLOCKING=1`, `TORCH_USE_CUDA_DSA=1`, `disable_custom_all_reduce=true`) | **PASS** (`overall_ok=True`) | **PASS** (`overall_ok=True`) |
+
+So: **graphs + patches + custom-AR disable work on both checkpoints** under the
+debug-script memory envelope. The remaining failure is **text quality**.
+
+> Practical note: prefer `debug_cudagraph_ima.sh` (or the same
+> `MAX_MODEL_LEN` / `GPU_UTIL`) when comparing quality across checkpoints, so
+> graph-capture OOMs do not get confused with quant quality.
+
+### Structural audit (rules out the usual MiniMax garbage modes)
+
+`python -m pipeline.verify_quant_checkpoint` on the full-calib checkpoint
+(**PASS**). Same ignore shape as smoke (`True True` + matching patterns).
+
+| Hypothesis | Status | Evidence |
+|------------|--------|----------|
+| Shared expert dropped / zero-loaded ([aquaman164 MiniMax-M3 AutoRound](https://huggingface.co/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx)) | **Ruled out** | `shared_experts: none quantized`; `re:.*mlp[.]shared_experts[.].*` in saved `ignore` |
+| MoE gate pruned from saved `ignore` (Qwen3 class; `pipeline/README.md`) | **Ruled out** | `re:.*mlp[.]gate$` present; `moe_router_gate: none quantized` |
+| Wrong expert count / layout | **Ruled out** | Exactly **22116** = 57 × (128×3 + 4 attn) |
+| MSA indexer accidentally INT4 | **Ruled out** | `msa_indexer: none quantized` |
+| Dense layers 0–2 / vision quantized | **Ruled out** | ignore patterns match; verify PASS |
+| “Full calib will fix smoke garbage” | **Falsified** | Full-calib still `"arringarring…"` |
+
+Log note from quantize: **“57 mappings were skipped due to incompatible shapes.”**
+That is expected for the MSA indexer / non-matching AWQ balance sets on this
+architecture (see `pipeline/probe_awq_mappings.py` / correctness audit); it is
+**not** evidence that shared experts or gates were dropped. Do not treat it as
+the garbage root cause without a separate mapping-coverage check.
+
+### Ablation 1 — serve INT4 weights with A16 activations (no re-quant) — DONE
+
+**Hypothesis:** W4AFP8’s dynamic per-token FP8 activations on attention + experts
+are too aggressive vs community W4A16 weight-only
+([cyankiwi/MiniMax-M3-AWQ-INT4](https://huggingface.co/cyankiwi/MiniMax-M3-AWQ-INT4));
+nulling `input_activations` should switch vLLM from
+`CompressedTensorsW4A8Fp8` → `CompressedTensorsWNA16` while keeping the same
+packed INT4 weights.
+
+**How (NFS-safe — do not `cp -a` the full shard tree):**
+
+```bash
+SRC=artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint
+DST=artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint-w4a16-serve
+
+mkdir -p "$DST"
+for f in "$SRC"/*; do
+  base=$(basename "$f")
+  [[ "$base" == config.json ]] && continue
+  ln -sfn "$(realpath "$f")" "$DST/$base"
+done
+cp -a "$SRC/config.json" "$DST/config.json"
+
+python - <<'PY'
+import json
+from pathlib import Path
+p = Path("artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint-w4a16-serve/config.json")
+cfg = json.loads(p.read_text())
+qc = cfg["quantization_config"]
+for g in qc.get("config_groups", {}).values():
+    g["input_activations"] = None
+p.write_text(json.dumps(cfg, indent=2) + "\n")
+for name, g in qc["config_groups"].items():
+    print(name, "weights bits=", g["weights"]["num_bits"], "acts=", g.get("input_activations"))
+PY
+# Expect: group_0 weights bits= 4 acts= None
+# Sanity: du -sh "$DST" is tiny (~132K); *.safetensors are symlinks into $SRC
+```
+
+**Serve:**
+
+```bash
+CHECKPOINT=artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint-w4a16-serve \
+OUT_DIR=serves/m3-awq-w4a16-serve-full \
+  bash pipeline/slurm/debug_cudagraph_ima.sh
+```
+
+**Result (2026-07-09, h118):**
+
+| Check | Outcome |
+|-------|---------|
+| Engine load | OK — `quantization=compressed-tensors`, `dtype=torch.bfloat16`, `quant: pack-quantized` |
+| CUDA graphs | OK — capture completed; no IMA |
+| Serve-verify | `overall_ok=True`, `rc=0` |
+| Prompt output | **Still garbage** — `"arringarringarring…"` (same class as W4AFP8) |
+| Config sanity | `group_0 weights bits= 4 acts= None`; DST ~132K with safetensor symlinks |
+
+**Conclusion:** FP8 activations are **not** the cause of the `"arring"` collapse.
+The packed INT4 **weights** (and/or **which Linears were quantized**) are the
+problem. Re-serving the same checkpoint as W4A16 does not recover quality.
+
+### Root-cause update (2026-07-09): online sources point to a SERVE-side load/wiring bug, not quant accuracy
+
+Web search of reputable community M3-quant efforts on the **same pipeline shape**
+(a *transformers* MiniMax-M3-VL export loaded into the official/`toncao` vLLM M3
+backbone) turned up three checkpoints that hit the **identical garbled/repetition
+failure**, and one that **bisected it to root cause**:
+
+- **[aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx](https://huggingface.co/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx)**
+  (`m3_official_loader.py`, `M3_FIX_SHARED`) — proved with a standalone HF
+  reference (`dbg_moe_ref_official.py`) that the official `MiniMaxM3MoE` passes
+  `shared_experts` into `FusedMoE` expecting the **quant method** to fuse the
+  shared-expert output; when the quant path returns `shared_output=None`, the
+  **shared expert is dropped in every MoE layer 3–59**: `moe_out == routed*2`,
+  with the shared expert (**norm 338 of 540**) entirely missing. The residual
+  stream loses that contribution each layer → washes out to garbage. Two
+  independent triggers for the same drop:
+  1. **Name mismatch** — checkpoint keys shared experts as `mlp.shared_experts.*`
+     (our transformers-VL naming, same as ours — see `minimax_m3.yaml` ignore
+     `re:.*mlp[.]shared_experts[.].*` and `verify_quant_checkpoint.py`), but the
+     official vLLM model looks them up as `block_sparse_moe.shared_experts.*`
+     (`startswith` match) → lookup **misses** → weight loads as **zero**.
+  2. **`n_shared_experts` not seen** — official `MiniMaxM3MoE` only *builds* the
+     shared expert when `config.n_shared_experts` is truthy; when it's nested
+     under `text_config` and the text-only arch reads top-level config, the module
+     is never built. aquaman fixed it at the **source config** (force
+     `n_shared_experts=1`), which builds the module and lets the runner add it.
+  Also flagged in the same loader: **`lm_head` naming** — VL export stores
+  `language_model.lm_head.weight`, text-only CausalLM expects top-level
+  `lm_head.weight`, and `tie_word_embeddings=False`, so a miss = **random
+  logits = garbage** (independent of any MoE issue).
+- **[CosmicRaisins/minimax-m3-awq-gb10](https://github.com/CosmicRaisins/minimax-m3-awq-gb10)**
+  / **[toncao/vllm minimax-m3-compressed-tensors](https://github.com/toncao/vllm/tree/minimax-m3-compressed-tensors)**
+  — the bf16 **MSA lightning indexer** gets fused into the INT4 q/k/v GEMM
+  (`MinimaxM3QKVParallelLinearWithIndexer`); a single quantized linear can't mix
+  precisions, so the indexer is effectively quantized → mis-selected KV blocks →
+  garbled/context-bleed. Their fix **de-quants q/k/v to bf16 at load** (not just
+  "un-fuse"), feeding all 5 shards bf16.
+
+**Why this beats the previous "attention INT4 too aggressive" ranking:** two of our
+own observations are hard to explain with an *accuracy* hypothesis but are the
+textbook signature of a **structural serve-side drop**:
+
+- **Ablation 1 (W4A16 re-serve) still garbage** — changing the activation dtype
+  cannot fix a shared-expert that is never *added*, or an `lm_head` that is never
+  *loaded*.
+- **Smoke and full-calib emit the identical `"arring"` loop** — a quant/calibration
+  error would move with 64× more calibration data; a deterministic collapse that
+  is invariant to calibration is a wiring/load bug, not a scale-fidelity bug.
+
+Our earlier "shared expert dropped / zero-loaded → **Ruled out**" line checked the
+**checkpoint** (`shared_experts: none quantized`, ignore pattern persisted). That
+only proves the shared expert was kept bf16 *in the checkpoint*; aquaman's drop
+happens **downstream at the vLLM loader/runner**, which `verify_quant_checkpoint`
+(metadata-only, no model load, no runtime norms) does not exercise. So it was
+ruled out at the wrong stage.
+
+### Remaining hypotheses (re-ranked after the online root-cause finding)
+
+| Rank | Hypothesis | Why it fits | How to test next |
+|------|------------|-------------|------------------|
+| **1** | **Shared expert silently dropped / zero-loaded at serve** in every MoE layer 3–59 (name mismatch `mlp.shared_experts.*` vs `block_sparse_moe.shared_experts.*`, and/or `shared_output=None` in the MoE runner, and/or `n_shared_experts` unset) | **Proven on the identical pipeline** by aquaman164 (`moe_out==routed*2`, shared norm 338/540 missing). Explains W4A16-still-garbage and calib-invariance. **Not a re-quant problem.** | **Runtime probe (no re-quant):** log per-MoE-layer shared-expert output norm and whether `moe_out ≈ routed*2`; log loaded `lm_head` param norm (0 ⇒ never loaded). Reuse aquaman's `M3_MOE_DIAG` / `M3_SHARED_PARAM` hook pattern. |
+| **2** | **`lm_head` not loaded** (`language_model.lm_head.weight` vs top-level; `tie_word_embeddings=False`) → random logits | Same class of VL-export naming mismatch; short-prompt garbage fits. | Print the serve-loaded `lm_head.weight` norm; compare to checkpoint tensor. Cheap; do it in the same probe as #1. |
+| **3** | **q/k/v INT4 fused with bf16 MSA indexer** corrupts token selection | Real (CosmicRaisins/toncao). We *assume* toncao's branch un-fuses; verify it also **de-quants q/k/v to bf16** at load, not just un-fuses. | With #1/#2 clean, run aquaman's `M3_FULL_ATTN=1` / `M3_FA_COMPARE=1` bisection or confirm the toncao loader de-quants q/k/v. |
+| **4** | Attention/experts INT4 accuracy genuinely too aggressive | Only after 1–3 are cleared; community keeps self-attn bf16 (experts-only W4A16). | Re-quant experts-only W4A16 (~21888 Linears), serve with `debug_cudagraph_ima.sh`. |
+| **5** | AWQ mapping coverage / calib length | Least likely (calib-invariant symptom). | Revisit only if 1–4 fail. |
+
+### What we are **not** doing next (and why)
+
+- **Re-quantizing first** — the top-2 suspects are **serve-side load/wiring** bugs a
+  re-quant cannot fix; confirm with a runtime probe before spending a ~hours-long
+  full-calib run. (Previous plan led with an experts-only re-quant; deferred to Rank 4.)
+- **Another config-only activation tweak** — Ablation 1 already nulls FP8 acts.
+- **Blaming graphs / custom AR / patch 4** — both checkpoints generate under the
+  known-good graphs-on path; infra is cleared for this symptom.
+- **Full `cp -a` of checkpoint shards on NFS** — hangs; use symlink + config copy.
+
+### Next concrete step (decisive, no re-quant) — 2026-07-09
+
+Two diagnostics are wired into the serve path (both cheap; the runtime probe is a
+no-op unless enabled). **No re-quant** — they confirm/rule out the serve-side
+shared-expert drop (Rank 1) and `lm_head` (Rank 2) before spending a full-calib run.
+
+**1. Static checkpoint audit (main process, always on for M3).** `serve_verify.py`
+now calls `audit_m3_checkpoint()`, which reads `config.json` + the safetensors
+index (no tensor load) and prints an `M3 CHECKPOINT QUALITY AUDIT` block:
+`tie_word_embeddings`, `n_shared_experts` (top-level **vs** `text_config`), the
+`lm_head` keys, and the **shared-expert key style** (`mlp.shared_experts.*` vs
+`block_sparse_moe.shared_experts.*`). A `mlp.shared_experts` style, a missing
+`lm_head`, or `n_shared_experts` only under `text_config` is flagged as a likely
+trigger. Run it standalone:
+
+```bash
+python -c "
+from pathlib import Path
+from pipeline.serve_verify import audit_m3_checkpoint, _read_model_config
+ck = Path('artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint')
+audit_m3_checkpoint(ck, _read_model_config(ck))
+"
+```
+
+**2. Runtime MoE probe (Worker_TP*, env-gated).** Injected into vLLM
+**site-packages** (so it reaches the spawned workers — in-process hooks do not)
+by `patch_vllm_m3_serve.py::ensure_m3_moe_probe()`; `serve_verify` applies it
+automatically. Dormant unless `M3_MOE_PROBE=1`. For the first few real-prefill MoE
+forwards it logs the shared-expert output norm and combined `moe_out` norm:
+
+```bash
+python pipeline/slurm/patch_vllm_m3_serve.py --probe   # inject once (idempotent)
+# then serve with the known-good graphs-on envelope + probe on:
+M3_MOE_PROBE=1 CHECKPOINT=artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint \
+  bash pipeline/slurm/debug_cudagraph_ima.sh 2>&1 | tee /mnt/nfs/hoangduy/logs/m3-moe-probe.log
+grep 'M3_MOE_PROBE#' /mnt/nfs/hoangduy/logs/m3-moe-probe.log
+# M3_MOE_PROBE_RECOMPUTE=1 also logs routed-only norm + out/routed ratio (heavier;
+# recomputes self.experts, so opt-in). moe_out ~= routed*2 => shared dropped.
+```
+
+Read: **`shared_present=False`**, **`shared_norm≈0`**, or **`out/routed≈2.0`**
+⇒ shared expert dropped in every MoE layer (Rank 1 confirmed).
+
+If Rank 1 confirmed, the fix is **serve-side, not a re-quant**: correct the
+shared-expert key mapping (`mlp.shared_experts.*` → `block_sparse_moe.shared_experts.*`),
+ensure `n_shared_experts` is set at the level the vLLM M3 arch reads (so the module
+is built), and ensure the MoE forward adds the shared-expert output exactly once
+(aquaman's note: with the module present the FusedMoE runner already adds it — do
+**not** double-add). Only if 1–3 are clean do we fall back to the experts-only
+W4A16 re-quant (Rank 4). Document PASS/FAIL of the `"arring"` prompt here when the
+probe run finishes.
 
 ## MiniMax-M3 sequential calibration fails on `image_token_id`
 

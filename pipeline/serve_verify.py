@@ -84,6 +84,145 @@ def _moe_intermediate_sizes(model_config: dict) -> list[int]:
     return sizes
 
 
+def _read_weight_map(ckpt: Path) -> dict:
+    """Return the safetensors index ``weight_map`` (tensor name -> shard) if present.
+
+    Reading the index avoids loading any tensor data — it is a cheap way to see
+    which parameter *names* the checkpoint actually stores.
+    """
+    idx = ckpt / "model.safetensors.index.json"
+    if not idx.exists():
+        return {}
+    try:
+        with idx.open("r", encoding="utf-8") as fh:
+            return json.load(fh).get("weight_map", {}) or {}
+    except Exception:
+        return {}
+
+
+def _layer_indices(keys, needle: str) -> set[int]:
+    """Distinct ``layers.N.`` indices among ``keys`` that contain ``needle``."""
+    import re as _re
+
+    out: set[int] = set()
+    for k in keys:
+        if needle in k:
+            m = _re.search(r"\.layers\.(\d+)\.", k)
+            if m:
+                out.add(int(m.group(1)))
+    return out
+
+
+def audit_m3_checkpoint(ckpt: Path, model_config: dict) -> dict:
+    """Static (no model load) audit of the serve-side load/wiring suspects for the
+    MiniMax-M3 ``"arring"`` garbage failure (BUGS_AND_FIXES.md
+    "full-calib AWQ garbage output").
+
+    Reputable community checkpoints on the *same* pipeline shape (transformers
+    MiniMax-M3-VL export -> official/toncao vLLM) trace the garbage to serve-side
+    load/wiring, not quant accuracy (see aquaman164 ``m3_official_loader.py``):
+
+      * shared expert dropped/zero-loaded in every MoE layer — key-name mismatch
+        (checkpoint ``mlp.shared_experts.*`` vs vLLM ``block_sparse_moe.shared_experts.*``)
+        and/or ``n_shared_experts`` nested under ``text_config`` so the module is
+        never built;
+      * ``lm_head`` not loaded (``language_model.lm_head.weight`` vs top-level;
+        ``tie_word_embeddings=False``) -> random logits.
+
+    This reports what the checkpoint actually contains so those triggers can be
+    confirmed/ruled out before any (expensive) re-quant. Cheap: reads config.json
+    and the safetensors index only.
+    """
+    wm = _read_weight_map(ckpt)
+    keys = list(wm.keys())
+    text_cfg = model_config.get("text_config") or {}
+
+    lm_head_keys = [k for k in keys if "lm_head" in k]
+    shared_keys = [k for k in keys if "shared_experts" in k]
+    mlp_shared = [k for k in shared_keys if ".mlp.shared_experts." in k]
+    bsm_shared = [k for k in shared_keys if "block_sparse_moe.shared_experts." in k]
+    routed_sample = next(
+        (k for k in keys if ".mlp.experts." in k or "block_sparse_moe.experts." in k),
+        None,
+    )
+
+    audit = {
+        "tie_word_embeddings": model_config.get(
+            "tie_word_embeddings", text_cfg.get("tie_word_embeddings")
+        ),
+        "n_shared_experts_top": model_config.get("n_shared_experts"),
+        "n_shared_experts_text_config": text_cfg.get("n_shared_experts"),
+        "lm_head_keys": lm_head_keys,
+        "shared_expert_tensor_count": len(shared_keys),
+        "shared_expert_key_style": (
+            "mlp.shared_experts"
+            if mlp_shared and not bsm_shared
+            else "block_sparse_moe.shared_experts"
+            if bsm_shared and not mlp_shared
+            else "mixed/none"
+        ),
+        "shared_expert_sample_key": shared_keys[0] if shared_keys else None,
+        "shared_expert_layers_covered": sorted(_layer_indices(keys, "shared_experts")),
+        "routed_expert_sample_key": routed_sample,
+        "index_present": bool(wm),
+    }
+
+    # Heuristic flags (the decisive proof is the runtime M3_MOE_PROBE, but these
+    # cheap static signals point at the likely trigger).
+    warnings: list[str] = []
+    if not wm:
+        warnings.append(
+            "no model.safetensors.index.json — cannot audit key names statically"
+        )
+    if not lm_head_keys:
+        warnings.append(
+            "no 'lm_head' tensor in the checkpoint index - if tie_word_embeddings "
+            "is False this means random logits (garbage). Confirm lm_head is saved."
+        )
+    if audit["shared_expert_key_style"] == "mlp.shared_experts":
+        warnings.append(
+            "shared experts stored as 'mlp.shared_experts.*' (transformers-VL "
+            "naming). If vLLM's M3 model looks them up as "
+            "'block_sparse_moe.shared_experts.*', the lookup misses -> shared "
+            "expert loads as ZERO in every MoE layer -> garbage (aquaman164 "
+            "m3_official_loader.py). Confirm at runtime with M3_MOE_PROBE=1."
+        )
+    if (
+        audit["n_shared_experts_top"] in (None, 0)
+        and audit["n_shared_experts_text_config"] not in (None, 0)
+    ):
+        warnings.append(
+            "n_shared_experts is set under text_config but NOT top-level. If the "
+            "serve arch reads top-level config, the shared-expert module is never "
+            "built -> dropped in every MoE layer -> garbage. Force n_shared_experts "
+            "at the level the vLLM M3 arch reads."
+        )
+    audit["warnings"] = warnings
+
+    print("\n========== M3 CHECKPOINT QUALITY AUDIT (static) ==========")
+    print(f"tie_word_embeddings: {audit['tie_word_embeddings']}")
+    print(
+        f"n_shared_experts: top={audit['n_shared_experts_top']} "
+        f"text_config={audit['n_shared_experts_text_config']}"
+    )
+    print(f"lm_head keys: {lm_head_keys or 'NONE'}")
+    print(
+        f"shared experts: {len(shared_keys)} tensors, style="
+        f"{audit['shared_expert_key_style']}, layers="
+        f"{audit['shared_expert_layers_covered'][:3]}..."
+        if shared_keys
+        else "shared experts: NONE found in index"
+    )
+    print(f"shared sample key: {audit['shared_expert_sample_key']}")
+    print(f"routed sample key: {routed_sample}")
+    for w in warnings:
+        print(f"  ! {w}")
+    if not warnings:
+        print("  (no static red flags; run M3_MOE_PROBE=1 to confirm at runtime)")
+    print("==========================================================\n")
+    return audit
+
+
 def preflight_serve_check(cfg: PipelineConfig, ckpt: Path) -> tuple[bool, dict]:
     """Cheap static checks before booting vLLM.
 
@@ -239,6 +378,10 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         if cfg_patches:
             print(f"[pipeline] patched checkpoint config for vLLM: {cfg_patches}")
 
+        # Static serve-side load/wiring audit for the "arring" garbage failure
+        # (shared-expert / lm_head naming; BUGS_AND_FIXES.md "full-calib AWQ garbage").
+        report["quality_audit"] = audit_m3_checkpoint(ckpt, _read_model_config(ckpt))
+
         added = ensure_vl_processor_artifacts(
             ckpt, cfg.model.id, trust_remote_code=cfg.model.trust_remote_code
         )
@@ -253,10 +396,27 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         # the checkpoint is not a W4A8 MoE scheme or the build lacks W4A8 MoE.
         if _is_w4a8_moe_scheme(_read_quant_config(ckpt)):
             # Persistent site-packages patches (required for Worker_TP* subprocesses).
-            from pipeline.slurm.patch_vllm_m3_serve import ensure_vllm_m3_patches
+            from pipeline.slurm.patch_vllm_m3_serve import (
+                ensure_m3_moe_probe,
+                ensure_vllm_m3_patches,
+            )
 
             ensure_vllm_m3_patches()
             print("[pipeline] verified vLLM M3 serve patches in site-packages (4/4)")
+
+            # Optional runtime MoE/shared-expert diagnostic probe. Dormant unless
+            # M3_MOE_PROBE=1 is exported (it reaches Worker_TP* because it is
+            # injected into site-packages). Best-effort: never block serve.
+            try:
+                probe_status = ensure_m3_moe_probe()
+                print(f"[pipeline] M3 MoE probe (site-packages): {probe_status}")
+                if os.environ.get("M3_MOE_PROBE") == "1":
+                    print(
+                        "[pipeline] M3_MOE_PROBE=1 — Worker_TP* will log per-MoE-layer "
+                        "shared-expert / moe_out norms (grep 'M3_MOE_PROBE#')"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[pipeline] M3 MoE probe install skipped: {exc!r}")
 
             from pipeline.vllm_m3_patches import (
                 patch_vllm_w4a8_swigluoai_uninterleave,

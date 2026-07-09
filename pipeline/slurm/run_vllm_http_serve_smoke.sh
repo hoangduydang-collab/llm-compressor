@@ -73,6 +73,11 @@ BLOCK_SIZE="${BLOCK_SIZE:-128}"
 ENABLE_EP="${ENABLE_EP:-1}"
 DISABLE_CUSTOM_AR="${DISABLE_CUSTOM_AR:-1}"
 APPLY_M3_PATCHES="${APPLY_M3_PATCHES:-1}"
+# Default ON for HTTP smoke: AsyncLLM KV/graph init has hit CUDA IMA on M3
+# (same class as BUGS_AND_FIXES.md cudagraph capture). Offline LLM.generate
+# for cyankiwi can pass with graphs; HTTP path is flakier. Set ENFORCE_EAGER=0
+# only after a clean free_gpus and a known-good graphs-on bring-up.
+ENFORCE_EAGER="${ENFORCE_EAGER:-1}"
 LOG="${LOG:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.log}"
 PID_FILE="${PID_FILE:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.pid}"
 
@@ -151,7 +156,7 @@ fi
 if [[ "$DISABLE_CUSTOM_AR" == "1" || "$DISABLE_CUSTOM_AR" == "true" ]]; then
   ARGS+=(--disable-custom-all-reduce)
 fi
-if [[ "${ENFORCE_EAGER:-0}" == "1" || "${ENFORCE_EAGER:-0}" == "true" ]]; then
+if [[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]]; then
   ARGS+=(--enforce-eager)
 fi
 
@@ -166,6 +171,7 @@ echo "  checkpoint:   $MODEL_CKPT"
 echo "  served-name:  $SERVED_NAME"
 echo "  port:         $PORT"
 echo "  max-model-len:$MAX_MODEL_LEN"
+echo "  enforce_eager:$ENFORCE_EAGER"
 echo "  log:          $LOG"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv 2>/dev/null || true

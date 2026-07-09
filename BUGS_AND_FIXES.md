@@ -1,43 +1,72 @@
 # Bugs and fixes (llm-compressor pipeline)
 
-## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
+## HTTP async cudagraph race (cyankiwi, 2026-07-09 A/B)
 
-**Symptom:** Offline serve-verify for `cyankiwi/MiniMax-M3-AWQ-INT4` **PASS**es
-(graphs on, `max_model_len=8192`). The Nemotron-style HTTP smoke
-(`run_vllm_http_serve_smoke.sh`) then dies at KV/graph init with
-`CUDA error: an illegal memory access` even after lowering to `2048/0.85`.
+**Symptom:** HTTP `vllm serve` for `cyankiwi/MiniMax-M3-AWQ-INT4` dies during
+PIECEWISE/FULL graph capture with async-reported
+`CUDA error: an illegal memory access` at `breakable_cudagraph._capture` →
+`empty_cache()`. Offline `LLM()` serve-verify on the same ckpt can PASS graphs-on
+at `max_model_len=8192`.
 
-**Root cause (HTTP path divergence, not the W4AFP8 memory envelope):**
-Offline `serve_verify` and raw `vllm serve` are different launch contracts.
-The first HTTP smoke copied Nemotron knobs and skipped offline preflight:
+**A/B on h119 (same ckpt, patches 4/4, flashinfer 0.6.12, language-model-only,
+8192/0.9, clean GPUs):**
 
-| Factor | Offline `LLM()` (PASS) | Early HTTP smoke (IMA) |
-|--------|------------------------|-------------------------|
-| Preflight `ensure_minimax_m3_vllm_serve_config` + VL processor copy | Always | Missing |
-| `--language-model-only` (text-only; official M3 recipes) | N/A (no MM HTTP path) | Missing |
-| `--max-num-seqs` / `--max-num-batched-tokens` | vLLM defaults | Forced `4` / `4096` (Nemotron) |
-| `VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1` | Unset | Forced on |
-| `max_model_len` / `gpu_util` | `8192` / `0.9` | First `4096/0.9`, then wrongly blamed |
+| Launch | Result |
+|--------|--------|
+| `DEBUG_CUDAGRAPH=1` (`CUDA_LAUNCH_BLOCKING=1` + DSA) | **51/51 capture PASS**, server up |
+| Async CUDA (no `CUDA_LAUNCH_BLOCKING`) | **IMA** at `empty_cache()` during capture |
 
-Lowering `max_model_len` alone was a **misdiagnosis** for cyankiwi: that
-envelope matters for our W4AFP8 debug path (`debug_cudagraph_ima.sh`), but
-cyankiwi already proved graphs-on at 8192 offline. The HTTP failure was the
-missing preflight + Nemotron batching / MM path, not “needs 2048”.
+**Root cause (class):** async CUDA-graph capture race on the HTTP/AsyncLLM path.
+Sync launches serialize kernels and the race does not fire. This is **not**:
 
-**Long-term fix:** `run_vllm_http_serve_smoke.sh` now mirrors offline
-preflight (config + VL artifacts), defaults `--language-model-only`, omits
-Nemotron batching unless set, uses `8192/0.9`, and does not force the
-cudagraph memory-profiler env. Escape hatch remains `ENFORCE_EAGER=1`.
+- the NaN→dup-experts MoE bug (patches 1–4 + flashinfer 0.6.12 were already live
+  on both the PASS and FAIL runs),
+- `max_model_len=2048` vs 8192 (PASS was at 8192 with sync CUDA),
+- missing `--language-model-only` / config preflight (both present in the A/B).
+
+**Confounder for earlier W4AFP8 “2048 envelope PASS”:**
+`debug_cudagraph_ima.sh` **always** exports `CUDA_LAUNCH_BLOCKING=1`. That PASS
+may have been sync-CUDA, not the smaller memory envelope. Re-validate W4AFP8
+graphs-on at 8192 **without** `CUDA_LAUNCH_BLOCKING` before treating 2048 as causal.
+
+**Tactical workaround (HTTP smoke):** default `DEBUG_CUDAGRAPH=1` when
+`ENFORCE_EAGER=0` in `run_vllm_http_serve_smoke.sh` so graphs-on HTTP is usable.
+Cost: slower capture / launch (sync CUDA). Escape hatch: `ENFORCE_EAGER=1`.
+
+**Long-term fix (preferred):** identify the racing kernel under async capture
+(compute-sanitizer / `cuda-gdb`, or a failing run that still surfaces a useful
+frame), then patch the offending path (likely MoE finalize / fused AR / MSA
+under `breakable_cudagraph`) so async HTTP capture is safe. Removal criteria for
+default `DEBUG_CUDAGRAPH=1`: HTTP graphs-on PASS with `DEBUG_CUDAGRAPH=0` on
+h119 for cyankiwi + our W4AFP8 ckpts.
 
 **How to verify:**
 
 ```bash
 bash pipeline/slurm/free_gpus.sh
+# default now enables sync CUDA for graphs-on:
 bash pipeline/slurm/run_vllm_http_serve_smoke.sh
-# expect: language-model-only:1  max-model-len:8192  max-num-seqs:<vllm default>
-tail -f /mnt/nfs/hoangduy/logs/serve-MiniMax-M3-AWQ-INT4-http-smoke.log
+# expect: debug_cudagraph:1 … Capturing … 51/51 … Application startup complete
 bash pipeline/slurm/smoke_chat_completions.sh
+
+# reproduce the race:
+DEBUG_CUDAGRAPH=0 bash pipeline/slurm/run_vllm_http_serve_smoke.sh
 ```
+
+## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
+
+**Earlier hypothesis (partially superseded by the A/B above):** first HTTP smoke
+also copied Nemotron knobs and skipped offline preflight. Those footguns are
+still real and still fixed in the script (config/VL preflight,
+`--language-model-only`, no forced Nemotron batching). They are **necessary but
+not sufficient** — after those were fixed, the async race remained.
+
+| Factor | Offline `LLM()` | Early HTTP smoke |
+|--------|-----------------|------------------|
+| Preflight config + VL processor | Always | Was missing → now applied |
+| `--language-model-only` | N/A | Was missing → now default |
+| Nemotron `max_num_seqs` / batched_tokens | Unset | Was forced → now omitted |
+| `CUDA_LAUNCH_BLOCKING` | Usually unset (PASS) | Must be 1 for HTTP graphs-on today |
 
 ## MiniMax-M3 vLLM serve stage chronicle (h118, 2026-07-07/08)
 
@@ -80,8 +109,13 @@ below did not move that failure under detached-script defaults.
 applied, **graphs-on serve-verify PASSes** on both smoke
 (``20260707-082218``) and full-calib (``20260708-093642``) checkpoints.
 Detached defaults (``MAX_MODEL_LEN=8192``, ``GPU_UTIL=0.9``) still reproduced
-IMA @ 16/51 on a re-run — treat that as a **memory-envelope / launch-flag**
-sensitivity, not “graphs fundamentally broken.” Quality remains garbage; see
+IMA @ 16/51 on a re-run.
+
+**Later A/B (HTTP cyankiwi, same day):** sync CUDA PASS @ 8192 vs async IMA —
+so the W4AFP8 “2048 PASS” is **confounded** by ``CUDA_LAUNCH_BLOCKING=1`` in
+the debug script. Prefer treating that as a **sync-vs-async capture** signal
+until 8192 is re-validated **without** ``CUDA_LAUNCH_BLOCKING``. See
+**“HTTP async cudagraph race”** above. Quality remains garbage; see
 **“MiniMax-M3 full-calib AWQ garbage output”** below.
 
 Historical attempt table (kept for the 16/51 investigation):

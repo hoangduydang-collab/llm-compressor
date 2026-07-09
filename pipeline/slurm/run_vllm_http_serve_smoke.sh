@@ -7,14 +7,17 @@
 #
 # Default target: cyankiwi MiniMax-M3 AWQ-INT4 on 8 GPUs.
 #
-# Root cause note (HTTP IMA while offline cyankiwi PASS at max_model_len=8192):
-#   Offline ``LLM()`` and HTTP ``vllm serve`` are NOT the same envelope.
-#   The HTTP smoke previously inherited Nemotron knobs (max_num_seqs /
-#   max_num_batched_tokens) and skipped the offline preflight that
-#   ``serve_verify`` always runs (config patch + VL processor artifacts +
-#   ``--language-model-only`` for text-only M3). Those diffs — not 4096 vs
-#   2048 — are why HTTP failed after offline already worked. See
-#   BUGS_AND_FIXES.md "HTTP vllm serve vs offline LLM".
+# Root cause note (HTTP graphs-on IMA, 2026-07-09 A/B on h119):
+#   Same ckpt/patches/flashinfer 0.6.12 / language-model-only / 8192/0.9:
+#     DEBUG_CUDAGRAPH=1 (CUDA_LAUNCH_BLOCKING=1) → 51/51 capture PASS
+#     async (default CUDA)                      → IMA at empty_cache()
+#   So this is an **async capture race** on the HTTP/AsyncLLM path, not the
+#   NaN→dup-experts bug (patches already live) and not max_model_len.
+#   Also confounds W4AFP8 "2048 PASS": debug_cudagraph_ima.sh always sets
+#   CUDA_LAUNCH_BLOCKING=1. See BUGS_AND_FIXES.md "HTTP async cudagraph race".
+#
+#   Default: DEBUG_CUDAGRAPH=1 for graphs-on HTTP smoke (tactical). Set
+#   DEBUG_CUDAGRAPH=0 to reproduce the race. Long-term: name the racing kernel.
 #
 #   bash pipeline/slurm/run_vllm_http_serve_smoke.sh
 #   CKPT=/path/to/ckpt SERVED_NAME=... bash pipeline/slurm/run_vllm_http_serve_smoke.sh
@@ -94,14 +97,18 @@ LANGUAGE_MODEL_ONLY="${LANGUAGE_MODEL_ONLY:-1}"
 # Setting these was a suspected HTTP-vs-offline divergence for graph capture.
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-}"
 MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-}"
-# Graphs on by default (offline cyankiwi LLM() PASS at 8192). HTTP AsyncLLM has
-# still IMA'd at capture with patches live — ENFORCE_EAGER=1 unblocks chat smoke
-# while we name the kernel (DEBUG_CUDAGRAPH=1). Do not treat eager as the fix.
+# Graphs on by default. ENFORCE_EAGER=1 is escape hatch (skips capture entirely).
 ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
 # Same preflight serve_verify runs before LLM() — required for raw vllm serve.
 PATCH_CKPT_CONFIG="${PATCH_CKPT_CONFIG:-1}"
-# When 1: force sync CUDA + DSA so the IMA names the real kernel (not empty_cache).
-DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-0}"
+# Default ON for graphs-on HTTP: A/B proved async capture IMAs while sync PASS
+# (BUGS_AND_FIXES.md). When ENFORCE_EAGER=1, leave unset (no capture to race).
+# Override: DEBUG_CUDAGRAPH=0 bash ...  # reproduce the race
+if [[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]]; then
+  DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-0}"
+else
+  DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-1}"
+fi
 LOG="${LOG:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.log}"
 PID_FILE="${PID_FILE:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.pid}"
 
@@ -110,6 +117,7 @@ if [[ "$DEBUG_CUDAGRAPH" == "1" || "$DEBUG_CUDAGRAPH" == "true" ]]; then
   export TORCH_USE_CUDA_DSA=1
   export PYTHONFAULTHANDLER=1
   echo "[http-smoke] DEBUG_CUDAGRAPH=1 — CUDA_LAUNCH_BLOCKING=1 TORCH_USE_CUDA_DSA=1"
+  echo "             (tactical: masks HTTP async cudagraph race; not the long-term fix)"
 fi
 
 test -f "$MODEL_CKPT/config.json" || {

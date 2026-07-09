@@ -1,5 +1,44 @@
 # Bugs and fixes (llm-compressor pipeline)
 
+## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
+
+**Symptom:** Offline serve-verify for `cyankiwi/MiniMax-M3-AWQ-INT4` **PASS**es
+(graphs on, `max_model_len=8192`). The Nemotron-style HTTP smoke
+(`run_vllm_http_serve_smoke.sh`) then dies at KV/graph init with
+`CUDA error: an illegal memory access` even after lowering to `2048/0.85`.
+
+**Root cause (HTTP path divergence, not the W4AFP8 memory envelope):**
+Offline `serve_verify` and raw `vllm serve` are different launch contracts.
+The first HTTP smoke copied Nemotron knobs and skipped offline preflight:
+
+| Factor | Offline `LLM()` (PASS) | Early HTTP smoke (IMA) |
+|--------|------------------------|-------------------------|
+| Preflight `ensure_minimax_m3_vllm_serve_config` + VL processor copy | Always | Missing |
+| `--language-model-only` (text-only; official M3 recipes) | N/A (no MM HTTP path) | Missing |
+| `--max-num-seqs` / `--max-num-batched-tokens` | vLLM defaults | Forced `4` / `4096` (Nemotron) |
+| `VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1` | Unset | Forced on |
+| `max_model_len` / `gpu_util` | `8192` / `0.9` | First `4096/0.9`, then wrongly blamed |
+
+Lowering `max_model_len` alone was a **misdiagnosis** for cyankiwi: that
+envelope matters for our W4AFP8 debug path (`debug_cudagraph_ima.sh`), but
+cyankiwi already proved graphs-on at 8192 offline. The HTTP failure was the
+missing preflight + Nemotron batching / MM path, not “needs 2048”.
+
+**Long-term fix:** `run_vllm_http_serve_smoke.sh` now mirrors offline
+preflight (config + VL artifacts), defaults `--language-model-only`, omits
+Nemotron batching unless set, uses `8192/0.9`, and does not force the
+cudagraph memory-profiler env. Escape hatch remains `ENFORCE_EAGER=1`.
+
+**How to verify:**
+
+```bash
+bash pipeline/slurm/free_gpus.sh
+bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+# expect: language-model-only:1  max-model-len:8192  max-num-seqs:<vllm default>
+tail -f /mnt/nfs/hoangduy/logs/serve-MiniMax-M3-AWQ-INT4-http-smoke.log
+bash pipeline/slurm/smoke_chat_completions.sh
+```
+
 ## MiniMax-M3 vLLM serve stage chronicle (h118, 2026-07-07/08)
 
 Reference run: smoke AWQ **W4AFP8** checkpoint

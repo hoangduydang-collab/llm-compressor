@@ -6,9 +6,15 @@
 # long-lived HTTP server, then curl ``/v1/chat/completions``.
 #
 # Default target: cyankiwi MiniMax-M3 AWQ-INT4 on 8 GPUs.
-# Defaults match the known-good graphs-on envelope (max_model_len=2048,
-# gpu_memory_utilization=0.85) — larger envelopes (4096/0.9, 8192/0.9) have
-# reproduced CUDA IMA during graph capture (BUGS_AND_FIXES.md).
+#
+# Root cause note (HTTP IMA while offline cyankiwi PASS at max_model_len=8192):
+#   Offline ``LLM()`` and HTTP ``vllm serve`` are NOT the same envelope.
+#   The HTTP smoke previously inherited Nemotron knobs (max_num_seqs /
+#   max_num_batched_tokens) and skipped the offline preflight that
+#   ``serve_verify`` always runs (config patch + VL processor artifacts +
+#   ``--language-model-only`` for text-only M3). Those diffs — not 4096 vs
+#   2048 — are why HTTP failed after offline already worked. See
+#   BUGS_AND_FIXES.md "HTTP vllm serve vs offline LLM".
 #
 #   bash pipeline/slurm/run_vllm_http_serve_smoke.sh
 #   CKPT=/path/to/ckpt SERVED_NAME=... bash pipeline/slurm/run_vllm_http_serve_smoke.sh
@@ -37,19 +43,23 @@ source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 
 export HOME="${HOME:-/mnt/nfs/hoangduy}"
 export WORK_ROOT="${WORK_ROOT:-/mnt/nfs/hoangduy}"
+export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$REPO_ROOT"
 export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR="${FLASHINFER_WORKSPACE_DIR:-${HOME}/cache/flashinfer}"
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS="${VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-# Nemotron smoke sets this; it is meaningless for MiniMax and only confuses logs.
+# Nemotron leftovers — meaningless / harmful for MiniMax HTTP smoke.
 unset VLLM_USE_FLASHINFER_MOE_FP4 2>/dev/null || true
+# Do NOT force VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 (Nemotron default).
+# Offline cyankiwi never set it; leave unset unless the caller exports it.
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
 
 DEFAULT_CKPT="/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4"
 DEFAULT_NAME="cyankiwi/MiniMax-M3-AWQ-INT4"
+# Same source used by offline serve_verify for config / processor restore.
+DEFAULT_MODEL_ID="/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3"
 
 # Prefer CKPT= (explicit). Ignore inherited MODEL_CKPT from Nemotron sessions.
 if [[ -n "${CKPT:-}" ]]; then
@@ -64,25 +74,30 @@ else
 fi
 
 SERVED_NAME="${SERVED_NAME:-$DEFAULT_NAME}"
+MODEL_ID="${MODEL_ID:-$DEFAULT_MODEL_ID}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 TP="${TP:-8}"
-# Memory envelope for graphs-on M3 (BUGS_AND_FIXES.md):
-#   PASS: MAX_MODEL_LEN=2048 GPU_UTIL=0.85
-#   IMA @ graph capture: MAX_MODEL_LEN=8192 GPU_UTIL=0.9 (and 4096 was in the
-#   failing HTTP smoke). Do not raise these until graphs-on is re-validated.
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-2048}"
-MAX_NUM_SEQS="${MAX_NUM_SEQS:-4}"
-MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-2048}"
-GPU_UTIL="${GPU_UTIL:-0.85}"
+# Match the offline cyankiwi PASS (MAX_MODEL_LEN=8192, GPU_UTIL=0.9), not the
+# W4AFP8 debug envelope. HTTP previously failed for other reasons (see header).
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
+GPU_UTIL="${GPU_UTIL:-0.9}"
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-fp8}"
 BLOCK_SIZE="${BLOCK_SIZE:-128}"
 ENABLE_EP="${ENABLE_EP:-1}"
 DISABLE_CUSTOM_AR="${DISABLE_CUSTOM_AR:-1}"
 APPLY_M3_PATCHES="${APPLY_M3_PATCHES:-1}"
-# Graphs on by default (matches known-good offline serve). ENFORCE_EAGER=1 is
-# only an escape hatch — not the fix for the IMA memory-envelope failure.
+# Text-only smoke: skip VL multimodal budget (official MiniMax recipes use this).
+# Offline LLM() does not allocate the same MM path as HTTP AsyncLLM.
+LANGUAGE_MODEL_ONLY="${LANGUAGE_MODEL_ONLY:-1}"
+# Optional Nemotron-style batching. Empty = omit (match offline LLM() defaults).
+# Setting these was a suspected HTTP-vs-offline divergence for graph capture.
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-}"
+# Graphs on by default (offline cyankiwi PASS). ENFORCE_EAGER=1 is escape hatch.
 ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
+# Same preflight serve_verify runs before LLM() — required for raw vllm serve.
+PATCH_CKPT_CONFIG="${PATCH_CKPT_CONFIG:-1}"
 LOG="${LOG:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.log}"
 PID_FILE="${PID_FILE:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.pid}"
 
@@ -129,6 +144,35 @@ if [[ "${SKIP_GPU_PREFLIGHT:-0}" != "1" ]]; then
   }
 fi
 
+# Mirror serve_verify preflight: restore hidden_act=swigluoai + VL processor
+# files. Raw ``vllm serve`` does not do this; offline LLM() always does.
+if [[ "$PATCH_CKPT_CONFIG" == "1" || "$PATCH_CKPT_CONFIG" == "true" ]]; then
+  python - "$MODEL_CKPT" "$MODEL_ID" <<'PY'
+import sys
+from pathlib import Path
+
+ckpt = Path(sys.argv[1])
+source = sys.argv[2]
+try:
+    from pipeline.minimax_m3_config import ensure_minimax_m3_vllm_serve_config
+    from pipeline.vl_artifacts import ensure_vl_processor_artifacts
+except ImportError as exc:
+    print(f"WARNING: cannot import pipeline helpers ({exc}); skip config patch")
+    sys.exit(0)
+
+cfg_patches = ensure_minimax_m3_vllm_serve_config(ckpt, source)
+if cfg_patches:
+    print(f"[http-smoke] patched checkpoint config: {cfg_patches}")
+else:
+    print("[http-smoke] checkpoint config already vLLM-ready")
+added = ensure_vl_processor_artifacts(ckpt, source, trust_remote_code=True)
+if added:
+    print(f"[http-smoke] copied VL processor artifacts: {added}")
+else:
+    print("[http-smoke] VL processor artifacts present")
+PY
+fi
+
 # Compressed-tensors / Marlin M3 path: site-packages patches must exist before
 # Worker_TP* spawn (same requirement as offline serve-verify).
 if [[ "$APPLY_M3_PATCHES" == "1" || "$APPLY_M3_PATCHES" == "true" ]]; then
@@ -146,8 +190,6 @@ ARGS=(
   --tensor-parallel-size "$TP"
   --kv-cache-dtype "$KV_CACHE_DTYPE"
   --max-model-len "$MAX_MODEL_LEN"
-  --max-num-seqs "$MAX_NUM_SEQS"
-  --max-num-batched-tokens "$MAX_NUM_BATCHED_TOKENS"
   --gpu-memory-utilization "$GPU_UTIL"
   --block-size "$BLOCK_SIZE"
   --tool-call-parser minimax_m3
@@ -155,30 +197,44 @@ ARGS=(
   --enable-auto-tool-choice
 )
 
+# Only pass batching knobs when explicitly set (empty = offline LLM defaults).
+if [[ -n "$MAX_NUM_SEQS" ]]; then
+  ARGS+=(--max-num-seqs "$MAX_NUM_SEQS")
+fi
+if [[ -n "$MAX_NUM_BATCHED_TOKENS" ]]; then
+  ARGS+=(--max-num-batched-tokens "$MAX_NUM_BATCHED_TOKENS")
+fi
+
 if [[ "$ENABLE_EP" == "1" || "$ENABLE_EP" == "true" ]]; then
   ARGS+=(--enable-expert-parallel)
 fi
 if [[ "$DISABLE_CUSTOM_AR" == "1" || "$DISABLE_CUSTOM_AR" == "true" ]]; then
   ARGS+=(--disable-custom-all-reduce)
 fi
+if [[ "$LANGUAGE_MODEL_ONLY" == "1" || "$LANGUAGE_MODEL_ONLY" == "true" ]]; then
+  ARGS+=(--language-model-only)
+fi
 if [[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]]; then
   ARGS+=(--enforce-eager)
 fi
 
-# Extra raw flags, space-separated (e.g. EXTRA_VLLM_ARGS='--language-model-only').
+# Extra raw flags, space-separated.
 if [[ -n "${EXTRA_VLLM_ARGS:-}" ]]; then
   # shellcheck disable=SC2206
   ARGS+=($EXTRA_VLLM_ARGS)
 fi
 
 echo "host=$(hostname) starting HTTP vLLM smoke serve"
-echo "  checkpoint:   $MODEL_CKPT"
-echo "  served-name:  $SERVED_NAME"
-echo "  port:         $PORT"
-echo "  max-model-len:$MAX_MODEL_LEN"
-echo "  gpu-util:     $GPU_UTIL"
-echo "  enforce_eager:$ENFORCE_EAGER"
-echo "  log:          $LOG"
+echo "  checkpoint:          $MODEL_CKPT"
+echo "  served-name:         $SERVED_NAME"
+echo "  port:                $PORT"
+echo "  max-model-len:       $MAX_MODEL_LEN"
+echo "  gpu-util:            $GPU_UTIL"
+echo "  max-num-seqs:        ${MAX_NUM_SEQS:-<vllm default>}"
+echo "  max-num-batched-tok: ${MAX_NUM_BATCHED_TOKENS:-<vllm default>}"
+echo "  language-model-only: $LANGUAGE_MODEL_ONLY"
+echo "  enforce_eager:       $ENFORCE_EAGER"
+echo "  log:                 $LOG"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv 2>/dev/null || true
 

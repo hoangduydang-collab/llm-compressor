@@ -8,7 +8,12 @@
 # Default target: cyankiwi MiniMax-M3 AWQ-INT4 on 8 GPUs.
 #
 #   bash pipeline/slurm/run_vllm_http_serve_smoke.sh
-#   MODEL_CKPT=... SERVED_NAME=... bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+#   CKPT=/path/to/ckpt SERVED_NAME=... bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+#
+# IMPORTANT: do NOT reuse a shell that still has ``export MODEL_CKPT=...Nemotron...``.
+# This script intentionally ignores inherited ``MODEL_CKPT`` (use ``CKPT=`` instead)
+# so a prior Nemotron smoke cannot silently load the wrong weights under MiniMax
+# parsers (that fails with MiniMaxM3ReasoningParser missing think tokens).
 #
 # Then smoke:
 #   bash pipeline/slurm/smoke_chat_completions.sh
@@ -36,10 +41,26 @@ export FLASHINFER_WORKSPACE_DIR="${FLASHINFER_WORKSPACE_DIR:-${HOME}/cache/flash
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 export VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS="${VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# Nemotron smoke sets this; it is meaningless for MiniMax and only confuses logs.
+unset VLLM_USE_FLASHINFER_MOE_FP4 2>/dev/null || true
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
 
-MODEL_CKPT="${MODEL_CKPT:-/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4}"
-SERVED_NAME="${SERVED_NAME:-cyankiwi/MiniMax-M3-AWQ-INT4}"
+DEFAULT_CKPT="/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4"
+DEFAULT_NAME="cyankiwi/MiniMax-M3-AWQ-INT4"
+
+# Prefer CKPT= (explicit). Ignore inherited MODEL_CKPT from Nemotron sessions.
+if [[ -n "${CKPT:-}" ]]; then
+  MODEL_CKPT="$CKPT"
+elif [[ -n "${MODEL_CKPT:-}" && "$MODEL_CKPT" != "$DEFAULT_CKPT" ]]; then
+  echo "WARNING: ignoring inherited MODEL_CKPT=$MODEL_CKPT"
+  echo "         (Nemotron leftover). Using default cyankiwi path."
+  echo "         Override with: CKPT=/path/to/minimax bash $0"
+  MODEL_CKPT="$DEFAULT_CKPT"
+else
+  MODEL_CKPT="${MODEL_CKPT:-$DEFAULT_CKPT}"
+fi
+
+SERVED_NAME="${SERVED_NAME:-$DEFAULT_NAME}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 TP="${TP:-8}"
@@ -59,6 +80,29 @@ test -f "$MODEL_CKPT/config.json" || {
   echo "ERROR: missing config.json at $MODEL_CKPT"
   exit 1
 }
+
+# Fail fast if someone pointed CKPT at Nemotron / non-M3 while we attach
+# minimax_m3 parsers (the failure mode that produced this bug report).
+python3 - "$MODEL_CKPT" <<'PY'
+import json, sys
+from pathlib import Path
+cfg = json.loads(Path(sys.argv[1], "config.json").read_text())
+archs = cfg.get("architectures") or []
+mt = str(cfg.get("model_type") or "")
+blob = " ".join(archs) + " " + mt
+if "minimax" not in blob.lower() and "MiniMax" not in "".join(archs):
+    print(
+        f"ERROR: checkpoint does not look like MiniMax-M3\n"
+        f"  path: {sys.argv[1]}\n"
+        f"  architectures={archs!r} model_type={mt!r}\n"
+        f"  Refusing to attach --reasoning-parser minimax_m3 "
+        f"(that is the Nemotron-weights + MiniMax-parser footgun).\n"
+        f"  Fix: unset MODEL_CKPT; use CKPT=.../cyankiwi/MiniMax-M3-AWQ-INT4",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+print(f"checkpoint ok: architectures={archs} model_type={mt}")
+PY
 
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"

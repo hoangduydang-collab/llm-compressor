@@ -6,6 +6,9 @@
 # long-lived HTTP server, then curl ``/v1/chat/completions``.
 #
 # Default target: cyankiwi MiniMax-M3 AWQ-INT4 on 8 GPUs.
+# Defaults match the known-good graphs-on envelope (max_model_len=2048,
+# gpu_memory_utilization=0.85) — larger envelopes (4096/0.9, 8192/0.9) have
+# reproduced CUDA IMA during graph capture (BUGS_AND_FIXES.md).
 #
 #   bash pipeline/slurm/run_vllm_http_serve_smoke.sh
 #   CKPT=/path/to/ckpt SERVED_NAME=... bash pipeline/slurm/run_vllm_http_serve_smoke.sh
@@ -64,20 +67,22 @@ SERVED_NAME="${SERVED_NAME:-$DEFAULT_NAME}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 TP="${TP:-8}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
+# Memory envelope for graphs-on M3 (BUGS_AND_FIXES.md):
+#   PASS: MAX_MODEL_LEN=2048 GPU_UTIL=0.85
+#   IMA @ graph capture: MAX_MODEL_LEN=8192 GPU_UTIL=0.9 (and 4096 was in the
+#   failing HTTP smoke). Do not raise these until graphs-on is re-validated.
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-2048}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-4}"
-MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-4096}"
-GPU_UTIL="${GPU_UTIL:-0.90}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-2048}"
+GPU_UTIL="${GPU_UTIL:-0.85}"
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-fp8}"
 BLOCK_SIZE="${BLOCK_SIZE:-128}"
 ENABLE_EP="${ENABLE_EP:-1}"
 DISABLE_CUSTOM_AR="${DISABLE_CUSTOM_AR:-1}"
 APPLY_M3_PATCHES="${APPLY_M3_PATCHES:-1}"
-# Default ON for HTTP smoke: AsyncLLM KV/graph init has hit CUDA IMA on M3
-# (same class as BUGS_AND_FIXES.md cudagraph capture). Offline LLM.generate
-# for cyankiwi can pass with graphs; HTTP path is flakier. Set ENFORCE_EAGER=0
-# only after a clean free_gpus and a known-good graphs-on bring-up.
-ENFORCE_EAGER="${ENFORCE_EAGER:-1}"
+# Graphs on by default (matches known-good offline serve). ENFORCE_EAGER=1 is
+# only an escape hatch — not the fix for the IMA memory-envelope failure.
+ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
 LOG="${LOG:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.log}"
 PID_FILE="${PID_FILE:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.pid}"
 
@@ -171,6 +176,7 @@ echo "  checkpoint:   $MODEL_CKPT"
 echo "  served-name:  $SERVED_NAME"
 echo "  port:         $PORT"
 echo "  max-model-len:$MAX_MODEL_LEN"
+echo "  gpu-util:     $GPU_UTIL"
 echo "  enforce_eager:$ENFORCE_EAGER"
 echo "  log:          $LOG"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"

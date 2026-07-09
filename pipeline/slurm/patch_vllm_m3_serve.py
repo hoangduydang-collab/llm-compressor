@@ -101,9 +101,15 @@ try:  # gated diagnostic; never break model import
                 out = _llmc_probe_orig_forward(self, hidden_states, *args, **kwargs)
                 try:
                     n = int(hidden_states.shape[0])
+                    hs = hidden_states.view(-1, hidden_states.shape[-1])
+                    in_norm = _llmc_probe_norm(hs)
+                    # Skip CUDA-graph-capture / profiling dummy runs: their input is
+                    # zero/near-zero, which makes shared_norm and moe_out trivially 0
+                    # (a FALSE 'dropped' signal). Only evaluate REAL forwards.
+                    if in_norm <= 1e-6:
+                        return out
                     if _llmc_probe_state["n"] < _llmc_probe_max and 2 <= n <= 64:
                         _llmc_probe_state["n"] += 1
-                        hs = hidden_states.view(-1, hidden_states.shape[-1])
                         shared_mod = getattr(self, "shared_experts", None)
                         shared_norm = (
                             _llmc_probe_norm(shared_mod(hs))
@@ -117,19 +123,22 @@ try:  # gated diagnostic; never break model import
                             _routed = self.experts(hidden_states=hs, router_logits=_rl)
                             routed_norm = _llmc_probe_norm(_routed)
                             ratio = out_norm / routed_norm if routed_norm > 0 else -1.0
-                        dropped = (
+                        # Real input (in_norm>0): shared missing/zero => zero-loaded
+                        # shared expert; moe_out ~= routed*2 (recompute) => runner
+                        # never added shared. Either => dropped in every MoE layer.
+                        dropped = in_norm > 1e-6 and (
                             shared_mod is None
-                            or (0.0 <= shared_norm <= 1e-4)
+                            or (0.0 <= shared_norm <= 1e-3)
                             or (0.0 <= ratio and abs(ratio - 2.0) < 0.05)
                         )
                         _llmc_probe_log.warning(
-                            "M3_MOE_PROBE#%d tokens=%d shared_present=%s "
+                            "M3_MOE_PROBE#%d tokens=%d in_norm=%.3f shared_present=%s "
                             "shared_norm=%.3f moe_out_norm=%.3f routed_norm=%.3f "
                             "out/routed=%.3f%s",
-                            _llmc_probe_state["n"], n, shared_mod is not None,
+                            _llmc_probe_state["n"], n, in_norm, shared_mod is not None,
                             shared_norm, out_norm, routed_norm, ratio,
                             "  <-- SHARED EXPERT DROPPED (garbage root cause)"
-                            if dropped else "",
+                            if dropped else "  (shared expert contributing)",
                         )
                 except Exception as _llmc_e:
                     _llmc_probe_log.warning("M3_MOE_PROBE forward failed: %r", _llmc_e)
@@ -139,7 +148,7 @@ try:  # gated diagnostic; never break model import
             _llmc_probe_moe_cls._llmc_probed = True
             _llmc_probe_log.warning(
                 "llmc M3 MoE probe active on %s.forward (M3_MOE_PROBE=1, "
-                "recompute=%s, max_layers=%d)",
+                "recompute=%s, max_layers=%d); skips zero-input capture runs",
                 _llmc_probe_moe_cls.__name__, _llmc_probe_recompute, _llmc_probe_max,
             )
 except Exception:
@@ -324,18 +333,36 @@ def _find_m3_moe_model_files(vllm_dir: Path) -> list[Path]:
     return hits
 
 
-def _patch_append_probe(text: str) -> tuple[str, bool, bool]:
-    """Append the env-gated MoE quality probe to the M3 model module.
+_PROBE_START = f'# === {_PROBE_MARK} ('
+_PROBE_END = f'# === end {_PROBE_MARK} ==='
 
-    Appending at end-of-module (after the class defs) means we do not depend on
-    any internal code layout — only that ``MiniMaxM3MoE`` is defined in this
-    module's globals, which it is by construction (this file was selected because
-    it contains ``class MiniMaxM3MoE``).
+
+def _patch_append_probe(text: str) -> tuple[str, bool, bool]:
+    """(Re)inject the env-gated MoE quality probe into the M3 model module.
+
+    Appended at end-of-module (after the class defs), so we do not depend on any
+    internal code layout — only that ``MiniMaxM3MoE`` is defined in this module's
+    globals, which it is by construction (this file was selected because it
+    contains ``class MiniMaxM3MoE``). If a previous block exists (between the
+    start/end sentinels), it is replaced in place so probe updates redeploy with
+    a plain ``--probe`` rerun.
     """
-    if _PROBE_MARK in text:
-        return text, False, True
     if "class MiniMaxM3MoE" not in text:
         return text, False, False
+
+    start = text.find(_PROBE_START)
+    if start != -1:
+        end = text.find(_PROBE_END, start)
+        if end != -1:
+            end += len(_PROBE_END)
+            existing = text[start:end]
+            new_block = _PROBE_BLOCK.strip("\n")
+            if existing.strip() == new_block.strip():
+                return text, False, True  # up to date
+            # Replace old block (and trim any trailing blank lines it left).
+            new_text = text[:start].rstrip("\n") + "\n\n" + new_block + "\n" + text[end:].lstrip("\n")
+            return new_text, True, True
+
     new_text = text.rstrip("\n") + "\n" + _PROBE_BLOCK
     return new_text, True, True
 

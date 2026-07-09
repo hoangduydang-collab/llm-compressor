@@ -82,9 +82,12 @@ try:  # gated diagnostic; never break model import
         from vllm.logger import init_logger as _llmc_init_logger
         _llmc_probe_log = _llmc_init_logger("llmc.m3_moe_probe")
         _llmc_probe_moe_cls = globals().get("MiniMaxM3MoE")
-        _llmc_probe_state = {{"n": 0}}
+        _llmc_probe_state = {{"n": 0, "nf": 0}}
         _llmc_probe_max = int(_llmc_os.environ.get("M3_MOE_PROBE_LAYERS", "6"))
+        _llmc_probe_nf_max = int(_llmc_os.environ.get("M3_MOE_PROBE_NF", "4"))
         _llmc_probe_recompute = _llmc_os.environ.get("M3_MOE_PROBE_RECOMPUTE") == "1"
+
+        import math as _llmc_math
 
         def _llmc_probe_norm(_t):
             try:
@@ -117,8 +120,26 @@ try:  # gated diagnostic; never break model import
                     n = int(hidden_states.shape[0])
                     hs = hidden_states.view(-1, hidden_states.shape[-1])
                     in_norm = _llmc_probe_norm(hs)
-                    # Secondary guard for eager profiling dummy runs (zero input):
-                    # skip so we never emit a FALSE 'dropped' signal from zero input.
+                    # Eager PROFILING/WARMUP dummy runs: vLLM's pre-capture warmup feeds
+                    # uninitialized/dummy input whose norm is ~0 (zeros) or NaN/inf
+                    # (uninit memory). NaN slips past a "<= 1e-6" test (all NaN compares
+                    # are False), which previously let warmup eat the whole probe budget
+                    # before the real prompt. So DON'T spend the main (finite-input)
+                    # budget on it. But a non-finite input on a REAL prefill would itself
+                    # be the garbage root cause (NaN propagating from upstream:
+                    # embed/attn/norm/indexer), so surface a bounded number of
+                    # non-finite hits separately instead of hiding them entirely.
+                    if not _llmc_math.isfinite(in_norm):
+                        if _llmc_probe_state["nf"] < _llmc_probe_nf_max:
+                            _llmc_probe_state["nf"] += 1
+                            _llmc_probe_log.warning(
+                                "M3_MOE_PROBE_NONFINITE#%d tokens=%d in_norm=%s "
+                                "(warmup/dummy OR real upstream NaN -> garbage; if these "
+                                "keep firing AFTER 'Capturing CUDA graphs' completes on "
+                                "the real prompt, NaN is propagating from upstream)",
+                                _llmc_probe_state["nf"], n, in_norm,
+                            )
+                        return out
                     if in_norm <= 1e-6:
                         return out
                     if _llmc_probe_state["n"] < _llmc_probe_max and 2 <= n <= 64:
@@ -161,7 +182,7 @@ try:  # gated diagnostic; never break model import
             _llmc_probe_moe_cls._llmc_probed = True
             _llmc_probe_log.warning(
                 "llmc M3 MoE probe active on %s.forward (M3_MOE_PROBE=1, "
-                "recompute=%s, max_layers=%d); skips CUDA-graph capture + zero-input runs",
+                "recompute=%s, max_layers=%d); skips capture + zero/non-finite warmup runs",
                 _llmc_probe_moe_cls.__name__, _llmc_probe_recompute, _llmc_probe_max,
             )
 except Exception:

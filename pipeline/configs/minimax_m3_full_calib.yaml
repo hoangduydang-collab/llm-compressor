@@ -20,6 +20,10 @@ model:
   device_map: null
 
 quantization:
+  # Experts-only: INT4 weights (community-standard weight contract) + FP8 dynamic
+  # activations (our choice; independent of the weight scheme). Attention kept BF16
+  # via the `ignore` list. See minimax_m3.yaml SCHEME RATIONALE and
+  # .cursor/rules/quantization-what-to-quantize.mdc.
   method: awq
   scheme: W4AFP8
   ignore:
@@ -27,10 +31,10 @@ quantization:
     - "re:.*vision_tower.*"
     - "re:.*multi_modal_projector.*"
     - "re:.*patch_merge_mlp.*"
-    - "re:.*mlp[.]gate$"
-    - "re:.*mlp[.]shared_experts[.].*"
-    - "re:.*self_attn[.]indexer[.].*"
-    - "re:.*layers[.][0-2][.].*"
+    - "re:.*mlp[.]gate$"                 # MoE router
+    - "re:.*mlp[.]shared_experts[.].*"   # shared experts
+    - "re:.*self_attn[.].*"               # ATTENTION q/k/v/o + MSA indexer: keep BF16
+    - "re:.*layers[.][0-2][.].*"          # first 3 dense/full-attn layers
   sample_generation: false
 
 calibration:

@@ -1,13 +1,26 @@
-# Stage 4 - MiniMax-M3 candidate checkpoints (W4AFP8 / W4A8).
+# Stage 4 - MiniMax-M3 candidate checkpoints (experts-only INT4 weights + FP8 acts).
 #
 # PREREQUISITE (Stage 3): confirm M3 MoE linearization works (see
-# pipeline/README.md "MiniMax-M3 enablement"). The ignore regexes below are a
-# STARTING POINT and MUST be confirmed against the real module names in the M3
-# config / remote code before a production run: keep the vision encoder, the MSA
-# attention indexer, the MoE gate, and lm_head out of quantization.
+# pipeline/README.md "MiniMax-M3 enablement").
 #
-#   python -m pipeline.run --config pipeline/configs/minimax_m3.yaml \
-#       --set quantization.scheme=W4A8     # and W4AFP8
+# SCHEME RATIONALE (WEIGHT quant borrowed from reputable MiniMax-M3 4-bit
+# practice; ACTIVATION quant is our own choice -- the two are independent. See
+# .cursor/rules/quantization-what-to-quantize.mdc + BUGS_AND_FIXES.md):
+# WEIGHTS: every reputable M3 4-bit checkpoint quantizes ONLY the routed MoE
+# expert projections (gate/up/down_proj) to INT4 and keeps ATTENTION HIGH-PRECISION:
+#   - spectator2026/MiniMax-M3-AWQ-int4  (llm-compressor recipe.yaml): experts-only
+#     INT4 g128, attention/router/shared/dense/lm_head/vision all high-precision.
+#   - brandonmusic/MiniMax-M3-NVFP4:      routed experts 4-bit, attention BF16 (all 60 layers).
+#   - mratsim/MiniMax-M2.1-FP8-INT4-AWQ:  experts INT4, self-attn FP8.
+# We adopt that WEIGHT contract (experts-only INT4, attention out of `ignore`).
+# ACTIVATIONS: we keep FP8 dynamic per-token activations (W4AFP8) rather than the
+# community weight-only (A16) default -- FP8 acts only apply to the quantized
+# modules (the experts); attention is ignored so it stays BF16 regardless.
+# The previous W4AFP8 recipe also quantized self_attn q/k/v/o to INT4 (attention
+# was NOT in `ignore`) -> NaN at first quantized attention layer -> "arringarring..."
+# garbage. Fix = exclude attention; activations stay FP8.
+#
+#   python -m pipeline.run --config pipeline/configs/minimax_m3.yaml
 name: minimax_m3
 
 model:
@@ -26,13 +39,17 @@ model:
   # max_memory: {cpu: 500e9}
 
 quantization:
-  method: gptq            # sweep gptq | awq | smoothquant+gptq | smoothquant+awq
-  scheme: W4AFP8          # and W4A8
+  method: awq             # sweep awq | gptq | smoothquant+awq
+  # W4AFP8 = INT4 weights (borrowed from community experts-only recipe) + FP8
+  # dynamic per-token activations (our choice; independent of the weight scheme).
+  # Applies only to the routed experts; attention is ignored below and stays BF16.
+  scheme: W4AFP8
   # Module paths verified against transformers 5.12.1 modeling_minimax_m3_vl.py.
   # Experts (MiniMaxM3VLExperts) carry @use_experts_implementation -> they
   # auto-linearize; no custom MoE calibration module is needed.
-  # Keep-bf16 strategy aligned with cyankiwi/MiniMax-M3-AWQ-INT4 (translated to
-  # transformers 5.12.1 module names). Only sparse MoE layers 3-59 are quantized.
+  # After the ignore list below, the ONLY quantized Linears are the routed MoE
+  # experts (mlp.experts.*.{gate,up,down}_proj) in layers 3-59 -- experts-only,
+  # matching best-practice M3 4-bit checkpoints.
   ignore:
     - "lm_head"
     - "re:.*vision_tower.*"
@@ -40,7 +57,7 @@ quantization:
     - "re:.*patch_merge_mlp.*"
     - "re:.*mlp[.]gate$"                 # MoE router
     - "re:.*mlp[.]shared_experts[.].*"   # shared experts
-    - "re:.*self_attn[.]indexer[.].*"     # MSA sparse indexer
+    - "re:.*self_attn[.].*"               # ATTENTION q/k/v/o + MSA indexer: keep BF16
     - "re:.*layers[.][0-2][.].*"          # first 3 dense/full-attn layers
   # 428B model calibrates offloaded (CPU/disk); autoregressive generation is ~minutes
   # per token. Skip the post-quant sanity gen and validate via serve_verify instead.

@@ -97,15 +97,28 @@ try:  # gated diagnostic; never break model import
         ):
             _llmc_probe_orig_forward = _llmc_probe_moe_cls.forward
 
+            import torch as _llmc_torch
+
             def _llmc_probe_forward(self, hidden_states, *args, **kwargs):
                 out = _llmc_probe_orig_forward(self, hidden_states, *args, **kwargs)
                 try:
+                    # HARD GATE: never touch the tensor while a CUDA graph is being
+                    # captured. Any .item()/.norm().item() forces a device sync, which
+                    # is ILLEGAL during capture and poisons the whole capture stream
+                    # ("operation failed due to a previous error during capture" ->
+                    # every Worker_TP* dies). The probe only cares about REAL prefills,
+                    # so skip capture (and profiling dummy) passes entirely, up front,
+                    # BEFORE computing any norm.
+                    if (
+                        _llmc_probe_state["n"] >= _llmc_probe_max
+                        or _llmc_torch.cuda.is_current_stream_capturing()
+                    ):
+                        return out
                     n = int(hidden_states.shape[0])
                     hs = hidden_states.view(-1, hidden_states.shape[-1])
                     in_norm = _llmc_probe_norm(hs)
-                    # Skip CUDA-graph-capture / profiling dummy runs: their input is
-                    # zero/near-zero, which makes shared_norm and moe_out trivially 0
-                    # (a FALSE 'dropped' signal). Only evaluate REAL forwards.
+                    # Secondary guard for eager profiling dummy runs (zero input):
+                    # skip so we never emit a FALSE 'dropped' signal from zero input.
                     if in_norm <= 1e-6:
                         return out
                     if _llmc_probe_state["n"] < _llmc_probe_max and 2 <= n <= 64:
@@ -148,7 +161,7 @@ try:  # gated diagnostic; never break model import
             _llmc_probe_moe_cls._llmc_probed = True
             _llmc_probe_log.warning(
                 "llmc M3 MoE probe active on %s.forward (M3_MOE_PROBE=1, "
-                "recompute=%s, max_layers=%d); skips zero-input capture runs",
+                "recompute=%s, max_layers=%d); skips CUDA-graph capture + zero-input runs",
                 _llmc_probe_moe_cls.__name__, _llmc_probe_recompute, _llmc_probe_max,
             )
 except Exception:

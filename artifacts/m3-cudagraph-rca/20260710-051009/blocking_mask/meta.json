@@ -1,0 +1,13 @@
+{
+  "case_name": "blocking_mask",
+  "graphs_on": true,
+  "debug_cudagraph": true,
+  "enforce_eager": "0",
+  "debug_cudagraph_env": "1",
+  "vllm_use_breakable_cudagraph": "<unset>",
+  "coredump": false,
+  "core_dump_path": null,
+  "port": 8104,
+  "log": "/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/20260710-051009/blocking_mask/serve.log",
+  "chat_ok": true
+}

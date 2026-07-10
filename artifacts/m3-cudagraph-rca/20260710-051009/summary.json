@@ -1,0 +1,77 @@
+{
+  "run_dir": "/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/20260710-051009",
+  "trials": [
+    {
+      "case": "async_baseline_1",
+      "verdict": "graph_ima_collective",
+      "server_ready": false,
+      "chat_ok": false,
+      "ima": true,
+      "notes": [
+        "collective symbols: custom_all_reduce, ProcessGroupNCCL",
+        "empty_cache near IMA (deferred report; lower precedence)"
+      ]
+    },
+    {
+      "case": "async_baseline_2",
+      "verdict": "server_ready",
+      "server_ready": true,
+      "chat_ok": true,
+      "ima": false,
+      "notes": [
+        "server ready + chat ok"
+      ]
+    },
+    {
+      "case": "async_baseline_3",
+      "verdict": "graph_ima_collective",
+      "server_ready": false,
+      "chat_ok": false,
+      "ima": true,
+      "notes": [
+        "collective symbols: custom_all_reduce, flashinfer_all_reduce, ProcessGroupNCCL",
+        "empty_cache near IMA (deferred report; lower precedence)"
+      ]
+    },
+    {
+      "case": "async_coredump",
+      "verdict": "inconclusive",
+      "server_ready": false,
+      "chat_ok": false,
+      "ima": false,
+      "notes": [
+        "compile/breakable fallback or unsupported path"
+      ]
+    },
+    {
+      "case": "blocking_mask",
+      "verdict": "masked_pass",
+      "server_ready": true,
+      "chat_ok": true,
+      "ima": false,
+      "notes": [
+        "ready under DEBUG_CUDAGRAPH/CUDA_LAUNCH_BLOCKING \u2014 not a root fix"
+      ]
+    },
+    {
+      "case": "breakable_off",
+      "verdict": "server_ready",
+      "server_ready": true,
+      "chat_ok": true,
+      "ima": false,
+      "notes": [
+        "server ready + chat ok"
+      ]
+    },
+    {
+      "case": "graphs_off",
+      "verdict": "server_ready",
+      "server_ready": true,
+      "chat_ok": true,
+      "ima": false,
+      "notes": [
+        "server ready + chat ok"
+      ]
+    }
+  ]
+}

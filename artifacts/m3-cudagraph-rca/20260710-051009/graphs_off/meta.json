@@ -1,0 +1,13 @@
+{
+  "case_name": "graphs_off",
+  "graphs_on": false,
+  "debug_cudagraph": false,
+  "enforce_eager": "1",
+  "debug_cudagraph_env": "0",
+  "vllm_use_breakable_cudagraph": "<unset>",
+  "coredump": false,
+  "core_dump_path": null,
+  "port": 8103,
+  "log": "/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/20260710-051009/graphs_off/serve.log",
+  "chat_ok": true
+}

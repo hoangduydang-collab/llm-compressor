@@ -1,0 +1,26 @@
+{
+  "verdict": "graph_ima_unclassified",
+  "server_ready": false,
+  "chat_ok": false,
+  "ima": false,
+  "graphs_on": true,
+  "debug_cudagraph": false,
+  "breakable_cudagraph_mentioned": true,
+  "capture_seen": true,
+  "moe_symbols": [],
+  "collective_symbols": [
+    "custom_all_reduce",
+    "ProcessGroupNCCL"
+  ],
+  "memory_hints": [],
+  "capture_end_seen": false,
+  "empty_cache_near_ima": false,
+  "first_ima_line": null,
+  "core_dump_path": "/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/20260710-051009/async_coredump/cuda_coredump_h119-gpu-polaris.pod4.lab.bitdeer.ai.2536654.1783662165",
+  "core_dump_exists": true,
+  "faulting_kernel": "at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >",
+  "notes": [
+    "faulting_kernel=at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> > (unmapped)"
+  ],
+  "case_name": "async_coredump"
+}

@@ -117,6 +117,24 @@ not strongly confirmed**: do not patch it yet. Next: independently verify the
 fork's effective per-worker threshold behavior before changing stream
 synchronization.
 
+**MiniMax-M3-only serving workaround (2026-07-10):** Until the source-level
+cause is confirmed and fixed, serve **MiniMax-M3** with
+`VLLM_DISABLE_SHARED_EXPERTS_STREAM=1`. This disables only the auxiliary CUDA
+stream used to overlap shared-expert work; it does not disable shared experts or
+otherwise change the model. It is a reliability-first workaround for this
+MiniMax-M3 CUDA-graph failure, not a general vLLM recommendation: all other
+models should follow standard vLLM serving practice and leave the feature at its
+default unless their own validated issue requires a change.
+
+This may cost performance only for scheduled batches at or below the default
+256-token shared-expert-stream threshold. Comparable upstream TP+EP tests show
+low-single-digit gains from the overlap, but MiniMax-M3 has not been benchmarked
+under the production workload, so the cost must not be assumed negligible.
+Future work: run a production-shaped A/B benchmark on MiniMax-M3 measuring
+output throughput, TTFT, and TPOT with the stream enabled versus disabled.
+Keep the stream disabled in production unless that benchmark and a corrected
+source-level implementation demonstrate safe, worthwhile re-enablement.
+
 ## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
 
 **Earlier hypothesis (partially superseded by the A/B above):** first HTTP smoke

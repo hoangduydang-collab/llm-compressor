@@ -1,0 +1,37 @@
+{
+  "run_dir": "/mnt/nfs/hoangduy/logs/m3-cudagraph-shared-stream/20260710-072629-control-t256",
+  "trials": [
+    {
+      "case": "async_baseline_1",
+      "verdict": "server_ready",
+      "server_ready": true,
+      "chat_ok": true,
+      "ima": false,
+      "notes": [
+        "server ready + chat ok"
+      ]
+    },
+    {
+      "case": "async_baseline_2",
+      "verdict": "graph_ima_collective",
+      "server_ready": false,
+      "chat_ok": false,
+      "ima": true,
+      "notes": [
+        "collective symbols: custom_all_reduce, flashinfer_all_reduce, ProcessGroupNCCL",
+        "empty_cache near IMA (deferred report; lower precedence)"
+      ]
+    },
+    {
+      "case": "async_baseline_3",
+      "verdict": "graph_ima_collective",
+      "server_ready": false,
+      "chat_ok": false,
+      "ima": true,
+      "notes": [
+        "collective symbols: custom_all_reduce, flashinfer_all_reduce, ProcessGroupNCCL",
+        "empty_cache near IMA (deferred report; lower precedence)"
+      ]
+    }
+  ]
+}

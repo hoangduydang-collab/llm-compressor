@@ -824,3 +824,6 @@ uv.lock
 !artifacts/m3-cudagraph-rca/
 !artifacts/m3-cudagraph-rca/20260710-051009/
 !artifacts/m3-cudagraph-rca/20260710-051009/**/*.json
+!artifacts/m3-cudagraph-shared-stream/
+!artifacts/m3-cudagraph-shared-stream/20260710-072629/
+!artifacts/m3-cudagraph-shared-stream/20260710-072629/**

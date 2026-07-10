@@ -1,0 +1,13 @@
+{
+  "case_name": "async_baseline_3",
+  "graphs_on": true,
+  "debug_cudagraph": false,
+  "enforce_eager": "0",
+  "debug_cudagraph_env": "0",
+  "vllm_use_breakable_cudagraph": "<unset>",
+  "coredump": false,
+  "core_dump_path": null,
+  "port": 8102,
+  "log": "/mnt/nfs/hoangduy/logs/m3-cudagraph-shared-stream/20260710-072629-control-t256/async_baseline_3/serve.log",
+  "chat_ok": false
+}

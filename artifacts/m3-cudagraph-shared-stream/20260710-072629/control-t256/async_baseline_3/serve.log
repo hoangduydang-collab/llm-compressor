@@ -1,0 +1,949 @@
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:339] 
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:339]        █     █     █▄   ▄█
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:339]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.24.0
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:339]   █▄█▀ █     █     █     █  model   /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:339]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:339] 
+(APIServer pid=1639592) INFO 07-10 07:41:24 [api_utils.py:273] non-default args: {'model_tag': '/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4', 'enable_auto_tool_choice': True, 'tool_call_parser': 'minimax_m3', 'host': '0.0.0.0', 'port': 8102, 'model': '/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4', 'trust_remote_code': True, 'max_model_len': 8192, 'served_model_name': ['cyankiwi/MiniMax-M3-AWQ-INT4'], 'reasoning_parser': 'minimax_m3', 'tensor_parallel_size': 8, 'enable_expert_parallel': True, 'disable_custom_all_reduce': True, 'block_size': 128, 'gpu_memory_utilization': 0.9, 'kv_cache_dtype': 'fp8', 'language_model_only': True}
+(APIServer pid=1639592) INFO 07-10 07:41:24 [model.py:598] Resolved architecture: MiniMaxM3SparseForConditionalGeneration
+(APIServer pid=1639592) INFO 07-10 07:41:24 [model.py:1725] Using max model len 8192
+(APIServer pid=1639592) INFO 07-10 07:41:25 [cache.py:279] Using fp8 data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor
+(APIServer pid=1639592) INFO 07-10 07:41:25 [scheduler.py:252] Chunked prefill is enabled with max_num_batched_tokens=8192.
+(APIServer pid=1639592) INFO 07-10 07:41:25 [vllm.py:1006] Asynchronous scheduling is enabled.
+(APIServer pid=1639592) INFO 07-10 07:41:25 [vllm.py:1094] Auto-enabling VLLM_USE_BREAKABLE_CUDAGRAPH=1. Set VLLM_USE_BREAKABLE_CUDAGRAPH=0 to opt out.
+(APIServer pid=1639592) WARNING 07-10 07:41:25 [vllm.py:1100] VLLM_USE_BREAKABLE_CUDAGRAPH is set, disabling vLLM's torch.compile pipeline. Equivalent to -cc.mode=none.
+(APIServer pid=1639592) WARNING 07-10 07:41:25 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(APIServer pid=1639592) INFO 07-10 07:41:25 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(APIServer pid=1639592) INFO 07-10 07:41:31 [compilation.py:310] Enabled custom fusions: norm_quant, act_quant, allreduce_rms
+(APIServer pid=1639592) INFO 07-10 07:41:32 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+(EngineCore pid=1639903) INFO 07-10 07:42:02 [core.py:114] Initializing a V1 LLM engine (v0.24.0) with config: model='/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4', speculative_config=None, tokenizer='/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=auto, tensor_parallel_size=8, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=compressed-tensors, quantization_config=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=fp8, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='minimax_m3', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_verbose=False), seed=0, served_model_name=cyankiwi/MiniMax-M3-AWQ-INT4, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [42, 8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': True, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native']), enable_flashinfer_autotune=True, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=1639903) WARNING 07-10 07:42:02 [multiproc_executor.py:1063] Reducing Torch parallelism from 64 threads to 1 to avoid unnecessary CPU contention. Set OMP_NUM_THREADS in the external environment to tune this value as needed.
+(EngineCore pid=1639903) INFO 07-10 07:42:02 [multiproc_executor.py:140] DP group leader: node_rank=0, node_rank_within_dp=0, master_addr=127.0.0.1, mq_connect_ip=10.2.4.29 (local), world_size=8, local_world_size=8
+INFO 07-10 07:42:36 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+(Worker pid=1640168) INFO 07-10 07:42:36 [parallel_state.py:1588] world_size=8 rank=6 local_rank=6 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+INFO 07-10 07:42:37 [registry.py:134] All limits of multimodal modalities supported by the model are set to 0, running in text-only mode.
+(Worker pid=1640162) INFO 07-10 07:42:37 [parallel_state.py:1588] world_size=8 rank=0 local_rank=0 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640163) INFO 07-10 07:42:38 [parallel_state.py:1588] world_size=8 rank=1 local_rank=1 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640169) INFO 07-10 07:42:38 [parallel_state.py:1588] world_size=8 rank=7 local_rank=7 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640166) INFO 07-10 07:42:38 [parallel_state.py:1588] world_size=8 rank=4 local_rank=4 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640165) INFO 07-10 07:42:38 [parallel_state.py:1588] world_size=8 rank=3 local_rank=3 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640164) INFO 07-10 07:42:38 [parallel_state.py:1588] world_size=8 rank=2 local_rank=2 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640167) INFO 07-10 07:42:38 [parallel_state.py:1588] world_size=8 rank=5 local_rank=5 distributed_init_method=tcp://127.0.0.1:42575 backend=nccl
+(Worker pid=1640162) INFO 07-10 07:42:39 [pynccl.py:113] vLLM is using nccl==2.28.9
+(Worker pid=1640162) INFO 07-10 07:42:42 [cuda_communicator.py:245] Using ['SYMM_MEM', 'PYNCCL'] all-reduce backends (in dispatch order) for group 'tp:0' out of potential backends: ['NCCL_SYMM_MEM', 'QUICK_REDUCE', 'FLASHINFER', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'].
+(Worker pid=1640162) INFO 07-10 07:42:43 [cuda_communicator.py:245] Using ['PYNCCL'] all-reduce backends (in dispatch order) for group 'ep:0' out of potential backends: ['NCCL_SYMM_MEM', 'QUICK_REDUCE', 'FLASHINFER', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'].
+(Worker pid=1640162) INFO 07-10 07:42:43 [parallel_state.py:1923] rank 0 in world size 8 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+(Worker pid=1640162) INFO 07-10 07:42:43 [topk_topp_sampler.py:55] Using FlashInfer for top-p & top-k sampling.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:43 [gpu_model_runner.py:5160] Starting to load model /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4...
+(Worker_TP6_EP6 pid=1640168) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP6_EP6 pid=1640168) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [cuda.py:539] Using backend AttentionBackendEnum.FLASH_ATTN for vit attention
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [mm_encoder_attention.py:373] Using AttentionBackendEnum.FLASH_ATTN for MMEncoderAttention.
+(Worker_TP7_EP7 pid=1640169) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP4_EP4 pid=1640166) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP3_EP3 pid=1640165) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP7_EP7 pid=1640169) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP4_EP4 pid=1640166) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP3_EP3 pid=1640165) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [vllm.py:1006] Asynchronous scheduling is enabled.
+(Worker_TP0_EP0 pid=1640162) WARNING 07-10 07:42:44 [vllm.py:1100] VLLM_USE_BREAKABLE_CUDAGRAPH is set, disabling vLLM's torch.compile pipeline. Equivalent to -cc.mode=none.
+(Worker_TP0_EP0 pid=1640162) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [compilation.py:310] Enabled custom fusions: norm_quant, act_quant, allreduce_rms
+(Worker_TP5_EP5 pid=1640167) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP5_EP5 pid=1640167) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP1_EP1 pid=1640163) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP2_EP2 pid=1640164) WARNING 07-10 07:42:44 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP1_EP1 pid=1640163) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP2_EP2 pid=1640164) INFO 07-10 07:42:44 [kernel.py:276] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+(Worker_TP6_EP6 pid=1640168) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [cuda.py:480] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN'].
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [flash_attn.py:670] Using FlashAttention version 3
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [deep_gemm.py:175] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [deep_gemm.py:202] DeepGEMM PDL enabled on vllm.third_party.deep_gemm.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [deep_gemm.py:120] DeepGEMM E8M0 enabled on current platform.
+(Worker_TP4_EP4 pid=1640166) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP7_EP7 pid=1640169) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP5_EP5 pid=1640167) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP2_EP2 pid=1640164) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP3_EP3 pid=1640165) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP1_EP1 pid=1640163) INFO 07-10 07:42:44 [compressed_tensors_wNa16.py:112] Using MarlinLinearKernel for CompressedTensorsWNA16
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [sparse_attention.py:410] MiniMax M3 sparse attention selected Triton (kv_cache_dtype=fp8, topk_blocks=16)
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [indexer.py:500] MiniMax M3 indexer: selected Triton (no fmha_sm100) [topk_blocks=16, indexer_kv_dtype=bf16, sm100=False]
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [expert_map_manager.py:245] [EP Rank 0/8] Expert parallelism is enabled. Expert placement strategy: linear. Local/global number of experts: 16/128. Experts local to global index map: 0->0, 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [compressed_tensors_moe.py:155] Using CompressedTensorsWNA16MarlinMoEMethod
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:44 [int_wna16.py:158] Using 'MARLIN' WNA16 MoE backend.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:47 [weight_utils.py:849] Filesystem type for checkpoints: WEKAFS. Checkpoint size: 240.30 GiB. Available RAM: 1965.55 GiB.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:42:47 [weight_utils.py:872] Auto-prefetch is disabled because the filesystem (WEKAFS) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:   0% Completed | 0/49 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:   2% Completed | 1/49 [00:00<00:06,  7.50it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:   4% Completed | 2/49 [00:00<00:18,  2.48it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:   6% Completed | 3/49 [00:01<00:25,  1.78it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:   8% Completed | 4/49 [00:02<00:26,  1.72it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  10% Completed | 5/49 [00:02<00:25,  1.71it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  12% Completed | 6/49 [00:03<00:25,  1.67it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  14% Completed | 7/49 [00:03<00:25,  1.67it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  16% Completed | 8/49 [00:04<00:23,  1.78it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  18% Completed | 9/49 [00:04<00:22,  1.77it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  20% Completed | 10/49 [00:05<00:21,  1.81it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  22% Completed | 11/49 [00:06<00:20,  1.82it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  24% Completed | 12/49 [00:06<00:20,  1.81it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  27% Completed | 13/49 [00:07<00:21,  1.71it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  29% Completed | 14/49 [00:07<00:20,  1.71it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  31% Completed | 15/49 [00:08<00:19,  1.73it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  33% Completed | 16/49 [00:08<00:19,  1.71it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  35% Completed | 17/49 [00:09<00:19,  1.67it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  37% Completed | 18/49 [00:10<00:18,  1.64it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  39% Completed | 19/49 [00:10<00:18,  1.60it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  41% Completed | 20/49 [00:11<00:17,  1.68it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  43% Completed | 21/49 [00:12<00:16,  1.66it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  45% Completed | 22/49 [00:12<00:16,  1.64it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  47% Completed | 23/49 [00:13<00:15,  1.65it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  49% Completed | 24/49 [00:13<00:15,  1.66it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  51% Completed | 25/49 [00:14<00:14,  1.65it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  53% Completed | 26/49 [00:15<00:14,  1.62it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  55% Completed | 27/49 [00:15<00:13,  1.66it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  57% Completed | 28/49 [00:16<00:13,  1.58it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  59% Completed | 29/49 [00:16<00:11,  1.73it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  61% Completed | 30/49 [00:17<00:11,  1.63it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  63% Completed | 31/49 [00:18<00:11,  1.54it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  65% Completed | 32/49 [00:18<00:11,  1.51it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  67% Completed | 33/49 [00:19<00:10,  1.56it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  69% Completed | 34/49 [00:20<00:09,  1.58it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  71% Completed | 35/49 [00:20<00:09,  1.51it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  73% Completed | 36/49 [00:21<00:08,  1.53it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  76% Completed | 37/49 [00:22<00:07,  1.55it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  78% Completed | 38/49 [00:22<00:06,  1.60it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  80% Completed | 39/49 [00:23<00:06,  1.59it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  82% Completed | 40/49 [00:24<00:05,  1.58it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  84% Completed | 41/49 [00:24<00:04,  1.61it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  86% Completed | 42/49 [00:25<00:04,  1.63it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  88% Completed | 43/49 [00:25<00:03,  1.69it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  90% Completed | 44/49 [00:26<00:03,  1.63it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  92% Completed | 45/49 [00:27<00:02,  1.63it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  94% Completed | 46/49 [00:27<00:01,  1.65it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  96% Completed | 47/49 [00:28<00:01,  1.68it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards:  98% Completed | 48/49 [00:28<00:00,  1.82it/s]
+(Worker_TP0_EP0 pid=1640162) Loading safetensors checkpoint shards: 100% Completed | 49/49 [00:28<00:00,  1.71it/s]
+(Worker_TP0_EP0 pid=1640162) 
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:15 [default_loader.py:430] Loading weights took 28.67 seconds
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:16 [int_wna16.py:250] Using MoEPrepareAndFinalizeNoDPEPModular
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:26 [gpu_model_runner.py:5255] Model loading took 30.17 GiB memory and 41.612152 seconds
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:26 [breakable_cudagraph.py:288] Breakable CUDA graph enabled
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:31 [marlin_utils.py:566] Marlin kernel can achieve better performance for small size_n with experimental use_atomic_add feature. You can consider set environment variable VLLM_MARLIN_USE_ATOMIC_ADD to 1 if possible.
+(Worker_TP2_EP2 pid=1640164) INFO 07-10 07:43:33 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP1_EP1 pid=1640163) INFO 07-10 07:43:33 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:34 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP4_EP4 pid=1640166) INFO 07-10 07:43:34 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP7_EP7 pid=1640169) INFO 07-10 07:43:34 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP3_EP3 pid=1640165) INFO 07-10 07:43:34 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP6_EP6 pid=1640168) INFO 07-10 07:43:34 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP5_EP5 pid=1640167) INFO 07-10 07:43:34 [gpu_model_runner.py:6483] Profiling CUDA graph memory: PIECEWISE=51 (largest=512), FULL=51 (largest=512)
+(Worker_TP2_EP2 pid=1640164) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP1_EP1 pid=1640163) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP4_EP4 pid=1640166) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP7_EP7 pid=1640169) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP3_EP3 pid=1640165) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP6_EP6 pid=1640168) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP5_EP5 pid=1640167) INFO 07-10 07:43:36 [gpu_model_runner.py:6588] Estimated CUDA graph memory: 0.93 GiB total
+(Worker_TP2_EP2 pid=1640164) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP1_EP1 pid=1640163) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP4_EP4 pid=1640166) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP7_EP7 pid=1640169) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP3_EP3 pid=1640165) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:36 [gpu_worker.py:508] Available KV cache memory: 35.63 GiB
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP5_EP5 pid=1640167) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP6_EP6 pid=1640168) INFO 07-10 07:43:36 [gpu_worker.py:523] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9000 is equivalent to --gpu-memory-utilization=0.8882 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9118. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=1639903) INFO 07-10 07:43:36 [kv_cache_utils.py:2146] GPU KV cache size: 1,277,312 tokens
+(EngineCore pid=1639903) INFO 07-10 07:43:36 [kv_cache_utils.py:2147] Maximum concurrency for 8,192 tokens per request: 155.92x
+(Worker_TP5_EP5 pid=1640167) 2026-07-10 07:43:39,729 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=1640165) 2026-07-10 07:43:39,729 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=1640169) 2026-07-10 07:43:39,729 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=1640164) 2026-07-10 07:43:39,730 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=1640166) 2026-07-10 07:43:39,730 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=1640163) 2026-07-10 07:43:39,730 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=1640168) 2026-07-10 07:43:39,730 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=1640162) 2026-07-10 07:43:39,731 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=1640163) 2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=1640169) (Worker_TP2_EP2 pid=1640164) (Worker_TP3_EP3 pid=1640165) 2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=1640167) (Worker_TP4_EP4 pid=1640166) (Worker_TP0_EP0 pid=1640162) 2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=1640168) 2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+2026-07-10 07:43:40,039 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=1640162) Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   2%|▏         | 1/51 [00:00<00:09,  5.23it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   4%|▍         | 2/51 [00:00<00:09,  5.39it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   6%|▌         | 3/51 [00:00<00:09,  5.28it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   8%|▊         | 4/51 [00:00<00:09,  5.22it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  10%|▉         | 5/51 [00:00<00:08,  5.17it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  12%|█▏        | 6/51 [00:01<00:08,  5.11it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  14%|█▎        | 7/51 [00:01<00:08,  5.10it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  16%|█▌        | 8/51 [00:01<00:08,  5.07it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  18%|█▊        | 9/51 [00:01<00:08,  5.07it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  20%|█▉        | 10/51 [00:01<00:08,  5.08it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  22%|██▏       | 11/51 [00:02<00:07,  5.10it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  24%|██▎       | 12/51 [00:02<00:07,  5.09it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  25%|██▌       | 13/51 [00:02<00:07,  5.05it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  27%|██▋       | 14/51 [00:02<00:07,  5.05it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  29%|██▉       | 15/51 [00:02<00:07,  5.09it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  31%|███▏      | 16/51 [00:03<00:06,  5.07it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  33%|███▎      | 17/51 [00:03<00:06,  4.90it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  35%|███▌      | 18/51 [00:03<00:06,  4.84it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  37%|███▋      | 19/51 [00:03<00:06,  4.77it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  39%|███▉      | 20/51 [00:03<00:06,  4.71it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  41%|████      | 21/51 [00:04<00:06,  4.66it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  43%|████▎     | 22/51 [00:04<00:06,  4.60it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  45%|████▌     | 23/51 [00:04<00:06,  4.60it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  47%|████▋     | 24/51 [00:04<00:05,  4.55it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  49%|████▉     | 25/51 [00:05<00:05,  4.54it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  51%|█████     | 26/51 [00:05<00:05,  4.78it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  53%|█████▎    | 27/51 [00:05<00:05,  4.70it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  55%|█████▍    | 28/51 [00:05<00:04,  4.60it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  57%|█████▋    | 29/51 [00:05<00:04,  4.59it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  59%|█████▉    | 30/51 [00:06<00:04,  4.58it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  61%|██████    | 31/51 [00:06<00:04,  4.95it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  63%|██████▎   | 32/51 [00:06<00:03,  5.22it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  65%|██████▍   | 33/51 [00:06<00:03,  5.49it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  67%|██████▋   | 34/51 [00:06<00:02,  5.68it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  69%|██████▊   | 35/51 [00:06<00:02,  5.82it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  71%|███████   | 36/51 [00:07<00:02,  5.86it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  73%|███████▎  | 37/51 [00:07<00:02,  5.89it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  75%|███████▍  | 38/51 [00:07<00:02,  5.91it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  76%|███████▋  | 39/51 [00:07<00:02,  5.85it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  78%|███████▊  | 40/51 [00:07<00:01,  5.81it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  80%|████████  | 41/51 [00:08<00:01,  5.88it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  82%|████████▏ | 42/51 [00:08<00:01,  5.92it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  84%|████████▍ | 43/51 [00:08<00:01,  5.95it/s](Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:48 [flashinfer_all_reduce.py:112] Auto-selected flashinfer allreduce backend: trtllm
+/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=1640162)   return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) INFO 07-10 07:43:49 [flashinfer_all_reduce.py:152] Initialized FlashInfer Allreduce norm fusion workspace with backend=trtllm
+(Worker_TP0_EP0 pid=1640162) Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  84%|████████▍ | 43/51 [00:09<00:01,  4.47it/s]
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] WorkerProc hit an exception.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] Traceback (most recent call last):
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 992, in worker_busy_loop
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     output = func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]              ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 658, in compile_or_warm_up_model
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     cuda_graph_memory_bytes = self.model_runner.capture_model()
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6624, in capture_model
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     self._capture_cudagraphs(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6740, in _capture_cudagraphs
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     self._warmup_and_capture(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6686, in _warmup_and_capture
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     self._dummy_run(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5959, in _dummy_run
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     outputs = self.model(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]               ^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/compilation/breakable_cudagraph.py", line 332, in __call__
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return self._capture(entry, args, kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/compilation/breakable_cudagraph.py", line 376, in _capture
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     torch.accelerator.empty_cache()
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/accelerator/memory.py", line 31, in empty_cache
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     torch._C._accelerator_emptyCache()
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] 
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] Traceback (most recent call last):
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 992, in worker_busy_loop
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     output = func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]              ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 658, in compile_or_warm_up_model
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     cuda_graph_memory_bytes = self.model_runner.capture_model()
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6624, in capture_model
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     self._capture_cudagraphs(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6740, in _capture_cudagraphs
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     self._warmup_and_capture(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6686, in _warmup_and_capture
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     self._dummy_run(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5959, in _dummy_run
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     outputs = self.model(
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]               ^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/compilation/breakable_cudagraph.py", line 332, in __call__
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     return self._capture(entry, args, kwargs)
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/compilation/breakable_cudagraph.py", line 376, in _capture
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     torch.accelerator.empty_cache()
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/accelerator/memory.py", line 31, in empty_cache
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000]     torch._C._accelerator_emptyCache()
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] 
+(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] 
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] EngineCore failed to start.
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] Traceback (most recent call last):
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1200, in run_engine_core
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     return func(*args, **kwargs)
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 966, in __init__
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     super().__init__(
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 133, in __init__
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     kv_cache_config = self._initialize_kv_caches(vllm_config)
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     return func(*args, **kwargs)
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 321, in _initialize_kv_caches
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     self.model_executor.initialize_from_config(kv_cache_configs)
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 124, in initialize_from_config
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     compilation_times: list[CompilationTimes] = self.collective_rpc(
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]                                                 ^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 402, in collective_rpc
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     return future if non_block else future.result()
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]                                     ^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 91, in result
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     return super().result()
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]            ^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     return self.__get_result()
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]            ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     raise self._exception
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 95, in _wait_for_response
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     response = self.aggregate(self.get_response())
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]                               ^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 391, in get_response
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231]     raise RuntimeError(
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] RuntimeError: Worker failed with error 'CUDA error: an illegal memory access was encountered
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(EngineCore pid=1639903) ERROR 07-10 07:43:50 [core.py:1231] ', please check the stack trace above for the root cause
+(Worker_TP0_EP0 pid=1640162) Process VllmWorker-0:
+(Worker_TP0_EP0 pid=1640162) Traceback (most recent call last):
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 921, in worker_main
+(Worker_TP0_EP0 pid=1640162)     raise e
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 889, in worker_main
+(Worker_TP0_EP0 pid=1640162)     worker.worker_busy_loop()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 983, in worker_busy_loop
+(Worker_TP0_EP0 pid=1640162)     method, args, kwargs, output_rank = self.rpc_broadcast_mq.dequeue(
+(Worker_TP0_EP0 pid=1640162)                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/distributed/device_communicators/shm_broadcast.py", line 779, in dequeue
+(Worker_TP0_EP0 pid=1640162)     with self.acquire_read(timeout, indefinite) as buf:
+(Worker_TP0_EP0 pid=1640162)          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/contextlib.py", line 137, in __enter__
+(Worker_TP0_EP0 pid=1640162)     return next(self.gen)
+(Worker_TP0_EP0 pid=1640162)            ^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/distributed/device_communicators/shm_broadcast.py", line 698, in acquire_read
+(Worker_TP0_EP0 pid=1640162)     self._spin_condition.wait(timeout_ms=read_timeout.timeout_ms())
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/distributed/device_communicators/shm_broadcast.py", line 198, in wait
+(Worker_TP0_EP0 pid=1640162)     events = dict(self.poller.poll(timeout=timeout_ms))
+(Worker_TP0_EP0 pid=1640162)                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/zmq/sugar/poll.py", line 106, in poll
+(Worker_TP0_EP0 pid=1640162)     return zmq_poll(self.sockets, timeout=timeout)
+(Worker_TP0_EP0 pid=1640162)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "zmq/backend/cython/_zmq.py", line 1680, in zmq.backend.cython._zmq.zmq_poll
+(Worker_TP0_EP0 pid=1640162)     _check_rc(rc)
+(Worker_TP0_EP0 pid=1640162)     ^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "zmq/backend/cython/_zmq.py", line 179, in zmq.backend.cython._zmq._check_rc
+(Worker_TP0_EP0 pid=1640162)     PyErr_CheckSignals()
+(Worker_TP0_EP0 pid=1640162)     ^^^^^^^^^^^
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 823, in signal_handler
+(Worker_TP0_EP0 pid=1640162)     raise SystemExit()
+(Worker_TP0_EP0 pid=1640162) SystemExit
+(Worker_TP0_EP0 pid=1640162) 
+(Worker_TP0_EP0 pid=1640162) During handling of the above exception, another exception occurred:
+(Worker_TP0_EP0 pid=1640162) 
+(Worker_TP0_EP0 pid=1640162) Traceback (most recent call last):
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+(Worker_TP0_EP0 pid=1640162)     self.run()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 108, in run
+(Worker_TP0_EP0 pid=1640162)     self._target(*self._args, **self._kwargs)
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 930, in worker_main
+(Worker_TP0_EP0 pid=1640162)     worker.shutdown()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 775, in shutdown
+(Worker_TP0_EP0 pid=1640162)     self.worker.shutdown()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/worker_base.py", line 220, in shutdown
+(Worker_TP0_EP0 pid=1640162)     self.worker.shutdown()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 1186, in shutdown
+(Worker_TP0_EP0 pid=1640162)     model_runner.shutdown()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6359, in shutdown
+(Worker_TP0_EP0 pid=1640162)     self._cleanup_profiling_kv_cache()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 6377, in _cleanup_profiling_kv_cache
+(Worker_TP0_EP0 pid=1640162)     torch.accelerator.synchronize()
+(Worker_TP0_EP0 pid=1640162)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/accelerator/__init__.py", line 263, in synchronize
+(Worker_TP0_EP0 pid=1640162)     torch._C._accelerator_synchronizeDevice(device_index)
+(Worker_TP0_EP0 pid=1640162) torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+(Worker_TP0_EP0 pid=1640162) Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP0_EP0 pid=1640162) CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP0_EP0 pid=1640162) For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP0_EP0 pid=1640162) Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP0_EP0 pid=1640162) 
+terminate called after throwing an instance of 'c10::AcceleratorError'
+  what():  CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+Exception raised from ~AllocationRef at /pytorch/torch/csrc/distributed/c10d/symm_mem/CUDASymmetricMemory.cu:51 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f386fd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0xc114 (0x7f387010e114 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10_cuda.so)
+frame #2: c10d::symmetric_memory::AllocationRef::~AllocationRef() + 0x84 (0x7f37bc104694 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10::intrusive_ptr<c10d::symmetric_memory::AllocationRef, c10::detail::intrusive_target_default_null_type<c10d::symmetric_memory::AllocationRef> >::reset_not_null_(c10d::symmetric_memory::AllocationRef*) + 0x7e (0x7f37bc108a2e in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: c10d::symmetric_memory::CUDAPeerAllocInfo::~CUDAPeerAllocInfo() + 0x5d (0x7f37bc108d4d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #5: c10d::symmetric_memory::Block::~Block() + 0x39 (0x7f37bc108bb9 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #6: c10d::symmetric_memory::CUDASymmetricMemoryAllocator::free(void*) + 0xdd (0x7f37bc10532d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #7: <unknown function> + 0x34f3c (0x7f386fd09f3c in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #8: <unknown function> + 0x7f8e4 (0x7f386fd548e4 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #9: c10::TensorImpl::~TensorImpl() + 0x9 (0x7f386fd4e279 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #10: <unknown function> + 0x869d55 (0x7f37e8d1dd55 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_python.so)
+frame #11: <unknown function> + 0x869df1 (0x7f37e8d1ddf1 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_python.so)
+frame #12: VLLM::Worker_TP0_EP0() [0x182c723]
+frame #13: VLLM::Worker_TP0_EP0() [0x182c8e3]
+frame #14: VLLM::Worker_TP0_EP0() [0x182c8e3]
+frame #15: VLLM::Worker_TP0_EP0() [0x182c8e3]
+frame #16: PyDict_SetItem + 0x578 (0x1834178 in VLLM::Worker_TP0_EP0)
+frame #17: _PyModule_ClearDict + 0x14d (0x18337d1 in VLLM::Worker_TP0_EP0)
+frame #18: VLLM::Worker_TP0_EP0() [0x190e827]
+frame #19: Py_FinalizeEx + 0xf0 (0x190d770 in VLLM::Worker_TP0_EP0)
+frame #20: Py_Exit + 0xd (0x190d54d in VLLM::Worker_TP0_EP0)
+frame #21: VLLM::Worker_TP0_EP0() [0x1c6d6e8]
+frame #22: VLLM::Worker_TP0_EP0() [0x1a2d3b0]
+frame #23: VLLM::Worker_TP0_EP0() [0x1bf6636]
+frame #24: VLLM::Worker_TP0_EP0() [0x1ae29d5]
+frame #25: VLLM::Worker_TP0_EP0() [0x1987b58]
+frame #26: VLLM::Worker_TP0_EP0() [0x198796c]
+frame #27: <unknown function> + 0x29d90 (0x7f3870e87d90 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #28: __libc_start_main + 0x80 (0x7f3870e87e40 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #29: _start + 0x29 (0x19a84a9 in VLLM::Worker_TP0_EP0)
+
+(EngineCore pid=1639903) ERROR 07-10 07:43:51 [multiproc_executor.py:284] Worker proc VllmWorker-0 died unexpectedly, shutting down executor.
+(EngineCore pid=1639903) INFO 07-10 07:43:51 [multiproc_executor.py:426] [shutdown] Executor: waiting for worker exit count=8
+[rank6]:[W710 07:43:51.985373479 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Connection reset by peer
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:679 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a91532 (0x7f66554b2532 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f66554b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:51.993334687 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Connection reset by peer
+[rank1]:[W710 07:43:51.524879933 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f9755eb24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f9755eb0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:51.532528565 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank7]:[W710 07:43:51.525014429 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fe3d36b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fe3d36b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:51.525206427 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fc73b2b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fc73b2b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:51.532713822 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank4]:[W710 07:43:51.532781855 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank3]:[W710 07:43:51.530746865 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f372ccb24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f372ccb0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:51.538328869 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank2]:[W710 07:43:51.531512313 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f8a160b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f8a160b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:51.539113045 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank5]:[W710 07:43:51.533252420 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f6b918b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f6b918b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:51.540859461 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank6]:[W710 07:43:52.993493656 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f66554b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f66554b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:52.000943086 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank1]:[W710 07:43:52.532676734 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f9755eb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f9755eb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:52.540093898 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank4]:[W710 07:43:52.532922063 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fc73b2b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fc73b2b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:52.540201031 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank7]:[W710 07:43:52.532860776 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fe3d36b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fe3d36b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:52.540273709 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank3]:[W710 07:43:52.538464432 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f372ccb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f372ccb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:52.545768258 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank2]:[W710 07:43:52.539255273 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f8a160b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f8a160b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:52.546692386 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank5]:[W710 07:43:52.540994666 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f6b918b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f6b918b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:52.548211910 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank6]:[W710 07:43:53.001079584 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f66554b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f66554b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:53.008334832 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank1]:[W710 07:43:53.540229221 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f9755eb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f9755eb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:53.547460880 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank4]:[W710 07:43:53.540333432 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fc73b2b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fc73b2b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:53.547689931 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank7]:[W710 07:43:53.540402154 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fe3d36b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fe3d36b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:53.547755777 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank3]:[W710 07:43:53.545890234 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f372ccb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f372ccb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:53.553262545 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank2]:[W710 07:43:53.546831507 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f8a160b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f8a160b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:53.554282757 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank5]:[W710 07:43:53.548324201 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f6b918b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f6b918b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:53.555465541 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank6]:[W710 07:43:54.008463758 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f66554b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f66554b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:54.015827146 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank1]:[W710 07:43:54.547591935 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f9755eb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f9755eb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:54.554922080 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank4]:[W710 07:43:54.547848150 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fc73b2b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fc73b2b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:54.555175496 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank7]:[W710 07:43:54.547882591 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fe3d36b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fe3d36b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:54.555270665 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank3]:[W710 07:43:54.553393219 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f372ccb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f372ccb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:54.560675406 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank2]:[W710 07:43:54.554400090 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f8a160b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f8a160b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:54.561706238 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank5]:[W710 07:43:54.555577836 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f6b918b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f6b918b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:54.562704288 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank6]:[W710 07:43:55.015946498 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f66554b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f66554b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:55.023192289 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank1]:[W710 07:43:55.555047335 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f9755eb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f9755eb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:55.562280665 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank7]:[W710 07:43:55.555407286 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fe3d36b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fe3d36b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:55.562624689 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank4]:[W710 07:43:55.555310541 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fc73b2b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fc73b2b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:55.562708981 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank3]:[W710 07:43:55.560800991 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f372ccb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f372ccb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:55.568105786 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank2]:[W710 07:43:55.561821960 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f8a160b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f8a160b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:55.569118484 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank5]:[W710 07:43:55.562830849 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f6b918b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f6b918b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:55.570004848 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank6]:[W710 07:43:56.023306004 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f66554b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f66554b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:56.026281618 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank1]:[W710 07:43:56.562446718 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f9755eb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f9755eb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:56.569962530 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank4]:[W710 07:43:56.562855442 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fc73b2b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fc73b2b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:56.570272489 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank7]:[W710 07:43:56.562796151 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fe3d36b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fe3d36b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:56.570373038 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank3]:[W710 07:43:56.568294480 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f372ccb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f372ccb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:56.575758442 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank2]:[W710 07:43:56.569272872 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f8a160b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f8a160b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:56.576745693 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank5]:[W710 07:43:56.570136037 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f6b918b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f6b918b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:56.577475477 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank6]:[W710 07:43:57.026414844 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=100, addr=[localhost]:37378, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f66ebd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f66554b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f66554b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6637c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f66bc0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f66ecc91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f66ecd238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W710 07:43:57.033847355 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank1]:[W710 07:43:57.570099032 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37310, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f97ec37305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f9755eb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f9755eb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f973869c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f97bcab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f97ed4efac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f97ed5818d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W710 07:43:57.577495554 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank4]:[W710 07:43:57.570398846 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37338, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc7d1b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fc73b2b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fc73b2b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc71da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc7a1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc7d2a91ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc7d2b238d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W710 07:43:57.577774611 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank7]:[W710 07:43:57.570508137 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37324, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe469f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7fe3d36b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7fe3d36b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe3b5e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe43a2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe46ae10ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe46aea28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W710 07:43:57.577842681 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank3]:[W710 07:43:57.575889442 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37342, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f37c357305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f372ccb1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f372ccb03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f370f49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f37938b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f37c4435ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f37c44c78d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W710 07:43:57.583124468 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank2]:[W710 07:43:57.576873439 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37356, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8aac97305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f8a160b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f8a160b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f89f889c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8a7ccb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8aad8c2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8aad9548d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W710 07:43:57.584232500 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe
+[rank5]:[W710 07:43:57.577595231 TCPStore.cpp:106] [c10d] sendBytes failed on SocketImpl(fd=99, addr=[localhost]:37364, remote=[localhost]:42575): Broken pipe
+Exception raised from sendBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:653 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6c2817305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a90931 (0x7f6b918b1931 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x24d (0x7f6b918b03ed in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6b7409c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6bf84b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6c290a2ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6c291348d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W710 07:43:57.584827294 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Broken pipe

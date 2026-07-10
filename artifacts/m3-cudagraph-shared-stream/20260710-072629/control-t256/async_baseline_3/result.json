@@ -1,0 +1,30 @@
+{
+  "verdict": "graph_ima_collective",
+  "server_ready": false,
+  "chat_ok": false,
+  "ima": true,
+  "graphs_on": true,
+  "debug_cudagraph": false,
+  "breakable_cudagraph_mentioned": true,
+  "capture_seen": true,
+  "moe_symbols": [],
+  "collective_symbols": [
+    "custom_all_reduce",
+    "flashinfer_all_reduce",
+    "ProcessGroupNCCL"
+  ],
+  "memory_hints": [
+    "empty_cache"
+  ],
+  "capture_end_seen": false,
+  "empty_cache_near_ima": true,
+  "first_ima_line": "(Worker_TP0_EP0 pid=1640162) ERROR 07-10 07:43:50 [multiproc_executor.py:1000] torch.AcceleratorError: CUDA error: an illegal memory access was encountered",
+  "core_dump_path": null,
+  "core_dump_exists": null,
+  "faulting_kernel": null,
+  "notes": [
+    "collective symbols: custom_all_reduce, flashinfer_all_reduce, ProcessGroupNCCL",
+    "empty_cache near IMA (deferred report; lower precedence)"
+  ],
+  "case_name": "async_baseline_3"
+}

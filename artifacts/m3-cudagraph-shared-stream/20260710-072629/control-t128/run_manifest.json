@@ -1,0 +1,14 @@
+{
+  "run_id": "20260710-072629-control-t128",
+  "host": "h125-gpu-polaris.pod4.lab.bitdeer.ai",
+  "dry_run": false,
+  "ckpt": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "served_name": "cyankiwi/MiniMax-M3-AWQ-INT4",
+  "max_model_len": 8192,
+  "gpu_util": 0.9,
+  "cases": [
+    "async_baseline_1",
+    "async_baseline_2",
+    "async_baseline_3"
+  ]
+}

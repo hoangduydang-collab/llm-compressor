@@ -106,6 +106,17 @@ single-failure `compute-sanitizer` follow-up before changing capture or
 collective code. `breakable_off` passing makes the breakable-cudagraph path the
 highest-priority experiment target, not established root cause.
 
+**Shared-expert stream RCA (h125, 20260710-072629):**
+[`comparison.json`](/mnt/nfs/hoangduy/logs/m3-cudagraph-shared-stream/20260710-072629-comparison.json)
+recorded IMA in 2/3 threshold-256 controls at 43/51 capture progress, while
+disabling only `VLLM_DISABLE_SHARED_EXPERTS_STREAM` passed ready + chat in all
+3/3 trials. Threshold 128 still failed at 43/51, 43/51, and 45/51 rather than
+the predicted 31–33/51 shift. The shared stream is therefore a strong
+workaround signal, but the missing-main-stream-join hypothesis is **narrowed,
+not strongly confirmed**: do not patch it yet. Next: independently verify the
+fork's effective per-worker threshold behavior before changing stream
+synchronization.
+
 ## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
 
 **Earlier hypothesis (partially superseded by the A/B above):** first HTTP smoke

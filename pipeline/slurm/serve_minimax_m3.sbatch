@@ -42,6 +42,9 @@ export PYTHONFAULTHANDLER=1
 export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR=${FLASHINFER_WORKSPACE_DIR:-$HOME/cache/flashinfer}
 export TOKENIZERS_PARALLELISM=false
+# MiniMax-M3-only: disable shared-expert aux-stream overlap (HTTP/async IMA
+# workaround; h125 matrix 3/3 ready+chat). Other models must not inherit this.
+export VLLM_DISABLE_SHARED_EXPERTS_STREAM="${VLLM_DISABLE_SHARED_EXPERTS_STREAM:-1}"
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
 
 CONFIG=${CONFIG:-pipeline/configs/minimax_m3.yaml}
@@ -59,6 +62,7 @@ echo "processor_source=$MODEL_ID"
 echo "out=$OUT_DIR"
 echo "max_model_len=$MAX_MODEL_LEN gpu_util=$GPU_UTIL"
 echo "enforce_eager=$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]] && echo true || echo false)"
+echo "disable_shared_experts_stream=$VLLM_DISABLE_SHARED_EXPERTS_STREAM"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 python pipeline/slurm/patch_vllm_m3_serve.py
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv || true

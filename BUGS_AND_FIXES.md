@@ -38,12 +38,11 @@ never a fix. Do not treat sync-CUDA success as root-cause closure.
 `debug_cudagraph_ima.sh` **always** exports `CUDA_LAUNCH_BLOCKING=1`. That PASS
 may have been sync-CUDA, not the smaller memory envelope.
 
-**Tactical workaround (HTTP smoke):** default `DEBUG_CUDAGRAPH=1` when
-`ENFORCE_EAGER=0` in `run_vllm_http_serve_smoke.sh` so graphs-on HTTP is usable.
-Cost: slower capture / launch (sync CUDA). Escape hatch: `ENFORCE_EAGER=1`.
-Removal criteria: HTTP graphs-on PASS with `DEBUG_CUDAGRAPH=0` on h119 for
-cyankiwi + our W4AFP8 ckpts **and** a classified matrix verdict that names the
-fixed path.
+**Production default (HTTP + offline MiniMax-M3, 2026-07-10):** async CUDA
+(`DEBUG_CUDAGRAPH=0`) with `VLLM_DISABLE_SHARED_EXPERTS_STREAM=1`. Validated by
+the h125 stream-disabled matrix (3/3 ready+chat). `DEBUG_CUDAGRAPH=1` is
+diagnostic-only (`masked_pass`). Escape hatch: `ENFORCE_EAGER=1`. Other models
+keep standard vLLM defaults (stream feature left enabled).
 
 ### RCA matrix (no vLLM site-packages edits)
 
@@ -126,6 +125,28 @@ MiniMax-M3 CUDA-graph failure, not a general vLLM recommendation: all other
 models should follow standard vLLM serving practice and leave the feature at its
 default unless their own validated issue requires a change.
 
+**Wired as the MiniMax-M3 production default (2026-07-10):** HTTP and offline
+launchers now default to async CUDA (`DEBUG_CUDAGRAPH=0` / no
+`CUDA_LAUNCH_BLOCKING`) **plus** `VLLM_DISABLE_SHARED_EXPERTS_STREAM=1`. The
+h125 stream-disabled matrix already validated that exact envelope (3/3
+`server_ready` + chat with graphs and breakable graphs on). Paths covered:
+
+- `pipeline/slurm/run_vllm_http_serve_smoke.sh`
+- `pipeline/slurm/serve_minimax_m3.sbatch` / `run_serve_minimax_m3_detached.sh`
+- `pipeline/serve_verify.py` (`apply_minimax_m3_serve_env`, M3-gated only)
+
+`DEBUG_CUDAGRAPH=1` remains a diagnostic opt-in (masks the race; classifier
+`masked_pass`). RCA A/B can still force `VLLM_DISABLE_SHARED_EXPERTS_STREAM=0`.
+
+**Retained (still required / not proven removable):** W4A8 SwiGLU site-packages
+patches 1–2, FlashInfer `FLASHINFER_USE_CUDA_NORM=1`, checkpoint/config
+preflight, `disable_custom_all_reduce=true` (h118 2×4 topology deadlock), and
+persistent cudagraph patches 3–4 (fused-AR NCCL fallback + router
+`nan_to_num`). **Removed as proven-dead only:** unwired in-process duplicates
+`patch_vllm_m3_fused_ar_for_cudagraph` / `patch_vllm_m3_moe_router_for_cudagraph`
+in `pipeline/vllm_m3_patches.py` (workers never saw them; site-packages edits
+remain the live path).
+
 This may cost performance only for scheduled batches at or below the default
 256-token shared-expert-stream threshold. Comparable upstream TP+EP tests show
 low-single-digit gains from the overlap, but MiniMax-M3 has not been benchmarked
@@ -148,7 +169,7 @@ not sufficient** — after those were fixed, the async race remained.
 | Preflight config + VL processor | Always | Was missing → now applied |
 | `--language-model-only` | N/A | Was missing → now default |
 | Nemotron `max_num_seqs` / batched_tokens | Unset | Was forced → now omitted |
-| `CUDA_LAUNCH_BLOCKING` | Usually unset (PASS) | Must be 1 for HTTP graphs-on today |
+| `CUDA_LAUNCH_BLOCKING` | Usually unset (PASS) | Was forced to 1 (masked); now default async with stream disabled |
 
 ## MiniMax-M3 vLLM serve stage chronicle (h118, 2026-07-07/08)
 

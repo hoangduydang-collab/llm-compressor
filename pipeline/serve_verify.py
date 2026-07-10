@@ -31,6 +31,35 @@ os.environ.setdefault("FLASHINFER_USE_CUDA_NORM", "1")
 W4A8_MOE_INTERMEDIATE_MULTIPLE = 256
 
 
+def _is_minimax_m3_checkpoint(ckpt: Path) -> bool:
+    """True when ``ckpt/config.json`` looks like MiniMax-M3 / MiniMax-M3-VL."""
+    cfg = _read_model_config(ckpt)
+    if not cfg:
+        return False
+    model_type = str(cfg.get("model_type") or "").lower()
+    archs = " ".join(cfg.get("architectures") or [])
+    blob = f"{model_type} {archs}".lower()
+    return "minimax" in blob
+
+
+def apply_minimax_m3_serve_env(ckpt: Path) -> list[str]:
+    """Apply MiniMax-M3-only serve env defaults before vLLM import.
+
+    Currently sets ``VLLM_DISABLE_SHARED_EXPERTS_STREAM=1`` when unset. This is
+    the production workaround for the HTTP async CUDA-graph IMA (h125 matrix:
+    3/3 ready+chat with stream disabled). Non-M3 checkpoints are left alone so
+    other models keep standard vLLM defaults. Explicit caller exports win.
+    """
+    applied: list[str] = []
+    if not _is_minimax_m3_checkpoint(ckpt):
+        return applied
+    key = "VLLM_DISABLE_SHARED_EXPERTS_STREAM"
+    if key not in os.environ:
+        os.environ[key] = "1"
+        applied.append(f"{key}=1")
+    return applied
+
+
 def _read_model_config(ckpt: Path) -> dict:
     cfg_path = ckpt / "config.json"
     if not cfg_path.exists():
@@ -367,6 +396,15 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     changed = ensure_writable_caches()
     if changed:
         print(f"[pipeline] redirected caches: {changed}")
+
+    # MiniMax-M3-only env defaults must land before ``from vllm import ...`` so
+    # Worker_TP* children inherit them. Non-M3 checkpoints are untouched.
+    m3_env = apply_minimax_m3_serve_env(ckpt)
+    if m3_env:
+        print(f"[pipeline] MiniMax-M3 serve env defaults: {m3_env}")
+    report["disable_shared_experts_stream"] = os.environ.get(
+        "VLLM_DISABLE_SHARED_EXPERTS_STREAM"
+    )
 
     # VL checkpoints need preprocessor_config.json for vLLM multimodal init even
     # when running a text-only smoke prompt. Older quant runs may lack these files.

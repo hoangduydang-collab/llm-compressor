@@ -15,6 +15,8 @@
 #
 # Env toggles:
 #   ENFORCE_EAGER=1     escape hatch: disable CUDA graphs if capture hangs
+#   VLLM_DISABLE_SHARED_EXPERTS_STREAM=0  RCA only: re-enable shared-expert
+#     aux stream (default 1 for MiniMax-M3; see BUGS_AND_FIXES.md)
 #
 # Monitor:
 #   tail -f serves/m3-awq-w4afp8/run.log
@@ -87,6 +89,8 @@ export PYTHONFAULTHANDLER=1
 export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR=\${FLASHINFER_WORKSPACE_DIR:-\$HOME/cache/flashinfer}
 export TOKENIZERS_PARALLELISM=false
+# MiniMax-M3-only: disable shared-expert aux-stream overlap (see BUGS_AND_FIXES.md).
+export VLLM_DISABLE_SHARED_EXPERTS_STREAM=\${VLLM_DISABLE_SHARED_EXPERTS_STREAM:-1}
 mkdir -p "\$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true
 export CONFIG=$(printf '%q' "$CONFIG")
 export OUT_DIR=$(printf '%q' "$OUT_DIR")
@@ -99,6 +103,7 @@ export ENFORCE_EAGER=$(printf '%q' "$([[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EA
 echo "host=\$(hostname) serve-verify started=\$(date -Is)"
 echo "checkpoint=\$CHECKPOINT"
 echo "processor_source=\$MODEL_ID"
+echo "disable_shared_experts_stream=\$VLLM_DISABLE_SHARED_EXPERTS_STREAM"
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 # Workers are spawned subprocesses — patches MUST be in site-packages, not runtime hooks.
 python pipeline/slurm/patch_vllm_m3_serve.py

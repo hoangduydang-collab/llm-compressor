@@ -7,17 +7,13 @@
 #
 # Default target: cyankiwi MiniMax-M3 AWQ-INT4 on 8 GPUs.
 #
-# Root cause note (HTTP graphs-on IMA, 2026-07-09 A/B on h119):
-#   Same ckpt/patches/flashinfer 0.6.12 / language-model-only / 8192/0.9:
-#     DEBUG_CUDAGRAPH=1 (CUDA_LAUNCH_BLOCKING=1) → 51/51 capture PASS
-#     async (default CUDA)                      → IMA at empty_cache()
-#   So this is an **async capture race** on the HTTP/AsyncLLM path, not the
-#   NaN→dup-experts bug (patches already live) and not max_model_len.
-#   Also confounds W4AFP8 "2048 PASS": debug_cudagraph_ima.sh always sets
-#   CUDA_LAUNCH_BLOCKING=1. See BUGS_AND_FIXES.md "HTTP async cudagraph race".
-#
-#   Default: DEBUG_CUDAGRAPH=1 for graphs-on HTTP smoke (tactical). Set
-#   DEBUG_CUDAGRAPH=0 to reproduce the race. Long-term: name the racing kernel.
+# Root cause note (HTTP graphs-on IMA; see BUGS_AND_FIXES.md):
+#   Async CUDA + shared-expert aux stream → flaky IMA during graph capture.
+#   Production default for MiniMax-M3 only:
+#     VLLM_DISABLE_SHARED_EXPERTS_STREAM=1  (h125 matrix: 3/3 ready+chat)
+#     DEBUG_CUDAGRAPH=0                     (async CUDA; standard practice)
+#   DEBUG_CUDAGRAPH=1 remains a diagnostic opt-in (masks the race; not a fix).
+#   Other models must not inherit this stream disablement.
 #
 #   bash pipeline/slurm/run_vllm_http_serve_smoke.sh
 #   CKPT=/path/to/ckpt SERVED_NAME=... bash pipeline/slurm/run_vllm_http_serve_smoke.sh
@@ -77,6 +73,10 @@ export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR="${FLASHINFER_WORKSPACE_DIR:-${HOME}/cache/flashinfer}"
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# MiniMax-M3-only: disable shared-expert aux-stream overlap (HTTP async IMA
+# workaround). Override with VLLM_DISABLE_SHARED_EXPERTS_STREAM=0 for RCA A/B.
+# Do NOT put this in env.sh — other models keep standard vLLM defaults.
+export VLLM_DISABLE_SHARED_EXPERTS_STREAM="${VLLM_DISABLE_SHARED_EXPERTS_STREAM:-1}"
 # Nemotron leftovers — meaningless / harmful for MiniMax HTTP smoke.
 unset VLLM_USE_FLASHINFER_MOE_FP4 2>/dev/null || true
 # Do NOT force VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 (Nemotron default).
@@ -127,14 +127,10 @@ MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-0}"
 # Same preflight serve_verify runs before LLM() — required for raw vllm serve.
 PATCH_CKPT_CONFIG="${PATCH_CKPT_CONFIG:-1}"
-# Default ON for graphs-on HTTP: A/B proved async capture IMAs while sync PASS
-# (BUGS_AND_FIXES.md). When ENFORCE_EAGER=1, leave unset (no capture to race).
-# Override: DEBUG_CUDAGRAPH=0 bash ...  # reproduce the race
-if [[ "$ENFORCE_EAGER" == "1" || "$ENFORCE_EAGER" == "true" ]]; then
-  DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-0}"
-else
-  DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-1}"
-fi
+# Async CUDA is the production default (with shared-expert stream disabled).
+# DEBUG_CUDAGRAPH=1 is diagnostic-only: forces CUDA_LAUNCH_BLOCKING and masks
+# the race; never treat a masked pass as a root-cause fix.
+DEBUG_CUDAGRAPH="${DEBUG_CUDAGRAPH:-0}"
 LOG="${LOG:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.log}"
 PID_FILE="${PID_FILE:-/mnt/nfs/hoangduy/logs/serve-$(basename "$SERVED_NAME" | tr '/' '-')-http-smoke.pid}"
 
@@ -143,7 +139,7 @@ if [[ "$DEBUG_CUDAGRAPH" == "1" || "$DEBUG_CUDAGRAPH" == "true" ]]; then
   export TORCH_USE_CUDA_DSA=1
   export PYTHONFAULTHANDLER=1
   echo "[http-smoke] DEBUG_CUDAGRAPH=1 — CUDA_LAUNCH_BLOCKING=1 TORCH_USE_CUDA_DSA=1"
-  echo "             (tactical: masks HTTP async cudagraph race; not the long-term fix)"
+  echo "             (diagnostic only: masks HTTP async cudagraph race; not a fix)"
 fi
 
 test -f "$MODEL_CKPT/config.json" || {
@@ -304,6 +300,7 @@ echo "  max-num-batched-tok: ${MAX_NUM_BATCHED_TOKENS:-<vllm default>}"
 echo "  language-model-only: $LANGUAGE_MODEL_ONLY"
 echo "  enforce_eager:       $ENFORCE_EAGER"
 echo "  debug_cudagraph:     $DEBUG_CUDAGRAPH"
+echo "  disable_shared_experts_stream: $VLLM_DISABLE_SHARED_EXPERTS_STREAM"
 echo "  log:                 $LOG"
 
 # Read-only observability for the RCA matrix: print effective env + argv, then exit
@@ -327,6 +324,7 @@ if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == 
   echo "  DEBUG_CUDAGRAPH=$DEBUG_CUDAGRAPH"
   echo "  CUDA_LAUNCH_BLOCKING=${CUDA_LAUNCH_BLOCKING:-<unset>}"
   echo "  TORCH_USE_CUDA_DSA=${TORCH_USE_CUDA_DSA:-<unset>}"
+  echo "  VLLM_DISABLE_SHARED_EXPERTS_STREAM=$VLLM_DISABLE_SHARED_EXPERTS_STREAM"
   echo "  VLLM_USE_BREAKABLE_CUDAGRAPH=${VLLM_USE_BREAKABLE_CUDAGRAPH:-<unset>}"
   echo "  APPLY_M3_PATCHES=$APPLY_M3_PATCHES"
   echo "  PATCH_CKPT_CONFIG=$PATCH_CKPT_CONFIG"

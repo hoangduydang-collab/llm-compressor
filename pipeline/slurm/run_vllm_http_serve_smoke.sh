@@ -41,8 +41,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
-source /mnt/nfs/hoangduy/env.sh
-source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+# PRINT_EFFECTIVE_CONFIG dry-runs may run off-cluster (no NFS mounts). Skip
+# env/venv sourcing when those paths are absent so local DRY_RUN validation works.
+_PRINT_CFG=0
+if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == "true" ]]; then
+  _PRINT_CFG=1
+fi
+
+if [[ -f /mnt/nfs/hoangduy/env.sh ]]; then
+  # shellcheck disable=SC1091
+  source /mnt/nfs/hoangduy/env.sh
+elif [[ "$_PRINT_CFG" -eq 1 ]]; then
+  echo "[http-smoke] WARNING: /mnt/nfs/hoangduy/env.sh missing (PRINT_EFFECTIVE_CONFIG dry-run)"
+else
+  echo "ERROR: missing /mnt/nfs/hoangduy/env.sh"
+  exit 1
+fi
+
+if [[ -f /mnt/nfs/hoangduy/venvs/quant/bin/activate ]]; then
+  # shellcheck disable=SC1091
+  source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+elif [[ "$_PRINT_CFG" -eq 1 ]]; then
+  echo "[http-smoke] WARNING: quant venv missing (PRINT_EFFECTIVE_CONFIG dry-run)"
+else
+  echo "ERROR: missing /mnt/nfs/hoangduy/venvs/quant/bin/activate"
+  exit 1
+fi
 
 export HOME="${HOME:-/mnt/nfs/hoangduy}"
 export WORK_ROOT="${WORK_ROOT:-/mnt/nfs/hoangduy}"
@@ -57,7 +81,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 unset VLLM_USE_FLASHINFER_MOE_FP4 2>/dev/null || true
 # Do NOT force VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 (Nemotron default).
 # Offline cyankiwi never set it; leave unset unless the caller exports it.
-mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
+if [[ "$_PRINT_CFG" -eq 0 ]]; then
+  mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
+fi
 
 DEFAULT_CKPT="/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4"
 DEFAULT_NAME="cyankiwi/MiniMax-M3-AWQ-INT4"
@@ -121,12 +147,17 @@ if [[ "$DEBUG_CUDAGRAPH" == "1" || "$DEBUG_CUDAGRAPH" == "true" ]]; then
 fi
 
 test -f "$MODEL_CKPT/config.json" || {
-  echo "ERROR: missing config.json at $MODEL_CKPT"
-  exit 1
+  if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == "true" ]]; then
+    echo "WARNING: missing config.json at $MODEL_CKPT (ignored for PRINT_EFFECTIVE_CONFIG)"
+  else
+    echo "ERROR: missing config.json at $MODEL_CKPT"
+    exit 1
+  fi
 }
 
 # Fail fast if someone pointed CKPT at Nemotron / non-M3 while we attach
 # minimax_m3 parsers (the failure mode that produced this bug report).
+if [[ -f "$MODEL_CKPT/config.json" ]]; then
 python3 - "$MODEL_CKPT" <<'PY'
 import json, sys
 from pathlib import Path
@@ -147,6 +178,7 @@ if "minimax" not in blob.lower() and "MiniMax" not in "".join(archs):
     sys.exit(2)
 print(f"checkpoint ok: architectures={archs} model_type={mt}")
 PY
+fi
 
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
@@ -154,6 +186,14 @@ if [[ -f "$PID_FILE" ]]; then
     echo "Serve already running (pid=$old_pid). tail -f $LOG"
     exit 0
   fi
+fi
+
+# PRINT_EFFECTIVE_CONFIG is read-only observability (RCA matrix dry-run): skip
+# GPU kill/preflight and site-packages patch apply — we never launch.
+if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == "true" ]]; then
+  SKIP_GPU_PREFLIGHT="${SKIP_GPU_PREFLIGHT:-1}"
+  APPLY_M3_PATCHES="${APPLY_M3_PATCHES:-0}"
+  PATCH_CKPT_CONFIG="${PATCH_CKPT_CONFIG:-0}"
 fi
 
 if [[ "${SKIP_GPU_PREFLIGHT:-0}" != "1" ]]; then
@@ -265,6 +305,43 @@ echo "  language-model-only: $LANGUAGE_MODEL_ONLY"
 echo "  enforce_eager:       $ENFORCE_EAGER"
 echo "  debug_cudagraph:     $DEBUG_CUDAGRAPH"
 echo "  log:                 $LOG"
+
+# Read-only observability for the RCA matrix: print effective env + argv, then exit
+# without launching. Does not change default flags or patch behavior.
+if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == "true" ]]; then
+  echo "[http-smoke] PRINT_EFFECTIVE_CONFIG=1 — effective configuration (no launch)"
+  echo "EFFECTIVE_ENV:"
+  echo "  CKPT=$MODEL_CKPT"
+  echo "  SERVED_NAME=$SERVED_NAME"
+  echo "  HOST=$HOST"
+  echo "  PORT=$PORT"
+  echo "  TP=$TP"
+  echo "  MAX_MODEL_LEN=$MAX_MODEL_LEN"
+  echo "  GPU_UTIL=$GPU_UTIL"
+  echo "  KV_CACHE_DTYPE=$KV_CACHE_DTYPE"
+  echo "  BLOCK_SIZE=$BLOCK_SIZE"
+  echo "  ENABLE_EP=$ENABLE_EP"
+  echo "  DISABLE_CUSTOM_AR=$DISABLE_CUSTOM_AR"
+  echo "  LANGUAGE_MODEL_ONLY=$LANGUAGE_MODEL_ONLY"
+  echo "  ENFORCE_EAGER=$ENFORCE_EAGER"
+  echo "  DEBUG_CUDAGRAPH=$DEBUG_CUDAGRAPH"
+  echo "  CUDA_LAUNCH_BLOCKING=${CUDA_LAUNCH_BLOCKING:-<unset>}"
+  echo "  TORCH_USE_CUDA_DSA=${TORCH_USE_CUDA_DSA:-<unset>}"
+  echo "  VLLM_USE_BREAKABLE_CUDAGRAPH=${VLLM_USE_BREAKABLE_CUDAGRAPH:-<unset>}"
+  echo "  APPLY_M3_PATCHES=$APPLY_M3_PATCHES"
+  echo "  PATCH_CKPT_CONFIG=$PATCH_CKPT_CONFIG"
+  echo "  LOG=$LOG"
+  echo "  PID_FILE=$PID_FILE"
+  echo "  EXTRA_VLLM_ARGS=${EXTRA_VLLM_ARGS:-}"
+  # shell-escaped argv for reproducibility
+  printf 'EFFECTIVE_ARGV: vllm'
+  for a in "${ARGS[@]}"; do
+    printf ' %q' "$a"
+  done
+  printf '\n'
+  exit 0
+fi
+
 python -c "import vllm; print('vllm', vllm.__version__)" 2>/dev/null || echo "vllm: not importable"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv 2>/dev/null || true
 

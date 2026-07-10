@@ -1,6 +1,6 @@
 # Bugs and fixes (llm-compressor pipeline)
 
-## HTTP async cudagraph race (cyankiwi, 2026-07-09 A/B)
+## HTTP async cudagraph IMA — RCA matrix protocol (cyankiwi, 2026-07-10)
 
 **Symptom:** HTTP `vllm serve` for `cyankiwi/MiniMax-M3-AWQ-INT4` dies during
 PIECEWISE/FULL graph capture with async-reported
@@ -8,50 +8,92 @@ PIECEWISE/FULL graph capture with async-reported
 `empty_cache()`. Offline `LLM()` serve-verify on the same ckpt can PASS graphs-on
 at `max_model_len=8192`.
 
-**A/B on h119 (same ckpt, patches 4/4, flashinfer 0.6.12, language-model-only,
-8192/0.9, clean GPUs):**
+**A/B already observed on h119 (same ckpt, patches 4/4, flashinfer 0.6.12,
+language-model-only, 8192/0.9, clean GPUs):**
 
 | Launch | Result |
 |--------|--------|
 | `DEBUG_CUDAGRAPH=1` (`CUDA_LAUNCH_BLOCKING=1` + DSA) | **51/51 capture PASS**, server up |
 | Async CUDA (no `CUDA_LAUNCH_BLOCKING`) | **IMA** at `empty_cache()` during capture |
 
-**Root cause (class):** async CUDA-graph capture race on the HTTP/AsyncLLM path.
-Sync launches serialize kernels and the race does not fire. This is **not**:
+**Evidence rule:** a named faulting device kernel (or a classified matrix
+verdict stronger than `graph_ima_unclassified`) is required before claiming a
+root cause. `CUDA_LAUNCH_BLOCKING=1` / `DEBUG_CUDAGRAPH=1` is a **masked_pass**,
+never a fix. Do not treat sync-CUDA success as root-cause closure.
 
-- the NaN→dup-experts MoE bug (patches 1–4 + flashinfer 0.6.12 were already live
-  on both the PASS and FAIL runs),
-- `max_model_len=2048` vs 8192 (PASS was at 8192 with sync CUDA),
-- missing `--language-model-only` / config preflight (both present in the A/B).
+**Working hypotheses (discriminate with the matrix — do not assume):**
+
+1. **MoE routing/finalize** — padded-token / NaN→dup-experts class
+   ([vLLM #39391](https://github.com/vllm-project/vllm/pull/39391)); patches 1–4
+   + flashinfer ≥0.6.10 were already live on both PASS and FAIL, so this is
+   *unlikely* unless a different MoE symbol still faults.
+2. **Breakable cudagraph + captured NCCL/collective** — MiniMax fused AR path
+   under `breakable_cudagraph` with default `capture_error_mode=global`
+   ([vLLM #46253](https://github.com/vllm-project/vllm/issues/46253)); sync CUDA
+   masks cross-thread / rank-phase invalidation.
+3. **Graph memory lifetime** — addresses baked into graphs then freed/realloc’d
+   (empty_cache / workspace; [vLLM #45487](https://github.com/vllm-project/vllm/pull/45487)).
 
 **Confounder for earlier W4AFP8 “2048 envelope PASS”:**
 `debug_cudagraph_ima.sh` **always** exports `CUDA_LAUNCH_BLOCKING=1`. That PASS
-may have been sync-CUDA, not the smaller memory envelope. Re-validate W4AFP8
-graphs-on at 8192 **without** `CUDA_LAUNCH_BLOCKING` before treating 2048 as causal.
+may have been sync-CUDA, not the smaller memory envelope.
 
 **Tactical workaround (HTTP smoke):** default `DEBUG_CUDAGRAPH=1` when
 `ENFORCE_EAGER=0` in `run_vllm_http_serve_smoke.sh` so graphs-on HTTP is usable.
 Cost: slower capture / launch (sync CUDA). Escape hatch: `ENFORCE_EAGER=1`.
+Removal criteria: HTTP graphs-on PASS with `DEBUG_CUDAGRAPH=0` on h119 for
+cyankiwi + our W4AFP8 ckpts **and** a classified matrix verdict that names the
+fixed path.
 
-**Long-term fix (preferred):** identify the racing kernel under async capture
-(compute-sanitizer / `cuda-gdb`, or a failing run that still surfaces a useful
-frame), then patch the offending path (likely MoE finalize / fused AR / MSA
-under `breakable_cudagraph`) so async HTTP capture is safe. Removal criteria for
-default `DEBUG_CUDAGRAPH=1`: HTTP graphs-on PASS with `DEBUG_CUDAGRAPH=0` on
-h119 for cyankiwi + our W4AFP8 ckpts.
+### RCA matrix (no vLLM site-packages edits)
 
-**How to verify:**
+Harness:
+
+- Classifier: `pipeline/m3_cudagraph_evidence.py` (+ unit tests)
+- Runner: `pipeline/slurm/test_m3_http_cudagraph_matrix.sh`
+- Launcher observability: `PRINT_EFFECTIVE_CONFIG=1` on
+  `run_vllm_http_serve_smoke.sh`
+
+Cases (one variable per trial; unique port/log/pid):
+
+| Case | Knobs | Expected use |
+|------|-------|----------------|
+| `async_baseline_{1,2,3}` | `ENFORCE_EAGER=0 DEBUG_CUDAGRAPH=0` | Determinism of async IMA |
+| `graphs_off` | `ENFORCE_EAGER=1` | Must PASS or reject “graphs-only” claim |
+| `blocking_mask` | `DEBUG_CUDAGRAPH=1` | Record `masked_pass` only |
+| `breakable_off` | `VLLM_USE_BREAKABLE_CUDAGRAPH=0` | Implicate breakable path if async PASS |
+| `async_coredump` | async + CUDA core dump env | Name faulting kernel via `cuda-gdb` |
+
+Verdicts: `server_ready`, `masked_pass`, `graph_ima_moe`,
+`graph_ima_collective`, `graph_ima_memory_lifetime`, `graph_ima_unclassified`,
+`graphs_off_failed`, `inconclusive`.
+
+**How to run:**
 
 ```bash
-bash pipeline/slurm/free_gpus.sh
-# default now enables sync CUDA for graphs-on:
-bash pipeline/slurm/run_vllm_http_serve_smoke.sh
-# expect: debug_cudagraph:1 … Capturing … 51/51 … Application startup complete
-bash pipeline/slurm/smoke_chat_completions.sh
+# local dry-run (no GPUs / no nohup):
+DRY_RUN=1 bash pipeline/slurm/test_m3_http_cudagraph_matrix.sh
 
-# reproduce the race:
-DEBUG_CUDAGRAPH=0 bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+# cluster (free 8-GPU node, e.g. h119):
+bash pipeline/slurm/free_gpus.sh
+bash pipeline/slurm/test_m3_http_cudagraph_matrix.sh
+# results under /mnt/nfs/hoangduy/logs/m3-cudagraph-rca/<run_id>/summary.json
+
+# single case:
+MATRIX_CASES=async_baseline_1 bash pipeline/slurm/test_m3_http_cudagraph_matrix.sh
 ```
+
+**Next branch after classified result:**
+
+| Verdict | Next |
+|---------|------|
+| `graph_ima_moe` | Compare installed route vs #39391 / FlashInfer finalize |
+| `graph_ima_collective` | Separately approved `capture_error_mode=thread_local` / rank barriers (#46253) |
+| `graph_ima_memory_lifetime` | Address-lifetime instrumentation (#45487) — follow-up plan |
+| `graph_ima_unclassified` | Keep tactical mask; escalate to `compute-sanitizer` before code changes |
+
+**Matrix result (fill after h119 run):** _pending — see latest
+`/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/*/summary.json`._
 
 ## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
 

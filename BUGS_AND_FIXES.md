@@ -92,8 +92,19 @@ MATRIX_CASES=async_baseline_1 bash pipeline/slurm/test_m3_http_cudagraph_matrix.
 | `graph_ima_memory_lifetime` | Address-lifetime instrumentation (#45487) — follow-up plan |
 | `graph_ima_unclassified` | Keep tactical mask; escalate to `compute-sanitizer` before code changes |
 
-**Matrix result (fill after h119 run):** _pending — see latest
-`/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/*/summary.json`._
+**Matrix result (h119, 20260710-051009):**
+[`summary.json`](/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/20260710-051009/summary.json).
+`async_baseline_1` and `_3` were `graph_ima_collective`; `_2` was
+`server_ready` with chat, establishing an async-flaky failure. `graphs_off`,
+`breakable_off`, and `blocking_mask` reached ready + chat; the latter is only
+`masked_pass`. The coredump's first device kernel was
+`at::native::vectorized_elementwise_kernel<8, CUDAFunctor_add<BFloat16>>`,
+which is not a named MoE or collective kernel, so
+[`result_with_kernel.json`](/mnt/nfs/hoangduy/logs/m3-cudagraph-rca/20260710-051009/async_coredump/result_with_kernel.json)
+is `graph_ima_unclassified`. Next: retain the tactical mask and run a
+single-failure `compute-sanitizer` follow-up before changing capture or
+collective code. `breakable_off` passing makes the breakable-cudagraph path the
+highest-priority experiment target, not established root cause.
 
 ## HTTP `vllm serve` vs offline `LLM()` (cyankiwi, 2026-07-09)
 

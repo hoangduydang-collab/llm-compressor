@@ -1,0 +1,300 @@
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] During handling of the above exception, another exception occurred:
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 865, in worker_main
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     worker = WorkerProc(*args, **kwargs)
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 634, in __init__
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.worker.load_model()
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 384, in load_model
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5171, in load_model
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     with DeviceMemoryProfiler() as m:
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]          ^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 101, in __exit__
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.final_memory = self.current_memory_usage()
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 93, in current_memory_usage
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return current_platform.get_current_memory_usage(self.device)
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/platforms/cuda.py", line 353, in get_current_memory_usage
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch.cuda.empty_cache()
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/cuda/memory.py", line 224, in empty_cache
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch._C._cuda_emptyCache()
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP1_EP1 pid=3803464) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] WorkerProc failed to start.
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5176, in load_model
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] WorkerProc failed to start.
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5176, in load_model
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model = model_loader.load_model(
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                  ^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/model_loader/base_loader.py", line 80, in load_model
+(Worker_TP4_EP4 pid=3803467) (Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] WorkerProc failed to start.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5176, in load_model
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model = model_loader.load_model(
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                  ^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/model_loader/base_loader.py", line 80, in load_model
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     process_weights_after_loading(model, model_config, target_device)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/model_loader/utils.py", line 112, in process_weights_after_loading
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     quant_method.process_weights_after_loading(module)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py", line 1137, in process_weights_after_loading
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     layer._k_scale_float = _to_scalar(layer.k_scale)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py", line 1135, in _to_scalar
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return tensor.item()
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] During handling of the above exception, another exception occurred:
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 865, in worker_main
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     worker = WorkerProc(*args, **kwargs)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 634, in __init__
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.worker.load_model()
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 384, in load_model
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5171, in load_model
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     with DeviceMemoryProfiler() as m:
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]          ^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 101, in __exit__
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.final_memory = self.current_memory_usage()
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 93, in current_memory_usage
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return current_platform.get_current_memory_usage(self.device)
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/platforms/cuda.py", line 353, in get_current_memory_usage
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch.cuda.empty_cache()
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/cuda/memory.py", line 224, in empty_cache
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch._C._cuda_emptyCache()
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP3_EP3 pid=3803466) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]     process_weights_after_loading(model, model_config, target_device)
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/model_loader/utils.py", line 112, in process_weights_after_loading
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     quant_method.process_weights_after_loading(module)
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py", line 1137, in process_weights_after_loading
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     layer._k_scale_float = _to_scalar(layer.k_scale)
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py", line 1135, in _to_scalar
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return tensor.item()
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] During handling of the above exception, another exception occurred:
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 865, in worker_main
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model = model_loader.load_model(
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     worker = WorkerProc(*args, **kwargs)
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                  ^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/model_loader/base_loader.py", line 80, in load_model
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 634, in __init__
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     process_weights_after_loading(model, model_config, target_device)
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.worker.load_model()
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/model_loader/utils.py", line 112, in process_weights_after_loading
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 384, in load_model
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]     quant_method.process_weights_after_loading(module)
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py", line 1137, in process_weights_after_loading
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     layer._k_scale_float = _to_scalar(layer.k_scale)
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5171, in load_model
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py", line 1135, in _to_scalar
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]     with DeviceMemoryProfiler() as m:
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return tensor.item()
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]          ^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 101, in __exit__
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.final_memory = self.current_memory_usage()
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 93, in current_memory_usage
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return current_platform.get_current_memory_usage(self.device)
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP4_EP4 pid=3803467) (Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/platforms/cuda.py", line 353, in get_current_memory_usage
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch.cuda.empty_cache()
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/cuda/memory.py", line 224, in empty_cache
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] During handling of the above exception, another exception occurred:
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch._C._cuda_emptyCache()
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Traceback (most recent call last):
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 865, in worker_main
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     worker = WorkerProc(*args, **kwargs)
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP0_EP0 pid=3803463) (Worker_TP4_EP4 pid=3803467) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 634, in __init__
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.worker.load_model()
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 384, in load_model
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return func(*args, **kwargs)
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/worker/gpu_model_runner.py", line 5171, in load_model
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     with DeviceMemoryProfiler() as m:
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]          ^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 101, in __exit__
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     self.final_memory = self.current_memory_usage()
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/utils/mem_utils.py", line 93, in current_memory_usage
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     return current_platform.get_current_memory_usage(self.device)
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/platforms/cuda.py", line 353, in get_current_memory_usage
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch.cuda.empty_cache()
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/cuda/memory.py", line 224, in empty_cache
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]     torch._C._cuda_emptyCache()
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] torch.AcceleratorError: CUDA error: device-side assert triggered
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898] Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+(Worker_TP0_EP0 pid=3803463) ERROR 07-11 12:00:54 [multiproc_executor.py:898]
+terminate called after throwing an instance of 'c10::AcceleratorError'
+terminate called after throwing an instance of 'c10::AcceleratorError'
+  what():    what():  terminate called after throwing an instance of 'CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fd7aef7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+c10::AcceleratorError'
+CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f0e1497305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+terminate called after throwing an instance of 'terminate called after throwing an instance of '  what():  CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f083297305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+terminate called after throwing an instance of 'c10::AcceleratorError'
+c10::AcceleratorError'
+c10::AcceleratorError'
+  what():    what():  CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f2f7697305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f342657305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+terminate called after throwing an instance of 'c10::AcceleratorError'
+  what():  CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fec4f17305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+  what():  CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f0b4bd7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+terminate called after throwing an instance of 'c10::AcceleratorError'
+  what():  CUDA error: device-side assert triggered
+Search for `cudaErrorAssert' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f648737305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+(EngineCore pid=3803404) WARNING 07-11 12:00:59 [multiproc_executor.py:438] [shutdown] Executor: workers still running after grace period; sending SIGTERM count=8
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231] EngineCore failed to start.
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231] Traceback (most recent call last):
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1200, in run_engine_core
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     return func(*args, **kwargs)
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 966, in __init__
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     super().__init__(
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 123, in __init__
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     self.model_executor = executor_class(vllm_config)
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 108, in __init__
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     super().__init__(vllm_config)
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     return func(*args, **kwargs)
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 109, in __init__
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     self._init_executor()
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 201, in _init_executor
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     self.workers = WorkerProc.wait_for_ready(unready_workers)
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 762, in wait_for_ready
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231]     raise e from None
+(EngineCore pid=3803404) ERROR 07-11 12:01:02 [core.py:1231] Exception: WorkerProc initialization failed due to an exception in a background process. See stack trace for root cause.
+(EngineCore pid=3803404) Traceback (most recent call last):
+(EngineCore pid=3803404) Exception: WorkerProc initialization failed due to an exception in a background process. See stack trace for root cause.
+========== vLLM LOAD FAILED ==========
+RuntimeError('Engine core initialization failed. See root cause above. Failed core proc(s): {}')
+The destroy_process_group() warnings are benign; the real error is usually a few hundred lines earlier from a worker rank.
+  grep -E 'Worker|ERROR|Error|OOM|out of memory|KeyError|size mismatch' \
+       python pipeline/slurm/patch_vllm_m3_serve.py --check
+  1) W4A8 MoE kernel rejects SWIGLUOAI_UNINTERLEAVE ("kernel does not support MoEActivation.SWIGLUOAI_UNINTERLEAVE"). No vLLM build wires this up; serve_verify patches it in-process via pipeline/vllm_m3_patches.py.
+       bash pipeline/slurm/install_vllm_m3_serve.sh
+       MAX_MODEL_LEN=2048 GPU_UTIL=0.85 bash pipeline/slurm/run_serve_minimax_m3_detached.sh
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

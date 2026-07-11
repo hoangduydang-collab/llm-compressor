@@ -1,0 +1,18 @@
+{
+  "evidence": {
+    "lm_head_bad": false,
+    "missing": [
+      "reference.fingerprint.lm_head",
+      "reference.fingerprint.shared_expert",
+      "reference.moe_probe",
+      "candidate.fingerprint.lm_head",
+      "candidate.fingerprint.shared_expert",
+      "candidate.moe_probe",
+      "candidate.loader_audit"
+    ],
+    "required_complete": false,
+    "shared_expert_bad": false
+  },
+  "next": "repair the reference serving baseline before candidate analysis",
+  "verdict": "invalid_reference"
+}

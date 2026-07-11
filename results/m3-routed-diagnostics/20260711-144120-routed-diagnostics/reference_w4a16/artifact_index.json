@@ -1,0 +1,14 @@
+[
+  {
+    "bytes": 317841,
+    "path": "/mnt/nfs/hoangduy/logs/m3-routed-diagnostics/20260711-144120-routed-diagnostics/reference_w4a16/serve.log",
+    "retention_until_utc": "2026-07-25T00:00:00Z",
+    "sha256": "3aca1680691b7d758d09c19c89122889de32ed7c3db2e2cd17ee152797333489"
+  },
+  {
+    "bytes": 318173,
+    "path": "/mnt/nfs/hoangduy/logs/m3-routed-diagnostics-srun/20260711-144120-routed-diagnostics-reference_w4a16.log",
+    "retention_until_utc": "2026-07-25T00:00:00Z",
+    "sha256": "556b7347001cb3b5027fa819863d384909039fe4424f0d44aafe7e4be64318cd"
+  }
+]

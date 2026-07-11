@@ -1,0 +1,60 @@
+{
+  "arm": "reference_w4a16",
+  "checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "checkpoint_config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+  "checkpoint_index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+  "checkpoint_role": "reference",
+  "config_overlay": null,
+  "deviations": [
+    {
+      "changes_quality_variable": false,
+      "name": "direct srun partition override",
+      "reason": "sbatch is unavailable from the current compute node; the prescribed srun launcher used --partition=compute."
+    },
+    {
+      "changes_quality_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled the owned-process signal path; the allocated GPUs were already free."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "1",
+    "M3_MOE_PROBE": "1",
+    "M3_MOE_PROBE_MAX_TOKENS": "256",
+    "M3_MOE_PROBE_RECOMPUTE": "1",
+    "M3_PARAM_FINGERPRINT": "1",
+    "M3_PARAM_FINGERPRINT_LAYERS": "3,59"
+  },
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-routed-diagnostics/20260711-144120-routed-diagnostics/reference_w4a16",
+  "finished_at": "2026-07-11T14:52:52.525426+00:00",
+  "git_commit": "89cd89cf98b485e09d7b5892af1a0f8e9af897cd",
+  "git_status_short": "?? results/m3-routed-diagnostics/",
+  "host": "h121-gpu-polaris.pod4.lab.bitdeer.ai",
+  "matrix_id": "20260711-144120-routed-diagnostics",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "platform": "Linux-5.15.0-173-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "quality_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "enable_expert_parallel": true,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "prompt_mode": "chat_template",
+    "tensor_parallel_size": 8,
+    "thinking_mode": "disabled"
+  },
+  "retries": [],
+  "return_code": 0,
+  "scheduler": {
+    "SLURM_JOB_ID": "12753",
+    "SLURM_JOB_NODELIST": "gpu-h121"
+  },
+  "scheduler_log": "/mnt/nfs/hoangduy/logs/m3-routed-diagnostics-srun/20260711-144120-routed-diagnostics-reference_w4a16.log",
+  "schema_version": 1,
+  "scheme": "w4a16",
+  "started_at": "2026-07-11T14:41:43.437057+00:00"
+}

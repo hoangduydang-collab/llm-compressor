@@ -1,6 +1,9 @@
 """CPU-only tests for persistent MiniMax-M3 vLLM diagnostics."""
 
-from pipeline.slurm.patch_vllm_m3_serve import _patch_append_load_audit
+from pipeline.slurm.patch_vllm_m3_serve import (
+    _LOAD_AUDIT_BLOCK,
+    _patch_append_load_audit,
+)
 
 
 def test_load_audit_patch_is_env_gated_and_covers_both_expert_layouts():
@@ -62,3 +65,11 @@ class MiniMaxM3Model:
     assert found
     assert not changed
     assert repatched == patched
+
+
+def test_load_audit_block_contains_bounded_parameter_fingerprints():
+    assert 'M3_PARAM_FINGERPRINT' in _LOAD_AUDIT_BLOCK
+    assert 'M3_PARAM_FINGERPRINT#' in _LOAD_AUDIT_BLOCK
+    assert 'M3_PARAM_FINGERPRINT_SUMMARY#' in _LOAD_AUDIT_BLOCK
+    assert '_llmc_fp_max_samples = 256' in _LOAD_AUDIT_BLOCK
+    compile(_LOAD_AUDIT_BLOCK, "<m3-load-audit>", "exec")

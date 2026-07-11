@@ -201,9 +201,29 @@ _LOAD_AUDIT_BLOCK = r'''
 # === llmc M3 load audit (MiniMax-M3 routed-expert wiring) ===
 try:  # gated diagnostic; never break model import
     import os as _llmc_audit_os
-    if _llmc_audit_os.environ.get("M3_LOAD_AUDIT") == "1":
+    _llmc_audit_enabled = _llmc_audit_os.environ.get("M3_LOAD_AUDIT") == "1"
+    _llmc_fp_enabled = (
+        _llmc_audit_os.environ.get("M3_PARAM_FINGERPRINT") == "1"
+    )
+    if _llmc_audit_enabled or _llmc_fp_enabled:
+        import hashlib as _llmc_fp_hashlib
+        import json as _llmc_fp_json
+        import re as _llmc_fp_re
+
+        import torch as _llmc_fp_torch
         from vllm.logger import init_logger as _llmc_audit_init_logger
         _llmc_audit_log = _llmc_audit_init_logger("llmc.m3_load_audit")
+        _llmc_fp_max_samples = 256
+        _llmc_fp_layers = {
+            int(_item)
+            for _item in _llmc_audit_os.environ.get(
+                "M3_PARAM_FINGERPRINT_LAYERS", "3,59"
+            ).split(",")
+            if _item.strip().isdigit()
+        }
+        _llmc_fp_case = _llmc_audit_os.environ.get(
+            "M3_QUALITY_CASE", "unspecified"
+        )
         _llmc_audit_cls = globals().get(
             "MiniMaxM3SparseForConditionalGeneration"
         )
@@ -231,6 +251,136 @@ try:  # gated diagnostic; never break model import
             if "lm_head" in _name:
                 return "lm_head"
             return "other"
+
+        def _llmc_fp_category(_name):
+            _lower = _name.lower()
+            _match = _llmc_fp_re.search(r"[.]layers[.](\d+)[.]", _lower)
+            _layer = int(_match.group(1)) if _match else None
+            if "lm_head" in _lower:
+                return "lm_head", _layer
+            if _layer not in _llmc_fp_layers:
+                return None, _layer
+            if "shared_experts" in _lower:
+                return "shared_expert", _layer
+            if ".experts." in _lower:
+                return "routed_expert", _layer
+            if "indexer" in _lower:
+                return "msa_indexer", _layer
+            if any(
+                _part in _lower
+                for _part in (
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "qkv_proj",
+                    "qkv.",
+                )
+            ):
+                return "attention_qkv", _layer
+            return None, _layer
+
+        def _llmc_emit_fingerprints(_model, _scope):
+            if not _llmc_fp_enabled:
+                return
+            _found = set()
+            _errors = []
+            try:
+                _dist = getattr(_llmc_fp_torch, "distributed", None)
+                _rank = (
+                    int(_dist.get_rank())
+                    if _dist is not None
+                    and _dist.is_available()
+                    and _dist.is_initialized()
+                    else int(_llmc_audit_os.environ.get("RANK", "0"))
+                )
+            except Exception:
+                _rank = -1
+            for _name, _param in _model.named_parameters():
+                _category, _layer = _llmc_fp_category(_name)
+                if _category is None:
+                    continue
+                _found.add(_category)
+                try:
+                    _flat = _param.detach().reshape(-1)
+                    _numel = int(_flat.numel())
+                    _sample_count = min(_llmc_fp_max_samples, _numel)
+                    if _sample_count:
+                        _indices = _llmc_fp_torch.linspace(
+                            0,
+                            _numel - 1,
+                            steps=_sample_count,
+                            device=_flat.device,
+                        ).long()
+                        _sample = _flat.index_select(0, _indices)
+                        _sample_cpu = _sample.detach().cpu().contiguous()
+                        _digest = _llmc_fp_hashlib.sha256(
+                            _sample_cpu.view(_llmc_fp_torch.uint8).numpy().tobytes()
+                        ).hexdigest()
+                    else:
+                        _sample_cpu = _flat.detach().cpu()
+                        _digest = _llmc_fp_hashlib.sha256(b"").hexdigest()
+                    _record = {
+                        "case": _llmc_fp_case,
+                        "scope": _scope,
+                        "rank": _rank,
+                        "name": _name,
+                        "category": _category,
+                        "layer": _layer,
+                        "dtype": str(_param.dtype),
+                        "shape": list(_param.shape),
+                        "numel": _numel,
+                        "sample_count": _sample_count,
+                        "sample_sha256": _digest,
+                    }
+                    if _sample_cpu.is_floating_point():
+                        _float = _sample_cpu.float()
+                        _finite = _llmc_fp_torch.isfinite(_float)
+                        _finite_values = _float[_finite]
+                        _record["finite_fraction"] = float(
+                            _finite.float().mean().item()
+                        )
+                        if int(_finite_values.numel()):
+                            _record.update(
+                                {
+                                    "sample_abs_max": float(
+                                        _finite_values.abs().max().item()
+                                    ),
+                                    "sample_mean": float(
+                                        _finite_values.mean().item()
+                                    ),
+                                    "sample_std": float(
+                                        _finite_values.std(unbiased=False).item()
+                                    ),
+                                }
+                            )
+                        if _numel <= 1_000_000:
+                            _record["full_norm"] = float(
+                                _flat.float().norm().item()
+                            )
+                    _llmc_audit_log.warning(
+                        "M3_PARAM_FINGERPRINT# %s",
+                        _llmc_fp_json.dumps(_record, sort_keys=True),
+                    )
+                except Exception as _llmc_fp_exc:
+                    _errors.append({"name": _name, "error": repr(_llmc_fp_exc)})
+            _expected = {
+                "lm_head",
+                "shared_expert",
+                "routed_expert",
+                "attention_qkv",
+                "msa_indexer",
+            }
+            _summary = {
+                "case": _llmc_fp_case,
+                "scope": _scope,
+                "found": sorted(_found),
+                "missing": sorted(_expected - _found),
+                "errors": _errors,
+            }
+            _llmc_audit_log.warning(
+                "M3_PARAM_FINGERPRINT_SUMMARY# %s",
+                _llmc_fp_json.dumps(_summary, sort_keys=True),
+            )
 
         if _llmc_audit_cls is not None and not getattr(
             _llmc_audit_cls, "_llmc_load_audited", False
@@ -323,6 +473,9 @@ try:  # gated diagnostic; never break model import
                         _llmc_counts,
                         _llmc_sample or "NONE",
                         _llmc_unmatched_sample or "NONE",
+                    )
+                    _llmc_emit_fingerprints(
+                        self, "MiniMaxM3SparseForConditionalGeneration"
                     )
 
             _llmc_audit_cls.load_weights = _llmc_audit_load_weights
@@ -444,6 +597,7 @@ try:  # gated diagnostic; never break model import
                         _llmc_sample or "NONE",
                         "; ".join(_llmc_unsupported_routed[:8]) or "NONE",
                     )
+                    _llmc_emit_fingerprints(self, "MiniMaxM3Model")
 
             _llmc_audit_model_cls.load_weights = _llmc_audit_model_load_weights
             _llmc_audit_model_cls._llmc_load_audited = True
@@ -746,6 +900,14 @@ def ensure_m3_load_audit(*, apply: bool = True) -> str:
         else:
             statuses.append(f"{path.name}: already injected")
     return "; ".join(statuses)
+
+
+def ensure_m3_quality_diagnostics(*, apply: bool = True) -> str:
+    """Install all dormant MiniMax-M3 quality diagnostics."""
+
+    probe = ensure_m3_moe_probe(apply=apply)
+    audit = ensure_m3_load_audit(apply=apply)
+    return f"moe_probe=[{probe}]; load_audit_and_fingerprint=[{audit}]"
 
 
 def _apply(path: Path, patch_fn, check_only: bool, *, fatal: bool = True) -> bool:

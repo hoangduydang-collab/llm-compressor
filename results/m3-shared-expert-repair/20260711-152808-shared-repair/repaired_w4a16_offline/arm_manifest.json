@@ -1,0 +1,67 @@
+{
+  "arm": "repaired_w4a16_offline",
+  "config_overlay": {
+    "input_activations": null,
+    "shared_expert_ignore": "re:.*block_sparse_moe[.]shared_experts[.].*"
+  },
+  "deviations": [
+    {
+      "changes_quality_variable": false,
+      "name": "direct srun partition override",
+      "reason": "sbatch is unavailable from the current compute node; the prescribed srun launcher used --partition=compute."
+    },
+    {
+      "changes_quality_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled the owned-process signal path; the allocated GPUs were already free."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "1",
+    "M3_MOE_PROBE": "1",
+    "M3_MOE_PROBE_MAX_TOKENS": "256",
+    "M3_MOE_PROBE_RECOMPUTE": "1",
+    "M3_PARAM_FINGERPRINT": "1",
+    "M3_PARAM_FINGERPRINT_LAYERS": "3,59"
+  },
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-shared-expert-repair/20260711-152808-shared-repair/repaired_w4a16_offline",
+  "finished_at": "2026-07-11T15:38:18.990572+00:00",
+  "git_commit": "19110e8f5e00bfca395d8b32724c865e62c0ebe6",
+  "git_status_short": "?? results/m3-shared-expert-repair/",
+  "host": "h121-gpu-polaris.pod4.lab.bitdeer.ai",
+  "interface": "offline",
+  "matrix_id": "20260711-152808-shared-repair",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "overlay_checkpoint": "/mnt/nfs/hoangduy/logs/m3-shared-expert-repair/20260711-152808-shared-repair/repaired_w4a16_offline/checkpoint",
+  "overlay_config_sha256": "a95288bc9e2968b9a8465b002091c193a9aecaa319f59ade123edcfda6220390",
+  "platform": "Linux-5.15.0-173-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "quality_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "disable_shared_experts_stream": true,
+    "enable_expert_parallel": true,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "max_tokens": 64,
+    "temperature": 0.0,
+    "tensor_parallel_size": 8,
+    "thinking_mode": "disabled"
+  },
+  "retries": [],
+  "return_code": 0,
+  "scheduler": {
+    "SLURM_JOB_ID": "12756",
+    "SLURM_JOB_NODELIST": "gpu-h121"
+  },
+  "scheduler_log": "/mnt/nfs/hoangduy/logs/m3-shared-expert-repair-srun/20260711-152808-shared-repair-repaired_w4a16_offline.log",
+  "schema_version": 1,
+  "scheme": "w4a16_overlay",
+  "source_checkpoint": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/MiniMax-M3-awq-W4AFP8/20260709-064104/checkpoint-vllm-w123",
+  "source_config_sha256": "3251c9715dc13852768209c3f9d88036542954f1a6a3fc92ed5c08bcb6c7ebb9",
+  "source_index_sha256": "3447e12c56ba4bef11a975f191d91b37b984a390a2dde05614104c4333131368",
+  "started_at": "2026-07-11T15:28:29.435666+00:00"
+}

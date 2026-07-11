@@ -1,0 +1,38 @@
+checkpoint ok: architectures=['MiniMaxM3SparseForConditionalGeneration'] model_type=minimax_m3_vl
+[http-smoke] checkpoint config already vLLM-ready
+[http-smoke] VL processor artifacts present
+vLLM 0.24.0 at /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm
+flashinfer 0.6.12
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/experts/cutlass_moe.py
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/activation.py
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_allreduce_gemma_rms_norm.py
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/router/base_router.py
+MoE quality probe: model.py: already injected; model.py: already injected
+STATUS: patched
+host=h128-gpu-polaris.pod4.lab.bitdeer.ai starting HTTP vLLM smoke serve
+  checkpoint:          /mnt/nfs/hoangduy/logs/m3-shared-expert-repair/20260711-152808-shared-repair/repaired_w4a8_http/checkpoint
+  served-name:         m3-shared-repair
+  port:                8000
+  max-model-len:       2048
+  gpu-util:            0.85
+  max-num-seqs:        <vllm default>
+  max-num-batched-tok: <vllm default>
+  language-model-only: 1
+  enforce_eager:       1
+  debug_cudagraph:     0
+  disable_shared_experts_stream: 1
+  log:                 /mnt/nfs/hoangduy/logs/m3-shared-expert-repair/20260711-152808-shared-repair/repaired_w4a8_http/serve.log
+vllm 0.24.0
+index, name, memory.total [MiB], memory.free [MiB]
+0, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+1, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+2, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+3, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+4, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+5, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+6, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+7, NVIDIA H100 80GB HBM3, 81559 MiB, 81079 MiB
+serve pid=1477991
+  tail -f /mnt/nfs/hoangduy/logs/m3-shared-expert-repair/20260711-152808-shared-repair/repaired_w4a8_http/serve.log
+  bash pipeline/slurm/smoke_chat_completions.sh
+  kill $(cat /mnt/nfs/hoangduy/logs/m3-shared-expert-repair/20260711-152808-shared-repair/repaired_w4a8_http/server.pid)

@@ -128,8 +128,17 @@ does not measure semantic quality and is a false positive for these runs.
 
 ## Active next handoff (2026-07-11)
 
-The next action is implemented as a paired eager-mode comparison; do not try
-another routed-key rename or re-quantization first.
+Run `MINIMAX_M3_QUALITY_RUNBOOK.md` section **“Current follow-up: reference
+without parameter fingerprinting”**. Failed run `20260711-114831` stopped
+before generation because the cyankiwi reference hit a device assertion after
+the parameter-fingerprint hook ran; the candidate was correctly skipped.
+
+The next allocation is reference-only with `M3_PARAM_FINGERPRINT=0`,
+loader audit and MoE probe still enabled, and every other envelope variable
+unchanged. Stop and return its compact evidence regardless of outcome. Do not
+fix the sampler or run the candidate in the same trial.
+
+After that A/B is analyzed, the longer-term paired workflow remains:
 
 - Runner: `pipeline/slurm/test_m3_paired_quality.sh`
 - Classifier: `pipeline/m3_quality_evidence.py`

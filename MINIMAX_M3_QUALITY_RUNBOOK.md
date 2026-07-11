@@ -15,6 +15,105 @@ not bundle a speculative loader fix into this comparison.
 
 This run does not investigate CUDA graphs, re-quantize, or delete checkpoints.
 
+## Current follow-up: reference without parameter fingerprinting
+
+This section supersedes the paired command below for the next allocation.
+Run **only cyankiwi** with one variable changed from failed run
+`20260711-114831`:
+
+```text
+M3_PARAM_FINGERPRINT: 1 -> 0
+```
+
+Keep `M3_LOAD_AUDIT=1` and `M3_MOE_PROBE=1`. The failed run produced a
+device assertion after the fingerprint hook sampled loaded CUDA parameters;
+compressed-tensors later reported the poisoned stream at `k_scale.item()`.
+This A/B determines whether the reference baseline is healthy when the
+suspected perturbation is absent. Do not run the candidate and do not repair
+the sampler in the same trial.
+
+After the normal preflight and on one clean eight-GPU node:
+
+```bash
+set -o pipefail
+RUN_ID="$(date +%Y%m%d-%H%M%S)-reference-no-fingerprint"
+RUN_DIR="/mnt/nfs/hoangduy/logs/m3-paired-quality/$RUN_ID"
+CASE_DIR="$RUN_DIR/cyankiwi_reference"
+EVIDENCE_DIR="$PWD/results/m3-paired-quality/$RUN_ID"
+REFERENCE_CKPT=/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+MODEL_ID=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+CONFIG=pipeline/configs/minimax_m3_full_calib.yaml
+
+mkdir -p "$CASE_DIR" "$EVIDENCE_DIR/cyankiwi_reference"
+ln -s "$(realpath "$REFERENCE_CKPT")" "$CASE_DIR/checkpoint"
+
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD"
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+export FLASHINFER_USE_CUDA_NORM=1
+export VLLM_DISABLE_SHARED_EXPERTS_STREAM=1
+export M3_LOAD_AUDIT=1
+export M3_MOE_PROBE=1
+export M3_PARAM_FINGERPRINT=0
+export M3_QUALITY_CASE=cyankiwi_reference_no_fingerprint
+
+python pipeline/slurm/patch_vllm_m3_serve.py >"$RUN_DIR/patch_status.txt" 2>&1
+FORCE=0 MIN_FREE_GIB=70 bash pipeline/slurm/free_gpus.sh
+
+date -Is >"$CASE_DIR/started_at.txt"
+set +e
+python -m pipeline.run --config "$CONFIG" --stage serve \
+  --checkpoint "$CASE_DIR/checkpoint" \
+  --set model.id="$MODEL_ID" \
+  --set serve.tensor_parallel_size=8 \
+  --set serve.enable_expert_parallel=true \
+  --set serve.block_size=128 \
+  --set serve.kv_cache_dtype=fp8 \
+  --set serve.max_model_len=2048 \
+  --set serve.gpu_memory_utilization=0.85 \
+  --set serve.enforce_eager=true \
+  --set serve.disable_custom_all_reduce=true \
+  --set eval.enabled=false \
+  2>&1 | tee "$CASE_DIR/serve.log"
+RC="${PIPESTATUS[0]}"
+set -e
+date -Is >"$CASE_DIR/finished_at.txt"
+echo "$RC" >"$CASE_DIR/return_code.txt"
+```
+
+Stop after this reference run regardless of outcome. A pass confirms only that
+fingerprinting perturbed the previous reference run; it does not authorize
+running or fixing the candidate yet.
+
+### Required follow-up return
+
+Commit `results/m3-paired-quality/<run_id>/` containing:
+
+- `run_manifest.json`: code commit, exact command, start/end, host/job/GPU
+  provenance, checkpoint config/index hashes, all diagnostic flags (including
+  fingerprint `0`), return code, deviations, and retry history;
+- unmodified `serve_report.json` with both raw quality outputs if generation
+  was reached;
+- `loader_audit.txt`, `moe_probe.txt`, and the last 300 notable
+  warning/error/diagnostic lines;
+- software versions, `nvidia-smi` inventory/topology, and patch status;
+- `artifact_index.json` with absolute paths, sizes, SHA-256 hashes, and
+  retention for the full serve and operator logs;
+- `comparison.json` with one of:
+  `reference_pass_without_fingerprint`,
+  `reference_failed_without_fingerprint`, or
+  `inconclusive_missing_evidence`.
+
+`parameter_fingerprints.jsonl` must be empty or absent by design. Loader
+audit and MoE evidence are still required when their respective stage is
+reached. Preserve the earliest traceback around the first CUDA error rather
+than only the later `empty_cache()` report.
+
+Before pushing, run the existing size/secret checks and name both the result
+commit and executed code commit in the return message.
+
 ## Comparison contract
 
 These are invariants between the two cases:

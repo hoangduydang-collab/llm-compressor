@@ -92,7 +92,9 @@ export M3_PARAM_FINGERPRINT_LAYERS="${M3_PARAM_FINGERPRINT_LAYERS:-3,59}"
   python --version
   python -c 'import vllm; print("vllm", vllm.__version__)'
   python -c 'import torch; print("torch", torch.__version__, "cuda", torch.version.cuda)'
-  python -c 'import importlib.metadata as m; names=("compressed-tensors","flashinfer-python","safetensors","transformers"); [print(name, m.version(name)) for name in names]'
+  for package in compressed-tensors flashinfer-python safetensors transformers; do
+    python -c 'import importlib.metadata as m,sys; print(sys.argv[1], m.version(sys.argv[1]))' "$package" || echo "$package NOT_INSTALLED"
+  done
 } >"$RUN_DIR/software_versions.txt" 2>&1
 nvidia-smi --query-gpu=index,name,uuid,driver_version,memory.total \
   --format=csv >"$RUN_DIR/nvidia_smi.csv" 2>&1
@@ -116,6 +118,7 @@ _run_case() {
   ln -s "$checkpoint" "$case_dir/checkpoint"
   MIN_FREE_GIB="${MIN_FREE_GIB:-70}" bash "$SCRIPT_DIR/free_gpus.sh"
   export M3_QUALITY_CASE="$case_name"
+  date -Is >"$case_dir/started_at.txt"
   echo "[m3-quality] starting $case_name at $(date -Is)"
   set +e
   python -m pipeline.run --config "$CONFIG" --stage serve \
@@ -134,6 +137,7 @@ _run_case() {
   local rc="${PIPESTATUS[0]}"
   set -e
   echo "$rc" >"$case_dir/return_code.txt"
+  date -Is >"$case_dir/finished_at.txt"
   echo "[m3-quality] finished $case_name rc=$rc at $(date -Is)"
   return "$rc"
 }

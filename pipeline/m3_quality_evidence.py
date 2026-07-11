@@ -17,6 +17,7 @@ import socket
 import subprocess
 from collections import Counter
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -304,10 +305,14 @@ def write_run_manifest(
                 ),
             }
         )
+    case_order = [case["name"] for case in cases]
     manifest = {
         "schema_version": 1,
         "run_id": run_dir.name,
         "dry_run": dry_run,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None,
+        "case_order": case_order,
         "git_commit": _git_output("rev-parse", "HEAD"),
         "git_status_short": _git_output("status", "--short"),
         "host": socket.gethostname(),
@@ -409,7 +414,23 @@ def bundle_run(run_dir: Path, evidence_dir: Path) -> dict[str, Any]:
     evidence_dir.mkdir(parents=True, exist_ok=True)
     manifest = _read_json(run_dir / "run_manifest.json")
     if manifest:
-        shutil.copy2(run_dir / "run_manifest.json", evidence_dir / "run_manifest.json")
+        manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
+        for case in manifest.get("cases", []):
+            case_dir = run_dir / str(case.get("name"))
+            for field, filename in (
+                ("started_at", "started_at.txt"),
+                ("finished_at", "finished_at.txt"),
+                ("return_code", "return_code.txt"),
+            ):
+                path = case_dir / filename
+                if path.is_file():
+                    value = path.read_text(encoding="utf-8").strip()
+                    case[field] = int(value) if field == "return_code" else value
+        encoded = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        (run_dir / "run_manifest.json").write_text(encoded, encoding="utf-8")
+        (evidence_dir / "run_manifest.json").write_text(
+            encoded, encoding="utf-8"
+        )
     if manifest.get("dry_run") is True:
         comparison = {"verdict": "dry_run", "required_complete": False}
         (evidence_dir / "comparison.json").write_text(

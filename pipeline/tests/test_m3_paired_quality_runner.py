@@ -77,6 +77,12 @@ def test_paired_runner_dry_run_records_identical_eager_envelopes():
             "cyankiwi_reference",
             "portable_awq_w4a8",
         ]
+        assert manifest["case_order"] == [
+            "cyankiwi_reference",
+            "portable_awq_w4a8",
+        ]
+        assert manifest["started_at"].endswith("+00:00")
+        assert manifest["finished_at"].endswith("+00:00")
         assert all(Path(case["checkpoint"]).is_absolute() for case in manifest["cases"])
         reference_command, candidate_command = [
             case["command"] for case in manifest["cases"]

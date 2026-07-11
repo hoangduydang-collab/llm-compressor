@@ -1,0 +1,87 @@
+{
+  "case_order": [
+    "cyankiwi_reference"
+  ],
+  "cases": [
+    {
+      "checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+      "command": [
+        "python",
+        "-m",
+        "pipeline.run",
+        "--config",
+        "pipeline/configs/minimax_m3_full_calib.yaml",
+        "--stage",
+        "serve",
+        "--checkpoint",
+        "/mnt/nfs/hoangduy/logs/m3-paired-quality/20260711-125747-reference-sequential/cyankiwi_reference/checkpoint",
+        "--set",
+        "model.id=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+        "--set",
+        "serve.tensor_parallel_size=8",
+        "--set",
+        "serve.enable_expert_parallel=true",
+        "--set",
+        "serve.block_size=128",
+        "--set",
+        "serve.kv_cache_dtype=fp8",
+        "--set",
+        "serve.max_model_len=2048",
+        "--set",
+        "serve.gpu_memory_utilization=0.85",
+        "--set",
+        "serve.enforce_eager=true",
+        "--set",
+        "serve.disable_custom_all_reduce=true",
+        "--set",
+        "eval.enabled=false"
+      ],
+      "config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+      "finished_at": "2026-07-11T13:10:15+00:00",
+      "index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+      "name": "cyankiwi_reference",
+      "return_code": 1,
+      "started_at": "2026-07-11T13:00:23+00:00"
+    }
+  ],
+  "comparison_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "enable_expert_parallel": true,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "tensor_parallel_size": 8
+  },
+  "config": "pipeline/configs/minimax_m3_full_calib.yaml",
+  "deviations": [
+    {
+      "changes_comparison_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled the runner's owned-process signal path; all eight allocated GPUs were already free, so no process was signalled."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "1",
+    "M3_MOE_PROBE": "1",
+    "M3_PARAM_FINGERPRINT": "0"
+  },
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-paired-quality/20260711-125747-reference-sequential",
+  "finished_at": "2026-07-11T13:10:15.940429+00:00",
+  "git_commit": "fc803ce2bf17c5afdbc551bad8fc1eeea7c42dd8",
+  "git_status_short": "",
+  "host": "h105-gpu-polaris.pod4.lab.bitdeer.ai",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "run_id": "20260711-125747-reference-sequential",
+  "run_mode": "reference_only",
+  "scheduler": {
+    "SLURM_JOB_ID": "12743",
+    "SLURM_JOB_NODELIST": "gpu-h105"
+  },
+  "schema_version": 1,
+  "started_at": "2026-07-11T12:57:48.313209+00:00"
+}

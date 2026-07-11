@@ -1,103 +1,53 @@
-# MiniMax-M3 paired quality runbook
+# MiniMax-M3 canonical chat quality matrix runbook
 
 ## Objective and ownership
 
-Run one eager-mode comparison between the working
-`cyankiwi/MiniMax-M3-AWQ-INT4` reference and the portable full-calibration
-AWQ W4A8 checkpoint. Return enough compact evidence through Git for analysis on
-the non-GPU cluster.
+Run four eager-mode canonical-chat arms concurrently: cyankiwi and the portable
+W4A8 checkpoint through offline vLLM and HTTP chat-completions. Return compact,
+auditable evidence through Git for analysis on the non-GPU cluster.
 
-The primary agent owns experiment design, static analysis, and evidence
-interpretation. The GPU agent owns preflight, execution, runtime-only
-adaptation, preservation of full logs, and the compact result commit. Use
-runtime judgment for scheduler, node, paths, and owned stale processes, but do
-not bundle a speculative loader fix into this comparison.
+The primary agent owns experiment design, implementation, and interpretation.
+The GPU agent owns preflight, four-node scheduling, runtime-only adaptations,
+execution, evidence inspection, and the result commit. Do not repair a model,
+change prompts, enable diagnostics, re-quantize, or investigate CUDA graphs in
+this matrix.
 
-This run does not investigate CUDA graphs, re-quantize, or delete checkpoints.
+## Why this supersedes the raw-completion runs
 
-## Current follow-up: sequential reference validation
+Run `20260711-125747-reference-sequential` proved batching was not the cause of
+the earlier reference output. The arithmetic case emitted only token `200020`,
+MiniMax-M3's EOS token, while the France case continued a raw-text loop. Those
+bare prompts omitted the model's required chat roles and assistant generation
+prefix, so they are not a valid quality baseline.
 
-This section supersedes the paired command below for the next allocation. Run
-**only cyankiwi** from the handed-off code commit. The previous reference run
-`20260711-122317-reference-no-fingerprint` proved that disabling parameter
-fingerprinting removes the earlier CUDA assertion, but its two-prompt offline
-batch produced one repeated response and one empty response.
+The handed-off offline verifier now applies the official tokenizer chat template
+with `add_generation_prompt=True` and `thinking_mode="disabled"`. HTTP uses the
+OpenAI-compatible chat endpoint with the same user messages and thinking mode.
 
-The new harness changes the MiniMax-M3 quality requests from one two-prompt
-batch to two sequential one-prompt `generate` calls. It also records generated
-token IDs, `finish_reason`, and `stop_reason` per case and rejects repeated
-multiword phrases. Keep the serving envelope and diagnostics identical to the
-last run:
+## Matrix contract
 
-```text
-M3_LOAD_AUDIT=1
-M3_MOE_PROBE=1
-M3_PARAM_FINGERPRINT=0
-```
+| Arm | Checkpoint | Interface |
+| --- | --- | --- |
+| `reference_offline_chat` | cyankiwi W4A16 | Offline canonical chat template |
+| `candidate_offline_chat` | Portable W4A8 | Offline canonical chat template |
+| `reference_http_chat` | cyankiwi W4A16 | `/v1/chat/completions` |
+| `candidate_http_chat` | Portable W4A8 | `/v1/chat/completions` |
 
-Do not run the portable candidate in this allocation, even if the reference
-passes. Do not change prompts, chat templates, sampling settings, diagnostics,
-or serving topology. This is a one-boundary test of offline batching.
+All arms must retain:
 
-After normal preflight, run the automated reference-only mode on one clean
-eight-GPU node:
+- one clean eight-GPU node per arm, running concurrently;
+- the same pushed code commit and Python/vLLM environment;
+- TP=8, expert parallelism, eager mode, block size 128, FP8 KV cache;
+- `max_model_len=2048`, GPU utilization 0.85, custom all-reduce disabled;
+- shared-expert auxiliary stream disabled;
+- two fixed user messages, 64 output tokens, temperature 0;
+- `thinking_mode=disabled`;
+- `M3_LOAD_AUDIT=0`, `M3_MOE_PROBE=0`, `M3_PARAM_FINGERPRINT=0`.
 
-```bash
-set -o pipefail
-RUN_ID="$(date +%Y%m%d-%H%M%S)-reference-sequential"
-RUN_MODE=reference_only \
-M3_LOAD_AUDIT=1 \
-M3_MOE_PROBE=1 \
-M3_PARAM_FINGERPRINT=0 \
-RUN_ID="$RUN_ID" \
-bash pipeline/slurm/test_m3_paired_quality.sh \
-  2>&1 | tee "/mnt/nfs/hoangduy/logs/m3-paired-quality-$RUN_ID-operator.log"
-```
-
-The runner validates only the reference checkpoint, records the actual
-diagnostic flags in `run_manifest.json`, runs only `cyankiwi_reference`, builds
-the compact evidence bundle, writes a reference-specific `comparison.json`,
-and exits with the serve return code. A nonzero quality result is expected to
-still leave a complete bundle; inspect and commit it.
-
-### Required return for this run
-
-Commit `results/m3-paired-quality/<run_id>/` with the same provenance,
-software, topology, hashes, patch status, loader audit, MoE probe, notable log,
-and external-artifact index required below. In addition:
-
-- preserve the unmodified `serve_report.json`;
-- verify both quality cases contain `text`, `token_ids`, `finish_reason`, and
-  `stop_reason` (record a deviation if the installed vLLM omits a field);
-- state how many `llm.generate` calls were observed or inferred from the log;
-- classify the result as `reference_sequential_pass`,
-  `reference_sequential_quality_fail`, or `inconclusive_runtime_failure`;
-- explicitly compare each output and termination reason with run
-  `20260711-122317-reference-no-fingerprint`;
-- preserve the first traceback and all scheduler/cleanup anomalies;
-- record every retry and deviation rather than silently changing a variable.
-
-If sequential reference quality passes, stop and return evidence so the primary
-agent can authorize a paired run. If it fails, stop and propose whether the
-next single boundary should be canonical HTTP chat serving or diagnostics-off
-offline serving. Do not investigate CUDA graphs in this run.
-
-## Comparison contract
-
-These are invariants between the two cases:
-
-- repository commit and clean worktree;
-- Python/vLLM environment, node, and GPU topology;
-- TP=8, expert parallelism, eager execution, block size 128, and FP8 KV cache;
-- `max_model_len=2048` and GPU utilization 0.85;
-- greedy two-prompt quality suite;
-- loader audit, MoE probe, and parameter fingerprints enabled;
-- persistent vLLM source state established before the reference.
-
-The GPU agent may adapt Slurm mechanics, node choice, cluster paths,
-`MIN_FREE_GIB`, and log retention. Record every adaptation in the manifest's
-`deviations` with its reason and whether it changes a comparison variable.
-Never silently rerun with different settings.
+The GPU agent may adapt partition, node constraints, time limit, NFS roots,
+ports, and other scheduler mechanics. Record changes and retry history in each
+`arm_manifest.json`; never silently change a quality variable. A retry gets a
+new matrix ID or an explicitly related attempt directory.
 
 ## Preflight
 
@@ -107,13 +57,11 @@ From the repository root:
 git pull --ff-only origin duy-branch
 git status --short
 git rev-parse HEAD
-test -x pipeline/slurm/test_m3_paired_quality.sh
-test -f pipeline/m3_quality_evidence.py
-```
 
-`git status --short` must be empty. Record the commit as `code_commit`.
+test -x pipeline/slurm/test_m3_chat_quality_arm.sh
+test -x pipeline/slurm/submit_m3_chat_quality_matrix.sh
+test -f pipeline/m3_chat_quality.py
 
-```bash
 REFERENCE_CKPT=/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
 CANDIDATE_CKPT=artifacts/MiniMax-M3-awq-W4AFP8/20260709-064104/checkpoint-vllm-w123
 MODEL_ID=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
@@ -129,128 +77,105 @@ source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD"
 
 pytest -q \
-  pipeline/tests/test_m3_quality_evidence.py \
-  pipeline/tests/test_m3_paired_quality_runner.py \
-  pipeline/tests/test_patch_vllm_m3_serve.py \
-  pipeline/tests/test_serve_verify_m3_env.py \
   pipeline/tests/test_serve_verify_quality.py \
+  pipeline/tests/test_m3_quality_evidence.py \
+  pipeline/tests/test_m3_chat_quality.py \
+  pipeline/tests/test_m3_chat_quality_runner.py \
+  pipeline/tests/test_submit_m3_chat_quality_matrix.py \
+  pipeline/tests/test_serve_verify_m3_env.py \
+  pipeline/tests/test_patch_vllm_m3_serve.py \
   pipeline/tests/test_reexport_minimax_m3_vllm.py
 
-DRY_RUN=1 \
-REFERENCE_CKPT="$REFERENCE_CKPT" \
-CANDIDATE_CKPT="$CANDIDATE_CKPT" \
-MODEL_ID="$MODEL_ID" \
-bash pipeline/slurm/test_m3_paired_quality.sh
+MATRIX_ID=preflight-canonical-chat DRY_RUN=1 \
+  bash pipeline/slurm/submit_m3_chat_quality_matrix.sh
 ```
 
-Do not reserve eight GPUs until the focused tests and dry run pass. If the live
-vLLM fork requires a diagnostic-only compatibility change, commit it
-separately, rerun the checks, and record the new code commit.
+The worktree must be clean before submission. Dry-run output must contain four
+`sbatch` commands with the four fixed arm names.
 
-## Exact live command
+## Submit four nodes
 
-On one clean eight-GPU node:
+Use one shared matrix ID. Scheduler settings are intentionally overrideable:
 
 ```bash
-set -o pipefail
-RUN_ID="$(date +%Y%m%d-%H%M%S)"
-REFERENCE_CKPT="$REFERENCE_CKPT" \
-CANDIDATE_CKPT="$CANDIDATE_CKPT" \
-MODEL_ID="$MODEL_ID" \
-RUN_ID="$RUN_ID" \
-bash pipeline/slurm/test_m3_paired_quality.sh \
-  2>&1 | tee "/mnt/nfs/hoangduy/logs/m3-paired-quality-$RUN_ID-operator.log"
+MATRIX_ID="$(date +%Y%m%d-%H%M%S)-canonical-chat"
+MATRIX_ID="$MATRIX_ID" \
+TIME_LIMIT=02:00:00 \
+bash pipeline/slurm/submit_m3_chat_quality_matrix.sh \
+  | tee "/mnt/nfs/hoangduy/logs/m3-chat-quality-submit-$MATRIX_ID.txt"
 ```
 
-The runner hashes checkpoint metadata, records exact commands and environment
-provenance, establishes one persistent vLLM source state, runs cyankiwi first,
-and stops before the candidate if the reference fails readiness or smoke
-quality. Full logs remain under
-`/mnt/nfs/hoangduy/logs/m3-paired-quality/<run_id>/`; compact evidence goes
-to `results/m3-paired-quality/<run_id>/`.
+If the default partition is unsuitable, add a recorded override such as
+`SBATCH_ARGS="--partition=h100"`. Do not put four arms on one node. Each job runs only its named arm and bundles evidence even after a
+serve failure.
 
-## Runtime decisions
+Monitor all returned job IDs. Do not cancel successful siblings when one arm
+fails. Preserve scheduler failure, OOM, timeout, startup error, malformed HTTP
+response, and cleanup evidence as distinct outcomes.
 
-- Reference failure invalidates the baseline. Return its evidence and stop.
-- Candidate infrastructure failure returns preserved evidence and a nonzero
-  status.
-- Missing loader, fingerprint, or MoE markers means
-  `inconclusive_missing_evidence`; do not reinterpret absence as a broken
-  model component.
-- A retry that changes an invariant gets a new `RUN_ID`. Preserve and relate
-  both attempts.
-- Record operator mistakes, OOMs, timeouts, instrumentation errors, cleanup,
-  retries, and all environment changes.
-- Never overwrite a checkpoint or kill another user's process.
+## Aggregate
 
-## Required compact evidence
+After all four jobs finish, rebuild each compact arm once so scheduler logs
+are closed before their final hashes are recorded, then aggregate:
+
+```bash
+EVIDENCE_ROOT="results/m3-chat-quality/$MATRIX_ID"
+FULL_ROOT="/mnt/nfs/hoangduy/logs/m3-chat-quality/$MATRIX_ID"
+for arm in reference_offline_chat candidate_offline_chat reference_http_chat candidate_http_chat; do
+  python -m pipeline.m3_chat_quality bundle-arm \
+    --run-dir "$FULL_ROOT/$arm" \
+    --evidence-dir "$EVIDENCE_ROOT/$arm"
+done
+python -m pipeline.m3_chat_quality aggregate --evidence-root "$EVIDENCE_ROOT"
+python -m json.tool "$EVIDENCE_ROOT/comparison.json"
+```
+
+Expected compact structure:
 
 ```text
-results/m3-paired-quality/<run_id>/
-├── run_manifest.json
-├── software_versions.txt
-├── nvidia_smi.csv
-├── nvidia_topology.txt
-├── patch_status.txt
+results/m3-chat-quality/<matrix_id>/
 ├── comparison.json
-├── artifact_index.json
-├── cyankiwi_reference/
-│   ├── serve_report.json
-│   ├── return_code.txt
-│   ├── parameter_fingerprints.jsonl
-│   ├── fingerprint_summaries.jsonl
-│   ├── loader_audit.txt
-│   ├── moe_probe.txt
-│   └── notable_log_excerpt.txt
-└── portable_awq_w4a8/
-    └── the same files
+├── reference_offline_chat/
+├── candidate_offline_chat/
+├── reference_http_chat/
+└── candidate_http_chat/
 ```
 
-If the reference stops the matrix, candidate files may be absent, but
-`comparison.json` must say `invalid_reference`.
+Each arm directory must contain `arm_manifest.json`, `arm_report.json`, raw HTTP
+requests/responses when applicable, software/GPU provenance, return code,
+notable traceback context, and `artifact_index.json` with full-log hashes.
+Offline reports must preserve `rendered_prompt`, token IDs, finish reason, stop
+reason, and raw text. HTTP reports must preserve the unmodified response body.
 
-Raw prompt outputs remain in `serve_report.json`. Do not replace them with a
-summary. `artifact_index.json` gives absolute path, byte size, and SHA-256 for
-full logs outside Git. Add the operator log and its retention deadline if the
-runner did not index it.
+Interpret only `comparison.json` verdicts:
+
+- `candidate_quality_pass`: both references and both candidates passed;
+- `candidate_quality_fail`: both references passed and both candidates failed;
+- `candidate_interface_disagreement`: references passed but candidate interfaces differ;
+- `invalid_reference`: at least one canonical reference failed quality;
+- `infrastructure_failure`: at least one arm did not reach a valid response;
+- `inconclusive_missing_arms`: one or more arm bundles are absent.
+
+Do not infer a checkpoint defect from a failed reference or infrastructure arm.
+Do not proceed to CUDA-graph RCA until the primary agent analyzes this matrix.
 
 ## Review, commit, and return
 
 ```bash
-EVIDENCE_DIR="results/m3-paired-quality/$RUN_ID"
-python -m json.tool "$EVIDENCE_DIR/run_manifest.json" >/dev/null
-python -m json.tool "$EVIDENCE_DIR/comparison.json"
-python -m json.tool "$EVIDENCE_DIR/artifact_index.json" >/dev/null
-find "$EVIDENCE_DIR" -type f -size +5M -print
-rg -n -i 'api[_-]?key|token=|authorization:|bearer ' "$EVIDENCE_DIR" || true
-```
-
-No compact file should exceed 5 MB. Inspect secret-scan matches. Before commit,
-ensure the manifest includes start/end times, case order, exact code commit,
-dirty state, scheduler IDs, deviations, retries, and full-log retention.
-
-```bash
-git add "results/m3-paired-quality/$RUN_ID"
-git commit -m "data: add MiniMax-M3 paired quality evidence $RUN_ID"
+find "$EVIDENCE_ROOT" -type f -size +5M -print
+rg -n -i 'api[_-]?key|token=|authorization:|bearer ' "$EVIDENCE_ROOT" || true
+git status --short
+git add "$EVIDENCE_ROOT"
+git commit -m "data: add MiniMax-M3 canonical chat matrix $MATRIX_ID"
 git push origin duy-branch
 ```
 
-Do not commit checkpoints, caches, site-packages, or full logs. Return the
-result commit, code commit, `RUN_ID`, verdict, full-log location/retention,
-runtime interpretation, and proposed next hypothesis.
+Do not commit checkpoints, caches, site-packages, full serve logs, PID files, or
+credentials. Return:
 
-## Completion checklist
-
-- [ ] Commit, commands, order, timestamps, hashes, flags, and deviations are
-      recorded.
-- [ ] Host, scheduler, GPU/topology, driver/CUDA, Python, vLLM, Torch,
-      compressed-tensors, FlashInfer, Safetensors, and Transformers are
-      recorded.
-- [ ] Reference raw outputs, quality decisions, loader audit, fingerprints, and
-      MoE evidence are present.
-- [ ] Candidate has the same evidence, or the reference correctly stopped it.
-- [ ] Operational failures, retries, cleanup, and instrumentation errors are
-      recorded.
-- [ ] Every non-Git artifact has path, size, SHA-256, and retention.
-- [ ] Compact files contain no credential and are each at most 5 MB.
-- [ ] The result commit is pushed and identifies the executed code commit.
+- result commit and executed code commit;
+- matrix ID and four scheduler job IDs/nodes;
+- aggregate verdict and one-line arm outcomes;
+- every deviation and retry;
+- full-log absolute paths, sizes, SHA-256 hashes, and retention deadlines;
+- any missing evidence or runtime judgment made by the executor.

@@ -126,30 +126,23 @@ does not measure semantic quality and is a false positive for these runs.
 4. Only after a quality-positive serve should the user be asked again to delete
    the obsolete 225 GB original checkpoint.
 
-## Active next handoff (2026-07-11, sequential reference)
+## Active next handoff (2026-07-11, canonical chat matrix)
 
-Run `MINIMAX_M3_QUALITY_RUNBOOK.md` section **“Current follow-up: sequential
-reference validation”** from this commit using the automated
-`RUN_MODE=reference_only` command. It validates and runs only cyankiwi, records
-the actual diagnostic flags, and builds the compact result bundle. Stop
-regardless of outcome.
+Run the four-node matrix in `MINIMAX_M3_QUALITY_RUNBOOK.md` from the handed-off
+commit. The previous sequential reference result ruled out batching but exposed
+that the quality harness used invalid bare completions: arithmetic emitted the
+configured EOS token `200020`, and the France prompt continued raw text. This is
+consistent with the user's known-good canonical HTTP chat serving and is not
+evidence that cyankiwi is corrupt.
 
-The completed fingerprint-off A/B established that the earlier CUDA assertion
-was diagnostic-induced: cyankiwi loaded and generated with
-`M3_PARAM_FINGERPRINT=0`. It also established a new boundary: the offline
-quality harness batched two prompts, after which the France completion repeated
-phrases and the arithmetic completion was empty. Loader matching, `lm_head`,
-and shared-expert presence/contribution looked healthy.
+The new offline path applies the official MiniMax-M3 chat template. The matrix
+runs reference/candidate through both offline and HTTP canonical chat on four
+separate eager-mode nodes, with diagnostics off and identical quality settings.
+Use `pipeline/slurm/submit_m3_chat_quality_matrix.sh`; do not manually combine
+arms on one node. After all jobs finish, aggregate with
+`python -m pipeline.m3_chat_quality aggregate`, inspect the compact bundle,
+commit it, and push it through Git.
 
-The handed-off harness now sends the two MiniMax-M3 prompts sequentially,
-records token IDs plus finish/stop reasons per request, and detects the exact
-multiword repetition pattern missed by the old evaluator. Preserve
-`M3_LOAD_AUDIT=1`, `M3_MOE_PROBE=1`, `M3_PARAM_FINGERPRINT=0`, eager TP8+EP,
-and all other prior serving settings. Do not run the portable candidate even
-if reference quality passes; return the compact Git evidence for primary-agent
-analysis first.
-
-After this boundary is resolved, the quality investigation remains focused on
-a trustworthy cyankiwi baseline followed by the portable W4A8 comparison.
-Only after the quality issue is resolved cleanly do we resume the separately
-tracked CUDA-graph issue.
+Do not repair the candidate, re-quantize, enable CUDA graphs, or resume the
+second issue in this run. Runtime scheduler adaptation is welcome when recorded;
+quality-variable changes require a new related attempt.

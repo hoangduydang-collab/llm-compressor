@@ -1,19 +1,22 @@
 # Bugs and fixes (llm-compressor pipeline)
 
-## Active priority: MiniMax-M3 quality before CUDA-graph RCA (2026-07-11)
+## Active priority: MiniMax-M3 canonical chat quality before CUDA-graph RCA (2026-07-11)
 
-Original AWQ/GPTQ and the portable routed-key re-export load but generate
-repetitive garbage. Renaming routed `gate_proj/down_proj/up_proj` tensors to
-the vLLM `w1/w2/w3` contract fixed a real mismatch but did not restore
-quality.
+Original AWQ/GPTQ and the portable routed-key re-export loaded but generated
+repetitive garbage under the old bare-completion smoke. The cyankiwi control
+then produced a repeated France continuation and immediate EOS (`200020`) for
+arithmetic under the same bare prompts, even when requests ran sequentially.
+Because canonical HTTP chat was already known-good and the official model
+requires chat role/generation framing, those raw-completion results are not a
+valid semantic baseline; batching is ruled out, not model quality.
 
-Next: run `MINIMAX_M3_QUALITY_RUNBOOK.md`, which compares cyankiwi against
-the portable W4A8 checkpoint in eager mode and returns semantic quality,
-loader mappings, loaded-parameter fingerprints, shared-expert contribution,
-environment provenance, and full-log hashes through Git.
+Active boundary: run the four-node canonical-chat matrix in
+`MINIMAX_M3_QUALITY_RUNBOOK.md`: reference/candidate × offline/HTTP, eager mode,
+identical official chat semantics, diagnostics off. This distinguishes candidate
+quality from interface integration in one parallel round.
 
-Do not resume CUDA-graph RCA, re-quantize, or apply another loader fix until
-this comparison identifies the first failing quality boundary.
+Do not resume CUDA-graph RCA, re-quantize, or apply another loader fix until the
+canonical matrix establishes a valid reference and candidate outcome.
 
 ## HTTP async cudagraph IMA — RCA matrix protocol (cyankiwi, 2026-07-10)
 

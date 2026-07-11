@@ -33,11 +33,24 @@ class _FakeLLM:
     def __init__(self, outputs: list[str]):
         self._outputs = outputs
         self.calls = []
+        self.tokenizer = _FakeTokenizer()
+
+    def get_tokenizer(self):
+        return self.tokenizer
 
     def generate(self, prompts, sampling_params):
         self.calls.append((prompts, sampling_params))
         index = len(self.calls) - 1
         return [_Completion(self._outputs[index], token_ids=[100 + index])]
+
+
+class _FakeTokenizer:
+    def __init__(self):
+        self.calls = []
+
+    def apply_chat_template(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return f"CHAT::{messages[0]['content']}::ASSISTANT"
 
 
 class _SamplingParams:
@@ -55,9 +68,23 @@ def test_m3_generation_runs_fixed_suite_and_rejects_garbage():
         sampling_params_cls=_SamplingParams,
     )
 
+    rendered = [f"CHAT::{case.prompt}::ASSISTANT" for case in M3_QUALITY_CASES]
     assert [call[0] for call in llm.calls] == [
-        [case.prompt] for case in M3_QUALITY_CASES
+        [prompt] for prompt in rendered
     ]
+    assert [call[0] for call in llm.tokenizer.calls] == [
+        [{"role": "user", "content": case.prompt}]
+        for case in M3_QUALITY_CASES
+    ]
+    assert all(
+        call[1]
+        == {
+            "tokenize": False,
+            "add_generation_prompt": True,
+            "thinking_mode": "disabled",
+        }
+        for call in llm.tokenizer.calls
+    )
     assert all(
         call[1].kwargs == {"max_tokens": 64, "temperature": 0.0}
         for call in llm.calls
@@ -69,6 +96,8 @@ def test_m3_generation_runs_fixed_suite_and_rejects_garbage():
     assert result["quality_cases"][0]["finish_reason"] == "stop"
     assert result["quality_cases"][1]["token_ids"] == [101]
     assert result["sample_prompt"] == M3_QUALITY_CASES[0].prompt
+    assert result["prompt_mode"] == "chat_template"
+    assert [case["rendered_prompt"] for case in result["quality_cases"]] == rendered
 
 
 def test_m3_generation_accepts_two_correct_outputs():

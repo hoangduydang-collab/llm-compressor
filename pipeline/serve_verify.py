@@ -405,17 +405,28 @@ def _run_generation_smoke(
         )
 
         prompts = [case.prompt for case in M3_QUALITY_CASES]
+        tokenizer = llm.get_tokenizer()
+        generation_prompts = [
+            tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                thinking_mode="disabled",
+            )
+            for prompt in prompts
+        ]
     else:
         prompts = [configured_prompt]
+        generation_prompts = prompts
     sampling_params = sampling_params_cls(max_tokens=64, temperature=0.0)
     if is_m3:
         # Keep requests independent so one sequence cannot affect scheduling,
         # padding, or termination of the other reference-quality case.
         outputs = []
-        for prompt in prompts:
+        for prompt in generation_prompts:
             outputs.extend(llm.generate([prompt], sampling_params))
     else:
-        outputs = llm.generate(prompts, sampling_params)
+        outputs = llm.generate(generation_prompts, sampling_params)
     texts = [item.outputs[0].text for item in outputs]
     generation_completed = len(texts) == len(prompts) and all(
         bool(text and text.strip()) for text in texts
@@ -426,11 +437,15 @@ def _run_generation_smoke(
         "generation_completed": generation_completed,
         "sane_output": generation_completed,
         "quality_ok": None,
+        "prompt_mode": "chat_template" if is_m3 else "raw",
     }
     if is_m3:
         result.update(assess_quality_outputs(texts))
-        for quality_case, request_output in zip(result["quality_cases"], outputs):
+        for quality_case, rendered_prompt, request_output in zip(
+            result["quality_cases"], generation_prompts, outputs
+        ):
             completion = request_output.outputs[0]
+            quality_case["rendered_prompt"] = rendered_prompt
             quality_case.update(
                 {
                     "token_ids": list(getattr(completion, "token_ids", []) or []),

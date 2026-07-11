@@ -435,6 +435,7 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         if _is_w4a8_moe_scheme(_read_quant_config(ckpt)):
             # Persistent site-packages patches (required for Worker_TP* subprocesses).
             from pipeline.slurm.patch_vllm_m3_serve import (
+                ensure_m3_load_audit,
                 ensure_m3_moe_probe,
                 ensure_vllm_m3_patches,
             )
@@ -455,6 +456,20 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
                     )
             except Exception as exc:  # noqa: BLE001
                 print(f"[pipeline] M3 MoE probe install skipped: {exc!r}")
+
+            # Optional load-time audit for routed expert aliases, shared experts,
+            # and lm_head. It wraps only parameter weight loaders during model
+            # construction and is dormant unless M3_LOAD_AUDIT=1 is exported.
+            try:
+                audit_status = ensure_m3_load_audit()
+                print(f"[pipeline] M3 load audit (site-packages): {audit_status}")
+                if os.environ.get("M3_LOAD_AUDIT") == "1":
+                    print(
+                        "[pipeline] M3_LOAD_AUDIT=1 — Worker_TP* will log checkpoint "
+                        "key -> parameter load handoffs (grep 'M3_LOAD_AUDIT#')"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[pipeline] M3 load audit install skipped: {exc!r}")
 
             from pipeline.vllm_m3_patches import (
                 patch_vllm_w4a8_swigluoai_uninterleave,

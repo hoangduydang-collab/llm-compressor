@@ -62,6 +62,7 @@ _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
 _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
 _CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in _select_experts"
 _PROBE_MARK = "llmc M3 MoE quality probe"
+_LOAD_AUDIT_MARK = "llmc M3 load audit"
 
 # Optional, env-gated (M3_MOE_PROBE=1) diagnostic appended to the vLLM M3 model
 # module so it runs inside the spawned Worker_TP* processes (in-process
@@ -189,6 +190,271 @@ except Exception:
     pass
 # === end {mark} ===
 '''.format(mark=_PROBE_MARK)
+
+# Optional, env-gated loader audit. The M3 VL top-level model delegates
+# language-model weights to MiniMaxM3Model.load_weights(), whose routed-expert
+# mapping historically recognized only w1/w2/w3. This hook records which
+# checkpoint routed-expert, shared-expert, and lm-head tensors actually reach a
+# parameter weight_loader without retaining tensor data or changing the mapping.
+_LOAD_AUDIT_BLOCK = r'''
+
+# === llmc M3 load audit (MiniMax-M3 routed-expert wiring) ===
+try:  # gated diagnostic; never break model import
+    import os as _llmc_audit_os
+    if _llmc_audit_os.environ.get("M3_LOAD_AUDIT") == "1":
+        from vllm.logger import init_logger as _llmc_audit_init_logger
+        _llmc_audit_log = _llmc_audit_init_logger("llmc.m3_load_audit")
+        _llmc_audit_cls = globals().get(
+            "MiniMaxM3SparseForConditionalGeneration"
+        )
+
+        def _llmc_audit_tracked_name(_name):
+            return (
+                "block_sparse_moe.experts." in _name
+                or "block_sparse_moe.shared_experts." in _name
+                or "lm_head" in _name
+            )
+
+        def _llmc_audit_projection(_name):
+            for _alias, _label in (
+                (".gate_proj.", "gate_proj"),
+                (".up_proj.", "up_proj"),
+                (".down_proj.", "down_proj"),
+                (".w1.", "w1"),
+                (".w2.", "w2"),
+                (".w3.", "w3"),
+            ):
+                if _alias in _name:
+                    return _label
+            if "shared_experts" in _name:
+                return "shared"
+            if "lm_head" in _name:
+                return "lm_head"
+            return "other"
+
+        if _llmc_audit_cls is not None and not getattr(
+            _llmc_audit_cls, "_llmc_load_audited", False
+        ):
+            _llmc_audit_orig_load_weights = _llmc_audit_cls.load_weights
+
+            def _llmc_audit_load_weights(self, weights):
+                _llmc_state = {
+                    "current": None,
+                    "seen": [],
+                    "matches": [],
+                }
+                _llmc_restore = []
+
+                # AutoWeightsLoader delegates nested M3 weights to the custom
+                # language-model loader. Wrapping these parameters records the
+                # actual source-key -> target-parameter handoff across both
+                # loader layers, including default-weight-loader lm_head tensors.
+                try:
+                    for _target, _param in self.named_parameters():
+                        if not _llmc_audit_tracked_name(_target):
+                            continue
+                        _had_loader = hasattr(_param, "weight_loader")
+                        _original_loader = getattr(_param, "weight_loader", None)
+                        _base_loader = (
+                            _original_loader
+                            if callable(_original_loader)
+                            else default_weight_loader
+                        )
+
+                        def _llmc_audit_weight_loader(
+                            *args,
+                            _target_name=_target,
+                            _base=_base_loader,
+                            **kwargs
+                        ):
+                            _source_name = _llmc_state["current"]
+                            if _source_name is not None:
+                                _llmc_state["matches"].append(
+                                    (_source_name, _target_name)
+                                )
+                            return _base(*args, **kwargs)
+
+                        _llmc_restore.append(
+                            (_param, _had_loader, _original_loader)
+                        )
+                        _param.weight_loader = _llmc_audit_weight_loader
+
+                    def _llmc_audit_weights():
+                        for _source_name, _weight in weights:
+                            if _llmc_audit_tracked_name(_source_name):
+                                _llmc_state["current"] = _source_name
+                                _llmc_state["seen"].append(_source_name)
+                                yield _source_name, _weight
+                                _llmc_state["current"] = None
+                            else:
+                                yield _source_name, _weight
+
+                    return _llmc_audit_orig_load_weights(
+                        self, _llmc_audit_weights()
+                    )
+                finally:
+                    for _param, _had_loader, _original_loader in _llmc_restore:
+                        if _had_loader:
+                            _param.weight_loader = _original_loader
+                        else:
+                            delattr(_param, "weight_loader")
+
+                    _llmc_seen = _llmc_state["seen"]
+                    _llmc_matched = {source for source, _ in _llmc_state["matches"]}
+                    _llmc_unmatched = [
+                        source for source in _llmc_seen
+                        if source not in _llmc_matched
+                    ]
+                    _llmc_counts = {}
+                    for _source in _llmc_seen:
+                        _kind = _llmc_audit_projection(_source)
+                        _llmc_counts[_kind] = _llmc_counts.get(_kind, 0) + 1
+                    _llmc_sample = "; ".join(
+                        "%s -> %s" % (_source, _target)
+                        for _source, _target in _llmc_state["matches"][:8]
+                    )
+                    _llmc_unmatched_sample = "; ".join(_llmc_unmatched[:8])
+                    _llmc_audit_log.warning(
+                        "M3_LOAD_AUDIT# seen=%d matched=%d unmatched_this_rank=%d "
+                        "by_projection=%s sample=%s unmatched_sample=%s",
+                        len(_llmc_seen),
+                        len(_llmc_matched),
+                        len(_llmc_unmatched),
+                        _llmc_counts,
+                        _llmc_sample or "NONE",
+                        _llmc_unmatched_sample or "NONE",
+                    )
+
+            _llmc_audit_cls.load_weights = _llmc_audit_load_weights
+            _llmc_audit_cls._llmc_load_audited = True
+            _llmc_audit_log.warning(
+                "llmc M3 load audit active "
+                "(M3_LOAD_AUDIT=1; no tensors retained or remapped)"
+            )
+
+        # The top-level AutoWeightsLoader does not expose the custom M3
+        # expert-alias decision. Instrument that decision point directly: it
+        # compares checkpoint aliases against get_expert_mapping() before it
+        # invokes the fused-MoE parameter weight loader.
+        _llmc_audit_model_cls = globals().get("MiniMaxM3Model")
+        if _llmc_audit_model_cls is not None and not getattr(
+            _llmc_audit_model_cls, "_llmc_load_audited", False
+        ):
+            _llmc_audit_orig_model_load_weights = (
+                _llmc_audit_model_cls.load_weights
+            )
+
+            def _llmc_audit_model_load_weights(self, weights):
+                _llmc_mapping_aliases = sorted({
+                    _weight_name
+                    for _, _weight_name, _, _ in self.get_expert_mapping()
+                })
+                _llmc_state = {
+                    "current": None,
+                    "seen": [],
+                    "matches": [],
+                }
+                _llmc_restore = []
+                try:
+                    for _target, _param in self.named_parameters():
+                        if (
+                            "block_sparse_moe.experts." not in _target
+                            and "block_sparse_moe.shared_experts." not in _target
+                        ):
+                            continue
+                        _had_loader = hasattr(_param, "weight_loader")
+                        _original_loader = getattr(_param, "weight_loader", None)
+                        _base_loader = (
+                            _original_loader
+                            if callable(_original_loader)
+                            else default_weight_loader
+                        )
+
+                        def _llmc_audit_model_weight_loader(
+                            *args,
+                            _target_name=_target,
+                            _base=_base_loader,
+                            **kwargs
+                        ):
+                            _source_name = _llmc_state["current"]
+                            if _source_name is not None:
+                                _llmc_state["matches"].append(
+                                    (_source_name, _target_name)
+                                )
+                            return _base(*args, **kwargs)
+
+                        _llmc_restore.append(
+                            (_param, _had_loader, _original_loader)
+                        )
+                        _param.weight_loader = _llmc_audit_model_weight_loader
+
+                    def _llmc_audit_model_weights():
+                        for _source_name, _weight in weights:
+                            if _llmc_audit_tracked_name(_source_name):
+                                _llmc_state["current"] = _source_name
+                                _llmc_state["seen"].append(_source_name)
+                                yield _source_name, _weight
+                                _llmc_state["current"] = None
+                            else:
+                                yield _source_name, _weight
+
+                    return _llmc_audit_orig_model_load_weights(
+                        self, _llmc_audit_model_weights()
+                    )
+                finally:
+                    for _param, _had_loader, _original_loader in _llmc_restore:
+                        if _had_loader:
+                            _param.weight_loader = _original_loader
+                        else:
+                            delattr(_param, "weight_loader")
+
+                    _llmc_seen = _llmc_state["seen"]
+                    _llmc_matched = {
+                        _source for _source, _ in _llmc_state["matches"]
+                    }
+                    _llmc_unsupported_routed = [
+                        _source
+                        for _source in _llmc_seen
+                        if (
+                            "block_sparse_moe.experts." in _source
+                            and not any(
+                                f".{_alias}." in _source
+                                for _alias in _llmc_mapping_aliases
+                            )
+                        )
+                    ]
+                    _llmc_shared_seen = sum(
+                        "block_sparse_moe.shared_experts." in _source
+                        for _source in _llmc_seen
+                    )
+                    _llmc_sample = "; ".join(
+                        "%s -> %s" % (_source, _target)
+                        for _source, _target in _llmc_state["matches"][:8]
+                    )
+                    _llmc_audit_log.warning(
+                        "M3_LOAD_AUDIT# scope=model mapping_aliases=%s seen=%d "
+                        "matched=%d unmatched_this_scope=%d unsupported_routed=%d "
+                        "shared_seen=%d sample=%s unsupported_sample=%s",
+                        _llmc_mapping_aliases,
+                        len(_llmc_seen),
+                        len(_llmc_matched),
+                        len(_llmc_seen) - len(_llmc_matched),
+                        len(_llmc_unsupported_routed),
+                        _llmc_shared_seen,
+                        _llmc_sample or "NONE",
+                        "; ".join(_llmc_unsupported_routed[:8]) or "NONE",
+                    )
+
+            _llmc_audit_model_cls.load_weights = _llmc_audit_model_load_weights
+            _llmc_audit_model_cls._llmc_load_audited = True
+            _llmc_audit_log.warning(
+                "llmc M3 direct loader audit active "
+                "(reports checkpoint aliases and unsupported routed tensors)"
+            )
+except Exception:
+    pass
+# === end llmc M3 load audit ===
+'''
 
 
 def _vllm_dir() -> Path:
@@ -369,6 +635,8 @@ def _find_m3_moe_model_files(vllm_dir: Path) -> list[Path]:
 
 _PROBE_START = f'# === {_PROBE_MARK} ('
 _PROBE_END = f'# === end {_PROBE_MARK} ==='
+_LOAD_AUDIT_START = f"# === {_LOAD_AUDIT_MARK} ("
+_LOAD_AUDIT_END = f"# === end {_LOAD_AUDIT_MARK} ==="
 
 
 def _patch_append_probe(text: str) -> tuple[str, bool, bool]:
@@ -401,6 +669,33 @@ def _patch_append_probe(text: str) -> tuple[str, bool, bool]:
     return new_text, True, True
 
 
+def _patch_append_load_audit(text: str) -> tuple[str, bool, bool]:
+    """(Re)inject the env-gated routed-expert loader audit into an M3 module."""
+    if "class MiniMaxM3MoE" not in text:
+        return text, False, False
+
+    start = text.find(_LOAD_AUDIT_START)
+    if start != -1:
+        end = text.find(_LOAD_AUDIT_END, start)
+        if end != -1:
+            end += len(_LOAD_AUDIT_END)
+            existing = text[start:end]
+            new_block = _LOAD_AUDIT_BLOCK.strip("\n")
+            if existing.strip() == new_block.strip():
+                return text, False, True
+            new_text = (
+                text[:start].rstrip("\n")
+                + "\n\n"
+                + new_block
+                + "\n"
+                + text[end:].lstrip("\n")
+            )
+            return new_text, True, True
+
+    new_text = text.rstrip("\n") + "\n" + _LOAD_AUDIT_BLOCK
+    return new_text, True, True
+
+
 def ensure_m3_moe_probe(*, apply: bool = True) -> str:
     """Inject (idempotently) the env-gated MoE quality probe into site-packages.
 
@@ -417,6 +712,29 @@ def ensure_m3_moe_probe(*, apply: bool = True) -> str:
     for path in files:
         text = path.read_text(encoding="utf-8")
         new_text, changed, found = _patch_append_probe(text)
+        if not found:
+            statuses.append(f"{path.name}: no MoE class")
+            continue
+        if changed and apply:
+            path.write_text(new_text, encoding="utf-8")
+            statuses.append(f"{path.name}: injected")
+        elif changed and not apply:
+            statuses.append(f"{path.name}: NOT injected")
+        else:
+            statuses.append(f"{path.name}: already injected")
+    return "; ".join(statuses)
+
+
+def ensure_m3_load_audit(*, apply: bool = True) -> str:
+    """Inject the dormant M3 routed-expert loader audit into site-packages."""
+    vllm_dir = _vllm_dir()
+    files = _find_m3_moe_model_files(vllm_dir)
+    if not files:
+        return "skipped (no 'class MiniMaxM3MoE' found; build layout differs)"
+    statuses: list[str] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        new_text, changed, found = _patch_append_load_audit(text)
         if not found:
             statuses.append(f"{path.name}: no MoE class")
             continue

@@ -88,13 +88,31 @@ try:  # gated diagnostic; never break model import
         _llmc_probe_nf_max = int(_llmc_os.environ.get("M3_MOE_PROBE_NF", "4"))
         _llmc_probe_recompute = _llmc_os.environ.get("M3_MOE_PROBE_RECOMPUTE") == "1"
 
+        import hashlib as _llmc_probe_hashlib
+        import json as _llmc_probe_json
         import math as _llmc_math
+
+        _llmc_probe_max_tokens = int(
+            _llmc_os.environ.get("M3_MOE_PROBE_MAX_TOKENS", "256")
+        )
 
         def _llmc_probe_norm(_t):
             try:
                 return float(_t.float().norm().item())
             except Exception:
                 return -1.0
+
+        def _llmc_probe_digest(_t):
+            _flat = _t.detach().reshape(-1)
+            _numel = int(_flat.numel())
+            _count = min(128, _numel)
+            if not _count:
+                return _llmc_probe_hashlib.sha256(b"").hexdigest()
+            _stride = max(1, _numel // _count)
+            _sample = _flat[::_stride][:_count].detach().cpu().contiguous()
+            return _llmc_probe_hashlib.sha256(
+                _sample.view(_llmc_torch.uint8).numpy().tobytes()
+            ).hexdigest()
 
         if _llmc_probe_moe_cls is not None and not getattr(
             _llmc_probe_moe_cls, "_llmc_probed", False
@@ -143,7 +161,10 @@ try:  # gated diagnostic; never break model import
                         return out
                     if in_norm <= 1e-6:
                         return out
-                    if _llmc_probe_state["n"] < _llmc_probe_max and 2 <= n <= 64:
+                    if (
+                        _llmc_probe_state["n"] < _llmc_probe_max
+                        and 2 <= n <= _llmc_probe_max_tokens
+                    ):
                         _llmc_probe_state["n"] += 1
                         shared_mod = getattr(self, "shared_experts", None)
                         shared_norm = (
@@ -151,12 +172,16 @@ try:  # gated diagnostic; never break model import
                             if shared_mod is not None else -1.0
                         )
                         out_norm = _llmc_probe_norm(out)
+                        input_digest = _llmc_probe_digest(hs)
+                        output_digest = _llmc_probe_digest(out)
                         routed_norm = -1.0
+                        routed_digest = None
                         ratio = -1.0
                         if _llmc_probe_recompute:
                             _rl, _ = self.gate(hs)
                             _routed = self.experts(hidden_states=hs, router_logits=_rl)
                             routed_norm = _llmc_probe_norm(_routed)
+                            routed_digest = _llmc_probe_digest(_routed)
                             ratio = out_norm / routed_norm if routed_norm > 0 else -1.0
                         # Real input (in_norm>0): shared missing/zero => zero-loaded
                         # shared expert; moe_out ~= routed*2 (recompute) => runner
@@ -166,14 +191,28 @@ try:  # gated diagnostic; never break model import
                             or (0.0 <= shared_norm <= 1e-3)
                             or (0.0 <= ratio and abs(ratio - 2.0) < 0.05)
                         )
+                        try:
+                            _probe_rank = int(_llmc_torch.distributed.get_rank())
+                        except Exception:
+                            _probe_rank = int(_llmc_os.environ.get("RANK", "-1"))
+                        _record = {{
+                            "rank": _probe_rank,
+                            "probe_index": _llmc_probe_state["n"],
+                            "tokens": n,
+                            "in_norm": in_norm,
+                            "input_sample_sha256": input_digest,
+                            "shared_present": shared_mod is not None,
+                            "shared_norm": shared_norm,
+                            "moe_out_norm": out_norm,
+                            "output_sample_sha256": output_digest,
+                            "routed_norm": routed_norm,
+                            "routed_sample_sha256": routed_digest,
+                            "out_over_routed": ratio,
+                            "dropped": dropped,
+                        }}
                         _llmc_probe_log.warning(
-                            "M3_MOE_PROBE#%d tokens=%d in_norm=%.3f shared_present=%s "
-                            "shared_norm=%.3f moe_out_norm=%.3f routed_norm=%.3f "
-                            "out/routed=%.3f%s",
-                            _llmc_probe_state["n"], n, in_norm, shared_mod is not None,
-                            shared_norm, out_norm, routed_norm, ratio,
-                            "  <-- SHARED EXPERT DROPPED (garbage root cause)"
-                            if dropped else "  (shared expert contributing)",
+                            "M3_MOE_PROBE# %s",
+                            _llmc_probe_json.dumps(_record, sort_keys=True),
                         )
                 except Exception as _llmc_e:
                     _llmc_probe_log.warning("M3_MOE_PROBE forward failed: %r", _llmc_e)
@@ -226,9 +265,7 @@ try:  # gated diagnostic; never break model import
         _llmc_fp_case = _llmc_audit_os.environ.get(
             "M3_QUALITY_CASE", "unspecified"
         )
-        _llmc_audit_cls = globals().get(
-            "MiniMaxM3SparseForConditionalGeneration"
-        )
+        _llmc_audit_cls = globals().get("MiniMaxM3SparseForConditionalGeneration")
 
         def _llmc_audit_tracked_name(_name):
             return (
@@ -307,14 +344,12 @@ try:  # gated diagnostic; never break model import
                     _numel = int(_flat.numel())
                     _sample_count = min(_llmc_fp_max_samples, _numel)
                     if _sample_count:
-                        _indices = _llmc_fp_torch.linspace(
-                            0,
-                            _numel - 1,
-                            steps=_sample_count,
-                            device=_flat.device,
-                        ).long()
-                        _sample = _flat.index_select(0, _indices)
-                        _sample_cpu = _sample.detach().cpu().contiguous()
+                        _stride = max(1, _numel // _sample_count)
+                        _sample_cpu = (
+                            _flat[::_stride][:_sample_count]
+                            .detach().cpu().contiguous()
+                        )
+                        _sample_count = int(_sample_cpu.numel())
                         _digest = _llmc_fp_hashlib.sha256(
                             _sample_cpu.view(_llmc_fp_torch.uint8).numpy().tobytes()
                         ).hexdigest()

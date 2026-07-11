@@ -172,6 +172,28 @@ WARNING M3_MOE_PROBE#1 tokens=8 in_norm=1.0 shared_present=False shared_norm=-1.
     assert len(evidence["loader_audit_lines"]) == 1
 
 
+def test_extract_log_evidence_parses_structured_moe_probe():
+    log = '''
+WARNING M3_MOE_PROBE# {"probe_index":1,"tokens":168,"shared_present":true,"shared_norm":2.0,"input_sample_sha256":"in","output_sample_sha256":"out","routed_sample_sha256":"routed","dropped":false}
+'''
+
+    evidence = extract_log_evidence(log)
+
+    assert evidence["moe_probe_records"] == [
+        {
+            "probe_index": 1,
+            "tokens": 168,
+            "shared_present": True,
+            "shared_norm": 2.0,
+            "input_sample_sha256": "in",
+            "output_sample_sha256": "out",
+            "routed_sample_sha256": "routed",
+            "dropped": False,
+        }
+    ]
+    assert evidence["shared_expert_bad"] is False
+
+
 def test_bundle_copies_provenance_and_indexes_full_logs():
     healthy_log = """
 M3_PARAM_FINGERPRINT# {"category":"lm_head","finite_fraction":1.0,"sample_abs_max":2.0}

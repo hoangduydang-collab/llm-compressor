@@ -195,6 +195,7 @@ def extract_log_evidence(log_text: str) -> dict[str, Any]:
     summaries: list[dict[str, Any]] = []
     loader_lines: list[str] = []
     probe_lines: list[str] = []
+    probe_records: list[dict[str, Any]] = []
     shared_bad = False
     for line in log_text.splitlines():
         record = _prefixed_json(line, "M3_PARAM_FINGERPRINT#")
@@ -210,6 +211,20 @@ def extract_log_evidence(log_text: str) -> dict[str, Any]:
         if "M3_MOE_PROBE#" in line:
             clean = line.strip()
             probe_lines.append(clean)
+            probe_record = _prefixed_json(clean, "M3_MOE_PROBE#")
+            if probe_record is not None:
+                probe_records.append(probe_record)
+                shared_bad = shared_bad or probe_record.get("dropped") is True
+                shared_bad = (
+                    shared_bad
+                    or probe_record.get("shared_present") is False
+                )
+                try:
+                    norm = float(probe_record.get("shared_norm", -1.0))
+                except (TypeError, ValueError):
+                    norm = -1.0
+                shared_bad = shared_bad or 0.0 <= norm <= 1e-3
+                continue
             shared_match = re.search(r"shared_norm=([-+0-9.eE]+)", clean)
             shared_bad = shared_bad or "shared_present=False" in clean
             shared_bad = shared_bad or "SHARED EXPERT DROPPED" in clean
@@ -224,6 +239,7 @@ def extract_log_evidence(log_text: str) -> dict[str, Any]:
         "fingerprint_summaries": summaries,
         "loader_audit_lines": loader_lines,
         "moe_probe_lines": probe_lines,
+        "moe_probe_records": probe_records,
         "shared_expert_bad": shared_bad,
     }
 

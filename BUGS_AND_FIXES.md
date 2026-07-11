@@ -1,22 +1,24 @@
 # Bugs and fixes (llm-compressor pipeline)
 
-## Active priority: MiniMax-M3 canonical chat quality before CUDA-graph RCA (2026-07-11)
+## Active priority: MiniMax-M3 routed-expert diagnostics before CUDA-graph RCA (2026-07-11)
 
-Original AWQ/GPTQ and the portable routed-key re-export loaded but generated
-repetitive garbage under the old bare-completion smoke. The cyankiwi control
-then produced a repeated France continuation and immediate EOS (`200020`) for
-arithmetic under the same bare prompts, even when requests ran sequentially.
-Because canonical HTTP chat was already known-good and the official model
-requires chat role/generation framing, those raw-completion results are not a
-valid semantic baseline; batching is ruled out, not model quality.
+Canonical matrix `20260711-135100-canonical-chat` validated the baseline:
+cyankiwi answers both cases correctly through offline and HTTP serving, while
+the portable W4A8 candidate produces the same garbage through both interfaces.
+This rules out raw prompting, batching, HTTP integration, diagnostics, CUDA
+graphs, and tokenizer framing for the candidate failure.
 
-Active boundary: run the four-node canonical-chat matrix in
-`MINIMAX_M3_QUALITY_RUNBOOK.md`: reference/candidate × offline/HTTP, eager mode,
-identical official chat semantics, diagnostics off. This distinguishes candidate
-quality from interface integration in one parallel round.
+The candidate keeps attention, MSA indexers, shared experts, dense layers 0–2,
+vision, and `lm_head` unquantized. Routed experts are the primary quantized
+boundary. Active next step: the three-node `srun` matrix in
+`MINIMAX_M3_QUALITY_RUNBOOK.md` compares cyankiwi W4A16, candidate W4A8, and a
+config-only candidate W4A16 overlay using exact shared/LM-head fingerprints and rank-aligned first-MoE functional
+digests. Attention fingerprints are observational because the reference stores
+attention W4A16 while the candidate keeps it BF16; exact first-MoE input equality
+is required only between the two candidate arms.
 
-Do not resume CUDA-graph RCA, re-quantize, or apply another loader fix until the
-canonical matrix establishes a valid reference and candidate outcome.
+Do not re-quantize, apply a loader fix, or resume CUDA-graph RCA until this
+matrix distinguishes activation handling from routed-expert weights/loading.
 
 ## HTTP async cudagraph IMA — RCA matrix protocol (cyankiwi, 2026-07-10)
 

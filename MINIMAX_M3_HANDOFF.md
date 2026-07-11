@@ -126,23 +126,28 @@ does not measure semantic quality and is a false positive for these runs.
 4. Only after a quality-positive serve should the user be asked again to delete
    the obsolete 225 GB original checkpoint.
 
-## Active next handoff (2026-07-11, canonical chat matrix)
+## Active next handoff (2026-07-11, routed-expert diagnostics via srun)
 
-Run the four-node matrix in `MINIMAX_M3_QUALITY_RUNBOOK.md` from the handed-off
-commit. The previous sequential reference result ruled out batching but exposed
-that the quality harness used invalid bare completions: arithmetic emitted the
-configured EOS token `200020`, and the France prompt continued raw text. This is
-consistent with the user's known-good canonical HTTP chat serving and is not
-evidence that cyankiwi is corrupt.
+Run the three-arm matrix in `MINIMAX_M3_QUALITY_RUNBOOK.md` from the handed-off
+commit. `sbatch` is unavailable on the current cluster, so the launcher uses
+three concurrent exclusive `srun` allocations and must not be translated back
+to `sbatch`.
 
-The new offline path applies the official MiniMax-M3 chat template. The matrix
-runs reference/candidate through both offline and HTTP canonical chat on four
-separate eager-mode nodes, with diagnostics off and identical quality settings.
-Use `pipeline/slurm/submit_m3_chat_quality_matrix.sh`; do not manually combine
-arms on one node. After all jobs finish, aggregate with
-`python -m pipeline.m3_chat_quality aggregate`, inspect the compact bundle,
-commit it, and push it through Git.
+The canonical four-arm result is decisive: cyankiwi passes offline and HTTP,
+while the candidate emits identical garbage through both interfaces. Rendered
+prompts and prompt token counts match, all runs are eager, and diagnostics were
+off. The candidate ignore list keeps attention, indexers, shared experts, dense
+layers 0–2, vision, and `lm_head` unquantized; routed experts are the primary
+quantized boundary.
 
-Do not repair the candidate, re-quantize, enable CUDA graphs, or resume the
-second issue in this run. Runtime scheduler adaptation is welcome when recorded;
-quality-variable changes require a new related attempt.
+The next matrix runs cyankiwi W4A16, candidate W4A8, and a source-preserving
+candidate W4A16 metadata overlay. Repaired worker diagnostics compare exact `lm_head`/shared-expert controls and
+rank-aligned first-MoE input/routed/shared/combined digests. Exact first-MoE
+input equality is asserted only between the two candidate arms: reference
+attention is W4A16 while candidate attention is BF16, so cross-checkpoint input
+hash equality would be invalid. The result distinguishes activation handling
+from routed INT4 weights/loading in one parallel round.
+
+Use `pipeline/slurm/run_m3_routed_diagnostics_srun.sh`, aggregate and commit the
+compact result, then stop. Do not re-quantize, repair the candidate, enable CUDA
+graphs, or start the second issue.

@@ -76,6 +76,31 @@ def test_load_audit_block_contains_bounded_parameter_fingerprints():
     compile(_LOAD_AUDIT_BLOCK, "<m3-load-audit>", "exec")
 
 
+def test_parameter_fingerprint_uses_correct_top_level_class_and_safe_sampling():
+    assert (
+        'globals().get("MiniMaxM3SparseForConditionalGeneration")'
+        in _LOAD_AUDIT_BLOCK
+    )
+    assert (
+        '"MiniMaxM3SparseForConditionalGeneration"\n'
+        '            "MiniMax'
+        not in _LOAD_AUDIT_BLOCK
+    )
+    assert "linspace(" not in _LOAD_AUDIT_BLOCK
+    assert "index_select(" not in _LOAD_AUDIT_BLOCK
+    assert "[::_stride][:_sample_count]" in _LOAD_AUDIT_BLOCK
+
+
+def test_moe_probe_covers_canonical_prefill_and_emits_structured_digests():
+    assert "M3_MOE_PROBE_MAX_TOKENS" in _PROBE_BLOCK
+    assert '"rank"' in _PROBE_BLOCK
+    assert '"input_sample_sha256"' in _PROBE_BLOCK
+    assert '"output_sample_sha256"' in _PROBE_BLOCK
+    assert '"routed_sample_sha256"' in _PROBE_BLOCK
+    assert "M3_MOE_PROBE# %s" in _PROBE_BLOCK
+    compile(_PROBE_BLOCK, "<m3-moe-probe>", "exec")
+
+
 def test_explicit_diagnostic_setup_errors_are_not_swallowed():
     marker = "raise  # explicit diagnostics must fail loudly"
 

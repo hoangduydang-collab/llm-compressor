@@ -407,10 +407,15 @@ def _run_generation_smoke(
         prompts = [case.prompt for case in M3_QUALITY_CASES]
     else:
         prompts = [configured_prompt]
-    outputs = llm.generate(
-        prompts,
-        sampling_params_cls(max_tokens=64, temperature=0.0),
-    )
+    sampling_params = sampling_params_cls(max_tokens=64, temperature=0.0)
+    if is_m3:
+        # Keep requests independent so one sequence cannot affect scheduling,
+        # padding, or termination of the other reference-quality case.
+        outputs = []
+        for prompt in prompts:
+            outputs.extend(llm.generate([prompt], sampling_params))
+    else:
+        outputs = llm.generate(prompts, sampling_params)
     texts = [item.outputs[0].text for item in outputs]
     generation_completed = len(texts) == len(prompts) and all(
         bool(text and text.strip()) for text in texts
@@ -424,6 +429,15 @@ def _run_generation_smoke(
     }
     if is_m3:
         result.update(assess_quality_outputs(texts))
+        for quality_case, request_output in zip(result["quality_cases"], outputs):
+            completion = request_output.outputs[0]
+            quality_case.update(
+                {
+                    "token_ids": list(getattr(completion, "token_ids", []) or []),
+                    "finish_reason": getattr(completion, "finish_reason", None),
+                    "stop_reason": getattr(completion, "stop_reason", None),
+                }
+            )
     return result
 
 

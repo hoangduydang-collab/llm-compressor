@@ -7,20 +7,37 @@ from pipeline.serve_verify import _run_generation_smoke
 
 
 class _Completion:
-    def __init__(self, text: str):
-        self.outputs = [type("Output", (), {"text": text})()]
+    def __init__(
+        self,
+        text: str,
+        *,
+        token_ids: list[int] | None = None,
+        finish_reason: str | None = "stop",
+        stop_reason: str | int | None = None,
+    ):
+        self.outputs = [
+            type(
+                "Output",
+                (),
+                {
+                    "text": text,
+                    "token_ids": token_ids or [],
+                    "finish_reason": finish_reason,
+                    "stop_reason": stop_reason,
+                },
+            )()
+        ]
 
 
 class _FakeLLM:
     def __init__(self, outputs: list[str]):
         self._outputs = outputs
-        self.prompts = None
-        self.sampling_params = None
+        self.calls = []
 
     def generate(self, prompts, sampling_params):
-        self.prompts = prompts
-        self.sampling_params = sampling_params
-        return [_Completion(text) for text in self._outputs]
+        self.calls.append((prompts, sampling_params))
+        index = len(self.calls) - 1
+        return [_Completion(self._outputs[index], token_ids=[100 + index])]
 
 
 class _SamplingParams:
@@ -38,11 +55,19 @@ def test_m3_generation_runs_fixed_suite_and_rejects_garbage():
         sampling_params_cls=_SamplingParams,
     )
 
-    assert llm.prompts == [case.prompt for case in M3_QUALITY_CASES]
-    assert llm.sampling_params.kwargs == {"max_tokens": 64, "temperature": 0.0}
+    assert [call[0] for call in llm.calls] == [
+        [case.prompt] for case in M3_QUALITY_CASES
+    ]
+    assert all(
+        call[1].kwargs == {"max_tokens": 64, "temperature": 0.0}
+        for call in llm.calls
+    )
     assert result["generation_completed"] is True
     assert result["quality_ok"] is False
     assert result["quality_cases"][0]["text"] == "arring" * 20
+    assert result["quality_cases"][0]["token_ids"] == [100]
+    assert result["quality_cases"][0]["finish_reason"] == "stop"
+    assert result["quality_cases"][1]["token_ids"] == [101]
     assert result["sample_prompt"] == M3_QUALITY_CASES[0].prompt
 
 
@@ -70,7 +95,7 @@ def test_non_m3_generation_retains_configured_single_prompt():
         sampling_params_cls=_SamplingParams,
     )
 
-    assert llm.prompts == ["The capital of France is"]
+    assert llm.calls[0][0] == ["The capital of France is"]
     assert result["sample_output"] == "Paris"
     assert result["generation_completed"] is True
     assert result["quality_ok"] is None

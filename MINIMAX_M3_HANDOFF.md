@@ -126,26 +126,28 @@ does not measure semantic quality and is a false positive for these runs.
 4. Only after a quality-positive serve should the user be asked again to delete
    the obsolete 225 GB original checkpoint.
 
-## Active next handoff (2026-07-11)
+## Active next handoff (2026-07-11, sequential reference)
 
-Run `MINIMAX_M3_QUALITY_RUNBOOK.md` section **“Current follow-up: reference
-without parameter fingerprinting”**. Failed run `20260711-114831` stopped
-before generation because the cyankiwi reference hit a device assertion after
-the parameter-fingerprint hook ran; the candidate was correctly skipped.
+Run `MINIMAX_M3_QUALITY_RUNBOOK.md` section **“Current follow-up: sequential
+reference validation”** from this commit. Run only the cyankiwi reference and
+stop regardless of outcome.
 
-The next allocation is reference-only with `M3_PARAM_FINGERPRINT=0`,
-loader audit and MoE probe still enabled, and every other envelope variable
-unchanged. Stop and return its compact evidence regardless of outcome. Do not
-fix the sampler or run the candidate in the same trial.
+The completed fingerprint-off A/B established that the earlier CUDA assertion
+was diagnostic-induced: cyankiwi loaded and generated with
+`M3_PARAM_FINGERPRINT=0`. It also established a new boundary: the offline
+quality harness batched two prompts, after which the France completion repeated
+phrases and the arithmetic completion was empty. Loader matching, `lm_head`,
+and shared-expert presence/contribution looked healthy.
 
-After that A/B is analyzed, the longer-term paired workflow remains:
+The handed-off harness now sends the two MiniMax-M3 prompts sequentially,
+records token IDs plus finish/stop reasons per request, and detects the exact
+multiword repetition pattern missed by the old evaluator. Preserve
+`M3_LOAD_AUDIT=1`, `M3_MOE_PROBE=1`, `M3_PARAM_FINGERPRINT=0`, eager TP8+EP,
+and all other prior serving settings. Do not run the portable candidate even
+if reference quality passes; return the compact Git evidence for primary-agent
+analysis first.
 
-- Runner: `pipeline/slurm/test_m3_paired_quality.sh`
-- Classifier: `pipeline/m3_quality_evidence.py`
-- Operator contract: `MINIMAX_M3_QUALITY_RUNBOOK.md`
-
-It runs cyankiwi first and the portable W4A8 checkpoint second under one
-node/environment/commit, with loader audit, bounded parameter fingerprints, and
-real-prefill MoE evidence for both. The GPU agent must commit the compact
-`results/m3-paired-quality/<run_id>` bundle; NFS-only paths or a narrative
-summary are not a complete return. CUDA-graph RCA remains deferred.
+After this boundary is resolved, the quality investigation remains focused on
+a trustworthy cyankiwi baseline followed by the portable W4A8 comparison.
+Only after the quality issue is resolved cleanly do we resume the separately
+tracked CUDA-graph issue.

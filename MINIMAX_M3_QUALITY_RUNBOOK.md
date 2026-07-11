@@ -15,28 +15,36 @@ not bundle a speculative loader fix into this comparison.
 
 This run does not investigate CUDA graphs, re-quantize, or delete checkpoints.
 
-## Current follow-up: reference without parameter fingerprinting
+## Current follow-up: sequential reference validation
 
-This section supersedes the paired command below for the next allocation.
-Run **only cyankiwi** with one variable changed from failed run
-`20260711-114831`:
+This section supersedes the paired command below for the next allocation. Run
+**only cyankiwi** from the handed-off code commit. The previous reference run
+`20260711-122317-reference-no-fingerprint` proved that disabling parameter
+fingerprinting removes the earlier CUDA assertion, but its two-prompt offline
+batch produced one repeated response and one empty response.
+
+The new harness changes the MiniMax-M3 quality requests from one two-prompt
+batch to two sequential one-prompt `generate` calls. It also records generated
+token IDs, `finish_reason`, and `stop_reason` per case and rejects repeated
+multiword phrases. Keep the serving envelope and diagnostics identical to the
+last run:
 
 ```text
-M3_PARAM_FINGERPRINT: 1 -> 0
+M3_LOAD_AUDIT=1
+M3_MOE_PROBE=1
+M3_PARAM_FINGERPRINT=0
 ```
 
-Keep `M3_LOAD_AUDIT=1` and `M3_MOE_PROBE=1`. The failed run produced a
-device assertion after the fingerprint hook sampled loaded CUDA parameters;
-compressed-tensors later reported the poisoned stream at `k_scale.item()`.
-This A/B determines whether the reference baseline is healthy when the
-suspected perturbation is absent. Do not run the candidate and do not repair
-the sampler in the same trial.
+Do not run the portable candidate in this allocation, even if the reference
+passes. Do not change prompts, chat templates, sampling settings, diagnostics,
+or serving topology. This is a one-boundary test of offline batching.
 
-After the normal preflight and on one clean eight-GPU node:
+After normal preflight, use the same reference-only command from the previous
+run, changing only the run identity:
 
 ```bash
 set -o pipefail
-RUN_ID="$(date +%Y%m%d-%H%M%S)-reference-no-fingerprint"
+RUN_ID="$(date +%Y%m%d-%H%M%S)-reference-sequential"
 RUN_DIR="/mnt/nfs/hoangduy/logs/m3-paired-quality/$RUN_ID"
 CASE_DIR="$RUN_DIR/cyankiwi_reference"
 EVIDENCE_DIR="$PWD/results/m3-paired-quality/$RUN_ID"
@@ -46,7 +54,6 @@ CONFIG=pipeline/configs/minimax_m3_full_calib.yaml
 
 mkdir -p "$CASE_DIR" "$EVIDENCE_DIR/cyankiwi_reference"
 ln -s "$(realpath "$REFERENCE_CKPT")" "$CASE_DIR/checkpoint"
-
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD"
@@ -57,7 +64,7 @@ export VLLM_DISABLE_SHARED_EXPERTS_STREAM=1
 export M3_LOAD_AUDIT=1
 export M3_MOE_PROBE=1
 export M3_PARAM_FINGERPRINT=0
-export M3_QUALITY_CASE=cyankiwi_reference_no_fingerprint
+export M3_QUALITY_CASE=cyankiwi_reference_sequential
 
 python pipeline/slurm/patch_vllm_m3_serve.py >"$RUN_DIR/patch_status.txt" 2>&1
 FORCE=0 MIN_FREE_GIB=70 bash pipeline/slurm/free_gpus.sh
@@ -83,36 +90,27 @@ date -Is >"$CASE_DIR/finished_at.txt"
 echo "$RC" >"$CASE_DIR/return_code.txt"
 ```
 
-Stop after this reference run regardless of outcome. A pass confirms only that
-fingerprinting perturbed the previous reference run; it does not authorize
-running or fixing the candidate yet.
+### Required return for this run
 
-### Required follow-up return
+Commit `results/m3-paired-quality/<run_id>/` with the same provenance,
+software, topology, hashes, patch status, loader audit, MoE probe, notable log,
+and external-artifact index required below. In addition:
 
-Commit `results/m3-paired-quality/<run_id>/` containing:
+- preserve the unmodified `serve_report.json`;
+- verify both quality cases contain `text`, `token_ids`, `finish_reason`, and
+  `stop_reason` (record a deviation if the installed vLLM omits a field);
+- state how many `llm.generate` calls were observed or inferred from the log;
+- classify the result as `reference_sequential_pass`,
+  `reference_sequential_quality_fail`, or `inconclusive_runtime_failure`;
+- explicitly compare each output and termination reason with run
+  `20260711-122317-reference-no-fingerprint`;
+- preserve the first traceback and all scheduler/cleanup anomalies;
+- record every retry and deviation rather than silently changing a variable.
 
-- `run_manifest.json`: code commit, exact command, start/end, host/job/GPU
-  provenance, checkpoint config/index hashes, all diagnostic flags (including
-  fingerprint `0`), return code, deviations, and retry history;
-- unmodified `serve_report.json` with both raw quality outputs if generation
-  was reached;
-- `loader_audit.txt`, `moe_probe.txt`, and the last 300 notable
-  warning/error/diagnostic lines;
-- software versions, `nvidia-smi` inventory/topology, and patch status;
-- `artifact_index.json` with absolute paths, sizes, SHA-256 hashes, and
-  retention for the full serve and operator logs;
-- `comparison.json` with one of:
-  `reference_pass_without_fingerprint`,
-  `reference_failed_without_fingerprint`, or
-  `inconclusive_missing_evidence`.
-
-`parameter_fingerprints.jsonl` must be empty or absent by design. Loader
-audit and MoE evidence are still required when their respective stage is
-reached. Preserve the earliest traceback around the first CUDA error rather
-than only the later `empty_cache()` report.
-
-Before pushing, run the existing size/secret checks and name both the result
-commit and executed code commit in the return message.
+If sequential reference quality passes, stop and return evidence so the primary
+agent can authorize a paired run. If it fails, stop and propose whether the
+next single boundary should be canonical HTTP chat serving or diagnostics-off
+offline serving. Do not investigate CUDA graphs in this run.
 
 ## Comparison contract
 

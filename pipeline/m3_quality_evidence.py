@@ -67,6 +67,22 @@ def _has_dominant_token(text: str) -> bool:
     return count >= 4 and count / len(tokens) >= 0.6
 
 
+def _has_repeated_phrase(text: str) -> bool:
+    """Detect a repeated multiword phrase despite small corruptions between copies."""
+
+    tokens = re.findall(r"[\w']+", text.casefold(), flags=re.UNICODE)
+    if len(tokens) < 12:
+        return False
+    for size in range(4, min(8, len(tokens) // 3) + 1):
+        phrases = Counter(
+            tuple(tokens[start : start + size])
+            for start in range(len(tokens) - size + 1)
+        )
+        if any(count >= 3 for count in phrases.values()):
+            return True
+    return False
+
+
 def assess_output(text: str, expected_any: tuple[str, ...]) -> dict[str, Any]:
     """Assess one raw generation without discarding evidence."""
 
@@ -77,6 +93,8 @@ def assess_output(text: str, expected_any: tuple[str, ...]) -> dict[str, Any]:
         reasons.append("dominant_token")
     if _has_consecutive_character_chunk(raw):
         reasons.append("character_chunk")
+    if _has_repeated_phrase(raw):
+        reasons.append("repeated_phrase")
     expected_match = any(
         re.search(
             rf"(?<!\w){re.escape(expected.casefold())}(?!\w)",

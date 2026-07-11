@@ -41,6 +41,20 @@ def test_assess_output_rejects_token_repetition():
     assert "dominant_token" in result["repetition_reasons"]
 
 
+def test_assess_output_rejects_repeated_multiword_phrase():
+    result = assess_output(
+        "Paris.\nThe The capital of France is Paris.\n"
+        "The The capital ofτhe capital of France is Paris.\n"
+        "The The τhe capital of France is Paris.\n"
+        "The The capital of France is Paris.\n",
+        ("paris",),
+    )
+
+    assert result["passed"] is False
+    assert result["repetitive"] is True
+    assert "repeated_phrase" in result["repetition_reasons"]
+
+
 def test_assess_output_rejects_repeated_digit_output():
     result = assess_output("444444444444", ("4", "four"))
 

@@ -12,6 +12,7 @@ import yaml
 
 from pipeline.m3_routed_diagnostics import (
     EXPECTED_ARMS,
+    VLLM_ROUTER_IGNORE,
     VLLM_SHARED_EXPERT_IGNORE,
     prepare_checkpoint_overlay,
 )
@@ -86,6 +87,33 @@ def test_repair_overlay_adds_vllm_shared_ignore_once_without_mutating_source():
         assert "re:.*mlp[.]shared_experts[.].*" in ignore
         assert ignore.count(VLLM_SHARED_EXPERT_IGNORE) == 1
         assert (second / "model-00001-of-00001.safetensors").is_symlink()
+
+
+def test_router_overlay_adds_vllm_runtime_alias_once():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        source = root / "source"
+        first = root / "first"
+        second = root / "second"
+        _checkpoint(source, with_activations=True)
+
+        prepare_checkpoint_overlay(
+            source,
+            first,
+            disable_activations=False,
+            add_vllm_router_ignore=True,
+        )
+        prepare_checkpoint_overlay(
+            first,
+            second,
+            disable_activations=False,
+            add_vllm_router_ignore=True,
+        )
+
+        ignore = json.loads((second / "config.json").read_text())[
+            "quantization_config"
+        ]["ignore"]
+        assert ignore.count(VLLM_ROUTER_IGNORE) == 1
 
 
 def test_minimax_recipes_persist_both_shared_expert_names():

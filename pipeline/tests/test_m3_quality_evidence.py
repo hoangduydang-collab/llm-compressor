@@ -194,6 +194,27 @@ WARNING M3_MOE_PROBE# {"probe_index":1,"tokens":168,"shared_present":true,"share
     assert evidence["shared_expert_bad"] is False
 
 
+def test_extract_log_evidence_parses_structured_layer_boundaries():
+    log = '''
+WARNING M3_LAYER_BOUNDARY# {"rank":0,"layer":8,"boundary":"moe_input","tokens":168,"norm":176844.0,"abs_max":910.0,"finite_fraction":1.0,"sample_sha256":"digest"}
+'''
+
+    evidence = extract_log_evidence(log)
+
+    assert evidence["layer_boundary_records"] == [
+        {
+            "rank": 0,
+            "layer": 8,
+            "boundary": "moe_input",
+            "tokens": 168,
+            "norm": 176844.0,
+            "abs_max": 910.0,
+            "finite_fraction": 1.0,
+            "sample_sha256": "digest",
+        }
+    ]
+
+
 def test_bundle_copies_provenance_and_indexes_full_logs():
     healthy_log = """
 M3_PARAM_FINGERPRINT# {"category":"lm_head","finite_fraction":1.0,"sample_abs_max":2.0}

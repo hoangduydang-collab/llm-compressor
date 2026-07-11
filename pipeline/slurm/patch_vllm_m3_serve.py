@@ -63,6 +63,7 @@ _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
 _CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in _select_experts"
 _PROBE_MARK = "llmc M3 MoE quality probe"
 _LOAD_AUDIT_MARK = "llmc M3 load audit"
+_BOUNDARY_MARK = "llmc M3 layer boundary probe"
 
 # Optional, env-gated (M3_MOE_PROBE=1) diagnostic appended to the vLLM M3 model
 # module so it runs inside the spawned Worker_TP* processes (in-process
@@ -232,6 +233,159 @@ except Exception:
 # === end {mark} ===
 '''.format(mark=_PROBE_MARK)
 
+_BOUNDARY_BLOCK = r'''
+
+# === llmc M3 layer boundary probe (quality root-cause localization) ===
+try:
+    import os as _llmc_boundary_os
+    if _llmc_boundary_os.environ.get("M3_LAYER_BOUNDARY") == "1":
+        import hashlib as _llmc_boundary_hashlib
+        import json as _llmc_boundary_json
+
+        import torch as _llmc_boundary_torch
+        from vllm.logger import init_logger as _llmc_boundary_init_logger
+
+        _llmc_boundary_log = _llmc_boundary_init_logger("llmc.m3_layer_boundary")
+        _llmc_boundary_layers = {
+            int(_item)
+            for _item in _llmc_boundary_os.environ.get(
+                "M3_LAYER_BOUNDARY_LAYERS", "3,4,5,6,7,8,9"
+            ).split(",")
+            if _item.strip().isdigit()
+        }
+        _llmc_boundary_max_tokens = int(
+            _llmc_boundary_os.environ.get("M3_LAYER_BOUNDARY_MAX_TOKENS", "256")
+        )
+        _llmc_boundary_state = {"seen": set()}
+
+        def _llmc_boundary_rank():
+            try:
+                _dist = _llmc_boundary_torch.distributed
+                if _dist.is_available() and _dist.is_initialized():
+                    return int(_dist.get_rank())
+            except Exception:
+                pass
+            return int(_llmc_boundary_os.environ.get("RANK", "-1"))
+
+        def _llmc_boundary_emit(_tensor, _layer, _boundary):
+            if _tensor is None or _layer not in _llmc_boundary_layers:
+                return
+            if _llmc_boundary_torch.cuda.is_current_stream_capturing():
+                return
+            _flat = _tensor.detach().reshape(-1)
+            _tokens = int(_tensor.shape[0]) if _tensor.ndim else 1
+            if not (2 <= _tokens <= _llmc_boundary_max_tokens):
+                return
+            _rank = _llmc_boundary_rank()
+            _key = (_rank, int(_layer), _boundary)
+            if _key in _llmc_boundary_state["seen"]:
+                return
+            _norm = float(_flat.float().norm().item())
+            if not _norm > 1e-6:
+                return
+            _count = min(256, int(_flat.numel()))
+            _stride = max(1, int(_flat.numel()) // max(1, _count))
+            _sample = _flat[::_stride][:_count].detach().cpu().contiguous()
+            _sample_float = _sample.float()
+            _finite = _llmc_boundary_torch.isfinite(_sample_float)
+            _record = {
+                "rank": _rank,
+                "layer": int(_layer),
+                "boundary": _boundary,
+                "tokens": _tokens,
+                "shape": list(_tensor.shape),
+                "dtype": str(_tensor.dtype),
+                "norm": _norm,
+                "finite_fraction": float(_finite.float().mean().item()),
+                "abs_max": float(_sample_float[_finite].abs().max().item())
+                if bool(_finite.any().item()) else -1.0,
+                "sample_sha256": _llmc_boundary_hashlib.sha256(
+                    _sample.view(_llmc_boundary_torch.uint8).numpy().tobytes()
+                ).hexdigest(),
+            }
+            _llmc_boundary_state["seen"].add(_key)
+            _llmc_boundary_log.warning(
+                "M3_LAYER_BOUNDARY# %s",
+                _llmc_boundary_json.dumps(_record, sort_keys=True),
+            )
+
+        def _llmc_boundary_layer_id(_self):
+            return int(getattr(_self, "layer_id", getattr(_self, "_llmc_layer_id", -1)))
+
+        def _llmc_boundary_wrap_init(_cls):
+            if getattr(_cls, "_llmc_boundary_init_wrapped", False):
+                return
+            _orig_init = _cls.__init__
+
+            def _init(self, *args, **kwargs):
+                _layer_id = kwargs.get("layer_id")
+                if _layer_id is None and len(args) > 1:
+                    _layer_id = args[1]
+                _orig_init(self, *args, **kwargs)
+                if _layer_id is not None:
+                    self._llmc_layer_id = int(_layer_id)
+
+            _cls.__init__ = _init
+            _cls._llmc_boundary_init_wrapped = True
+
+        def _llmc_boundary_wrap_forward(_cls, _kind):
+            if getattr(_cls, "_llmc_boundary_forward_wrapped", False):
+                return
+            _orig_forward = _cls.forward
+
+            def _forward(self, *args, **kwargs):
+                _layer = _llmc_boundary_layer_id(self)
+                if _kind == "decoder":
+                    _hidden = kwargs.get("hidden_states", args[1] if len(args) > 1 else None)
+                    _residual = kwargs.get("residual", args[2] if len(args) > 2 else None)
+                    _llmc_boundary_emit(_hidden, _layer, "decoder_input_hidden")
+                    _llmc_boundary_emit(_residual, _layer, "decoder_input_residual")
+                elif _kind == "attention":
+                    _hidden = kwargs.get("hidden_states", args[1] if len(args) > 1 else None)
+                    _llmc_boundary_emit(_hidden, _layer, "attention_input")
+                else:
+                    _hidden = kwargs.get("hidden_states", args[0] if args else None)
+                    _llmc_boundary_emit(_hidden, _layer, "moe_input")
+                _out = _orig_forward(self, *args, **kwargs)
+                if _kind == "decoder":
+                    _llmc_boundary_emit(_out[0], _layer, "decoder_output_hidden")
+                    _llmc_boundary_emit(_out[1], _layer, "decoder_output_residual")
+                elif _kind == "attention":
+                    _llmc_boundary_emit(_out, _layer, "attention_output")
+                else:
+                    _llmc_boundary_emit(_out, _layer, "moe_output")
+                return _out
+
+            _cls.forward = _forward
+            _cls._llmc_boundary_forward_wrapped = True
+
+        _llmc_decoder_cls = globals().get("MiniMaxM3DecoderLayer")
+        _llmc_moe_cls = globals().get("MiniMaxM3MoE")
+        _llmc_attention_classes = [
+            _cls for _cls in (
+                globals().get("MiniMaxM3Attention"),
+                globals().get("MiniMaxM3SparseAttention"),
+            ) if _cls is not None
+        ]
+        if _llmc_decoder_cls is None or _llmc_moe_cls is None or not _llmc_attention_classes:
+            raise RuntimeError("MiniMax-M3 layer-boundary classes not found")
+        _llmc_boundary_wrap_forward(_llmc_decoder_cls, "decoder")
+        _llmc_boundary_wrap_init(_llmc_moe_cls)
+        _llmc_boundary_wrap_forward(_llmc_moe_cls, "moe")
+        for _llmc_attention_cls in _llmc_attention_classes:
+            _llmc_boundary_wrap_init(_llmc_attention_cls)
+            _llmc_boundary_wrap_forward(_llmc_attention_cls, "attention")
+        _llmc_boundary_log.warning(
+            "llmc M3 layer boundary probe active layers=%s max_tokens=%d",
+            sorted(_llmc_boundary_layers), _llmc_boundary_max_tokens,
+        )
+except Exception:
+    import os as _llmc_boundary_fail_os
+    if _llmc_boundary_fail_os.environ.get("M3_LAYER_BOUNDARY") == "1":
+        raise  # explicit diagnostics must fail loudly
+# === end llmc M3 layer boundary probe ===
+'''
+
 # Optional, env-gated loader audit. The M3 VL top-level model delegates
 # language-model weights to MiniMaxM3Model.load_weights(), whose routed-expert
 # mapping historically recognized only w1/w2/w3. This hook records which
@@ -271,10 +425,13 @@ try:  # gated diagnostic; never break model import
             return (
                 "block_sparse_moe.experts." in _name
                 or "block_sparse_moe.shared_experts." in _name
+                or "block_sparse_moe.gate." in _name
                 or "lm_head" in _name
             )
 
         def _llmc_audit_projection(_name):
+            if "block_sparse_moe.gate." in _name:
+                return "router"
             for _alias, _label in (
                 (".gate_proj.", "gate_proj"),
                 (".up_proj.", "up_proj"),
@@ -301,6 +458,8 @@ try:  # gated diagnostic; never break model import
                 return None, _layer
             if "shared_experts" in _lower:
                 return "shared_expert", _layer
+            if "block_sparse_moe.gate." in _lower:
+                return "moe_router", _layer
             if ".experts." in _lower:
                 return "routed_expert", _layer
             if "indexer" in _lower:
@@ -403,6 +562,7 @@ try:  # gated diagnostic; never break model import
             _expected = {
                 "lm_head",
                 "shared_expert",
+                "moe_router",
                 "routed_expert",
                 "attention_qkv",
                 "msa_indexer",
@@ -550,6 +710,7 @@ try:  # gated diagnostic; never break model import
                         if (
                             "block_sparse_moe.experts." not in _target
                             and "block_sparse_moe.shared_experts." not in _target
+                            and "block_sparse_moe.gate." not in _target
                         ):
                             continue
                         _had_loader = hasattr(_param, "weight_loader")
@@ -833,6 +994,8 @@ _PROBE_START = f'# === {_PROBE_MARK} ('
 _PROBE_END = f'# === end {_PROBE_MARK} ==='
 _LOAD_AUDIT_START = f"# === {_LOAD_AUDIT_MARK} ("
 _LOAD_AUDIT_END = f"# === end {_LOAD_AUDIT_MARK} ==="
+_BOUNDARY_START = f"# === {_BOUNDARY_MARK} ("
+_BOUNDARY_END = f"# === end {_BOUNDARY_MARK} ==="
 
 
 def _patch_append_probe(text: str) -> tuple[str, bool, bool]:
@@ -892,6 +1055,27 @@ def _patch_append_load_audit(text: str) -> tuple[str, bool, bool]:
     return new_text, True, True
 
 
+def _patch_append_boundary(text: str) -> tuple[str, bool, bool]:
+    """(Re)inject the env-gated layer boundary probe into an M3 module."""
+    if "class MiniMaxM3DecoderLayer" not in text or "class MiniMaxM3MoE" not in text:
+        return text, False, False
+    start = text.find(_BOUNDARY_START)
+    if start != -1:
+        end = text.find(_BOUNDARY_END, start)
+        if end != -1:
+            end += len(_BOUNDARY_END)
+            existing = text[start:end]
+            new_block = _BOUNDARY_BLOCK.strip("\n")
+            if existing.strip() == new_block.strip():
+                return text, False, True
+            new_text = (
+                text[:start].rstrip("\n") + "\n\n" + new_block + "\n"
+                + text[end:].lstrip("\n")
+            )
+            return new_text, True, True
+    return text.rstrip("\n") + "\n" + _BOUNDARY_BLOCK, True, True
+
+
 def ensure_m3_moe_probe(*, apply: bool = True) -> str:
     """Inject (idempotently) the env-gated MoE quality probe into site-packages.
 
@@ -944,12 +1128,38 @@ def ensure_m3_load_audit(*, apply: bool = True) -> str:
     return "; ".join(statuses)
 
 
+def ensure_m3_layer_boundary(*, apply: bool = True) -> str:
+    """Inject the dormant layer-resolved quality probe into site-packages."""
+    vllm_dir = _vllm_dir()
+    files = _find_m3_moe_model_files(vllm_dir)
+    if not files:
+        return "skipped (no 'class MiniMaxM3MoE' found; build layout differs)"
+    statuses: list[str] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        new_text, changed, found = _patch_append_boundary(text)
+        if not found:
+            statuses.append(f"{path.name}: boundary classes missing")
+        elif changed and apply:
+            path.write_text(new_text, encoding="utf-8")
+            statuses.append(f"{path.name}: injected")
+        elif changed:
+            statuses.append(f"{path.name}: NOT injected")
+        else:
+            statuses.append(f"{path.name}: already injected")
+    return "; ".join(statuses)
+
+
 def ensure_m3_quality_diagnostics(*, apply: bool = True) -> str:
     """Install all dormant MiniMax-M3 quality diagnostics."""
 
     probe = ensure_m3_moe_probe(apply=apply)
     audit = ensure_m3_load_audit(apply=apply)
-    return f"moe_probe=[{probe}]; load_audit_and_fingerprint=[{audit}]"
+    boundary = ensure_m3_layer_boundary(apply=apply)
+    return (
+        f"moe_probe=[{probe}]; load_audit_and_fingerprint=[{audit}]; "
+        f"layer_boundary=[{boundary}]"
+    )
 
 
 def _apply(path: Path, patch_fn, check_only: bool, *, fatal: bool = True) -> bool:

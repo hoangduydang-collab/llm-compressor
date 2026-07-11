@@ -195,6 +195,7 @@ def extract_log_evidence(log_text: str) -> dict[str, Any]:
     summaries: list[dict[str, Any]] = []
     loader_lines: list[str] = []
     probe_lines: list[str] = []
+    boundary_records: list[dict[str, Any]] = []
     probe_records: list[dict[str, Any]] = []
     shared_bad = False
     for line in log_text.splitlines():
@@ -234,6 +235,9 @@ def extract_log_evidence(log_text: str) -> dict[str, Any]:
                 except ValueError:
                     norm = -1.0
                 shared_bad = shared_bad or 0.0 <= norm <= 1e-3
+        boundary = _prefixed_json(line, "M3_LAYER_BOUNDARY#")
+        if boundary is not None:
+            boundary_records.append(boundary)
     return {
         "fingerprints": fingerprints,
         "fingerprint_summaries": summaries,
@@ -241,6 +245,7 @@ def extract_log_evidence(log_text: str) -> dict[str, Any]:
         "moe_probe_lines": probe_lines,
         "moe_probe_records": probe_records,
         "shared_expert_bad": shared_bad,
+        "layer_boundary_records": boundary_records,
     }
 
 

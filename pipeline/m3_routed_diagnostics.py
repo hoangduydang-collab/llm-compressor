@@ -27,6 +27,7 @@ EXPECTED_ARMS = tuple(ARM_SPECS)
 # indexer into QKV, so neither is a portable byte-equality control.
 UNQUANTIZED_CATEGORIES = {"lm_head", "shared_expert"}
 VLLM_SHARED_EXPERT_IGNORE = "re:.*block_sparse_moe[.]shared_experts[.].*"
+VLLM_ROUTER_IGNORE = "re:.*block_sparse_moe[.]gate$"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -260,6 +261,7 @@ def prepare_checkpoint_overlay(
     *,
     disable_activations: bool,
     add_vllm_shared_expert_ignore: bool = False,
+    add_vllm_router_ignore: bool = False,
 ) -> None:
     """Create a metadata-only overlay without mutating the source checkpoint."""
 
@@ -272,15 +274,17 @@ def prepare_checkpoint_overlay(
             continue
         (destination / item.name).symlink_to(item.resolve())
     config = _read_json(source / "config.json")
-    if add_vllm_shared_expert_ignore:
+    if add_vllm_shared_expert_ignore or add_vllm_router_ignore:
         quantization_config = config.get("quantization_config")
         if not isinstance(quantization_config, dict):
             raise ValueError("candidate config has no quantization_config")
         ignore = quantization_config.setdefault("ignore", [])
         if not isinstance(ignore, list):
             raise ValueError("candidate quantization_config.ignore is not a list")
-        if VLLM_SHARED_EXPERT_IGNORE not in ignore:
+        if add_vllm_shared_expert_ignore and VLLM_SHARED_EXPERT_IGNORE not in ignore:
             ignore.append(VLLM_SHARED_EXPERT_IGNORE)
+        if add_vllm_router_ignore and VLLM_ROUTER_IGNORE not in ignore:
+            ignore.append(VLLM_ROUTER_IGNORE)
     if disable_activations:
         groups = config.get("quantization_config", {}).get("config_groups", {})
         if not groups:
@@ -462,6 +466,7 @@ def _build_parser() -> argparse.ArgumentParser:
     overlay.add_argument("--destination", type=Path, required=True)
     overlay.add_argument("--disable-activations", action="store_true")
     overlay.add_argument("--add-vllm-shared-expert-ignore", action="store_true")
+    overlay.add_argument("--add-vllm-router-ignore", action="store_true")
     return parser
 
 
@@ -486,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
             args.destination,
             disable_activations=args.disable_activations,
             add_vllm_shared_expert_ignore=args.add_vllm_shared_expert_ignore,
+            add_vllm_router_ignore=args.add_vllm_router_ignore,
         )
     return 0
 

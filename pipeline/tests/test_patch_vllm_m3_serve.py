@@ -1,6 +1,7 @@
 """CPU-only tests for persistent MiniMax-M3 vLLM diagnostics."""
 
 from pipeline.slurm.patch_vllm_m3_serve import (
+    _BOUNDARY_BLOCK,
     _LOAD_AUDIT_BLOCK,
     _PROBE_BLOCK,
     _patch_append_load_audit,
@@ -106,3 +107,30 @@ def test_explicit_diagnostic_setup_errors_are_not_swallowed():
 
     assert marker in _LOAD_AUDIT_BLOCK
     assert marker in _PROBE_BLOCK
+
+
+def test_layer_boundary_probe_is_layer_resolved_bounded_and_capture_safe():
+    for boundary in (
+        "decoder_input_hidden",
+        "decoder_input_residual",
+        "attention_input",
+        "attention_output",
+        "moe_input",
+        "moe_output",
+        "decoder_output_hidden",
+        "decoder_output_residual",
+    ):
+        assert boundary in _BOUNDARY_BLOCK
+    assert 'M3_LAYER_BOUNDARY_LAYERS' in _BOUNDARY_BLOCK
+    assert '"layer"' in _BOUNDARY_BLOCK
+    assert '"sample_sha256"' in _BOUNDARY_BLOCK
+    assert '"finite_fraction"' in _BOUNDARY_BLOCK
+    assert "is_current_stream_capturing" in _BOUNDARY_BLOCK
+    assert "layer_id" in _BOUNDARY_BLOCK
+    assert "M3_LAYER_BOUNDARY# %s" in _BOUNDARY_BLOCK
+    compile(_BOUNDARY_BLOCK, "<m3-layer-boundary>", "exec")
+
+
+def test_router_is_included_in_load_and_parameter_audits():
+    assert "block_sparse_moe.gate" in _LOAD_AUDIT_BLOCK
+    assert '"moe_router"' in _LOAD_AUDIT_BLOCK

@@ -78,7 +78,12 @@ def assess_output(text: str, expected_any: tuple[str, ...]) -> dict[str, Any]:
     if _has_consecutive_character_chunk(raw):
         reasons.append("character_chunk")
     expected_match = any(
-        expected.casefold() in normalized for expected in expected_any
+        re.search(
+            rf"(?<!\w){re.escape(expected.casefold())}(?!\w)",
+            normalized,
+        )
+        is not None
+        for expected in expected_any
     )
     nonempty = bool(normalized)
     return {

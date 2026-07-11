@@ -187,7 +187,9 @@ try:  # gated diagnostic; never break model import
                 _llmc_probe_moe_cls.__name__, _llmc_probe_recompute, _llmc_probe_max,
             )
 except Exception:
-    pass
+    import os as _llmc_probe_fail_os
+    if _llmc_probe_fail_os.environ.get("M3_MOE_PROBE") == "1":
+        raise  # explicit diagnostics must fail loudly
 # === end {mark} ===
 '''.format(mark=_PROBE_MARK)
 
@@ -606,7 +608,12 @@ try:  # gated diagnostic; never break model import
                 "(reports checkpoint aliases and unsupported routed tensors)"
             )
 except Exception:
-    pass
+    import os as _llmc_audit_fail_os
+    if (
+        _llmc_audit_fail_os.environ.get("M3_LOAD_AUDIT") == "1"
+        or _llmc_audit_fail_os.environ.get("M3_PARAM_FINGERPRINT") == "1"
+    ):
+        raise  # explicit diagnostics must fail loudly
 # === end llmc M3 load audit ===
 '''
 

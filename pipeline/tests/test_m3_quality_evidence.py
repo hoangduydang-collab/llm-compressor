@@ -40,11 +40,17 @@ def test_assess_output_rejects_token_repetition():
     assert "dominant_token" in result["repetition_reasons"]
 
 
-def test_assess_output_rejects_repeated_digit_that_matches_expected_answer():
+def test_assess_output_rejects_repeated_digit_output():
     result = assess_output("444444444444", ("4", "four"))
 
-    assert result["expected_match"] is True
     assert result["repetitive"] is True
+    assert result["passed"] is False
+
+
+def test_assess_output_does_not_accept_expected_digit_inside_wrong_number():
+    result = assess_output("14", ("4", "four"))
+
+    assert result["expected_match"] is False
     assert result["passed"] is False
 
 

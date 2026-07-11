@@ -2,6 +2,7 @@
 
 from pipeline.slurm.patch_vllm_m3_serve import (
     _LOAD_AUDIT_BLOCK,
+    _PROBE_BLOCK,
     _patch_append_load_audit,
 )
 
@@ -73,3 +74,10 @@ def test_load_audit_block_contains_bounded_parameter_fingerprints():
     assert 'M3_PARAM_FINGERPRINT_SUMMARY#' in _LOAD_AUDIT_BLOCK
     assert '_llmc_fp_max_samples = 256' in _LOAD_AUDIT_BLOCK
     compile(_LOAD_AUDIT_BLOCK, "<m3-load-audit>", "exec")
+
+
+def test_explicit_diagnostic_setup_errors_are_not_swallowed():
+    marker = "raise  # explicit diagnostics must fail loudly"
+
+    assert marker in _LOAD_AUDIT_BLOCK
+    assert marker in _PROBE_BLOCK

@@ -1,24 +1,25 @@
 # Bugs and fixes (llm-compressor pipeline)
 
-## Active priority: MiniMax-M3 routed-expert diagnostics before CUDA-graph RCA (2026-07-11)
+## Active priority: repair MiniMax-M3 shared-expert loading before CUDA-graph RCA (2026-07-11)
 
-Canonical matrix `20260711-135100-canonical-chat` validated the baseline:
-cyankiwi answers both cases correctly through offline and HTTP serving, while
-the portable W4A8 candidate produces the same garbage through both interfaces.
-This rules out raw prompting, batching, HTTP integration, diagnostics, CUDA
-graphs, and tokenizer framing for the candidate failure.
+Canonical matrix `20260711-135100-canonical-chat` proved that cyankiwi passes
+offline and HTTP while the candidate fails identically through both interfaces.
+Routed matrix `20260711-144120-routed-diagnostics` then localized the failure.
+Both candidate schemes see 171 shared-expert checkpoint tensors but leave exactly
+171 unmatched on every rank. vLLM constructs zero packed shared parameters; all
+48 candidate probes have `shared_norm=0` and `dropped=true`. The reference loads
+BF16 shared weights and all 48 shared outputs are nonzero. Candidate W4A8 and
+W4A16 first-MoE inputs match on all ranks, while LM-head hashes match reference.
 
-The candidate keeps attention, MSA indexers, shared experts, dense layers 0–2,
-vision, and `lm_head` unquantized. Routed experts are the primary quantized
-boundary. Active next step: the three-node `srun` matrix in
-`MINIMAX_M3_QUALITY_RUNBOOK.md` compares cyankiwi W4A16, candidate W4A8, and a
-config-only candidate W4A16 overlay using exact shared/LM-head fingerprints and rank-aligned first-MoE functional
-digests. Attention fingerprints are observational because the reference stores
-attention W4A16 while the candidate keeps it BF16; exact first-MoE input equality
-is required only between the two candidate arms.
+Root cause: the checkpoint correctly stores BF16 shared experts and persists the
+Transformers ignore path `mlp.shared_experts`, but vLLM constructs them as
+`block_sparse_moe.shared_experts`. Compressed Tensors therefore applies the
+quantized scheme at runtime and creates packed placeholders that cannot accept
+the BF16 tensors. Active next step: the config-only alias repair and three-node
+`srun` validation in `MINIMAX_M3_QUALITY_RUNBOOK.md`.
 
-Do not re-quantize, apply a loader fix, or resume CUDA-graph RCA until this
-matrix distinguishes activation handling from routed-expert weights/loading.
+Do not re-quantize, rewrite tensor shards, or resume CUDA-graph RCA until W4A8
+passes canonical offline and HTTP quality with healthy shared-expert evidence.
 
 ## HTTP async cudagraph IMA — RCA matrix protocol (cyankiwi, 2026-07-10)
 

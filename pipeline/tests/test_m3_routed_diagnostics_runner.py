@@ -8,7 +8,14 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from pipeline.m3_routed_diagnostics import EXPECTED_ARMS, prepare_checkpoint_overlay
+import yaml
+
+from pipeline.m3_routed_diagnostics import (
+    EXPECTED_ARMS,
+    VLLM_SHARED_EXPERT_IGNORE,
+    prepare_checkpoint_overlay,
+)
+from pipeline.verify_quant_checkpoint import _EXPECTED_IGNORE_SUBSTR
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER = REPO_ROOT / "pipeline/slurm/test_m3_routed_diagnostics_arm.sh"
@@ -22,6 +29,7 @@ def _checkpoint(path: Path, *, with_activations: bool) -> None:
             {
                 "model_type": "minimax_m3_vl",
                 "quantization_config": {
+                    "ignore": ["re:.*mlp[.]shared_experts[.].*"],
                     "config_groups": {
                         "group_0": {"input_activations": activation}
                     }
@@ -48,6 +56,52 @@ def test_prepare_w4a16_overlay_does_not_mutate_source_checkpoint():
         group = config["quantization_config"]["config_groups"]["group_0"]
         assert group["input_activations"] is None
         assert (overlay / "model-00001-of-00001.safetensors").is_symlink()
+
+
+def test_repair_overlay_adds_vllm_shared_ignore_once_without_mutating_source():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        source = root / "source"
+        first = root / "first"
+        second = root / "second"
+        _checkpoint(source, with_activations=True)
+        original = (source / "config.json").read_text()
+
+        prepare_checkpoint_overlay(
+            source,
+            first,
+            disable_activations=False,
+            add_vllm_shared_expert_ignore=True,
+        )
+        prepare_checkpoint_overlay(
+            first,
+            second,
+            disable_activations=False,
+            add_vllm_shared_expert_ignore=True,
+        )
+
+        assert (source / "config.json").read_text() == original
+        config = json.loads((second / "config.json").read_text())
+        ignore = config["quantization_config"]["ignore"]
+        assert "re:.*mlp[.]shared_experts[.].*" in ignore
+        assert ignore.count(VLLM_SHARED_EXPERT_IGNORE) == 1
+        assert (second / "model-00001-of-00001.safetensors").is_symlink()
+
+
+def test_minimax_recipes_persist_both_shared_expert_names():
+    transformers_alias = "re:.*mlp[.]shared_experts[.].*"
+    for relative in (
+        "pipeline/configs/minimax_m3.yaml",
+        "pipeline/configs/minimax_m3_full_calib.yaml",
+    ):
+        config = yaml.safe_load((REPO_ROOT / relative).read_text())
+        ignore = config["quantization"]["ignore"]
+        assert transformers_alias in ignore
+        assert VLLM_SHARED_EXPERT_IGNORE in ignore
+
+
+def test_static_checkpoint_verifier_requires_vllm_shared_expert_alias():
+    assert "block_sparse_moe" in _EXPECTED_IGNORE_SUBSTR
 
 
 def test_all_diagnostic_arms_dry_run_with_fixed_envelope():

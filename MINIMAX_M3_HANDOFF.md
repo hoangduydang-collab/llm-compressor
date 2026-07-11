@@ -126,28 +126,22 @@ does not measure semantic quality and is a false positive for these runs.
 4. Only after a quality-positive serve should the user be asked again to delete
    the obsolete 225 GB original checkpoint.
 
-## Active next handoff (2026-07-11, routed-expert diagnostics via srun)
+## Active next handoff (2026-07-11, shared-expert repair via srun)
 
-Run the three-arm matrix in `MINIMAX_M3_QUALITY_RUNBOOK.md` from the handed-off
-commit. `sbatch` is unavailable on the current cluster, so the launcher uses
-three concurrent exclusive `srun` allocations and must not be translated back
-to `sbatch`.
+Pull the handed-off commit and run `MINIMAX_M3_QUALITY_RUNBOOK.md`. The previous
+matrix proved a serve-time naming failure: every candidate rank sees 171 shared
+tensors and leaves all 171 unmatched; both candidate schemes create zero packed
+shared parameters and all 48 probes have zero shared output. Reference shared
+weights and outputs are healthy, candidate first-MoE inputs agree across W4A8
+and W4A16, and LM-head hashes match.
 
-The canonical four-arm result is decisive: cyankiwi passes offline and HTTP,
-while the candidate emits identical garbage through both interfaces. Rendered
-prompts and prompt token counts match, all runs are eager, and diagnostics were
-off. The candidate ignore list keeps attention, indexers, shared experts, dense
-layers 0–2, vision, and `lm_head` unquantized; routed experts are the primary
-quantized boundary.
+The implementation creates an immutable metadata overlay that retains the
+Transformers ignore regex and adds the vLLM-native alias
+`re:.*block_sparse_moe[.]shared_experts[.].*`. No tensor shard is copied,
+rewritten, packed, or re-quantized.
 
-The next matrix runs cyankiwi W4A16, candidate W4A8, and a source-preserving
-candidate W4A16 metadata overlay. Repaired worker diagnostics compare exact `lm_head`/shared-expert controls and
-rank-aligned first-MoE input/routed/shared/combined digests. Exact first-MoE
-input equality is asserted only between the two candidate arms: reference
-attention is W4A16 while candidate attention is BF16, so cross-checkpoint input
-hash equality would be invalid. The result distinguishes activation handling
-from routed INT4 weights/loading in one parallel round.
-
-Use `pipeline/slurm/run_m3_routed_diagnostics_srun.sh`, aggregate and commit the
-compact result, then stop. Do not re-quantize, repair the candidate, enable CUDA
-graphs, or start the second issue.
+Use `pipeline/slurm/run_m3_shared_expert_repair_srun.sh`. It launches repaired
+W4A8 offline diagnostics, repaired W4A16 offline diagnostics, and repaired W4A8
+canonical HTTP concurrently on three exclusive eight-GPU nodes through `srun`.
+Return and commit the complete compact bundle, then stop for primary-agent
+analysis. Do not enable CUDA graphs or begin the second issue in this run.

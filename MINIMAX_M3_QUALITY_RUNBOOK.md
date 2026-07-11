@@ -1,51 +1,46 @@
-# MiniMax-M3 routed-expert diagnostic runbook
+# MiniMax-M3 shared-expert repair validation runbook
 
 ## Objective
 
-Run three canonical offline diagnostic arms concurrently through `srun` to
-identify whether the portable W4A8 candidate fails because of activation
-handling or routed-expert INT4 weights/loading.
+Validate the config-only vLLM shared-expert ignore alias and close the quality
+issue if repaired W4A8 passes canonical offline and HTTP serving. Do not
+re-quantize, rewrite shards, enable CUDA graphs, or investigate the second issue.
 
-The completed canonical matrix `20260711-135100-canonical-chat` established:
+Confirmed input evidence from matrix `20260711-144120-routed-diagnostics`:
 
-- cyankiwi passes offline and HTTP with identical correct answers;
-- the candidate produces identical garbage offline and HTTP;
-- prompts, token counts, eager serving, and software envelopes match;
-- the candidate keeps attention, MSA indexers, shared experts, dense layers
-  0–2, vision, and `lm_head` unquantized, leaving routed experts as the primary
-  quantized boundary.
+- reference passes; candidate W4A8 and W4A16 fail;
+- every candidate rank sees 171 shared tensors and leaves all 171 unmatched;
+- both candidates construct zero packed shared parameters;
+- all 48 candidate probes have zero shared output; all 48 reference probes are
+  nonzero;
+- candidate first-MoE inputs match across W4A8/W4A16 and LM-head hashes match
+  the reference.
 
-This run does not fix the candidate, re-quantize, use HTTP, enable CUDA graphs,
-or investigate the second serving issue.
-
-## Arms and invariants
-
-| Arm | Checkpoint/runtime scheme | Purpose |
-| --- | --- | --- |
-| `reference_w4a16` | cyankiwi W4A16 | Valid diagnostic control |
-| `candidate_w4a8` | portable candidate W4A8 | Reproduce candidate failure with probes |
-| `candidate_w4a16` | same candidate payload, config-only activations disabled | Separate W4A8 activation handling from INT4 weights/loading |
-
-Each arm uses a different exclusive eight-GPU node and the same pushed commit,
-environment, canonical chat prompts, eager TP8+EP, block size 128, FP8 KV cache,
-2048 context, 0.85 utilization, disabled custom all-reduce, and disabled shared
-expert auxiliary stream.
-
-Diagnostics are identical:
+The overlay adds exactly:
 
 ```text
-M3_LOAD_AUDIT=1
-M3_PARAM_FINGERPRINT=1
-M3_PARAM_FINGERPRINT_LAYERS=3,59
-M3_MOE_PROBE=1
-M3_MOE_PROBE_RECOMPUTE=1
-M3_MOE_PROBE_MAX_TOKENS=256
+re:.*block_sparse_moe[.]shared_experts[.].*
 ```
 
-The repaired fingerprint sampler uses bounded strided slices rather than CUDA
-`linspace/index_select`. The MoE probe records rank-aligned first-prefill input,
-routed output, shared output, and combined output norms/digests. The W4A16 arm
-uses a metadata overlay and never modifies candidate files.
+Payload files remain symlinks to the source checkpoint. Only copied
+`config.json` metadata changes.
+
+## Matrix
+
+| Arm | Interface | Purpose |
+| --- | --- | --- |
+| `repaired_w4a8_offline` | canonical offline | Prove shared loading/execution and W4A8 quality |
+| `repaired_w4a16_offline` | canonical offline | Preserve activation-disabled control |
+| `repaired_w4a8_http` | canonical HTTP chat | Prove production-interface quality |
+
+Every arm uses a separate exclusive eight-GPU node, TP8+EP, eager mode, block
+size 128, FP8 KV cache, 2048 context, 0.85 utilization, disabled custom
+all-reduce, disabled shared-expert auxiliary stream, 64 output tokens,
+temperature 0, and thinking disabled. Offline arms enable loader, fingerprint,
+and structured MoE diagnostics. HTTP keeps diagnostics off.
+
+Scheduler partition, constraints, NFS roots, and time may be adapted and must be
+recorded. Do not change a quality variable. Use `srun`; `sbatch` is unavailable.
 
 ## Preflight
 
@@ -54,119 +49,84 @@ git pull --ff-only origin duy-branch
 git status --short
 git rev-parse HEAD
 
-test -x pipeline/slurm/test_m3_routed_diagnostics_arm.sh
-test -x pipeline/slurm/run_m3_routed_diagnostics_srun.sh
-test -f pipeline/m3_routed_diagnostics.py
-
-REFERENCE_CKPT=/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
-CANDIDATE_CKPT=/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/MiniMax-M3-awq-W4AFP8/20260709-064104/checkpoint-vllm-w123
-MODEL_ID=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
-
-test -f "$REFERENCE_CKPT/config.json"
-test -f "$REFERENCE_CKPT/model.safetensors.index.json"
-test -f "$CANDIDATE_CKPT/config.json"
-test -f "$CANDIDATE_CKPT/model.safetensors.index.json"
-test -f "$MODEL_ID/config.json"
-
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD"
 
 pytest -q \
-  pipeline/tests/test_patch_vllm_m3_serve.py \
-  pipeline/tests/test_m3_quality_evidence.py \
-  pipeline/tests/test_m3_routed_diagnostics.py \
+  pipeline/tests/test_m3_shared_expert_repair.py \
+  pipeline/tests/test_m3_shared_expert_repair_runner.py \
+  pipeline/tests/test_run_m3_shared_expert_repair_srun.py \
   pipeline/tests/test_m3_routed_diagnostics_runner.py \
-  pipeline/tests/test_run_m3_routed_diagnostics_srun.py \
-  pipeline/tests/test_serve_verify_quality.py
+  pipeline/tests/test_m3_quality_evidence.py \
+  pipeline/tests/test_patch_vllm_m3_serve.py
 
-MATRIX_ID=preflight-routed-diag DRY_RUN=1 \
-  bash pipeline/slurm/run_m3_routed_diagnostics_srun.sh
+MATRIX_ID=preflight-shared-repair DRY_RUN=1 \
+  bash pipeline/slurm/run_m3_shared_expert_repair_srun.sh
 ```
 
-The worktree must be clean. Dry-run output must contain exactly three `srun`
-commands, each with `--exclusive --nodes=1 --ntasks=1 --gres=gpu:8`, and no
-`sbatch` command.
+The worktree must be clean. Dry-run output must contain exactly three commands,
+each with `srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8`, and no `sbatch`.
 
-## Live command
-
-Run from a Slurm context allowed to start three concurrent `srun` allocations:
+## Live run
 
 ```bash
-MATRIX_ID="$(date +%Y%m%d-%H%M%S)-routed-diagnostics"
+MATRIX_ID="$(date +%Y%m%d-%H%M%S)-shared-repair"
 MATRIX_ID="$MATRIX_ID" \
 TIME_LIMIT=02:00:00 \
-bash pipeline/slurm/run_m3_routed_diagnostics_srun.sh \
-  2>&1 | tee "/mnt/nfs/hoangduy/logs/m3-routed-diagnostics-$MATRIX_ID-launcher.log"
+SRUN_ARGS="--partition=compute" \
+bash pipeline/slurm/run_m3_shared_expert_repair_srun.sh \
+  2>&1 | tee "/mnt/nfs/hoangduy/logs/m3-shared-repair-$MATRIX_ID-launcher.log"
 ```
 
-If required, pass a recorded scheduler override such as
-`SRUN_ARGS="--partition=h100"`. The executor may adapt reservation mechanics,
-node constraints, time, and NFS roots, but must preserve separate nodes and all
-quality/diagnostic variables. Do not translate this run back to `sbatch`.
+The launcher patches/checks the shared vLLM environment once, launches all
+three allocations concurrently, waits for every sibling, rebundles after logs
+close, and aggregates even if an arm fails. Runtime troubleshooting and
+scheduler adaptation are allowed when recorded; do not implement another model
+repair during this run.
 
-The launcher updates and checks the shared vLLM site-packages once before any
-workers spawn, starts all three `srun` commands in parallel, waits for every arm,
-rebundles after logs close, and writes the aggregate comparison even when an arm
-fails.
-
-## Required evidence
+## Required evidence and verdicts
 
 ```text
-results/m3-routed-diagnostics/<matrix_id>/
+results/m3-shared-expert-repair/<matrix_id>/
 ├── comparison.json
-├── reference_w4a16/
-├── candidate_w4a8/
-└── candidate_w4a16/
+├── repaired_w4a8_offline/
+├── repaired_w4a16_offline/
+└── repaired_w4a8_http/
 ```
 
-Each arm must contain:
+Each manifest must record source/overlay config hashes, source index hash,
+overlay alias, interface/scheme, job/node, code/environment, fixed envelope,
+return code, deviations, retries, and retained full-log hashes. Preserve raw
+offline reports and HTTP requests/responses. Offline evidence must include all
+rank loader summaries, BF16 shared fingerprints, and structured MoE probes.
 
-- `arm_manifest.json` with code/checkpoint hashes, node/job, scheme, diagnostics,
-  deviations, retries, and return code;
-- unmodified `serve_report.json` and canonical raw outputs;
-- `parameter_fingerprints.jsonl` plus summaries;
-- `moe_probe_records.jsonl` with records from all eight ranks;
-- `loader_audit.txt`, `notable_log_excerpt.txt`, patch status, software/GPU
-  provenance, and full-log artifact hashes/retention.
+Interpret only the aggregate classifier:
 
-Interpret aggregate verdicts as follows:
-
-- `w4a8_activation_boundary`: candidate W4A16 recovers while W4A8 fails;
-- `routed_weight_or_loader_boundary`: both candidate schemes fail after the two
-  candidate arms match at their first-MoE inputs;
-- `unquantized_load_boundary`: `lm_head` or shared-expert fingerprints differ
-  between reference and candidate;
-- `overlay_pre_moe_divergence`: the candidate W4A8 and config-only W4A16 arms
-  do not enter their first routed expert identically, invalidating the overlay
-  as a one-variable control;
-- `inconclusive_missing_diagnostics`: a required loader/fingerprint/probe signal
-  is absent;
-- `invalid_reference`, `infrastructure_failure`, or `inconclusive_missing_arms`:
-  do not diagnose the candidate past that boundary.
-
-Do not treat different routed-expert hashes between cyankiwi and the candidate as
-a defect by themselves: their INT4 schemes differ. Only `lm_head` and shared-expert fingerprints are exact cross-checkpoint
-controls. Reference attention is W4A16 while candidate attention is BF16, and
-the MSA indexer may be fused into QKV, so neither is required to hash equally.
-Likewise, reference/candidate first-MoE input digests may differ legitimately;
-exact first-input equality is required only between candidate W4A8 and its W4A16
-overlay. The decisive signals are that candidate-pair control, routed/combined
-norms, and W4A16 recovery.
+- `quality_repair_pass`: both repaired W4A8 interfaces and W4A16 pass; all
+  offline shared loader/fingerprint/probe gates are healthy;
+- `shared_ignore_repair_failed`: shared tensors remain unmatched, runtime shared
+  parameters remain packed/zero, or any shared output is zero/dropped;
+- `activation_boundary_after_shared_repair`: W4A16 passes while both W4A8
+  interfaces fail after healthy shared loading;
+- `candidate_interface_disagreement`: W4A8 offline and HTTP differ;
+- `post_shared_routed_boundary`: both schemes fail after healthy shared loading;
+- `w4a16_overlay_backend_regression`: W4A8 passes but W4A16 fails;
+- infrastructure or missing-evidence verdicts are not model conclusions.
 
 ## Commit and return
 
 ```bash
-EVIDENCE_ROOT="results/m3-routed-diagnostics/$MATRIX_ID"
+EVIDENCE_ROOT="results/m3-shared-expert-repair/$MATRIX_ID"
 python -m json.tool "$EVIDENCE_ROOT/comparison.json"
 find "$EVIDENCE_ROOT" -type f -size +5M -print
 rg -n -i 'api[_-]?key|token=|authorization:|bearer ' "$EVIDENCE_ROOT" || true
 git add "$EVIDENCE_ROOT"
-git commit -m "data: add MiniMax-M3 routed diagnostics $MATRIX_ID"
+git commit -m "data: add MiniMax-M3 shared-expert repair $MATRIX_ID"
 git push origin duy-branch
 ```
 
-Return the result and code commits, matrix ID, all three `srun` job IDs/nodes,
-aggregate and arm outcomes, deviations/retries, missing diagnostics, and full-log
-paths/hashes/retention. Stop for primary-agent analysis; do not implement a fix
-or resume CUDA-graph RCA.
+Return result/code commits, matrix ID, all three `srun` job IDs/nodes, aggregate
+and arm outcomes, loader match counts, shared representation/norm summary,
+canonical responses, every deviation/retry, missing signals, and full-log
+paths/hashes/retention. Stop for analysis; do not resume CUDA graphs yet.

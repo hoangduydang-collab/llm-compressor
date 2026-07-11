@@ -26,6 +26,7 @@ EXPECTED_ARMS = tuple(ARM_SPECS)
 # W4A16 while candidate attention is BF16, and the vLLM model may fuse the MSA
 # indexer into QKV, so neither is a portable byte-equality control.
 UNQUANTIZED_CATEGORIES = {"lm_head", "shared_expert"}
+VLLM_SHARED_EXPERT_IGNORE = "re:.*block_sparse_moe[.]shared_experts[.].*"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -258,6 +259,7 @@ def prepare_checkpoint_overlay(
     destination: Path,
     *,
     disable_activations: bool,
+    add_vllm_shared_expert_ignore: bool = False,
 ) -> None:
     """Create a metadata-only overlay without mutating the source checkpoint."""
 
@@ -270,6 +272,15 @@ def prepare_checkpoint_overlay(
             continue
         (destination / item.name).symlink_to(item.resolve())
     config = _read_json(source / "config.json")
+    if add_vllm_shared_expert_ignore:
+        quantization_config = config.get("quantization_config")
+        if not isinstance(quantization_config, dict):
+            raise ValueError("candidate config has no quantization_config")
+        ignore = quantization_config.setdefault("ignore", [])
+        if not isinstance(ignore, list):
+            raise ValueError("candidate quantization_config.ignore is not a list")
+        if VLLM_SHARED_EXPERT_IGNORE not in ignore:
+            ignore.append(VLLM_SHARED_EXPERT_IGNORE)
     if disable_activations:
         groups = config.get("quantization_config", {}).get("config_groups", {})
         if not groups:
@@ -450,6 +461,7 @@ def _build_parser() -> argparse.ArgumentParser:
     overlay.add_argument("--source", type=Path, required=True)
     overlay.add_argument("--destination", type=Path, required=True)
     overlay.add_argument("--disable-activations", action="store_true")
+    overlay.add_argument("--add-vllm-shared-expert-ignore", action="store_true")
     return parser
 
 
@@ -473,6 +485,7 @@ def main(argv: list[str] | None = None) -> int:
             args.source,
             args.destination,
             disable_activations=args.disable_activations,
+            add_vllm_shared_expert_ignore=args.add_vllm_shared_expert_ignore,
         )
     return 0
 

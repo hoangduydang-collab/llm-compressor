@@ -57,6 +57,7 @@ quantization:
     - "re:.*patch_merge_mlp.*"
     - "re:.*mlp[.]gate$"                 # MoE router
     - "re:.*mlp[.]shared_experts[.].*"   # shared experts
+    - "re:.*block_sparse_moe[.]shared_experts[.].*" # vLLM shared-expert alias
     - "re:.*self_attn[.].*"               # ATTENTION q/k/v/o + MSA indexer: keep BF16
     - "re:.*layers[.][0-2][.].*"          # first 3 dense/full-attn layers
   # 428B model calibrates offloaded (CPU/disk); autoregressive generation is ~minutes

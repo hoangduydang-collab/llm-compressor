@@ -54,6 +54,7 @@ _EXPECTED_IGNORE_SUBSTR = [
     "patch_merge",
     "mlp[.]gate$",
     "shared_experts",
+    "block_sparse_moe",
     "indexer",
     "layers[.][0-2]",
 ]

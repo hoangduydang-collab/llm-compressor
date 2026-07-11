@@ -63,14 +63,18 @@ loader audit, and rank-aligned MoE probes.
 
 The aggregate classifier requires all three arms and distinguishes:
 
-- `quality_repair_pass`: W4A8 passes offline and HTTP, all 171 shared tensors
-  match, runtime shared parameters are nonzero BF16 weights, and every first
-  real-prompt shared output is nonzero;
+- `quality_repair_pass`: W4A8 passes offline and HTTP, the W4A16 control passes,
+  all 171 shared tensors match, runtime shared parameters are nonzero BF16
+  weights, and every first real-prompt shared output is nonzero;
 - `activation_boundary_after_shared_repair`: repaired W4A16 passes while W4A8
   fails after shared loading is proven healthy;
 - `shared_ignore_repair_failed`: shared tensors remain unmatched, packed/zero,
   or produce zero output;
 - `candidate_interface_disagreement`: repaired W4A8 offline and HTTP differ;
+- `post_shared_routed_boundary`: both repaired schemes fail after shared loading
+  is proven healthy;
+- `w4a16_overlay_backend_regression`: repaired W4A8 passes but its W4A16
+  metadata control fails;
 - explicit infrastructure, invalid-control, or missing-evidence verdicts.
 
 If `quality_repair_pass` is returned, the quality issue is resolved and the next

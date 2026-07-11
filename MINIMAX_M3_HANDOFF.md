@@ -125,3 +125,18 @@ does not measure semantic quality and is a false positive for these runs.
    cyankiwi's W4A16 checkpoint.
 4. Only after a quality-positive serve should the user be asked again to delete
    the obsolete 225 GB original checkpoint.
+
+## Active next handoff (2026-07-11)
+
+The next action is implemented as a paired eager-mode comparison; do not try
+another routed-key rename or re-quantization first.
+
+- Runner: `pipeline/slurm/test_m3_paired_quality.sh`
+- Classifier: `pipeline/m3_quality_evidence.py`
+- Operator contract: `MINIMAX_M3_QUALITY_RUNBOOK.md`
+
+It runs cyankiwi first and the portable W4A8 checkpoint second under one
+node/environment/commit, with loader audit, bounded parameter fingerprints, and
+real-prefill MoE evidence for both. The GPU agent must commit the compact
+`results/m3-paired-quality/<run_id>` bundle; NFS-only paths or a narrative
+summary are not a complete return. CUDA-graph RCA remains deferred.

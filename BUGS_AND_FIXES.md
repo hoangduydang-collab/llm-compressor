@@ -1,5 +1,20 @@
 # Bugs and fixes (llm-compressor pipeline)
 
+## Active priority: MiniMax-M3 quality before CUDA-graph RCA (2026-07-11)
+
+Original AWQ/GPTQ and the portable routed-key re-export load but generate
+repetitive garbage. Renaming routed `gate_proj/down_proj/up_proj` tensors to
+the vLLM `w1/w2/w3` contract fixed a real mismatch but did not restore
+quality.
+
+Next: run `MINIMAX_M3_QUALITY_RUNBOOK.md`, which compares cyankiwi against
+the portable W4A8 checkpoint in eager mode and returns semantic quality,
+loader mappings, loaded-parameter fingerprints, shared-expert contribution,
+environment provenance, and full-log hashes through Git.
+
+Do not resume CUDA-graph RCA, re-quantize, or apply another loader fix until
+this comparison identifies the first failing quality boundary.
+
 ## HTTP async cudagraph IMA — RCA matrix protocol (cyankiwi, 2026-07-10)
 
 **Symptom:** HTTP `vllm serve` for `cyankiwi/MiniMax-M3-AWQ-INT4` dies during

@@ -39,56 +39,26 @@ Do not run the portable candidate in this allocation, even if the reference
 passes. Do not change prompts, chat templates, sampling settings, diagnostics,
 or serving topology. This is a one-boundary test of offline batching.
 
-After normal preflight, use the same reference-only command from the previous
-run, changing only the run identity:
+After normal preflight, run the automated reference-only mode on one clean
+eight-GPU node:
 
 ```bash
 set -o pipefail
 RUN_ID="$(date +%Y%m%d-%H%M%S)-reference-sequential"
-RUN_DIR="/mnt/nfs/hoangduy/logs/m3-paired-quality/$RUN_ID"
-CASE_DIR="$RUN_DIR/cyankiwi_reference"
-EVIDENCE_DIR="$PWD/results/m3-paired-quality/$RUN_ID"
-REFERENCE_CKPT=/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
-MODEL_ID=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
-CONFIG=pipeline/configs/minimax_m3_full_calib.yaml
-
-mkdir -p "$CASE_DIR" "$EVIDENCE_DIR/cyankiwi_reference"
-ln -s "$(realpath "$REFERENCE_CKPT")" "$CASE_DIR/checkpoint"
-source /mnt/nfs/hoangduy/env.sh
-source /mnt/nfs/hoangduy/venvs/quant/bin/activate
-export PYTHONPATH="$PWD"
-export PYTHONUNBUFFERED=1
-export TOKENIZERS_PARALLELISM=false
-export FLASHINFER_USE_CUDA_NORM=1
-export VLLM_DISABLE_SHARED_EXPERTS_STREAM=1
-export M3_LOAD_AUDIT=1
-export M3_MOE_PROBE=1
-export M3_PARAM_FINGERPRINT=0
-export M3_QUALITY_CASE=cyankiwi_reference_sequential
-
-python pipeline/slurm/patch_vllm_m3_serve.py >"$RUN_DIR/patch_status.txt" 2>&1
-FORCE=0 MIN_FREE_GIB=70 bash pipeline/slurm/free_gpus.sh
-
-date -Is >"$CASE_DIR/started_at.txt"
-set +e
-python -m pipeline.run --config "$CONFIG" --stage serve \
-  --checkpoint "$CASE_DIR/checkpoint" \
-  --set model.id="$MODEL_ID" \
-  --set serve.tensor_parallel_size=8 \
-  --set serve.enable_expert_parallel=true \
-  --set serve.block_size=128 \
-  --set serve.kv_cache_dtype=fp8 \
-  --set serve.max_model_len=2048 \
-  --set serve.gpu_memory_utilization=0.85 \
-  --set serve.enforce_eager=true \
-  --set serve.disable_custom_all_reduce=true \
-  --set eval.enabled=false \
-  2>&1 | tee "$CASE_DIR/serve.log"
-RC="${PIPESTATUS[0]}"
-set -e
-date -Is >"$CASE_DIR/finished_at.txt"
-echo "$RC" >"$CASE_DIR/return_code.txt"
+RUN_MODE=reference_only \
+M3_LOAD_AUDIT=1 \
+M3_MOE_PROBE=1 \
+M3_PARAM_FINGERPRINT=0 \
+RUN_ID="$RUN_ID" \
+bash pipeline/slurm/test_m3_paired_quality.sh \
+  2>&1 | tee "/mnt/nfs/hoangduy/logs/m3-paired-quality-$RUN_ID-operator.log"
 ```
+
+The runner validates only the reference checkpoint, records the actual
+diagnostic flags in `run_manifest.json`, runs only `cyankiwi_reference`, builds
+the compact evidence bundle, writes a reference-specific `comparison.json`,
+and exits with the serve return code. A nonzero quality result is expected to
+still leave a complete bundle; inspect and commit it.
 
 ### Required return for this run
 

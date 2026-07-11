@@ -9,6 +9,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 DRY_RUN="${DRY_RUN:-0}"
+RUN_MODE="${RUN_MODE:-paired}"
+if [[ "$RUN_MODE" != "paired" && "$RUN_MODE" != "reference_only" ]]; then
+  echo "ERROR: RUN_MODE must be paired or reference_only: $RUN_MODE"
+  exit 2
+fi
+M3_LOAD_AUDIT="${M3_LOAD_AUDIT:-1}"
+M3_MOE_PROBE="${M3_MOE_PROBE:-1}"
+M3_PARAM_FINGERPRINT="${M3_PARAM_FINGERPRINT:-1}"
 RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 RESULTS_ROOT="${RESULTS_ROOT:-/mnt/nfs/hoangduy/logs/m3-paired-quality}"
 EVIDENCE_ROOT="${EVIDENCE_ROOT:-$REPO_ROOT/results/m3-paired-quality}"
@@ -24,14 +32,20 @@ GPU_UTIL="${GPU_UTIL:-0.85}"
 ENV_FILE="${ENV_FILE:-/mnt/nfs/hoangduy/env.sh}"
 VENV_ACTIVATE="${VENV_ACTIVATE:-/mnt/nfs/hoangduy/venvs/quant/bin/activate}"
 
-for checkpoint in "$REFERENCE_CKPT" "$CANDIDATE_CKPT"; do
+checkpoints=("$REFERENCE_CKPT")
+if [[ "$RUN_MODE" == "paired" ]]; then
+  checkpoints+=("$CANDIDATE_CKPT")
+fi
+for checkpoint in "${checkpoints[@]}"; do
   if [[ ! -f "$checkpoint/config.json" ]]; then
     echo "ERROR: checkpoint config missing: $checkpoint/config.json"
     exit 2
   fi
 done
 REFERENCE_CKPT="$(realpath "$REFERENCE_CKPT")"
-CANDIDATE_CKPT="$(realpath "$CANDIDATE_CKPT")"
+if [[ "$RUN_MODE" == "paired" ]]; then
+  CANDIDATE_CKPT="$(realpath "$CANDIDATE_CKPT")"
+fi
 if [[ ! -f "$CONFIG" ]]; then
   echo "ERROR: pipeline config missing: $CONFIG"
   exit 2
@@ -48,6 +62,10 @@ manifest_args=(
   --model-id "$MODEL_ID"
   --max-model-len "$MAX_MODEL_LEN"
   --gpu-util "$GPU_UTIL"
+  --run-mode "$RUN_MODE"
+  --load-audit "$M3_LOAD_AUDIT"
+  --moe-probe "$M3_MOE_PROBE"
+  --param-fingerprint "$M3_PARAM_FINGERPRINT"
 )
 if [[ "$DRY_RUN" == "1" || "$DRY_RUN" == "true" ]]; then
   manifest_args+=(--dry-run)
@@ -81,9 +99,9 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export FLASHINFER_USE_CUDA_NORM=1
 export VLLM_DISABLE_SHARED_EXPERTS_STREAM=1
-export M3_LOAD_AUDIT=1
-export M3_MOE_PROBE=1
-export M3_PARAM_FINGERPRINT=1
+export M3_LOAD_AUDIT
+export M3_MOE_PROBE
+export M3_PARAM_FINGERPRINT
 export M3_PARAM_FINGERPRINT_LAYERS="${M3_PARAM_FINGERPRINT_LAYERS:-3,59}"
 
 {
@@ -145,6 +163,10 @@ _run_case() {
 reference_rc=0
 _run_case "cyankiwi_reference" "$REFERENCE_CKPT" || reference_rc=$?
 _bundle
+if [[ "$RUN_MODE" == "reference_only" ]]; then
+  echo "[m3-quality] reference-only evidence complete: $EVIDENCE_DIR (rc=$reference_rc)"
+  exit "$reference_rc"
+fi
 if [[ "$reference_rc" -ne 0 ]]; then
   echo "ERROR: reference infrastructure failed (rc=$reference_rc); candidate skipped"
   exit "$reference_rc"

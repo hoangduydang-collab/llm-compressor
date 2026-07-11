@@ -129,8 +129,10 @@ does not measure semantic quality and is a false positive for these runs.
 ## Active next handoff (2026-07-11, sequential reference)
 
 Run `MINIMAX_M3_QUALITY_RUNBOOK.md` section **“Current follow-up: sequential
-reference validation”** from this commit. Run only the cyankiwi reference and
-stop regardless of outcome.
+reference validation”** from this commit using the automated
+`RUN_MODE=reference_only` command. It validates and runs only cyankiwi, records
+the actual diagnostic flags, and builds the compact result bundle. Stop
+regardless of outcome.
 
 The completed fingerprint-off A/B established that the earlier CUDA assertion
 was diagnostic-induced: cyankiwi loaded and generated with

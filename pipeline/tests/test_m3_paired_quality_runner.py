@@ -100,3 +100,51 @@ def test_paired_runner_dry_run_records_identical_eager_envelopes():
             "M3_PARAM_FINGERPRINT": "1",
         }
         assert not (results / "test-run/cyankiwi_reference/serve.log").exists()
+
+
+def test_reference_only_dry_run_needs_no_candidate_and_records_flags():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        reference = root / "reference"
+        results = root / "runs"
+        evidence = root / "evidence"
+        _write_checkpoint(reference, w4a8=False)
+        env = os.environ.copy()
+        env.update(
+            {
+                "PYTHONPATH": str(REPO_ROOT),
+                "DRY_RUN": "1",
+                "RUN_MODE": "reference_only",
+                "RUN_ID": "reference-only",
+                "REFERENCE_CKPT": os.path.relpath(reference, REPO_ROOT),
+                "CANDIDATE_CKPT": str(root / "does-not-exist"),
+                "RESULTS_ROOT": str(results),
+                "EVIDENCE_ROOT": str(evidence),
+                "M3_PARAM_FINGERPRINT": "0",
+            }
+        )
+
+        completed = subprocess.run(
+            ["bash", str(RUNNER)],
+            cwd=REPO_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr + completed.stdout
+        manifest = json.loads(
+            (evidence / "reference-only/run_manifest.json").read_text(encoding="utf-8")
+        )
+        assert manifest["run_mode"] == "reference_only"
+        assert manifest["case_order"] == ["cyankiwi_reference"]
+        assert manifest["diagnostics"] == {
+            "M3_LOAD_AUDIT": "1",
+            "M3_MOE_PROBE": "1",
+            "M3_PARAM_FINGERPRINT": "0",
+        }
+        comparison = json.loads(
+            (evidence / "reference-only/comparison.json").read_text(encoding="utf-8")
+        )
+        assert comparison["verdict"] == "dry_run"

@@ -218,6 +218,79 @@ M3_MOE_PROBE#1 shared_present=True shared_norm=2.0
         assert all(item["sha256"] for item in artifacts)
 
 
+def test_reference_only_bundle_classifies_quality_without_candidate():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        run_dir = root / "run"
+        evidence_dir = root / "evidence"
+        case_dir = run_dir / "cyankiwi_reference"
+        case_dir.mkdir(parents=True)
+        (run_dir / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "dry_run": False,
+                    "run_mode": "reference_only",
+                    "cases": [{"name": "cyankiwi_reference"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (case_dir / "serve_report.json").write_text(
+            json.dumps(
+                {
+                    "loaded": True,
+                    "quality_ok": False,
+                    "quality_cases": [{"text": ""}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        comparison = bundle_run(run_dir, evidence_dir)
+
+        assert comparison == {
+            "verdict": "reference_sequential_quality_fail",
+            "quality_ok": False,
+            "loaded": True,
+            "generation_reached": True,
+        }
+        assert not (evidence_dir / "portable_awq_w4a8").exists()
+
+
+def test_bundle_preserves_first_traceback_context():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        run_dir = root / "run"
+        evidence_dir = root / "evidence"
+        case_dir = run_dir / "cyankiwi_reference"
+        case_dir.mkdir(parents=True)
+        (run_dir / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "dry_run": False,
+                    "run_mode": "reference_only",
+                    "cases": [{"name": "cyankiwi_reference"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (case_dir / "serve.log").write_text(
+            "before\nTraceback (most recent call last):\n"
+            "  File \"worker.py\", line 12, in run\n"
+            "    launch_kernel()\n"
+            "RuntimeError: device-side assert triggered\nafter\n",
+            encoding="utf-8",
+        )
+
+        bundle_run(run_dir, evidence_dir)
+
+        excerpt = (
+            evidence_dir / "cyankiwi_reference/notable_log_excerpt.txt"
+        ).read_text(encoding="utf-8")
+        assert 'File "worker.py", line 12, in run' in excerpt
+        assert "launch_kernel()" in excerpt
+
+
 def test_bundle_cli_uses_manifest_evidence_dir_when_omitted():
     with TemporaryDirectory() as raw_tmp:
         root = Path(raw_tmp)

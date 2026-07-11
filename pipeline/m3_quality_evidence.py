@@ -300,16 +300,22 @@ def write_run_manifest(
     dry_run: bool,
     max_model_len: int,
     gpu_util: float,
+    run_mode: str = "paired",
+    load_audit: str = "1",
+    moe_probe: str = "1",
+    param_fingerprint: str = "1",
 ) -> dict[str, Any]:
-    """Write allowlisted provenance and the exact two-case comparison envelope."""
+    """Write allowlisted provenance and the exact requested run envelope."""
 
+    if run_mode not in {"paired", "reference_only"}:
+        raise ValueError(f"unsupported run_mode={run_mode!r}")
     reference = reference.resolve()
     candidate = candidate.resolve()
+    selected = [("cyankiwi_reference", reference)]
+    if run_mode == "paired":
+        selected.append(("portable_awq_w4a8", candidate))
     cases = []
-    for name, checkpoint in (
-        ("cyankiwi_reference", reference),
-        ("portable_awq_w4a8", candidate),
-    ):
+    for name, checkpoint in selected:
         case_dir = run_dir / name
         cases.append(
             {
@@ -334,6 +340,7 @@ def write_run_manifest(
         "run_id": run_dir.name,
         "evidence_dir": str(evidence_dir.resolve()),
         "dry_run": dry_run,
+        "run_mode": run_mode,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "finished_at": None,
         "case_order": case_order,
@@ -360,9 +367,9 @@ def write_run_manifest(
             "disable_custom_all_reduce": True,
         },
         "diagnostics": {
-            "M3_LOAD_AUDIT": "1",
-            "M3_MOE_PROBE": "1",
-            "M3_PARAM_FINGERPRINT": "1",
+            "M3_LOAD_AUDIT": load_audit,
+            "M3_MOE_PROBE": moe_probe,
+            "M3_PARAM_FINGERPRINT": param_fingerprint,
         },
         "deviations": [],
         "cases": cases,
@@ -432,6 +439,33 @@ def _combined_evidence(
     }
 
 
+def _notable_log_excerpt(log_text: str, limit: int = 300) -> list[str]:
+    """Keep the first traceback context plus the latest diagnostic lines."""
+
+    lines = log_text.splitlines()
+    selected: set[int] = set()
+    for index, line in enumerate(lines):
+        if re.search(r"warning|error|traceback|failed|M3_", line, re.I):
+            selected.add(index)
+    first_traceback = next(
+        (index for index, line in enumerate(lines) if "traceback" in line.casefold()),
+        None,
+    )
+    if first_traceback is not None:
+        selected.update(range(first_traceback, min(len(lines), first_traceback + 60)))
+    ordered = sorted(selected)
+    if len(ordered) > limit:
+        traceback_indices = (
+            set(range(first_traceback, min(len(lines), first_traceback + 60)))
+            if first_traceback is not None
+            else set()
+        )
+        latest = [index for index in ordered if index not in traceback_indices]
+        remaining = limit - len(traceback_indices)
+        ordered = sorted(traceback_indices | set(latest[-remaining:]))
+    return [lines[index] for index in ordered]
+
+
 def bundle_run(run_dir: Path, evidence_dir: Path) -> dict[str, Any]:
     """Build a compact auditable bundle from full per-case logs and reports."""
 
@@ -475,7 +509,10 @@ def bundle_run(run_dir: Path, evidence_dir: Path) -> dict[str, Any]:
 
     case_evidence: dict[str, dict[str, Any]] = {}
     artifact_index: list[dict[str, Any]] = []
-    for case_name in ("cyankiwi_reference", "portable_awq_w4a8"):
+    case_names = [
+        str(case.get("name")) for case in manifest.get("cases", [])
+    ] or ["cyankiwi_reference", "portable_awq_w4a8"]
+    for case_name in case_names:
         source_dir = run_dir / case_name
         output_dir = evidence_dir / case_name
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -512,11 +549,7 @@ def bundle_run(run_dir: Path, evidence_dir: Path) -> dict[str, Any]:
             "\n".join(extracted["loader_audit_lines"]) + "\n",
             encoding="utf-8",
         )
-        notable = [
-            line
-            for line in log_text.splitlines()
-            if re.search(r"warning|error|traceback|failed|M3_", line, re.I)
-        ][-300:]
+        notable = _notable_log_excerpt(log_text)
         (output_dir / "notable_log_excerpt.txt").write_text(
             "\n".join(notable) + "\n",
             encoding="utf-8",
@@ -537,14 +570,28 @@ def bundle_run(run_dir: Path, evidence_dir: Path) -> dict[str, Any]:
     candidate_report = _read_json(
         run_dir / "portable_awq_w4a8/serve_report.json"
     )
-    combined = _combined_evidence(
-        case_evidence["cyankiwi_reference"],
-        case_evidence["portable_awq_w4a8"],
-    )
-    comparison = {
-        **classify_pair(reference_report, candidate_report, combined),
-        "evidence": combined,
-    }
+    if manifest.get("run_mode") == "reference_only":
+        if reference_report.get("quality_ok") is True:
+            verdict = "reference_sequential_pass"
+        elif reference_report.get("loaded") is True:
+            verdict = "reference_sequential_quality_fail"
+        else:
+            verdict = "inconclusive_runtime_failure"
+        comparison = {
+            "verdict": verdict,
+            "quality_ok": reference_report.get("quality_ok"),
+            "loaded": reference_report.get("loaded", False),
+            "generation_reached": bool(reference_report.get("quality_cases")),
+        }
+    else:
+        combined = _combined_evidence(
+            case_evidence["cyankiwi_reference"],
+            case_evidence["portable_awq_w4a8"],
+        )
+        comparison = {
+            **classify_pair(reference_report, candidate_report, combined),
+            "evidence": combined,
+        }
     (evidence_dir / "comparison.json").write_text(
         json.dumps(comparison, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -569,6 +616,12 @@ def _build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--max-model-len", type=int, required=True)
     manifest.add_argument("--gpu-util", type=float, required=True)
     manifest.add_argument("--dry-run", action="store_true")
+    manifest.add_argument(
+        "--run-mode", choices=("paired", "reference_only"), default="paired"
+    )
+    manifest.add_argument("--load-audit", default="1")
+    manifest.add_argument("--moe-probe", default="1")
+    manifest.add_argument("--param-fingerprint", default="1")
     bundle = subparsers.add_parser("bundle")
     bundle.add_argument("--run-dir", type=Path, required=True)
     bundle.add_argument("--evidence-dir", type=Path)
@@ -588,6 +641,10 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             max_model_len=args.max_model_len,
             gpu_util=args.gpu_util,
+            run_mode=args.run_mode,
+            load_audit=args.load_audit,
+            moe_probe=args.moe_probe,
+            param_fingerprint=args.param_fingerprint,
         )
     else:
         evidence_dir = args.evidence_dir

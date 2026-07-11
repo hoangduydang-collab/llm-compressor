@@ -13,6 +13,7 @@ from pipeline.m3_quality_evidence import (
     bundle_run,
     extract_log_evidence,
     classify_pair,
+    main,
 )
 
 
@@ -201,3 +202,25 @@ M3_MOE_PROBE#1 shared_present=True shared_norm=2.0
             "portable_awq_w4a8",
         }
         assert all(item["sha256"] for item in artifacts)
+
+
+def test_bundle_cli_uses_manifest_evidence_dir_when_omitted():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        run_dir = root / "run"
+        evidence_dir = root / "evidence"
+        run_dir.mkdir()
+        (run_dir / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "dry_run": True,
+                    "evidence_dir": str(evidence_dir),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["bundle", "--run-dir", str(run_dir)]) == 0
+        assert json.loads(
+            (evidence_dir / "comparison.json").read_text(encoding="utf-8")
+        )["verdict"] == "dry_run"

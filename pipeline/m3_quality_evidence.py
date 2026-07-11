@@ -314,6 +314,7 @@ def write_run_manifest(
     manifest = {
         "schema_version": 1,
         "run_id": run_dir.name,
+        "evidence_dir": str(evidence_dir.resolve()),
         "dry_run": dry_run,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "finished_at": None,
@@ -552,7 +553,7 @@ def _build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--dry-run", action="store_true")
     bundle = subparsers.add_parser("bundle")
     bundle.add_argument("--run-dir", type=Path, required=True)
-    bundle.add_argument("--evidence-dir", type=Path, required=True)
+    bundle.add_argument("--evidence-dir", type=Path)
     return parser
 
 
@@ -571,7 +572,18 @@ def main(argv: list[str] | None = None) -> int:
             gpu_util=args.gpu_util,
         )
     else:
-        bundle_run(args.run_dir, args.evidence_dir)
+        evidence_dir = args.evidence_dir
+        if evidence_dir is None:
+            evidence_value = _read_json(args.run_dir / "run_manifest.json").get(
+                "evidence_dir"
+            )
+            if not isinstance(evidence_value, str) or not evidence_value:
+                raise ValueError(
+                    "bundle requires --evidence-dir when the run manifest "
+                    "does not record one"
+                )
+            evidence_dir = Path(evidence_value)
+        bundle_run(args.run_dir, evidence_dir)
     return 0
 
 

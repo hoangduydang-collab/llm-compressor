@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from pipeline.m3_quality_evidence import (
     M3_QUALITY_CASES,
     assess_output,
     assess_quality_outputs,
+    bundle_run,
+    extract_log_evidence,
     classify_pair,
 )
 
@@ -119,3 +125,65 @@ def test_clean_primary_boundaries_select_attention_indexer():
     )
 
     assert result["verdict"] == "attention_indexer_boundary"
+
+
+def test_extract_log_evidence_preserves_json_and_probe_signals():
+    log = """
+WARNING M3_PARAM_FINGERPRINT# {"case":"candidate","category":"lm_head","finite_fraction":1.0,"sample_abs_max":2.0}
+WARNING M3_PARAM_FINGERPRINT_SUMMARY# {"case":"candidate","found":["lm_head","shared_expert"],"missing":[],"errors":[]}
+WARNING M3_LOAD_AUDIT# seen=10 matched=10 unmatched_this_rank=0
+WARNING M3_MOE_PROBE#1 tokens=8 in_norm=1.0 shared_present=False shared_norm=-1.0
+"""
+
+    evidence = extract_log_evidence(log)
+
+    assert evidence["fingerprints"][0]["category"] == "lm_head"
+    assert evidence["fingerprint_summaries"][0]["missing"] == []
+    assert evidence["shared_expert_bad"] is True
+    assert len(evidence["loader_audit_lines"]) == 1
+
+
+def test_bundle_copies_provenance_and_indexes_full_logs():
+    healthy_log = """
+M3_PARAM_FINGERPRINT# {"category":"lm_head","finite_fraction":1.0,"sample_abs_max":2.0}
+M3_PARAM_FINGERPRINT# {"category":"shared_expert","finite_fraction":1.0,"sample_abs_max":2.0}
+M3_LOAD_AUDIT# seen=2 matched=2 unmatched_this_rank=0
+M3_MOE_PROBE#1 shared_present=True shared_norm=2.0
+"""
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        run_dir = root / "run"
+        evidence_dir = root / "evidence"
+        run_dir.mkdir()
+        (run_dir / "run_manifest.json").write_text(
+            json.dumps({"dry_run": False}),
+            encoding="utf-8",
+        )
+        (run_dir / "software_versions.txt").write_text(
+            "vllm 0.24.0\n",
+            encoding="utf-8",
+        )
+        for case_name, quality_ok in (
+            ("cyankiwi_reference", True),
+            ("portable_awq_w4a8", False),
+        ):
+            case_dir = run_dir / case_name
+            case_dir.mkdir()
+            (case_dir / "serve_report.json").write_text(
+                json.dumps({"quality_ok": quality_ok}),
+                encoding="utf-8",
+            )
+            (case_dir / "serve.log").write_text(healthy_log, encoding="utf-8")
+
+        comparison = bundle_run(run_dir, evidence_dir)
+
+        assert comparison["verdict"] == "attention_indexer_boundary"
+        assert (evidence_dir / "software_versions.txt").read_text() == "vllm 0.24.0\n"
+        artifacts = json.loads(
+            (evidence_dir / "artifact_index.json").read_text(encoding="utf-8")
+        )
+        assert {item["case"] for item in artifacts} == {
+            "cyankiwi_reference",
+            "portable_awq_w4a8",
+        }
+        assert all(item["sha256"] for item in artifacts)

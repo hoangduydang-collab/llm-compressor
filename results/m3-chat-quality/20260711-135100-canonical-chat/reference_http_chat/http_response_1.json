@@ -1,0 +1,37 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "logprobs": null,
+      "message": {
+        "annotations": null,
+        "audio": null,
+        "content": "4",
+        "function_call": null,
+        "reasoning": null,
+        "refusal": null,
+        "role": "assistant"
+      },
+      "routed_experts": null,
+      "stop_reason": null,
+      "token_ids": null
+    }
+  ],
+  "created": 1783778504,
+  "id": "chatcmpl-904a10f0483b34f3",
+  "kv_transfer_params": null,
+  "model": "m3-quality-reference_http_chat",
+  "object": "chat.completion",
+  "prompt_logprobs": null,
+  "prompt_text": null,
+  "prompt_token_ids": null,
+  "service_tier": null,
+  "system_fingerprint": "vllm-0.24.0-tp8-ep-5292da56",
+  "usage": {
+    "completion_tokens": 2,
+    "prompt_tokens": 177,
+    "prompt_tokens_details": null,
+    "total_tokens": 179
+  }
+}

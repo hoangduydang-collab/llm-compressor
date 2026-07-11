@@ -1,0 +1,106 @@
+{
+  "arm": "candidate_offline_chat",
+  "checkpoint": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/MiniMax-M3-awq-W4AFP8/20260709-064104/checkpoint-vllm-w123",
+  "checkpoint_chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "checkpoint_config_sha256": "3251c9715dc13852768209c3f9d88036542954f1a6a3fc92ed5c08bcb6c7ebb9",
+  "checkpoint_index_sha256": "3447e12c56ba4bef11a975f191d91b37b984a390a2dde05614104c4333131368",
+  "checkpoint_role": "candidate",
+  "checkpoint_tokenizer_config_sha256": "2b037abb6ae0e8b79a098f758ef432d31fab8daa4f699747376b23492c21aac9",
+  "command": [
+    "python",
+    "-m",
+    "pipeline.run",
+    "--config",
+    "pipeline/configs/minimax_m3_full_calib.yaml",
+    "--stage",
+    "serve",
+    "--checkpoint",
+    "/mnt/nfs/hoangduy/logs/m3-chat-quality/20260711-135100-canonical-chat/candidate_offline_chat/checkpoint",
+    "--set",
+    "model.id=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+    "--set",
+    "serve.tensor_parallel_size=8",
+    "--set",
+    "serve.enable_expert_parallel=true",
+    "--set",
+    "serve.block_size=128",
+    "--set",
+    "serve.kv_cache_dtype=fp8",
+    "--set",
+    "serve.max_model_len=2048",
+    "--set",
+    "serve.gpu_memory_utilization=0.85",
+    "--set",
+    "serve.enforce_eager=true",
+    "--set",
+    "serve.disable_custom_all_reduce=true",
+    "--set",
+    "eval.enabled=false"
+  ],
+  "deviations": [
+    {
+      "changes_quality_variable": false,
+      "name": "direct srun submission",
+      "reason": "sbatch failed from the compute node before creating a job; this arm used an equivalent exclusive direct srun allocation on gpu-h99."
+    },
+    {
+      "changes_quality_variable": false,
+      "name": "absolute candidate checkpoint path retry",
+      "reason": "The first attempt used a relative path unavailable in the isolated worktree and exited before checkpoint loading; this retry used the same portable checkpoint by absolute path."
+    },
+    {
+      "changes_quality_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled the owned-process signal path; the allocated GPUs were already free."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "0",
+    "M3_MOE_PROBE": "0",
+    "M3_PARAM_FINGERPRINT": "0"
+  },
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-chat-quality/20260711-135100-canonical-chat/candidate_offline_chat",
+  "finished_at": "2026-07-11T14:09:11.962411+00:00",
+  "git_commit": "7379337bf5b539b1726f7dd4bbbd4aaeda76aee5",
+  "git_status_short": "?? results/m3-chat-quality/",
+  "host": "h99-gpu-polaris.pod4.lab.bitdeer.ai",
+  "interface": "offline",
+  "matrix_id": "20260711-135100-canonical-chat",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "model_id_chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "model_id_tokenizer_config_sha256": "15caca9f74fbce9b86dc014e9324cbefa56703d81ccd6d56020faa1c41d2eae5",
+  "platform": "Linux-5.15.0-173-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "quality_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "enable_expert_parallel": true,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "max_tokens": 64,
+    "temperature": 0.0,
+    "tensor_parallel_size": 8,
+    "thinking_mode": "disabled"
+  },
+  "retries": [
+    {
+      "outcome": "pre-load failure",
+      "reason": "Relative candidate checkpoint path was absent from the isolated worktree."
+    }
+  ],
+  "return_code": 0,
+  "runtime_context": {},
+  "scheduler": {
+    "SLURM_JOB_ID": "12749",
+    "SLURM_JOB_NODELIST": "gpu-h99"
+  },
+  "scheduler_logs": {
+    "stderr": null,
+    "stdout": null
+  },
+  "schema_version": 1,
+  "started_at": "2026-07-11T13:55:30.293302+00:00"
+}

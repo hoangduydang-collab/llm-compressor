@@ -1,0 +1,8 @@
+[
+  {
+    "bytes": 49103,
+    "path": "/mnt/nfs/hoangduy/logs/m3-chat-quality/20260711-135100-canonical-chat/reference_offline_chat/serve.log",
+    "retention_until_utc": "2026-07-25T00:00:00Z",
+    "sha256": "6b733bfea5ecc956c14de69a16d778cff23f08c34d11a6b18ad46fd9cca02678"
+  }
+]

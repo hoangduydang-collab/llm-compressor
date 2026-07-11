@@ -1,0 +1,80 @@
+{
+  "case_order": [
+    "cyankiwi_reference_no_fingerprint"
+  ],
+  "code_commit": "b6a26d4fa45c066ec6333f110db2c12e69ba785f",
+  "command": [
+    "python",
+    "-m",
+    "pipeline.run",
+    "--config",
+    "pipeline/configs/minimax_m3_full_calib.yaml",
+    "--stage",
+    "serve",
+    "--checkpoint",
+    "/mnt/nfs/hoangduy/logs/m3-paired-quality/20260711-122317-reference-no-fingerprint/cyankiwi_reference/checkpoint",
+    "--set",
+    "model.id=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+    "--set",
+    "serve.tensor_parallel_size=8",
+    "--set",
+    "serve.enable_expert_parallel=true",
+    "--set",
+    "serve.block_size=128",
+    "--set",
+    "serve.kv_cache_dtype=fp8",
+    "--set",
+    "serve.max_model_len=2048",
+    "--set",
+    "serve.gpu_memory_utilization=0.85",
+    "--set",
+    "serve.enforce_eager=true",
+    "--set",
+    "serve.disable_custom_all_reduce=true",
+    "--set",
+    "eval.enabled=false"
+  ],
+  "deviations": [
+    {
+      "changes_comparison_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled owned-process signalling; all eight GPUs were free."
+    },
+    {
+      "changes_comparison_variable": true,
+      "name": "parameter fingerprints disabled",
+      "reason": "Required A/B variable: M3_PARAM_FINGERPRINT=1 -> 0."
+    },
+    {
+      "changes_comparison_variable": false,
+      "name": "reused node inventory/version snapshots",
+      "reason": "software_versions.txt and nvidia inventory/topology are from run 20260711-114831 on the same node at 12:01 UTC; this run did not capture them."
+    },
+    {
+      "changes_comparison_variable": false,
+      "name": "scheduler job ID absent",
+      "reason": "The direct srun ID was not retained after completion; node is confirmed as gpu-h105."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "1",
+    "M3_MOE_PROBE": "1",
+    "M3_PARAM_FINGERPRINT": "0"
+  },
+  "finished_at": "2026-07-11T12:35:01+00:00",
+  "git_status_short_before_run": "",
+  "host": "gpu-h105",
+  "loaded": true,
+  "quality_ok": false,
+  "reference_checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "reference_config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+  "reference_index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+  "return_code": 1,
+  "run_id": "20260711-122317-reference-no-fingerprint",
+  "scheduler": {
+    "job_id": "not recorded",
+    "node": "gpu-h105"
+  },
+  "schema_version": 1,
+  "started_at": "2026-07-11T12:24:37+00:00"
+}

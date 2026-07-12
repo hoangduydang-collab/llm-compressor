@@ -17,13 +17,23 @@ done
 ARM="$RUN_ROOT/models/$LABEL/shards/$SHARD"; mkdir -p "$ARM"
 rank=${SLURM_PROCID:-0}; nodes=${SLURM_NTASKS:-1}
 if ((nodes > 1)); then
-  head_node=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -1)
-  head_ip=$(getent ahostsv4 "$head_node" | awk 'NR==1 {print $1}')
-  if ((rank == 0)); then
-    ray start --head --node-ip-address="$head_ip" --port=6379
-  else
-    sleep 10; exec ray start --address="$head_ip:6379" --block
+  python -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["ready"] else 1)' \
+    "$RUN_ROOT/ray_preflight/gate.json"
+  source pipeline/slurm/test_m3_ray_topology.sh \
+    --out "$ARM/ray_runtime" --keep-alive
+  cleanup_ray() {
+    touch "$ARM/ray_runtime/driver-done"
+    ray stop --force >/dev/null 2>&1 || true
+  }
+  if ((rank != 0)); then
+    for _ in $(seq 1 86400); do
+      [[ -f "$ARM/ray_runtime/driver-done" ]] && break
+      sleep 1
+    done
+    cleanup_ray
+    exit 0
   fi
+  trap cleanup_ray EXIT
 fi
 if ((rank != 0)); then exit 0; fi
 python - "$ARM/arm_manifest.json" "$RUN_ROOT" "$LABEL" "$SHARD" "$SAMPLES_MANIFEST" "$EVAL_CONFIG" <<'PYMAN'
@@ -73,5 +83,4 @@ fi
 python - "$ARM/arm_complete.json" "$rc" <<'PYDONE'
 import json,sys; json.dump({'complete':int(sys.argv[2])==0},open(sys.argv[1],'w'),indent=2)
 PYDONE
-if ((nodes > 1)); then ray stop --force >/dev/null 2>&1 || true; fi
 exit "$rc"

@@ -34,6 +34,15 @@ PYPLAN
 TOTAL_NODES=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["total_nodes"])' "$PLAN")
 echo "profile=$PROFILE arms=${#ARMS[@]} total_nodes=$TOTAL_NODES"
 
+if [[ "$PROFILE" == smoke ]]; then
+  ray_check=(srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1
+    pipeline/slurm/test_m3_ray_topology.sh --out "$RUN_ROOT/ray_preflight" --stop-after-check)
+  printf '%q ' "${ray_check[@]}"; printf '\n'
+  if ((DRY_RUN == 0)); then
+    "${ray_check[@]}" >"$RUN_ROOT/logs/ray-preflight.out" 2>"$RUN_ROOT/logs/ray-preflight.err"
+  fi
+fi
+
 pids=()
 for row in "${ARMS[@]}"; do
   IFS=$'\t' read -r label model shard nodes tp backend tasks probe probe_tokens <<<"$row"

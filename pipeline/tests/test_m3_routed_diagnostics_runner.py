@@ -118,6 +118,7 @@ def test_router_overlay_adds_vllm_runtime_alias_once():
 
 def test_minimax_recipes_persist_both_shared_expert_names():
     transformers_alias = "re:.*mlp[.]shared_experts[.].*"
+    runtime_router_alias = "re:.*block_sparse_moe[.]gate$"
     for relative in (
         "pipeline/configs/minimax_m3.yaml",
         "pipeline/configs/minimax_m3_full_calib.yaml",
@@ -126,6 +127,7 @@ def test_minimax_recipes_persist_both_shared_expert_names():
         ignore = config["quantization"]["ignore"]
         assert transformers_alias in ignore
         assert VLLM_SHARED_EXPERT_IGNORE in ignore
+        assert runtime_router_alias in ignore
 
 
 def test_static_checkpoint_verifier_requires_vllm_shared_expert_alias():

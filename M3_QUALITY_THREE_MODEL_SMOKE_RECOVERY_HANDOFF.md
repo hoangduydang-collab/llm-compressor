@@ -41,6 +41,13 @@ missing; record any installation and exact versions.
 
 ## Fresh preflight
 
+This is a hard CPU-only serving ABI gate, not bookkeeping. Before task or probe
+preparation, it compares each quantized checkpoint's packed/plain tensor
+inventory with compressed-tensors decisions under both Transformers and vLLM
+MiniMax-M3 names. Plain quantizable vLLM modules not ignored, ignored packed
+modules, packed/plain collisions, missing scales, malformed regexes, or invalid
+quantization targets abort preflight.
+
 ```bash
 RUN_ID="$(date +%Y%m%d-%H%M%S)-m3-gptq-discriminator"
 RUN_ROOT="results/m3-quality/$RUN_ID"
@@ -76,6 +83,31 @@ PY
 
 Stop on failure and return the preflight tree and traceback. Never edit a
 generated manifest manually.
+
+Require `preflight/serving_abi/<model>.json` for every active model. Every
+quantized report must say `"valid": true`. Never bypass a failure to reach GPU
+execution. Source-only `mlp.shared_experts` or `mlp.gate` matches do not satisfy
+vLLM's `block_sparse_moe` contract; return the report and config/index instead.
+The same gate can be run independently without task packages or GPUs:
+
+```bash
+python -m pipeline.m3_serve_abi --checkpoint /path/to/checkpoint \
+  --out /tmp/serving_abi.json
+```
+
+
+## Canary after static validation, before full re-quantization
+
+Only after the static checker passes may a new quantization recipe advance to a
+representative-layer canary. Quantize layer 3 (the first MoE layer) and one
+mid/late layer such as layer 35 with the intended AWQ/GPTQ and activation
+scheme. Do not start a 7-to-15-hour full model run first.
+
+Return matched calibration/AWQ mappings, packed weights and scale metadata,
+reference-dequant versus exported-dequant error, BF16-versus-dequant cosine,
+normalized MSE and SQNR, fixed-input layer-output error, the incremental error
+from dynamic FP8 activations, and the canary ABI report. A valid canary permits
+full quantization but does not replace final end-to-end quality evaluation.
 
 ## Parallel smoke execution
 

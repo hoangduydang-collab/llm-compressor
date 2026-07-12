@@ -44,7 +44,7 @@ eval:
       num_fewshot: 0
       limit: null
     - name: mmlu_pro
-      metric: acc,none
+      metric: exact_match,custom-extract
       num_fewshot: 5
       limit: null
     - name: gsm8k

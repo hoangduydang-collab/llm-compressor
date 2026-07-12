@@ -14,6 +14,7 @@ import yaml
 from pipeline.evalsuite.probe_corpus import build_probe_corpus
 from pipeline.m3_checkpoint_diagnostics import diagnose_checkpoint
 from pipeline.m3_distributional_probe import write_probe_corpus
+from pipeline.m3_serve_abi import analyze_checkpoint
 from pipeline.m3_quality_eval import (
     build_profile_sample_manifests,
     load_matrix,
@@ -58,6 +59,22 @@ def inspect_leaf_sizes(manager, installed_task: str) -> dict[str, int]:
     return sizes
 
 
+def inspect_checkpoint_serving_abi(checkpoint: Path) -> dict:
+    return analyze_checkpoint(checkpoint)
+
+
+def require_valid_serving_abi(label: str, report: dict) -> None:
+    if report.get("valid") is True:
+        return
+    examples = ", ".join(
+        str(error.get("module") or error.get("code"))
+        for error in (report.get("errors") or [])[:3]
+    )
+    raise ValueError(
+        f"static serving ABI validation failed for {label}: {examples}"
+    )
+
+
 def run_preflight(matrix_path: Path, run_root: Path) -> dict:
     from datasets import load_dataset
     from lm_eval.tasks import TaskManager
@@ -70,6 +87,11 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
     for model in spec.models:
         if not model.path.is_dir() or not (model.path / "config.json").is_file():
             raise FileNotFoundError(f"checkpoint is missing or incomplete: {model.label}={model.path}")
+
+    for model in spec.models:
+        report = inspect_checkpoint_serving_abi(model.path)
+        _write(out / "serving_abi" / f"{model.label}.json", report)
+        require_valid_serving_abi(model.label, report)
 
     manager = TaskManager()
     available = set(manager.all_tasks)

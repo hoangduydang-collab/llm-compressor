@@ -32,6 +32,7 @@ quantization:
     - "re:.*multi_modal_projector.*"
     - "re:.*patch_merge_mlp.*"
     - "re:.*mlp[.]gate$"                 # MoE router
+    - "re:.*block_sparse_moe[.]gate$"     # vLLM router alias
     - "re:.*mlp[.]shared_experts[.].*"   # shared experts
     - "re:.*block_sparse_moe[.]shared_experts[.].*" # vLLM shared-expert alias
     - "re:.*self_attn[.].*"               # ATTENTION q/k/v/o + MSA indexer: keep BF16

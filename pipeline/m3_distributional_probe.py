@@ -212,6 +212,10 @@ def run_vllm_probe(args: argparse.Namespace) -> dict[str, Any]:
         "block_size": 128,
         "kv_cache_dtype": args.kv_cache_dtype,
     }
+    if args.distributed_executor_backend:
+        llm_kwargs["distributed_executor_backend"] = (
+            args.distributed_executor_backend
+        )
     engine = LLM(**llm_kwargs)
     sampling = SamplingParams(
         temperature=0.0,
@@ -313,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--max-model-len", type=int, default=65_536)
     run.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     run.add_argument("--kv-cache-dtype", default="fp8")
+    run.add_argument("--distributed-executor-backend")
     run.add_argument("--top-k", type=int, default=20)
     run.add_argument("--seed", type=int, default=42)
     run.set_defaults(func=run_vllm_probe)

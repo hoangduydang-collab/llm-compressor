@@ -297,9 +297,16 @@ def build_profile_sample_manifests(
     smoke_tasks: dict[str, dict[str, list[int]]] = {}
     for canonical, installed in resolved_tasks.items():
         sizes = leaf_sizes[canonical]
-        smoke_tasks[installed] = build_stratified_indices(
-            sizes, min(2, sum(sizes.values())), seed
-        )
+        if len(sizes) == 1:
+            smoke_tasks[installed] = build_stratified_indices(
+                sizes, min(2, sum(sizes.values())), seed
+            )
+        else:
+            smoke_tasks[installed] = {
+                leaf: build_stratified_indices({leaf: size}, 1, seed)[leaf]
+                for leaf, size in sizes.items()
+                if size > 0
+            }
     production_name = resolved_tasks[mmlu_task]
     production_tasks = {
         production_name: build_stratified_indices(

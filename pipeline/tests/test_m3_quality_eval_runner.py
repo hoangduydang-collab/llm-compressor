@@ -86,3 +86,8 @@ def test_ray_placement_group_diagnostic_is_bounded_and_captures_state():
     assert 'ray-logs-rank-$rank.tar.gz' in script
     assert 'driver-done' in script
     assert 'ray stop --force' in script
+
+
+def test_distributional_probe_receives_distributed_backend():
+    arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+    assert '--distributed-executor-backend "$BACKEND"' in arm

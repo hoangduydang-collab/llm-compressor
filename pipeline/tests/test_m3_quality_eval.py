@@ -399,7 +399,7 @@ def test_production_launch_plan_refuses_failed_smoke_gate(tmp_path):
 def test_profile_manifests_make_tiny_smoke_and_mmlu_only_production(tmp_path):
     leaf_sizes = {
         "gpqa_diamond": {"gpqa_diamond": 100},
-        "mmlu_pro": {"mmlu_math": 1000, "mmlu_history": 500},
+        "mmlu_pro": {"mmlu_math": 1000, "mmlu_history": 499, "mmlu_law": 1},
     }
     outputs = build_profile_sample_manifests(
         resolved_tasks={"gpqa_diamond": "gpqa_diamond", "mmlu_pro": "mmlu_pro"},
@@ -413,7 +413,9 @@ def test_profile_manifests_make_tiny_smoke_and_mmlu_only_production(tmp_path):
     smoke = json.loads(outputs["smoke"].read_text())
     production = json.loads(outputs["production"].read_text())
     assert sum(len(v) for v in smoke["tasks"]["gpqa_diamond"].values()) == 2
-    assert sum(len(v) for v in smoke["tasks"]["mmlu_pro"].values()) == 2
+    mmlu_smoke = smoke["tasks"]["mmlu_pro"]
+    assert sum(len(v) for v in mmlu_smoke.values()) == len(mmlu_smoke)
+    assert all(len(indices) == 1 for indices in mmlu_smoke.values())
     assert set(production["tasks"]) == {"mmlu_pro"}
     assert sum(len(v) for v in production["tasks"]["mmlu_pro"].values()) == 1200
     assert smoke["sha256"] and production["sha256"]
@@ -448,3 +450,28 @@ def test_sample_index_validation_reports_resolved_leaf_bounds():
         ),
     ):
         validate_sample_indices(tasks, sizes)
+
+
+def test_static_serving_abi_gate_rejects_before_runtime():
+    from pipeline.m3_quality_preflight import require_valid_serving_abi
+
+    report = {
+        "valid": False,
+        "errors": [
+            {
+                "code": "plain_runtime_module_not_ignored",
+                "module": "language_model.model.layers.3.block_sparse_moe.shared_experts.gate_up_proj",
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="static serving ABI.*shared_experts"):
+        require_valid_serving_abi("inhouse_awq", report)
+
+
+def test_minimax_mmlu_metric_matches_installed_generation_task():
+    import yaml
+
+    config = yaml.safe_load(Path("pipeline/configs/eval_minimax_m3_quality.yaml").read_text())
+    mmlu = next(task for task in config["eval"]["tasks"] if task["name"] == "mmlu_pro")
+    assert mmlu["metric"] == "exact_match,custom-extract"

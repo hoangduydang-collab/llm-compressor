@@ -1,0 +1,31 @@
+{
+  "arm": "gptq_w4a8",
+  "checkpoint_role": "gptq",
+  "deviations": [],
+  "diagnostic_layers": "3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59",
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/results/m3-awq-gptq-repair/20260712-045912-awq-gptq-staged/gptq_w4a8",
+  "finished_at": "2026-07-12T05:12:21.670568+00:00",
+  "git_commit": "c12f218e72055122ac360ac4174088c098ddcf14",
+  "git_status_short": "?? artifacts/MiniMax-M3-awq-W4AFP8/\n?? artifacts/MiniMax-M3-gptq-W4AFP8/\n?? artifacts/Qwen1.5-MoE-A2.7B-Chat-gptq-W4AFP8/\n?? artifacts/Qwen3-30B-A3B-awq-W4AFP8/\n?? artifacts/Qwen3-30B-A3B-gptq-W4A16/\n?? artifacts/Qwen3-30B-A3B-gptq-W4AFP8/\n?? artifacts/Qwen3-8B-gptq-W4AFP8/\n?? artifacts/m3-awq-gptq-prepared/\n?? results/m3-awq-gptq-repair/",
+  "host": "h113-gpu-polaris.pod4.lab.bitdeer.ai",
+  "interface": "offline",
+  "matrix_id": "20260712-045912-awq-gptq-staged",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "overlay_checkpoint": "/mnt/nfs/hoangduy/logs/m3-awq-gptq-repair/20260712-045912-awq-gptq-staged/gptq_w4a8/checkpoint",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "retries": [],
+  "return_code": 0,
+  "scheduler": {
+    "SLURM_JOB_ID": "12774",
+    "SLURM_JOB_NODELIST": "gpu-h113"
+  },
+  "scheduler_log": "/mnt/nfs/hoangduy/logs/m3-awq-gptq-repair-srun/20260712-045912-awq-gptq-staged-gptq_w4a8.log",
+  "schema_version": 1,
+  "scheme": "w4a8",
+  "source_checkpoint": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123",
+  "source_config_sha256": "e3840724abf81f69df1213ea94d8ec3e9479f0329144773a4f360ca779cad507",
+  "source_index_sha256": "3447e12c56ba4bef11a975f191d91b37b984a390a2dde05614104c4333131368",
+  "started_at": "2026-07-12T04:59:13.356480+00:00"
+}

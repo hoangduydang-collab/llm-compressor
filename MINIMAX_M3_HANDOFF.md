@@ -451,8 +451,58 @@ capture and commit its complete log plus `sacct`/`scontrol` output for the
 allocation and step, including requested/effective time limit, state, exit
 code, reason, and node, before the scheduler record expires.
 
+## Superseding handoff: representative-layer AWQ diagnostic
 
-## Superseding handoff: three-model smoke recovery
+Do **not** retry either full AWQ rebuild. The two cancellations did not test the
+AWQ hypotheses and made full preparation the slow path. The active task is now
+an in-memory six-arm diagnostic over layers 8, 31, and 59 for `offsetfix` and
+`nosmooth`. Each arm quantizes one layer only, captures two reference and two
+candidate propagation passes inside the sequential calibration pipeline, writes
+compact local-fidelity evidence, and exits without saving a checkpoint.
+
+Pull the latest commit, activate the cluster quantization environment, and run
+the CPU/config preflight before allocating GPUs:
+
+    python -m pytest -q \
+      pipeline/tests/test_m3_awq_representative.py \
+      pipeline/tests/test_m3_awq_representative_launcher.py \
+      pipeline/tests/test_minimax_m3_config.py \
+      tests/llmcompressor/modeling/test_offset_norm_minimax_m3.py
+    bash -n pipeline/slurm/run_m3_awq_representative_srun.sh
+
+Then print and inspect the exact six `srun` commands:
+
+    RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-awq-representative" \
+      DRY_RUN=1 bash pipeline/slurm/run_m3_awq_representative_srun.sh
+
+Launch the same command without `DRY_RUN=1` in the foreground. Keep the
+controlling process attached and poll it; do not put the launcher in another
+tool-managed background shell. The launcher creates fresh run-specific log and
+result roots by default, starts all six one-GPU `srun` steps concurrently,
+waits for every arm, and aggregates after all returns.
+
+Do not change the production 512x2048 calibration, W4AFP8 scheme, AWQ grid,
+layer set, mappings, thresholds, or variants at runtime. Do not save/export a
+checkpoint, launch vLLM, run HTTP generation, retry a failed arm, or begin the
+CUDA-graph issue. A quality failure is a valid result.
+
+Return through Git:
+
+- the complete run-specific result tree, including every `start.json`,
+  successful `arm.json`, per-arm `rc`, `matrix.json`, and `report.md`;
+- all six complete logs when reasonably sized, otherwise durable log paths,
+  sizes, and SHA-256 hashes plus committed head/tail excerpts;
+- exact command, Git revision, environment/package versions, run/result/log
+  roots, Slurm job/step IDs, nodes, elapsed times, return codes, retries (expected
+  zero), OOMs, and deviations;
+- immediate `scontrol`/`sacct` evidence for any abnormal exit before scheduler
+  records disappear.
+
+Commit and push the evidence, then stop for primary-agent analysis. Do not
+interpret a mostly passing matrix as permission to start full quantization.
+
+
+## Historical handoff: three-model smoke recovery (deferred)
 
 This section supersedes the four-model commands above. AutoRound is deferred:
 its mixed-bit checkpoint requires a pinned OneCompression plugin plus a
@@ -525,3 +575,11 @@ normalized samples, generation health, probe records/summaries, root matrix,
 gates and report, exact commands, Slurm job/step IDs and nodes, software
 versions, wall times, retries, and deviations. Do not begin AutoRound adapter or
 serving-performance work.
+
+## Active handoff pointer
+
+The active cluster task is **Superseding handoff: representative-layer AWQ
+diagnostic** above. The three-model quality matrix in the immediately preceding
+historical section is deferred until the AWQ direction is resolved. Run only
+`pipeline/slurm/run_m3_awq_representative_srun.sh`, return its evidence, and
+stop.

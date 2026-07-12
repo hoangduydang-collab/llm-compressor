@@ -84,10 +84,9 @@ contributor and this launch method should not be reused for the next attempt.
 
 ## Recommended next action
 
-Rerun both AWQ variants unchanged from a persistent login-shell context or a
-proper detached/batch allocation that survives the controlling session.
-Capture `sacct`/`scontrol` metadata before records expire, along with
-stdout/stderr and a completion marker. Before serving, verify that each output
-contains a complete `config.json`, `model.safetensors.index.json`, all
-referenced shards, and a successful quantization completion record. Only then
-launch the AWQ/GPTQ serving matrix.
+Do not begin a third full rebuild yet. Run the six-arm representative-layer
+diagnostic in `MINIMAX_M3_HANDOFF.md` instead. It tests layers 8, 31, and 59 for
+both AWQ variants concurrently, measures reference-versus-candidate MoE
+boundaries inside the sequential calibration lifecycle, and never exports a
+checkpoint. Use its compact evidence to decide whether either recipe justifies
+the cost of a later full rebuild.

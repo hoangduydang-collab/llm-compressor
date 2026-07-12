@@ -300,8 +300,9 @@ _M3_LM = r".*language_model[.]layers[.]"
 
 def get_minimax_m3_awq_mappings(
     disable_mlp_input_smoothing: bool | None = None,
+    layer: int | None = None,
 ) -> list:
-    """Return AWQ smooth/balance mappings for MiniMax-M3 sparse layers (3-59).
+    """Return AWQ mappings for all sparse layers or one selected sparse layer.
 
     Mirrors the keep-bf16 strategy from ``cyankiwi/MiniMax-M3-AWQ-INT4``, translated
     to transformers 5.12.1 module names (``self_attn.indexer.*``, ``mlp.experts.N.*``).
@@ -311,7 +312,9 @@ def get_minimax_m3_awq_mappings(
     """
     from llmcompressor.modifiers.transform.awq import AWQMapping
 
-    s = _M3_SPARSE_LAYER
+    if layer is not None and layer not in range(3, 60):
+        raise ValueError(f"expected sparse MiniMax-M3 layer in [3, 59], got {layer}")
+    s = _M3_SPARSE_LAYER if layer is None else str(layer)
     lm = _M3_LM
     if disable_mlp_input_smoothing is None:
         disable_mlp_input_smoothing = os.environ.get(

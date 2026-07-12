@@ -1,5 +1,6 @@
 """Tests for MiniMax-M3 config coercion."""
 
+import pytest
 import torch
 
 
@@ -272,3 +273,22 @@ def test_minimax_m3_awq_can_disable_only_mlp_input_smoothing():
     assert not any(
         "post_attention_layernorm" in mapping.smooth_layer for mapping in mappings
     )
+
+
+def test_minimax_m3_awq_mappings_can_target_one_representative_layer():
+    from pipeline.minimax_m3_config import get_minimax_m3_awq_mappings
+
+    mappings = get_minimax_m3_awq_mappings(layer=31)
+
+    assert len(mappings) == 4
+    for mapping in mappings:
+        patterns = [mapping.smooth_layer, *mapping.balance_layers]
+        assert all("layers[.]31[.]" in pattern for pattern in patterns)
+        assert all("[1-5][0-9]" not in pattern for pattern in patterns)
+
+
+def test_minimax_m3_awq_mappings_reject_non_sparse_layer():
+    from pipeline.minimax_m3_config import get_minimax_m3_awq_mappings
+
+    with pytest.raises(ValueError, match="sparse MiniMax-M3 layer"):
+        get_minimax_m3_awq_mappings(layer=2)

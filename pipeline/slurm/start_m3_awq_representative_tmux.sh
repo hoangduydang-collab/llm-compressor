@@ -49,6 +49,10 @@ if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
   exit 0
 fi
 
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  echo "refusing nested srun under SLURM_JOB_ID=$SLURM_JOB_ID; start this tmux wrapper from a login/control shell outside any Slurm allocation so each top-level srun receives an exclusive node" >&2
+  exit 2
+fi
 if ! command -v tmux >/dev/null 2>&1; then
   echo "tmux is required; install/load it before launching srun" >&2
   exit 2

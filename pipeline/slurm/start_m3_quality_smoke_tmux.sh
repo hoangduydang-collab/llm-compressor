@@ -32,6 +32,10 @@ if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
   DRY_RUN=1 RUN_ROOT="$RUN_ROOT" MATRIX="$MATRIX" REPAIRED_GPTQ="$REPAIRED_GPTQ" LOG_ROOT="$LOG_ROOT" bash "$SCRIPT_DIR/run_m3_quality_smoke_srun.sh"
   exit 0
 fi
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  echo "refusing nested srun under SLURM_JOB_ID=$SLURM_JOB_ID; start this tmux wrapper from a login/control shell outside any Slurm allocation so each top-level srun receives an exclusive node" >&2
+  exit 2
+fi
 command -v tmux >/dev/null 2>&1 || { echo "tmux is required; install/load it before launching srun" >&2; exit 2; }
 if tmux has-session -t "=$SESSION_NAME" 2>/dev/null; then echo "tmux session already exists: $SESSION_NAME" >&2; exit 2; fi
 for stale in "$RUN_ROOT/controller.sh" "$RUN_ROOT/controller.rc" "$CONTROLLER_LOG"; do

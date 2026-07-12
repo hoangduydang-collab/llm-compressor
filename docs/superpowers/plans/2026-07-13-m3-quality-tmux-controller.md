@@ -23,3 +23,10 @@
 - [x] Add duplicate/stale evidence tests and monitoring instructions.
 - [x] Run focused tests, Bash syntax, dry run, and diff checks.
 - [ ] Commit and push the shared branch.
+
+## Node-allocation invariant
+
+The real tmux launcher and direct controller must run outside any Slurm
+allocation. They reject an inherited `SLURM_JOB_ID`; only top-level
+`srun --exclusive` provides the required whole-node allocations. Executor
+monitoring must confirm disjoint running node lists.

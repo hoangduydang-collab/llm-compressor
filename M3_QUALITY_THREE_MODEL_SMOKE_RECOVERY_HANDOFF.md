@@ -150,8 +150,14 @@ Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclus
 The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
 so benchmark failure cannot erase distribution evidence.
 
-The Cursor tool must not own any `srun` process. Start the unchanged four-arm
-controller through the tested detached tmux wrapper:
+The Cursor tool must not own any `srun` process. Run the real wrapper from a
+login/control shell outside every Slurm allocation; `[[ -z
+"${SLURM_JOB_ID:-}" ]]` must succeed. Nested `srun --exclusive` is only
+step-exclusive and may colocate jobs, so both wrapper and controller now refuse
+an inherited `SLURM_JOB_ID`. Top-level `srun --exclusive` gives each arm a
+whole-node allocation.
+
+Start the unchanged four-arm controller through the tested detached tmux wrapper:
 
 ```bash
 export RUN_ID RUN_ROOT MATRIX REPAIRED_GPTQ
@@ -172,6 +178,10 @@ tail -f "$RUN_ROOT/logs/controller.log"
 squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
 cat "$RUN_ROOT/controller.rc"
 ```
+
+Confirm concurrent running jobs have disjoint `NODELIST` values: GPTQ and AWQ
+one node each, and Ray two other nodes. BF16 later receives two exclusive nodes
+after Ray finishes. Do not accept colocated running arms.
 
 Attaching is optional: `tmux attach-session -t "=m3-quality-$RUN_ID"`. Detach
 with `Ctrl-b d`; do not kill the tmux server. The controller starts repaired

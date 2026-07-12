@@ -15,7 +15,7 @@ def test_tmux_wrapper_dry_run_prints_durable_launch_and_monitoring(tmp_path):
         ["bash", str(WRAPPER)],
         cwd=WRAPPER.parents[2],
         env={
-            **os.environ,
+            **{k: v for k, v in os.environ.items() if k != "SLURM_JOB_ID"},
             "DRY_RUN": "1",
             "RUN_ID": "run-123",
             "SESSION_NAME": "m3-awq-run-123",
@@ -63,7 +63,7 @@ def test_tmux_wrapper_creates_and_verifies_detached_session(tmp_path):
         ["bash", str(WRAPPER)],
         cwd=WRAPPER.parents[2],
         env={
-            **os.environ,
+            **{k: v for k, v in os.environ.items() if k != "SLURM_JOB_ID"},
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "FAKE_TMUX_STATE": str(state),
             "RUN_ID": "verified-run",
@@ -91,7 +91,7 @@ def test_tmux_wrapper_rejects_existing_session(tmp_path):
         ["bash", str(WRAPPER)],
         cwd=WRAPPER.parents[2],
         env={
-            **os.environ,
+            **{k: v for k, v in os.environ.items() if k != "SLURM_JOB_ID"},
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "FAKE_TMUX_STATE": str(state),
             "RUN_ID": "duplicate-run",
@@ -115,7 +115,7 @@ def test_tmux_wrapper_rejects_stale_result_root(tmp_path):
         ["bash", str(WRAPPER)],
         cwd=WRAPPER.parents[2],
         env={
-            **os.environ,
+            **{k: v for k, v in os.environ.items() if k != "SLURM_JOB_ID"},
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "FAKE_TMUX_STATE": str(state),
             "RUN_ID": "stale-run",

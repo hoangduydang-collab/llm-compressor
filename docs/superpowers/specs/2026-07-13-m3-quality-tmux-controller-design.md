@@ -24,3 +24,10 @@ be reconciled with durable logs and Slurm state before any retry.
 CPU tests cover four-arm dry-run parity, verified tmux creation, monitoring
 instructions, duplicate/stale rejection, and absence of nohup/setsid/screen.
 Bash syntax and the dry-run launcher are checked without allocating GPUs.
+
+## Node-allocation invariant
+
+The real tmux launcher and direct controller must run outside any Slurm
+allocation. They reject an inherited `SLURM_JOB_ID`; only top-level
+`srun --exclusive` provides the required whole-node allocations. Executor
+monitoring must confirm disjoint running node lists.

@@ -19,6 +19,10 @@ BF16="${BF16:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}"
 if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
   TASKS=resolved-smoke-tasks
 else
+  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    echo "refusing nested srun under SLURM_JOB_ID=$SLURM_JOB_ID; launch from outside any Slurm allocation" >&2
+    exit 2
+  fi
   if ! source "$ENV_FILE"; then
     echo "failed to source ENV_FILE=$ENV_FILE" >&2
     exit 2

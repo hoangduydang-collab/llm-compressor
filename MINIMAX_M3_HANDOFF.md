@@ -466,11 +466,19 @@ the CPU/config preflight before allocating GPUs:
     python -m pytest -q \
       pipeline/tests/test_m3_awq_representative.py \
       pipeline/tests/test_m3_awq_representative_launcher.py \
+      pipeline/tests/test_m3_node_exclusivity.py \
       pipeline/tests/test_minimax_m3_config.py \
       tests/llmcompressor/modeling/test_offset_norm_minimax_m3.py
     bash -n pipeline/slurm/run_m3_awq_representative_srun.sh
 
 ### Cursor-safe detached launch (required)
+
+Launch from a login/control shell **outside every Slurm allocation**. Confirm
+`[[ -z "${SLURM_JOB_ID:-}" ]]` before the real launch. Inside an existing
+allocation, Slurm defines `srun --exclusive` as step-level `--exact`, so several
+one-GPU steps may share one eight-GPU node. The wrapper now refuses that unsafe
+context. From the outside context, each top-level `srun --exclusive` requests a
+separate whole-node allocation; the six arms therefore require six nodes.
 
 Cursor must **not** run `run_m3_awq_representative_srun.sh` directly as a
 background tool task. `srun` is client-owned: destroying Cursor's controller
@@ -520,6 +528,10 @@ if entering them manually, first restore the printed values:
     tmux has-session -t "=$SESSION_NAME"
     tmux capture-pane -pt "=$SESSION_NAME" -S -80
     squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
+
+Before accepting the run, confirm the six running arm jobs show six distinct
+single-node `NODELIST` values. Pending jobs are acceptable; two running arms on
+the same node are not. Stop and return scheduler evidence if colocation occurs.
 
 Poll with `tmux capture-pane` and `tail` of the printed `controller.log`; these
 commands return immediately. Attaching is optional:

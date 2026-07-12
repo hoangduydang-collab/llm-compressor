@@ -10,7 +10,7 @@ CONTROLLER = ROOT / "pipeline/slurm/run_m3_quality_smoke_srun.sh"
 
 def _base_env(tmp_path):
     return {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if k != "SLURM_JOB_ID"},
         "DRY_RUN": "1",
         "RUN_ID": "quality-123",
         "SESSION_NAME": "m3-quality-123",

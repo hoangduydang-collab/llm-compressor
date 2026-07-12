@@ -26,6 +26,10 @@ layers=(8 31 59 8 31 59)
 pids=()
 
 if [[ "$DRY_RUN" != 1 && "$DRY_RUN" != true ]]; then
+  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    echo "refusing nested srun under SLURM_JOB_ID=$SLURM_JOB_ID; launch from outside any Slurm allocation" >&2
+    exit 2
+  fi
   # shellcheck disable=SC1090
   if ! source "$ENV_FILE"; then
     echo "failed to source ENV_FILE=$ENV_FILE" >&2

@@ -53,13 +53,41 @@ timeouts:
 
 `artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123`
 
+## Retry attempt and cancellation analysis
+
+The prescribed retry was launched from a tool-managed background shell on
+2026-07-12 at 08:12 UTC with:
+
+```text
+test -z "${SLURM_JOB_ID:-}" || { echo "leave parent allocation first"; exit 1; }
+unset SRUN_ARGS
+TIME_LIMIT=96:00:00 bash pipeline/slurm/run_m3_awq_gptq_prepare_srun.sh
+```
+
+The launcher preflight passed (`23 passed`). Slurm reported both allocations
+with approximately 3 days 22 hours remaining at the 10:08 UTC progress check,
+so the configured 96-hour limit had not expired. Nevertheless, both steps were
+cancelled together at approximately 14:30 UTC:
+
+- `awq-offsetfix`: `gpu-h122`, step `12778.0`; smoothing reached 100% and the
+  run had entered layer 12 before cancellation.
+- `awq-nosmooth`: `gpu-h121`, step `12777.0`; the run was at layer 15 and 31%
+  of its 128 smoothing targets.
+
+Both logs end with `srun: error: Timed out waiting for job step to complete`.
+No `scancel`, `kill`, or other termination command was issued by the agent.
+The launcher process was later absent, and Slurm accounting no longer returned
+records for these completed job IDs, so the exact cancellation source cannot
+be proven from the available evidence. Because the jobs were started from a
+tool-managed background shell, launcher/session teardown remains a plausible
+contributor and this launch method should not be reused for the next attempt.
+
 ## Recommended next action
 
-Rerun both AWQ variants unchanged from a login shell outside any parent Slurm
-allocation. Clear `SRUN_ARGS` and explicitly retain the launcher's 96-hour
-limit; the launcher already defaulted to 96 hours, so merely increasing its
-configured default would not explain or prevent the observed simultaneous
-cancellation. Preserve stdout/stderr and scheduler accounting. Before serving,
-verify that each output contains a complete `config.json`,
-`model.safetensors.index.json`, all referenced shards, and a successful
-quantization completion record. Only then launch the AWQ/GPTQ serving matrix.
+Rerun both AWQ variants unchanged from a persistent login-shell context or a
+proper detached/batch allocation that survives the controlling session.
+Capture `sacct`/`scontrol` metadata before records expire, along with
+stdout/stderr and a completion marker. Before serving, verify that each output
+contains a complete `config.json`, `model.safetensors.index.json`, all
+referenced shards, and a successful quantization completion record. Only then
+launch the AWQ/GPTQ serving matrix.

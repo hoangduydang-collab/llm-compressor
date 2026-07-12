@@ -416,10 +416,18 @@ output.
 
 ### Immediate rerun
 
-Treat the simultaneous cancellation as a likely transient infrastructure
-failure. Do not change calibration, AWQ mappings, smoothing, or checkpoint
-export for this retry. From a login shell that is **not** inside an existing
-Slurm allocation, pull the latest commit and run:
+The first retry was launched from a tool-managed background shell. Although no
+`scancel`, `kill`, or other termination command was issued, both steps were
+cancelled together after about six hours while their 96-hour allocations still
+had days remaining. The exact source cannot be proven because the launcher
+later disappeared and Slurm accounting records were unavailable. Treat
+launcher/session teardown as a plausible contributor. The next retry must use a
+persistent login-shell context or a detached/batch allocation that survives
+the controlling session.
+
+Do not change calibration, AWQ mappings, smoothing, or checkpoint export. From
+a persistent login shell that is **not** inside an existing Slurm allocation,
+pull the latest commit and run:
 
     test -z "${SLURM_JOB_ID:-}" || { echo "leave parent allocation first"; exit 1; }
     unset SRUN_ARGS
@@ -438,9 +446,10 @@ run only the pending AWQ finish phase against the existing staged matrix:
 
 Commit the preparation logs, exact output paths, return codes, checkpoint
 validation, the six AWQ arm artifacts, and the regenerated `comparison.json`.
-If a preparation arm exits early again, do not retry dynamically: commit its
-complete log plus the output of `sacct`/`scontrol` for the allocation and step,
-including requested/effective time limit, state, exit code, reason, and node.
+If a preparation arm exits early again, do not retry dynamically: immediately
+capture and commit its complete log plus `sacct`/`scontrol` output for the
+allocation and step, including requested/effective time limit, state, exit
+code, reason, and node, before the scheduler record expires.
 
 
 ## Superseding handoff: three-model smoke recovery

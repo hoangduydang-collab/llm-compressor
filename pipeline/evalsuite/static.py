@@ -100,7 +100,7 @@ def _numeric_metrics(task_results: dict) -> dict[str, float]:
     return {
         k: float(v)
         for k, v in task_results.items()
-        if isinstance(v, (int, float))
+        if isinstance(v, (int, float)) and "stderr" not in k
     }
 
 

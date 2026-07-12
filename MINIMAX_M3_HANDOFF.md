@@ -650,20 +650,20 @@ gates and report, exact commands, Slurm job/step IDs and nodes, software
 versions, wall times, retries, and deviations. Do not begin AutoRound adapter or
 serving-performance work.
 
-## Representative diagnostic progress snapshot
+## Representative diagnostic final status
 
 The current six-arm run is documented in
-`M3_AWQ_REPRESENTATIVE_DIAGNOSTIC_REPORT.md`. At the 2026-07-12 ~17:10 UTC
-snapshot, the exclusive-node launch was healthy: three arms were still
-running under the detached tmux controller, and three arms had exited with
-`rc=1`. The failed arms were `offsetfix-layer8`, `nosmooth-layer8`, and
-`nosmooth-layer59`; all three raised `ZeroDivisionError` while computing
+`M3_AWQ_REPRESENTATIVE_DIAGNOSTIC_REPORT.md`. At the final 2026-07-12
+~17:15 UTC verification, the exclusive-node launch had completed and all six
+arms exited with `rc=1`. Every arm raised `ZeroDivisionError` while computing
 `avg_reduction` in `llmcompressor/modifiers/transform/awq/base.py:846`.
+The compact matrix therefore reports six `infrastructure_failure` arms and an
+`incomplete` overall verdict.
 
 The complete logs and compact result artifacts remain at the durable absolute
 paths listed in the report, with SHA256 hashes recorded there. Do not
-aggregate this run or start a full AWQ rebuild until the three active arms
-finish and the empty-metric failure is analyzed.
+start a full AWQ rebuild until the empty-metric failure is analyzed and the
+representative diagnostic is corrected.
 
 ## Active handoff pointer
 

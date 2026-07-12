@@ -470,16 +470,72 @@ the CPU/config preflight before allocating GPUs:
       tests/llmcompressor/modeling/test_offset_norm_minimax_m3.py
     bash -n pipeline/slurm/run_m3_awq_representative_srun.sh
 
-Then print and inspect the exact six `srun` commands:
+### Cursor-safe detached launch (required)
 
-    RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-awq-representative" \
-      DRY_RUN=1 bash pipeline/slurm/run_m3_awq_representative_srun.sh
+Cursor must **not** run `run_m3_awq_representative_srun.sh` directly as a
+background tool task. `srun` is client-owned: destroying Cursor's controller
+process cancels the Slurm steps. Do not use plain shell backgrounding or the
+older detached-process wrappers for this matrix. A detached tmux server must
+own the controller.
 
-Launch the same command without `DRY_RUN=1` in the foreground. Keep the
-controlling process attached and poll it; do not put the launcher in another
-tool-managed background shell. The launcher creates fresh run-specific log and
-result roots by default, starts all six one-GPU `srun` steps concurrently,
-waits for every arm, and aggregates after all returns.
+First print and inspect the tmux launch plus the exact evidence roots. This is
+read-only and does not create a session:
+
+    RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-awq-representative"
+    SESSION_NAME="m3-awq-$RUN_ID"
+    DRY_RUN=1 RUN_ID="$RUN_ID" SESSION_NAME="$SESSION_NAME" \
+      bash pipeline/slurm/start_m3_awq_representative_tmux.sh
+
+The dry run prints all six underlying `srun` commands. Record its literal
+`RUN_ID` and `SESSION_NAME`. Then, in a new short **foreground** Cursor tool
+call, reuse those exact printed values to create the detached session. Do not
+recompute the timestamp, add `&`, or ask Cursor to keep this call alive:
+
+    RUN_ID='<RUN_ID printed by the dry run>'
+    SESSION_NAME='<SESSION_NAME printed by the dry run>'
+    RUN_ID="$RUN_ID" SESSION_NAME="$SESSION_NAME" \
+      bash pipeline/slurm/start_m3_awq_representative_tmux.sh
+
+The wrapper returns only after `tmux has-session` succeeds. Record the printed
+`RUN_ID`, `SESSION_NAME`, `LOG_ROOT`, `RESULT_ROOT`, and monitoring commands.
+At that point the Cursor tool may exit or be interrupted; the tmux server, not
+Cursor, owns the `srun` controller.
+
+The wrapper rejects a live duplicate session and any completed/partial evidence
+already present for that `RUN_ID`. Never delete those guards to reuse an ID;
+choose a fresh ID instead.
+
+Verify survival from a **new** Cursor tool call by copying the literal commands
+printed by the wrapper. Shell variables do not carry between Cursor tool calls;
+if entering them manually, first restore the printed values:
+
+    SESSION_NAME='<printed SESSION_NAME>'
+    RESULT_ROOT='<printed RESULT_ROOT>'
+    tmux has-session -t "=$SESSION_NAME"
+    tmux capture-pane -pt "=$SESSION_NAME" -S -80
+    squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
+
+Poll with `tmux capture-pane` and `tail` of the printed `controller.log`; these
+commands return immediately. Attaching is optional:
+
+    tmux attach-session -t "=$SESSION_NAME"
+
+Detach manually with `Ctrl-b d`. Never run `tmux kill-session` or
+`tmux kill-server` while an arm is active. Do not leave a Cursor tool blocked in
+`tmux attach-session` for monitoring.
+
+Interpret session state carefully:
+
+- tmux exists and Slurm steps exist: healthy; continue polling;
+- tmux is gone and `controller.rc` exists: the controller finished; read the rc,
+  `matrix.json`, `report.md`, and logs;
+- tmux is gone, `controller.rc` is absent, or Slurm steps vanish unexpectedly:
+  treat as infrastructure failure, immediately capture `scontrol`/`sacct` and
+  logs, and do not restart dynamically.
+
+The tmux-owned controller creates fresh run-specific log and result roots,
+starts all six one-GPU `srun` steps concurrently, waits for every arm, and
+aggregates after all returns.
 
 Do not change the production 512x2048 calibration, W4AFP8 scheme, AWQ grid,
 layer set, mappings, thresholds, or variants at runtime. Do not save/export a
@@ -581,5 +637,5 @@ serving-performance work.
 The active cluster task is **Superseding handoff: representative-layer AWQ
 diagnostic** above. The three-model quality matrix in the immediately preceding
 historical section is deferred until the AWQ direction is resolved. Run only
-`pipeline/slurm/run_m3_awq_representative_srun.sh`, return its evidence, and
-stop.
+`pipeline/slurm/start_m3_awq_representative_tmux.sh`; it owns
+`run_m3_awq_representative_srun.sh` inside tmux. Return the evidence and stop.

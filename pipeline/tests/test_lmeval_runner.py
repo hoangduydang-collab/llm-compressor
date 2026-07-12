@@ -11,6 +11,7 @@ import pytest
 from pipeline.config import EvalTask, PipelineConfig, ServeConfig, load_config
 from pipeline._env import apply_lm_eval_sglang_compat, apply_sglang_compat_env
 from pipeline.lmeval_runner import (
+    _prepare_vllm_runtime,
     model_args,
     per_task_limit,
     per_task_num_fewshot,
@@ -125,6 +126,36 @@ def test_vllm_model_args():
     assert "max_model_len=4096" in args
     assert "trust_remote_code=True" in args
     assert "disable_custom_all_reduce=True" in args
+
+
+def test_vllm_model_args_forwards_typed_vllm_kwargs():
+    cfg = PipelineConfig()
+    cfg.serve.vllm_kwargs = {
+        "distributed_executor_backend": "ray",
+        "enable_expert_parallel": True,
+        "block_size": 128,
+        "kv_cache_dtype": "fp8",
+    }
+
+    args = vllm_model_args(cfg, "/models/minimax-m3")
+
+    assert "distributed_executor_backend=ray" in args
+    assert "enable_expert_parallel=True" in args
+    assert "block_size=128" in args
+    assert "kv_cache_dtype=fp8" in args
+
+
+def test_prepare_vllm_runtime_reuses_minimax_runtime(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        "pipeline.m3_distributional_probe._prepare_minimax_runtime",
+        lambda model, source: calls.append((model, source)) or {"prepared": True},
+    )
+
+    result = _prepare_vllm_runtime(str(tmp_path), "MiniMaxAI/MiniMax-M3")
+
+    assert result == {"prepared": True}
+    assert calls == [(tmp_path, "MiniMaxAI/MiniMax-M3")]
 
 
 def test_sglang_model_args_maps_serve_knobs():

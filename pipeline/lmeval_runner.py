@@ -35,6 +35,7 @@ def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
             f"enforce_eager={s.enforce_eager}",
             f"disable_custom_all_reduce={s.disable_custom_all_reduce}",
             "dtype=auto",
+            *(f"{key}={value}" for key, value in s.vllm_kwargs.items()),
             *_thinking_model_arg_parts(cfg.eval),
         ]
     )
@@ -104,8 +105,20 @@ def per_task_limit(tasks: list[EvalTask]) -> int | float | dict[str, int | float
     return limited
 
 
+def _prepare_vllm_runtime(model_path: str, model_source: str) -> dict:
+    """Apply the same MiniMax runtime preparation used by the fidelity probe."""
+    from pathlib import Path
+    from pipeline.m3_distributional_probe import _prepare_minimax_runtime
+
+    return _prepare_minimax_runtime(Path(model_path), model_source)
+
+
 def _load_lm_model(cfg: PipelineConfig, model_path: str):
     """Instantiate the lm-eval backend once for reuse across tasks."""
+    if cfg.eval.backend == "vllm":
+        runtime = _prepare_vllm_runtime(model_path, cfg.model.id)
+        if runtime:
+            print(f"[lmeval] vLLM runtime preparation: {runtime}")
     from lm_eval.api.registry import get_model
     import lm_eval.models  # noqa: F401  (populates the model registry)
 

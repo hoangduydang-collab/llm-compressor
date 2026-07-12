@@ -198,3 +198,140 @@ missing. Pull the classifier/audit fix and rerun only that one allocation:
 This returns checkpoint_scale_audit.json, its full log and return code, then
 regenerates comparison_early.json. Explosion detection is now reference-relative:
 the normal approximately 10k residual at layer 5 is no longer a false boundary.
+
+
+## Current handoff: vLLM-first paired quality matrix (2026-07-12)
+
+### Scope and stop condition
+
+This run addresses the **model-quality issue only**. Do not start serving
+throughput/CUDA-graph diagnosis. Compare exactly BF16, in-house GPTQ, cyankiwi
+AWQ, and aquaman AutoRound using paired prompts and direct vLLM execution.
+A quality-gate failure is a valid experimental result and must be returned; an
+infrastructure failure must be reported separately.
+
+The launcher deliberately has two stages:
+
+1. Four concurrent smoke arms use five nodes total (BF16: 2 nodes/16 H100;
+   each quantized model: 1 node/8 H100). Each task gets two exact samples,
+   generations are capped at 256 tokens, and each model gets a 2,048-token
+   distributional probe.
+2. Only a passed `smoke_gate.json` unlocks eight concurrent production arms
+   using ten nodes total. BF16's two arms each use 2 nodes/16 H100 with Ray;
+   the six quantized arms each use 1 node/8 H100.
+
+Use `srun`, not `sbatch`.
+
+### Pull, environment, and dynamic preflight
+
+```bash
+git pull
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+source <the-working-vllm-environment>/bin/activate
+export PYTHONPATH="$PWD"
+RUN_ID="$(date +%Y%m%d-%H%M%S)-m3-quality"
+RUN_ROOT="results/m3-quality/$RUN_ID"
+MATRIX=pipeline/configs/minimax_m3_quality_matrix.yaml
+mkdir -p "$RUN_ROOT"
+
+python -m pipeline.m3_quality_preflight \
+  --matrix "$MATRIX" \
+  --run-root "$RUN_ROOT" \
+  2>&1 | tee "$RUN_ROOT/preflight.log"
+```
+
+Preflight intentionally performs the runtime-dependent work on the capable
+cluster: verifies all checkpoint paths, resolves installed lm-eval task aliases
+and leaf splits, creates immutable smoke/production sample manifests, builds
+calibration-disjoint 2,048/49,152-token probe corpora, records tokenizer/chat
+hashes and Git/software provenance, and writes checkpoint diagnostics.
+Do not proceed unless `run_manifest.json`, `preflight/resolved_eval_config.yaml`,
+both sample manifests, both probe corpora, `resolved_tasks.json`, and four
+checkpoint diagnostic JSONs exist.
+
+If preflight fails because a task alias or dataset split changed, diagnose the
+installed lm-eval task registry locally and make the smallest documented fix.
+Do not silently substitute a benchmark or reduce production sample counts.
+
+### Mandatory smoke, then parallel production
+
+First inspect the exact allocations without consuming GPUs:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile smoke --matrix "$MATRIX" --run-root "$RUN_ROOT" --dry-run
+```
+
+It must print 4 arms and `total_nodes=5`. Then run:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile smoke --matrix "$MATRIX" --run-root "$RUN_ROOT"
+SMOKE_RC=$?
+python -m json.tool "$RUN_ROOT/smoke_gate.json"
+```
+
+Stop and return evidence immediately if `SMOKE_RC != 0` or
+`ready_for_production` is not true. Return every smoke stdout/stderr log,
+`smoke_report.json`, `smoke_gate.json`, each `smoke_evidence.json`, each arm
+manifest/return code, and the preflight artifacts. Include Slurm job IDs,
+nodes, environment/version output, exception traces, and any deviation or
+retry. Do not launch a five-hour run after a failed smoke.
+
+After smoke passes:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile production --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  --smoke-gate "$RUN_ROOT/smoke_gate.json" --dry-run
+```
+
+It must print 8 arms and `total_nodes=10`. Launch all arms concurrently:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile production --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  --smoke-gate "$RUN_ROOT/smoke_gate.json"
+PRODUCTION_RC=$?
+```
+
+Do not cancel healthy arms merely because another arm fails; preserve all
+completed evidence. If cluster contention prevents ten simultaneous nodes,
+keep the same arms and resource topology but start as many independent arms as
+available, documenting start/end times and queueing.
+
+### Aggregate and return contract
+
+Run aggregation even when one production arm failed; its infrastructure report
+is part of the diagnosis:
+
+```bash
+set +e
+python -m pipeline.m3_quality_eval aggregate \
+  --matrix "$MATRIX" --root "$RUN_ROOT" \
+  2>&1 | tee "$RUN_ROOT/aggregate.log"
+AGGREGATE_RC=${PIPESTATUS[0]}
+set -e
+```
+
+Commit and push the complete compact evidence tree and this handoff update.
+Return all of the following so the primary agent can do the analysis without
+asking for a rerun:
+
+- `run_manifest.json`, all preflight manifests/configs/hashes, resolved task
+  names and leaf sizes, probe corpora metadata, and checkpoint diagnostics;
+- every arm's `arm_manifest.json`, `arm_complete.json`, `return_code.txt`,
+  aggregate metrics, normalized per-sample JSONL, generation-health JSON,
+  distributional probe JSONL+summary, and stdout/stderr log;
+- root `matrix.json`, `gates.json`, `report.md`, `aggregate.log`, smoke report
+  and gate;
+- exact command lines, Git commit, Python/PyTorch/CUDA/vLLM/lm-eval versions,
+  Slurm job IDs/nodes, wall times, exit codes, retries, OOMs, and deviations;
+- log/artifact SHA-256 values if any large file must remain outside Git, plus
+  its exact durable path. Never replace a missing artifact with a prose summary.
+
+The decision metrics are downstream accuracy, paired accuracy delta and CI,
+flip/regression/recovery rates, exact/asymptotic McNemar evidence, score
+recovery, teacher-forced NLL/perplexity/top-k drift, generation degeneration,
+and checkpoint quantization coverage/scales/saturation. Serving latency and
+throughput remain explicitly out of scope until quality is resolved.

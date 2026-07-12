@@ -4,7 +4,7 @@
 
 **Goal:** Build a reproducible, paired, vLLM-first MiniMax-M3 quality matrix comparing BF16, in-house GPTQ, cyankiwi AWQ, and aquaman AutoRound in less than five hours, with downstream, distributional, generation-health, and checkpoint-fidelity metrics.
 
-**Architecture:** Extend the existing `pipeline.evalsuite` boundaries: lm-eval remains the task executor, normalized sample rows become the stable comparison interface, and focused modules add sample selection, paired statistics, generation health, distributional probes, and checkpoint diagnostics. A MiniMax-M3 matrix controller validates provenance and merges shard outputs; two concurrent `srun` shards per model execute on eight 8xH100 nodes and return complete evidence through Git.
+**Architecture:** Extend the existing `pipeline.evalsuite` boundaries: lm-eval remains the task executor, normalized sample rows become the stable comparison interface, and focused modules add sample selection, paired statistics, generation health, distributional probes, and checkpoint diagnostics. A MiniMax-M3 matrix controller validates provenance and merges shard outputs; concurrent `srun` arms execute on ten nodes (two 8xH100 nodes per BF16 arm and one per quantized arm) and return complete evidence through Git.
 
 **Tech Stack:** Python 3.11+, PyYAML, EleutherAI lm-evaluation-harness, vLLM, Transformers tokenizer, safetensors metadata, pytest, Bash, Slurm `srun`, JSON/JSONL artifacts.
 
@@ -48,7 +48,7 @@
 - `pipeline/configs/eval_minimax_m3_quality.yaml`: canonical deterministic quality task profile.
 - `pipeline/configs/minimax_m3_quality_matrix.yaml`: four models, two shards, paths, and gate defaults.
 - `pipeline/slurm/test_m3_quality_eval_arm.sh`: one resumable model/shard worker.
-- `pipeline/slurm/run_m3_quality_eval_srun.sh`: eight-arm concurrent `srun` launcher.
+- `pipeline/slurm/run_m3_quality_eval_srun.sh`: smoke-gated eight-arm concurrent `srun` launcher.
 
 ### New tests
 

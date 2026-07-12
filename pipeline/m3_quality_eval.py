@@ -334,12 +334,24 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
         if not isinstance(evidence, dict):
             continue
         probe = evidence.get("probe") or {}
-        projection = project_probe_overhead(
-            smoke_tokens=int(probe.get("tokens", 0)),
-            smoke_elapsed_seconds=float(probe.get("elapsed_seconds", 0.0)),
-            production_tokens=spec.probe.total_tokens,
-            budget_seconds=spec.probe.max_overhead_seconds,
-        )
+        smoke_tokens = int(probe.get("tokens", 0))
+        smoke_elapsed_seconds = float(probe.get("elapsed_seconds", 0.0))
+        if smoke_tokens > 0 and smoke_elapsed_seconds > 0:
+            projection = project_probe_overhead(
+                smoke_tokens=smoke_tokens,
+                smoke_elapsed_seconds=smoke_elapsed_seconds,
+                production_tokens=spec.probe.total_tokens,
+                budget_seconds=spec.probe.max_overhead_seconds,
+            )
+        else:
+            projection = {
+                "smoke_tokens": smoke_tokens,
+                "smoke_elapsed_seconds": smoke_elapsed_seconds,
+                "production_tokens": spec.probe.total_tokens,
+                "budget_seconds": spec.probe.max_overhead_seconds,
+                "within_budget": False,
+                "reason": "missing positive smoke probe timing",
+            }
         checks = {
             "infrastructure": evidence.get("infrastructure_ok") is True,
             "artifacts": evidence.get("artifacts_valid") is True,

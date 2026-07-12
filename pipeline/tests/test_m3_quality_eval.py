@@ -161,6 +161,22 @@ def test_smoke_gate_requires_every_model_and_projects_probe_budget():
     assert result["models"]["bf16"]["distributed_world_size"] == 16
 
 
+def test_smoke_gate_reports_zero_probe_evidence_without_raising():
+    spec = load_matrix(MATRIX)
+    report = _passing_smoke_report(spec)
+    report["models"]["inhouse_gptq"]["probe"] = {
+        "tokens": 0,
+        "elapsed_seconds": 0,
+    }
+
+    result = validate_smoke_gate(spec, report)
+
+    projection = result["models"]["inhouse_gptq"]["probe_projection"]
+    assert result["ready_for_production"] is False
+    assert projection["within_budget"] is False
+    assert projection["reason"] == "missing positive smoke probe timing"
+
+
 def test_smoke_gate_rejects_missing_or_looping_model():
     spec = load_matrix(MATRIX)
     report = _passing_smoke_report(spec)

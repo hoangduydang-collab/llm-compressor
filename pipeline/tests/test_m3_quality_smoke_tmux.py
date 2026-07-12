@@ -21,21 +21,20 @@ def _base_env(tmp_path):
     }
 
 
-def test_quality_controller_dry_run_preserves_four_arm_plan(tmp_path):
+def test_quality_controller_dry_run_preserves_three_model_plan(tmp_path):
     completed = subprocess.run(
         ["bash", str(CONTROLLER)], cwd=ROOT, env=_base_env(tmp_path),
         check=True, capture_output=True, text=True,
     )
     output = completed.stdout
-    assert output.count("srun --exclusive") == 4
+    assert output.count("srun --exclusive") == 3
     assert "inhouse_gptq" in output
     assert "cyankiwi_awq" in output
-    assert "test_m3_ray_topology.sh" in output
-    assert "ray_preflight" in output
-    assert "--stop-after-check" in output
+    assert "test_m3_ray_topology.sh" not in output
     assert "m3_ray_placement_group" not in output
     assert "--model-label bf16" in output
-    assert "timeout --signal=TERM --kill-after=60s 10m" in output
+    assert "--tensor-parallel-size 8" in output
+    assert "--distributed-executor-backend mp" in output
 
 
 def test_quality_tmux_wrapper_dry_run_prints_monitoring(tmp_path):
@@ -115,3 +114,17 @@ def test_quality_tmux_wrapper_forbids_unsafe_detachment():
     assert "nohup" not in text
     assert "setsid" not in text
     assert "screen -" not in text
+
+
+def test_quality_controller_can_run_bf16_only(tmp_path):
+    env = _base_env(tmp_path)
+    env["QUALITY_ARM_FILTER"] = "bf16"
+    completed = subprocess.run(
+        ["bash", str(CONTROLLER)], cwd=ROOT, env=env,
+        check=True, capture_output=True, text=True,
+    )
+    output = completed.stdout
+    assert output.count("srun --exclusive") == 1
+    assert "--model-label bf16" in output
+    assert "inhouse_gptq" not in output
+    assert "cyankiwi_awq" not in output

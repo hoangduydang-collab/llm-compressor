@@ -10,7 +10,7 @@ re-quantization remain deferred.
 The primary agent owns experimental interpretation and code changes. The
 capable-cluster executor owns runtime checks, safe operational diagnosis,
 execution, artifact collection, and factual reporting. Fix transient environment
-issues such as a missing package or stale Ray process when necessary, but do
+issues such as a missing package or stale worker process when necessary, but do
 not change checkpoints, prompts, sample identities, probe corpus, or
 quantization settings without recording the deviation and stopping when it
 breaks comparability.
@@ -36,8 +36,7 @@ python -m pytest -q \
   pipeline/tests/test_m3_quality_eval_runner.py
 ```
 
-Use this working environment throughout. Ray 2.56.0 may be installed if still
-missing; record any installation and exact versions.
+Use this working environment throughout and record exact package versions.
 
 ## Fresh preflight
 
@@ -146,7 +145,7 @@ full quantization but does not replace final end-to-end quality evaluation.
 
 ## Parallel smoke execution
 
-Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclusive`. Repaired GPTQ, AWQ, and the two-node Ray topology preflight run concurrently. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
+Use three exclusive 8xH100 nodes when running the complete smoke. `sbatch` is unavailable; use only top-level `srun --exclusive`. Repaired GPTQ, AWQ, and BF16 TP8/mp run concurrently, one node each. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
 The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
 so benchmark failure cannot erase distribution evidence.
 
@@ -157,7 +156,7 @@ step-exclusive and may colocate jobs, so both wrapper and controller now refuse
 an inherited `SLURM_JOB_ID`. Top-level `srun --exclusive` gives each arm a
 whole-node allocation.
 
-Start the unchanged four-arm controller through the tested detached tmux wrapper:
+Start the three-model controller through the tested detached tmux wrapper:
 
 ```bash
 export RUN_ID RUN_ROOT MATRIX REPAIRED_GPTQ
@@ -166,6 +165,17 @@ DRY_RUN=1 SESSION_NAME="m3-quality-$RUN_ID" \
 SESSION_NAME="m3-quality-$RUN_ID" \
   bash pipeline/slurm/start_m3_quality_smoke_tmux.sh
 ```
+
+To obtain the missing working baseline without rerunning completed quantized
+controls, use a fresh preflight/run root and set `QUALITY_ARM_FILTER=bf16` for
+both dry and real wrapper calls. The BF16 arm uses TP8, `mp`, and a 45-minute
+bound:
+
+```bash
+export QUALITY_ARM_FILTER=bf16
+```
+
+Omit the filter only when a fresh paired three-model smoke is desired.
 
 The launcher returns only after `tmux has-session` verifies the detached
 session. At that point the Cursor tool may exit without terminating `srun`.
@@ -179,17 +189,16 @@ squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
 cat "$RUN_ROOT/controller.rc"
 ```
 
-Confirm concurrent running jobs have disjoint `NODELIST` values: GPTQ and AWQ
-one node each, and the Ray topology preflight two other nodes. BF16 later receives two exclusive nodes
-after Ray finishes. Do not accept colocated running arms.
+For an unfiltered run, confirm GPTQ, AWQ, and BF16 have three distinct
+single-node `NODELIST` values. For `QUALITY_ARM_FILTER=bf16`, require exactly one
+exclusive node. Do not accept colocated running arms.
 
 Attaching is optional: `tmux attach-session -t "=m3-quality-$RUN_ID"`. Detach
-with `Ctrl-b d`; do not kill the tmux server. The controller starts repaired
-GPTQ, cyankiwi AWQ, and the proven two-node Ray topology preflight concurrently,
-waits for Ray to write `ray_preflight/gate.json` and release its nodes, then runs
-the ten-minute BF16 diagnostic. It records
-all four return codes in `executor_return_codes.txt` and its own final status
-atomically in `controller.rc`.
+with `Ctrl-b d`; do not kill the tmux server. The controller starts the selected
+arms concurrently. BF16 uses one exclusive 8xH100 node with TP8/mp and the same
+probe/evaluation contract as the quantized controls. It records selected return
+codes in `executor_return_codes.txt` and its own final status atomically in
+`controller.rc`.
 
 If the tmux session disappears, first check `controller.rc`, the durable
 controller/arm logs, and Slurm state. A completed session normally disappears
@@ -197,9 +206,8 @@ after writing `controller.rc`. If the file is absent while Slurm steps remain,
 do not relaunch or cancel them; report the scheduler state. Never reuse a stale
 `RUN_ROOT` or session name.
 
-If resource policy delays BF16 while both quantized arms occupy nodes, the
-controller waits; never cancel a quantized arm. Do not extend the BF16 timeout
-without primary-agent approval.
+Do not change BF16 to TP16/Ray in this handoff. If TP8 fails, return its exact
+OOM or runtime evidence rather than retrying another topology.
 
 ## Distribution comparisons
 
@@ -243,8 +251,7 @@ handoff.
   next offline-dequant-versus-loaded localization.
 - Close teacher-forced GPTQ but garbage autoregressive output: return rendered
   prompts, token IDs, health, and vLLM logs; focus shifts to generation/KV-cache.
-- Ready 16-bundle Ray group but BF16 vLLM timeout: classify as vLLM-Ray
-  integration evidence and retain both nodes' Ray logs.
+- BF16 TP8 OOM: return memory evidence; do not silently fall back to TP16/Ray.
 - Benchmark failure after a successful probe: preserve it; diagnose the task
   failure but do not immediately rerun or change the experiment.
 
@@ -258,9 +265,7 @@ Commit and push the complete run root, excluding checkpoints. Include:
   evidence, aggregates, samples, generation health, rendered prompts/token IDs,
   distribution JSONL, and summary;
 - all distribution comparison JSON;
-- Ray topology gate, rank records/logs, node list, and `ray status`,
-  topology gate/rank files, both rank Ray-log archives, and cleanup output;
-- Python, CUDA, PyTorch, vLLM, Ray, lm-eval, transformers, and llm-compressor
+- Python, CUDA, PyTorch, vLLM, lm-eval, transformers, and llm-compressor
   versions plus node/GPU identities;
 - `executor_return_codes.txt` and `EXECUTOR_NOTES.md` with exact commands,
   timestamps, allocation, deviations, retries, observations, hypotheses, and
@@ -273,6 +278,6 @@ Keep observations separate from hypotheses. Explicitly answer:
 3. Is the reference argmax absent from GPTQ top-20, rank-displaced, or retained?
 4. Are GPTQ generations now health-applicable, and what are cap, loop,
    repetition, and answer-extraction rates versus AWQ?
-5. Did the 16-bundle Ray group become ready? If so, where did BF16 vLLM stop?
+5. Did BF16 TP8/mp complete its paired probe and smoke tasks? If not, where did it stop?
 6. Is the returned evidence sufficient for full primary-agent analysis without
    another cluster round trip?

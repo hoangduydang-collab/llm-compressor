@@ -697,12 +697,12 @@ If and only if the one-arm smoke passes, immediately start a fresh unfiltered
 six-arm tmux run on six exclusive nodes using the standard commands above. Do
 not reuse the one-arm result root.
 
-In parallel with the AWQ one-arm smoke, rerun the three-model quality smoke
-from `M3_QUALITY_THREE_MODEL_SMOKE_RECOVERY_HANDOFF.md`. Its controller now uses
-`test_m3_ray_topology.sh --out "$RUN_ROOT/ray_preflight" --stop-after-check`,
-which both terminates cleanly and writes the exact `ray_preflight/gate.json`
-required by BF16. Return BF16, repaired GPTQ, and cyankiwi AWQ evidence; do not
-start production until the primary agent validates the BF16 comparison.
+In parallel with the AWQ one-arm smoke, run a fresh BF16-only quality smoke
+from `M3_QUALITY_THREE_MODEL_SMOKE_RECOVERY_HANDOFF.md` with
+`QUALITY_ARM_FILTER=bf16`. BF16 now uses one exclusive 8xH100 node, TP8, and the
+`mp` backend; the failed TP16/Ray path is removed from the baseline workflow.
+Return its paired probe and smoke metrics. Do not start production until the
+primary agent validates the BF16 comparison.
 
 ## Active handoff pointer
 

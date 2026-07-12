@@ -36,3 +36,10 @@ monitoring must confirm disjoint running node lists.
 - [x] Reproduce the placement-output versus `ray_preflight/gate.json` mismatch.
 - [x] Replace the placement diagnostic with the proven bounded topology preflight.
 - [x] Preserve the four-arm resource plan and BF16 initialization timeout.
+
+
+### Task 3: Replace blocked TP16/Ray baseline
+
+- [x] Run BF16 on one exclusive node with TP8/mp and a 45-minute bound.
+- [x] Remove Ray preflight from the quality controller.
+- [x] Add a BF16-only filter and update the executor handoff.

@@ -12,6 +12,7 @@ RUN_ROOT="${RUN_ROOT:?set RUN_ROOT from completed preflight}"
 MATRIX="${MATRIX:?set MATRIX to repaired matrix}"
 REPAIRED_GPTQ="${REPAIRED_GPTQ:?set REPAIRED_GPTQ}"
 LOG_ROOT="${LOG_ROOT:-$RUN_ROOT/logs}"
+QUALITY_ARM_FILTER="${QUALITY_ARM_FILTER:-}"
 CONTROLLER_LOG="${CONTROLLER_LOG:-$LOG_ROOT/controller.log}"
 CONTROLLER_SCRIPT="$RUN_ROOT/controller.sh"
 
@@ -29,7 +30,7 @@ if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
   echo "RUN_ID=$RUN_ID SESSION_NAME=$SESSION_NAME RUN_ROOT=$RUN_ROOT"
   echo "controller executes: $SCRIPT_DIR/run_m3_quality_smoke_srun.sh"
   print_commands
-  DRY_RUN=1 RUN_ROOT="$RUN_ROOT" MATRIX="$MATRIX" REPAIRED_GPTQ="$REPAIRED_GPTQ" LOG_ROOT="$LOG_ROOT" bash "$SCRIPT_DIR/run_m3_quality_smoke_srun.sh"
+  DRY_RUN=1 RUN_ROOT="$RUN_ROOT" MATRIX="$MATRIX" REPAIRED_GPTQ="$REPAIRED_GPTQ" LOG_ROOT="$LOG_ROOT" QUALITY_ARM_FILTER="$QUALITY_ARM_FILTER" bash "$SCRIPT_DIR/run_m3_quality_smoke_srun.sh"
   exit 0
 fi
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then

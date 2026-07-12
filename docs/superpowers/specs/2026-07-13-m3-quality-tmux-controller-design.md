@@ -31,3 +31,10 @@ The real tmux launcher and direct controller must run outside any Slurm
 allocation. They reject an inherited `SLURM_JOB_ID`; only top-level
 `srun --exclusive` provides the required whole-node allocations. Executor
 monitoring must confirm disjoint running node lists.
+
+
+## Working BF16 baseline
+
+The quality controller uses BF16 TP8/mp on one exclusive 8xH100 node. Ray and
+TP16 are excluded from the baseline path. `QUALITY_ARM_FILTER=bf16` permits a
+fresh baseline-only smoke without rerunning completed quantized controls.

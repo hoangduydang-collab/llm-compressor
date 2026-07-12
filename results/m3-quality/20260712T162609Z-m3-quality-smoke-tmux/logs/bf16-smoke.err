@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: 'results/m3-quality/20260712T162609Z-m3-quality-smoke-tmux/ray_preflight/gate.json'
+srun: error: gpu-h114: task 1: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12823.0
+slurmstepd-gpu-h113: error: *** STEP 12823.0 ON gpu-h113 CANCELLED AT 2026-07-12T16:38:53 ***
+srun: error: gpu-h113: task 0: Terminated
+srun: Force Terminated StepId=12823.0

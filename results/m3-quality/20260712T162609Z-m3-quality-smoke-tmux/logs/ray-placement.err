@@ -1,0 +1,10 @@
+2026-07-12 16:28:46,615	INFO worker.py:1683 -- Using address auto set in the environment variable RAY_ADDRESS
+2026-07-12 16:28:46,737	INFO worker.py:1833 -- Connecting to existing Ray cluster at address: 10.2.4.17:6379...
+2026-07-12 16:28:46,813	INFO worker.py:2024 -- Connected to Ray cluster.
+timed out waiting for placement-group driver
+srun: error: gpu-h114: task 1: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12820.0
+slurmstepd-gpu-h113: error: *** STEP 12820.0 ON gpu-h113 CANCELLED AT 2026-07-12T16:38:45 ***
+[2026-07-12 16:38:48,638 E 4035419 4035419] core_worker_process.cc:217: Failed to register worker to Raylet: IOError: Failed to read data from the socket: End of file worker_id=01000000ffffffffffffffffffffffffffffffffffffffffffffffff
+srun: error: gpu-h113: task 0: Terminated
+srun: Force Terminated StepId=12820.0

@@ -1,0 +1,168 @@
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:   0% Completed | 0/49 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:   2% Completed | 1/49 [00:02<01:40,  2.10s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:   4% Completed | 2/49 [00:08<03:45,  4.80s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:   6% Completed | 3/49 [00:16<04:46,  6.24s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:   8% Completed | 4/49 [00:23<04:56,  6.59s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  10% Completed | 5/49 [00:31<05:10,  7.06s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  12% Completed | 6/49 [00:39<05:09,  7.19s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  14% Completed | 7/49 [00:46<05:07,  7.33s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  16% Completed | 8/49 [00:54<04:59,  7.30s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  18% Completed | 9/49 [01:01<04:54,  7.37s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  20% Completed | 10/49 [01:09<04:49,  7.42s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  22% Completed | 11/49 [01:16<04:42,  7.43s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  24% Completed | 12/49 [01:24<04:36,  7.48s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  27% Completed | 13/49 [01:31<04:29,  7.48s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  29% Completed | 14/49 [01:39<04:29,  7.69s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  31% Completed | 15/49 [01:47<04:23,  7.74s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  33% Completed | 16/49 [01:55<04:12,  7.65s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  35% Completed | 17/49 [02:02<04:01,  7.54s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  37% Completed | 18/49 [02:09<03:53,  7.52s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  39% Completed | 19/49 [02:18<03:51,  7.72s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  41% Completed | 20/49 [02:25<03:41,  7.63s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  43% Completed | 21/49 [02:33<03:34,  7.67s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  45% Completed | 22/49 [02:41<03:31,  7.83s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  47% Completed | 23/49 [02:49<03:22,  7.80s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  49% Completed | 24/49 [02:57<03:15,  7.84s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  51% Completed | 25/49 [03:04<03:04,  7.68s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  53% Completed | 26/49 [03:12<02:58,  7.76s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  55% Completed | 27/49 [03:19<02:49,  7.69s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  57% Completed | 28/49 [03:27<02:42,  7.72s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  59% Completed | 29/49 [03:35<02:32,  7.64s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  61% Completed | 30/49 [03:43<02:29,  7.86s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  63% Completed | 31/49 [03:50<02:18,  7.70s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  65% Completed | 32/49 [03:58<02:11,  7.76s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  67% Completed | 33/49 [04:06<02:02,  7.68s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  69% Completed | 34/49 [04:13<01:54,  7.63s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  71% Completed | 35/49 [04:21<01:45,  7.56s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  73% Completed | 36/49 [04:28<01:37,  7.49s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  76% Completed | 37/49 [04:36<01:32,  7.70s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  78% Completed | 38/49 [04:44<01:23,  7.63s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  80% Completed | 39/49 [04:51<01:16,  7.66s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  82% Completed | 40/49 [04:59<01:08,  7.59s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  84% Completed | 41/49 [05:07<01:01,  7.64s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  86% Completed | 42/49 [05:14<00:54,  7.73s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  88% Completed | 43/49 [05:22<00:46,  7.74s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  90% Completed | 44/49 [05:30<00:38,  7.70s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  92% Completed | 45/49 [05:38<00:31,  7.87s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  94% Completed | 46/49 [05:46<00:23,  7.76s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  96% Completed | 47/49 [05:53<00:15,  7.76s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards:  98% Completed | 48/49 [06:01<00:07,  7.69s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards: 100% Completed | 49/49 [06:02<00:00,  5.68s/it]
+(Worker_TP0_EP0 pid=2351972) Loading safetensors checkpoint shards: 100% Completed | 49/49 [06:02<00:00,  7.40s/it]
+(Worker_TP0_EP0 pid=2351972) 
+(Worker_TP2_EP2 pid=2351974) 2026-07-12 16:39:28,193 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=2351978) 2026-07-12 16:39:28,195 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2351975) 2026-07-12 16:39:28,197 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2351976) 2026-07-12 16:39:28,204 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=2351977) 2026-07-12 16:39:28,207 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=2351972) 2026-07-12 16:39:28,208 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2351973) 2026-07-12 16:39:28,210 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2351979) 2026-07-12 16:39:28,210 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2351979) 2026-07-12 16:39:29,109 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2351978) 2026-07-12 16:39:29,109 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=2351973) 2026-07-12 16:39:29,112 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP3_EP3 pid=2351975) 2026-07-12 16:39:29,112 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP2_EP2 pid=2351974) 2026-07-12 16:39:29,112 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2351976) 2026-07-12 16:39:29,112 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2351977) 2026-07-12 16:39:29,113 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2351972) 2026-07-12 16:39:29,124 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+[rank1]:[W712 16:39:52.178408211 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:37738, remote=[localhost]:60309): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe0a937305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fe012ab24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fe012ab0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fdff529c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe0796b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe0aa4cfac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe0aa5618d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W712 16:39:52.181255695 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:   0% Completed | 0/49 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:   2% Completed | 1/49 [00:00<00:36,  1.32it/s]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:   4% Completed | 2/49 [00:04<01:49,  2.34s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:   6% Completed | 3/49 [00:08<02:32,  3.32s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:   8% Completed | 4/49 [00:12<02:32,  3.40s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  10% Completed | 5/49 [00:15<02:32,  3.46s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  12% Completed | 6/49 [00:19<02:30,  3.49s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  14% Completed | 7/49 [00:23<02:37,  3.75s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  16% Completed | 8/49 [00:27<02:34,  3.77s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  18% Completed | 9/49 [00:31<02:29,  3.73s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  20% Completed | 10/49 [00:34<02:19,  3.59s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  22% Completed | 11/49 [00:37<02:14,  3.53s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  24% Completed | 12/49 [00:41<02:13,  3.60s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  27% Completed | 13/49 [00:45<02:15,  3.77s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  29% Completed | 14/49 [00:49<02:14,  3.84s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  31% Completed | 15/49 [00:53<02:10,  3.83s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  33% Completed | 16/49 [00:57<02:07,  3.88s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  35% Completed | 17/49 [01:01<02:05,  3.93s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  37% Completed | 18/49 [01:05<02:01,  3.91s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  39% Completed | 19/49 [01:09<02:00,  4.03s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  41% Completed | 20/49 [01:12<01:50,  3.80s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  43% Completed | 21/49 [01:16<01:45,  3.76s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  45% Completed | 22/49 [01:20<01:42,  3.80s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  47% Completed | 23/49 [01:24<01:38,  3.77s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  49% Completed | 24/49 [01:28<01:36,  3.86s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  51% Completed | 25/49 [01:31<01:30,  3.78s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  53% Completed | 26/49 [01:36<01:29,  3.88s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  55% Completed | 27/49 [01:39<01:22,  3.77s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  57% Completed | 28/49 [01:43<01:18,  3.74s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  59% Completed | 29/49 [01:46<01:11,  3.59s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  61% Completed | 30/49 [01:50<01:11,  3.78s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  63% Completed | 31/49 [01:54<01:09,  3.88s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  65% Completed | 32/49 [01:58<01:06,  3.89s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  67% Completed | 33/49 [02:02<01:00,  3.78s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  69% Completed | 34/49 [02:05<00:56,  3.75s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  71% Completed | 35/49 [02:09<00:53,  3.86s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  73% Completed | 36/49 [02:13<00:48,  3.75s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  76% Completed | 37/49 [02:17<00:44,  3.73s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  78% Completed | 38/49 [02:21<00:41,  3.77s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  80% Completed | 39/49 [02:24<00:38,  3.81s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  82% Completed | 40/49 [02:29<00:35,  3.97s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  84% Completed | 41/49 [02:32<00:30,  3.84s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  86% Completed | 42/49 [02:36<00:26,  3.76s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  88% Completed | 43/49 [02:40<00:22,  3.79s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  90% Completed | 44/49 [02:43<00:18,  3.76s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  92% Completed | 45/49 [02:47<00:14,  3.72s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  94% Completed | 46/49 [02:51<00:11,  3.69s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  96% Completed | 47/49 [02:55<00:07,  3.76s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards:  98% Completed | 48/49 [02:58<00:03,  3.67s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards: 100% Completed | 49/49 [02:59<00:00,  2.75s/it]
+(Worker_TP0_EP0 pid=2354006) Loading safetensors checkpoint shards: 100% Completed | 49/49 [02:59<00:00,  3.66s/it]
+(Worker_TP0_EP0 pid=2354006) 
+(Worker_TP6_EP6 pid=2354012) 2026-07-12 16:48:14,817 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2354013) 2026-07-12 16:48:14,819 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2354008) 2026-07-12 16:48:14,820 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2354007) 2026-07-12 16:48:14,822 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2354009) 2026-07-12 16:48:14,823 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2354010) 2026-07-12 16:48:14,823 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=2354006) 2026-07-12 16:48:14,823 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=2354011) 2026-07-12 16:48:14,829 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2354013) 2026-07-12 16:48:15,745 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2354012) 2026-07-12 16:48:15,745 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2354011) 2026-07-12 16:48:15,746 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP2_EP2 pid=2354008) 2026-07-12 16:48:15,746 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2354010) 2026-07-12 16:48:15,747 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=2354007) 2026-07-12 16:48:15,748 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP3_EP3 pid=2354009) 2026-07-12 16:48:15,749 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2354006) 2026-07-12 16:48:15,760 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+generation_kwargs: {'temperature': 0.0, 'do_sample': False, 'max_gen_toks': 256} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 46.96it/s]
+Tokenizing inputs:   0%|          | 0/8 [00:00<?, ?it/s]Tokenizing inputs: 100%|██████████| 8/8 [00:00<00:00, 368.74it/s]
+Running loglikelihood requests:   0%|          | 0/8 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/8 [00:00<?, ?it/s][A
+Rendering prompts:  12%|█▎        | 1/8 [00:00<00:00,  7.97it/s][ARendering prompts: 100%|██████████| 8/8 [00:00<00:00, 56.78it/s]
+
+Processed prompts:   0%|          | 0/8 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  12%|█▎        | 1/8 [00:06<00:44,  6.29s/it, est. speed input: 60.90 toks/s, output: 0.16 toks/s][A
+Processed prompts:  25%|██▌       | 2/8 [00:07<00:18,  3.14s/it, est. speed input: 105.98 toks/s, output: 0.28 toks/s][A
+Processed prompts: 100%|██████████| 8/8 [00:07<00:00,  3.14s/it, est. speed input: 404.54 toks/s, output: 1.11 toks/s][AProcessed prompts: 100%|██████████| 8/8 [00:07<00:00,  1.11it/s, est. speed input: 404.54 toks/s, output: 1.11 toks/s]
+Running loglikelihood requests:  12%|█▎        | 1/8 [00:07<00:51,  7.37s/it]Running loglikelihood requests: 100%|██████████| 8/8 [00:07<00:00,  1.09it/s]
+generation_kwargs: {'temperature': 0.0, 'do_sample': False, 'max_gen_toks': 256} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 5366.99it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3206.65it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A(Worker_TP0_EP0 pid=2354006) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=2354006)   return func(*args, **kwargs)

@@ -1,0 +1,112 @@
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards:  20% Completed | 1/5 [00:37<02:30, 37.57s/it]
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards:  40% Completed | 2/5 [01:11<01:46, 35.66s/it]
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards:  60% Completed | 3/5 [01:51<01:14, 37.40s/it]
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards:  80% Completed | 4/5 [02:33<00:39, 39.29s/it]
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards: 100% Completed | 5/5 [03:10<00:00, 38.31s/it]
+(Worker_TP0_EP0 pid=2700606) Loading safetensors checkpoint shards: 100% Completed | 5/5 [03:10<00:00, 38.03s/it]
+(Worker_TP0_EP0 pid=2700606) 
+(Worker_TP6_EP6 pid=2700612) 2026-07-12 16:36:55,128 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2700607) 2026-07-12 16:36:55,136 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2700608) 2026-07-12 16:36:55,137 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2700609) 2026-07-12 16:36:55,139 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=2700611) 2026-07-12 16:36:55,141 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=2700606) 2026-07-12 16:36:55,143 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2700613) 2026-07-12 16:36:55,144 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2700610) 2026-07-12 16:36:55,145 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2700608) 2026-07-12 16:36:55,646 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2700606) 2026-07-12 16:36:55,646 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP3_EP3 pid=2700609) 2026-07-12 16:36:55,675 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2700611) 2026-07-12 16:36:55,675 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=2700613) 2026-07-12 16:36:55,690 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2700612) 2026-07-12 16:36:55,704 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2700610) 2026-07-12 16:36:55,730 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=2700607) 2026-07-12 16:36:55,742 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+[rank6]:[W712 16:37:18.805057021 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:35424, remote=[localhost]:44101): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fc6f657305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fc65fcb24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fc65fcb0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fc64249c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fc6c68b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fc6f76d6ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fc6f77688d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W712 16:37:18.808866110 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank2]:[W712 16:37:18.830125253 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:35422, remote=[localhost]:44101): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fcb0377305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fca6ceb24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fca6ceb0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fca4f69c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fcad3ab0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fcb04931ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fcb049c38d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W712 16:37:18.832560993 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank1]:[W712 16:37:18.017180475 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:35446, remote=[localhost]:44101): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f1b3997305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f1aa34b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f1aa34b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f1a85c9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f1b0a0b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f1b3adfdac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f1b3ae8f8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank1]:[W712 16:37:18.019659347 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 1] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards:  20% Completed | 1/5 [00:11<00:45, 11.31s/it]
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards:  40% Completed | 2/5 [00:24<00:37, 12.61s/it]
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards:  60% Completed | 3/5 [00:38<00:26, 13.31s/it]
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards:  80% Completed | 4/5 [00:53<00:13, 13.77s/it]
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards: 100% Completed | 5/5 [01:05<00:00, 13.29s/it]
+(Worker_TP0_EP0 pid=2702807) Loading safetensors checkpoint shards: 100% Completed | 5/5 [01:05<00:00, 13.18s/it]
+(Worker_TP0_EP0 pid=2702807) 
+(Worker_TP5_EP5 pid=2702812) 2026-07-12 16:44:21,455 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2702814) 2026-07-12 16:44:21,455 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=2702813) 2026-07-12 16:44:21,482 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2702810) 2026-07-12 16:44:21,482 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2702811) 2026-07-12 16:44:21,484 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=2702807) 2026-07-12 16:44:21,467 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2702808) 2026-07-12 16:44:21,485 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2702809) 2026-07-12 16:44:21,505 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2702810) 2026-07-12 16:44:22,054 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2702812) 2026-07-12 16:44:22,066 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2702811) 2026-07-12 16:44:22,076 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2702807) 2026-07-12 16:44:22,083 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=2702808) 2026-07-12 16:44:22,087 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=2702814) 2026-07-12 16:44:22,093 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2702813) 2026-07-12 16:44:22,103 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP2_EP2 pid=2702809) 2026-07-12 16:44:22,105 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+generation_kwargs: {'temperature': 0.0, 'do_sample': False, 'max_gen_toks': 256} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 47.35it/s]
+Tokenizing inputs:   0%|          | 0/8 [00:00<?, ?it/s]Tokenizing inputs: 100%|██████████| 8/8 [00:00<00:00, 355.36it/s]
+Running loglikelihood requests:   0%|          | 0/8 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/8 [00:00<?, ?it/s][A
+Rendering prompts:  12%|█▎        | 1/8 [00:00<00:00,  9.41it/s][ARendering prompts: 100%|██████████| 8/8 [00:00<00:00, 60.92it/s]
+
+Processed prompts:   0%|          | 0/8 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  12%|█▎        | 1/8 [00:06<00:44,  6.37s/it, est. speed input: 60.09 toks/s, output: 0.16 toks/s][A
+Processed prompts:  25%|██▌       | 2/8 [00:07<00:19,  3.20s/it, est. speed input: 104.26 toks/s, output: 0.27 toks/s][A
+Processed prompts: 100%|██████████| 8/8 [00:07<00:00,  3.20s/it, est. speed input: 397.98 toks/s, output: 1.09 toks/s][AProcessed prompts: 100%|██████████| 8/8 [00:07<00:00,  1.09it/s, est. speed input: 397.98 toks/s, output: 1.09 toks/s]
+Running loglikelihood requests:  12%|█▎        | 1/8 [00:07<00:52,  7.52s/it]Running loglikelihood requests: 100%|██████████| 8/8 [00:07<00:00,  1.06it/s]
+generation_kwargs: {'temperature': 0.0, 'do_sample': False, 'max_gen_toks': 256} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 4295.24it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1742.54it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A(Worker_TP0_EP0 pid=2702807) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=2702807)   return func(*args, **kwargs)
+
+Processed prompts:  50%|█████     | 1/2 [03:06<03:06, 186.19s/it, est. speed input: 1.40 toks/s, output: 1.37 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:07<00:00, 77.34s/it, est. speed input: 2.73 toks/s, output: 2.73 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:07<00:00, 77.34s/it, est. speed input: 2.73 toks/s, output: 2.73 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:07<00:00, 93.67s/it, est. speed input: 2.73 toks/s, output: 2.73 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:07<03:07, 187.34s/it]Running generate_until requests: 100%|██████████| 2/2 [03:07<00:00, 93.67s/it] 
+generation_kwargs: {'temperature': 0.0, 'do_sample': False, 'max_gen_toks': 256} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 579.84it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1910.41it/s]
+

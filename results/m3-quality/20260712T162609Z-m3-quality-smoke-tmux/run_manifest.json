@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "run_id": "20260712T162609Z-m3-quality-smoke-tmux",
+  "git_commit": "fb4523dd035a70331e012e49eb517f752316269e",
+  "baseline_label": "bf16",
+  "models": [
+    "bf16",
+    "inhouse_gptq",
+    "cyankiwi_awq"
+  ],
+  "expected_arms": [
+    {
+      "model_label": "bf16",
+      "shard": "reasoning"
+    },
+    {
+      "model_label": "bf16",
+      "shard": "broad"
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "shard": "reasoning"
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "shard": "broad"
+    },
+    {
+      "model_label": "cyankiwi_awq",
+      "shard": "reasoning"
+    },
+    {
+      "model_label": "cyankiwi_awq",
+      "shard": "broad"
+    }
+  ],
+  "sample_manifest_sha256": "3d3ec6bf6776ccbf23eb1d90d801c1745e837f98432d70619dbaec88f2199189",
+  "eval_config_sha256": "0e218b57c254fbad942bd324a4f71369170957c6a1f7a7fe05d170d1860395fc",
+  "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+  "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "resolved_tasks": {
+    "gpqa_diamond": "gpqa_diamond_zeroshot",
+    "ifeval": "ifeval",
+    "aime_2025": "aime25",
+    "mmlu_pro": "mmlu_pro",
+    "gsm8k": "gsm8k"
+  },
+  "lm_eval_version": "0.4.12",
+  "matrix_sha256": "2faece8749f08cdba48c6c72e8702338d366f14352d1d0ff618097515649a92d"
+}

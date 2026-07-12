@@ -1,0 +1,7 @@
+{
+  "gpqa_diamond_zeroshot": {
+    "sample_len": 2.0,
+    "acc,none": 0.0,
+    "acc_norm,none": 0.0
+  }
+}

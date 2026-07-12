@@ -61,3 +61,14 @@ def test_bf16_arm_requires_ray_gate_before_eval():
     assert "ray_preflight/gate.json" in arm
     assert arm.index("ray_preflight/gate.json") < arm.index("pipeline.evalsuite.cli")
     assert "exec ray start" not in arm
+
+
+def test_smoke_probe_runs_before_eval_and_failure_skips_eval():
+    arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+    probe = 'python -m pipeline.m3_distributional_probe run'
+    evaluate = '"${eval_cmd[@]}"'
+
+    assert arm.index(probe) < arm.index(evaluate)
+    assert 'if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then' in arm
+    assert 'if ((rc == 0)); then\n  "${eval_cmd[@]}"' in arm
+    assert 'if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then' in arm

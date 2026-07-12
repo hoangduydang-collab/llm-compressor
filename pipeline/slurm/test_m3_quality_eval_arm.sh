@@ -51,10 +51,22 @@ eval_cmd=(python -m pipeline.evalsuite.cli run --config "$EVAL_CONFIG" --model "
   --set "serve.vllm_kwargs.distributed_executor_backend=$BACKEND"
   --set serve.vllm_kwargs.enable_expert_parallel=true --set serve.vllm_kwargs.block_size=128 --set serve.vllm_kwargs.kv_cache_dtype=fp8)
 if [[ "$PROFILE" == smoke ]]; then eval_cmd+=(--set eval.gen_kwargs.max_gen_toks=256); fi
-"${eval_cmd[@]}"
-rc=$?
-if ((rc == 0 && RUN_PROBE == 1)); then
+run_probe() {
   python -m pipeline.m3_distributional_probe run --model "$MODEL" --model-source "$MODEL_SOURCE" --corpus "$PROBE_CORPUS" --out "$ARM/distributional_probe.jsonl" --tensor-parallel-size "$TP" --top-k 20
+}
+rc=0
+probe_ran=0
+if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then
+  run_probe
+  rc=$?
+  probe_ran=1
+fi
+if ((rc == 0)); then
+  "${eval_cmd[@]}"
+  rc=$?
+fi
+if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then
+  run_probe
   rc=$?
 fi
 set -e

@@ -6,6 +6,10 @@ import json
 from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
+from pipeline.evalsuite.health import (
+    analyze_generation,
+    summarize_generation_health,
+)
 from pipeline.evalsuite.sampling import stable_sample_uid
 from pipeline.eval_gate import _gate_metric
 from pipeline.lmeval_runner import evaluate_tasks
@@ -61,13 +65,21 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
                 break
 
     subtask = str(sample.get("_eval_subtask") or task.name)
+    response = _first_response(sample)
+    extracted_answer = _first_filtered_response(sample)
+    response_token_ids = sample.get("response_token_ids")
+    if not isinstance(response_token_ids, list):
+        response_token_ids = None
+    max_gen_toks = sample.get("max_gen_toks")
+    if not isinstance(max_gen_toks, int):
+        max_gen_toks = None
     row: dict = {
         "sample_uid": stable_sample_uid(task.name, subtask, doc_id),
         "task": task.name,
         "subtask": subtask,
         "doc_id": doc_id,
         "target": sample.get("target"),
-        "response": _first_response(sample),
+        "response": response,
         "metric": used_metric or base,
         "metric_value": metric_value,
     }
@@ -80,16 +92,34 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
     else:
         row["correct"] = None  # perplexity: compare via metric_value only
 
+    if isinstance(response, str) or response_token_ids is not None:
+        row["health"] = analyze_generation(
+            response if isinstance(response, str) else None,
+            token_ids=response_token_ids,
+            max_gen_toks=max_gen_toks,
+            extracted_answer=extracted_answer,
+        )
+    else:
+        row["health"] = {"applicable": False}
+    if response_token_ids is not None:
+        row["response_token_ids"] = response_token_ids
     return row
 
 
 def _first_response(sample: dict):
-    for key in ("filtered_resps", "resps", "response"):
+    for key in ("resps", "response", "filtered_resps"):
         val = sample.get(key)
         if isinstance(val, list) and val:
             return val[0]
         if isinstance(val, str):
             return val
+    return None
+
+
+def _first_filtered_response(sample: dict):
+    value = sample.get("filtered_resps")
+    if isinstance(value, list) and value:
+        return value[0]
     return None
 
 
@@ -102,6 +132,13 @@ def _write_samples(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    temporary.replace(path)
 
 
 def _numeric_metrics(task_results: dict) -> dict[str, float]:
@@ -182,6 +219,10 @@ def checkpoint_task_result(
         if raw:
             rows = [_extract_sample_row(s, task) for s in raw]
             _write_samples(samples_dir / f"{task.name}.jsonl", rows)
+            _write_json_atomic(
+                samples_dir.parent / "generation_health" / f"{task.name}.json",
+                summarize_generation_health(rows),
+            )
 
     print(
         f"[evalsuite] checkpoint: {task.name} "

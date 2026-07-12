@@ -6,7 +6,11 @@ from pathlib import Path
 import torch
 from safetensors.torch import save_file
 
-from pipeline.m3_checkpoint_scale_audit import audit_checkpoints, resolve_suffix
+from pipeline.m3_checkpoint_scale_audit import (
+    _component_suffixes,
+    audit_checkpoints,
+    resolve_suffix,
+)
 
 
 def _checkpoint(path: Path, *, scale: torch.Tensor) -> None:
@@ -31,6 +35,12 @@ def _checkpoint(path: Path, *, scale: torch.Tensor) -> None:
 
 def test_suffix_resolution_requires_one_match():
     assert resolve_suffix({"a.x": "one"}, "x") == "a.x"
+
+
+def test_component_suffixes_cover_transformers_and_reference_names():
+    router = _component_suffixes(8, "router")
+    assert "language_model.layers.8.mlp.gate.weight" in router
+    assert "model.layers.8.block_sparse_moe.gate.weight" in router
 
 
 def test_audit_recovers_exact_compensation(tmp_path: Path):

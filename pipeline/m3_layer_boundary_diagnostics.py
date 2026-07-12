@@ -119,7 +119,7 @@ def _first_explosive_boundary(
             except (TypeError, ValueError):
                 continue
             ratio = norm / ref_norm if ref_norm > 0 else float("inf")
-            if finite < 1.0 or norm >= 10_000.0 or ratio >= 50.0:
+            if finite < 1.0 or ratio >= 50.0:
                 hits.append(
                     {
                         "rank": key[0],

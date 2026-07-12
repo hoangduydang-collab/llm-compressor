@@ -70,6 +70,8 @@ done
 audit_rc=0
 wait "$audit_pid" || audit_rc=$?
 echo "checkpoint_scale_audit srun_rc=$audit_rc"
+cp "$audit_log" "$EVIDENCE_ROOT/$MATRIX_ID/checkpoint_scale_audit.log" || true
+echo "$audit_rc" >"$EVIDENCE_ROOT/$MATRIX_ID/checkpoint_scale_audit.return_code.txt"
 [[ "$audit_rc" -eq 0 ]] || overall=1
 
 python -m pipeline.m3_awq_gptq_repair aggregate \

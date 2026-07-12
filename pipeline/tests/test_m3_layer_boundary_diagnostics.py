@@ -1,6 +1,10 @@
 """CPU tests for the parallel MiniMax-M3 layer-boundary matrix."""
 
-from pipeline.m3_layer_boundary_diagnostics import EXPECTED_ARMS, classify_matrix
+from pipeline.m3_layer_boundary_diagnostics import (
+    EXPECTED_ARMS,
+    _first_explosive_boundary,
+    classify_matrix,
+)
 
 
 def _boundaries(explosive_boundary: str | None = None) -> list[dict]:
@@ -96,3 +100,12 @@ def test_invalid_reference_stops_diagnosis():
     arms = _arms()
     arms["reference_w4a16_ep_fp8kv"]["quality_ok"] = False
     assert classify_matrix(arms)["verdict"] == "invalid_reference"
+
+
+def test_large_norm_matching_reference_is_not_explosive():
+    reference = [{"rank": 0, "layer": 5, "boundary": "decoder_output_residual",
+                  "norm": 10104.78, "finite_fraction": 1.0}]
+    candidate = [{"rank": 0, "layer": 5, "boundary": "decoder_output_residual",
+                  "norm": 10071.44, "finite_fraction": 1.0}]
+
+    assert _first_explosive_boundary(reference, [candidate]) is None

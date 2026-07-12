@@ -185,3 +185,16 @@ Every offline arm probes all sparse layers 3-59. Return the complete
 results/m3-awq-gptq-repair/<matrix-id>/ tree, preparation and matrix logs,
 checkpoint paths, job/node/return codes, deviations, retries, and retained-log
 hashes. Do not start CUDA-graph work.
+
+
+### Repair the missing staged tensor audit
+
+The first staged run completed all serving arms but its tensor audit artifact was
+missing. Pull the classifier/audit fix and rerun only that one allocation:
+
+    MATRIX_ID=20260712-045912-awq-gptq-staged \
+      bash pipeline/slurm/rerun_m3_checkpoint_scale_audit_srun.sh
+
+This returns checkpoint_scale_audit.json, its full log and return code, then
+regenerates comparison_early.json. Explosion detection is now reference-relative:
+the normal approximately 10k residual at layer 5 is no longer a false boundary.

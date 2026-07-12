@@ -19,14 +19,37 @@ def _index(checkpoint: Path) -> dict[str, str]:
     return dict(data["weight_map"])
 
 
-def resolve_suffix(weight_map: dict[str, str], suffix: str) -> str:
+def resolve_suffix(
+    weight_map: dict[str, str], suffix: str | tuple[str, ...]
+) -> str:
     matches = [name for name in weight_map if name.endswith(suffix)]
     if len(matches) != 1:
         raise ValueError(f"expected one tensor ending {suffix!r}, found {matches}")
     return matches[0]
 
 
-def load_suffix(checkpoint: Path, suffix: str) -> tuple[str, torch.Tensor]:
+def _component_suffixes(layer: int, component: str) -> tuple[str, ...]:
+    roots = (
+        f"language_model.layers.{layer}",
+        f"model.layers.{layer}",
+        f"language_model.model.layers.{layer}",
+    )
+    tails = {
+        "norm": ("post_attention_layernorm.weight",),
+        "router": ("mlp.gate.weight", "block_sparse_moe.gate.weight"),
+        "shared_gate_up": (
+            "mlp.shared_experts.gate_up_proj.weight",
+            "block_sparse_moe.shared_experts.gate_up_proj.weight",
+        ),
+    }
+    if component not in tails:
+        raise ValueError(f"unknown component: {component}")
+    return tuple(f"{root}.{tail}" for root in roots for tail in tails[component])
+
+
+def load_suffix(
+    checkpoint: Path, suffix: str | tuple[str, ...]
+) -> tuple[str, torch.Tensor]:
     weight_map = _index(checkpoint)
     name = resolve_suffix(weight_map, suffix)
     with safe_open(checkpoint / weight_map[name], framework="pt", device="cpu") as handle:
@@ -67,17 +90,15 @@ def compensation_error(
 def audit_checkpoint(base: Path, candidate: Path, layers: list[int]) -> dict[str, Any]:
     records: dict[str, Any] = {}
     for layer in layers:
-        prefix = f"language_model.layers.{layer}."
-        _, base_norm = load_suffix(base, prefix + "post_attention_layernorm.weight")
-        _, cand_norm = load_suffix(candidate, prefix + "post_attention_layernorm.weight")
-        _, base_router = load_suffix(base, prefix + "mlp.gate.weight")
-        _, cand_router = load_suffix(candidate, prefix + "mlp.gate.weight")
-        _, base_shared = load_suffix(
-            base, prefix + "mlp.shared_experts.gate_up_proj.weight"
-        )
-        _, cand_shared = load_suffix(
-            candidate, prefix + "mlp.shared_experts.gate_up_proj.weight"
-        )
+        norm_suffixes = _component_suffixes(layer, "norm")
+        router_suffixes = _component_suffixes(layer, "router")
+        shared_suffixes = _component_suffixes(layer, "shared_gate_up")
+        _, base_norm = load_suffix(base, norm_suffixes)
+        _, cand_norm = load_suffix(candidate, norm_suffixes)
+        _, base_router = load_suffix(base, router_suffixes)
+        _, cand_router = load_suffix(candidate, router_suffixes)
+        _, base_shared = load_suffix(base, shared_suffixes)
+        _, cand_shared = load_suffix(candidate, shared_suffixes)
         records[str(layer)] = {
             "normalization": {
                 "base": tensor_stats(base_norm),

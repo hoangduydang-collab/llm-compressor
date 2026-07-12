@@ -441,3 +441,78 @@ validation, the six AWQ arm artifacts, and the regenerated `comparison.json`.
 If a preparation arm exits early again, do not retry dynamically: commit its
 complete log plus the output of `sacct`/`scontrol` for the allocation and step,
 including requested/effective time limit, state, exit code, reason, and node.
+
+
+## Superseding handoff: three-model smoke recovery
+
+This section supersedes the four-model commands above. AutoRound is deferred:
+its mixed-bit checkpoint requires a pinned OneCompression plugin plus a
+repository-specific translating/dequantizing loader in both lm-eval and the
+distributional probe. Do not download, mutate, substitute, or launch it in this
+retry. The active comparison is BF16, in-house GPTQ, and cyankiwi AWQ.
+
+Pull the latest branch and create a fresh run root because the previous
+resolved config contains invalid reasoning arguments:
+
+```bash
+git pull
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD"
+RUN_ID="$(date +%Y%m%d-%H%M%S)-m3-quality-3model"
+RUN_ROOT="results/m3-quality/$RUN_ID"
+MATRIX=pipeline/configs/minimax_m3_quality_matrix.yaml
+mkdir -p "$RUN_ROOT"
+python -m pipeline.m3_quality_preflight \
+  --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  2>&1 | tee "$RUN_ROOT/preflight.log"
+```
+
+Preflight must report three active models, six production arms, adaptive
+MiniMax reasoning (`enable_thinking: null`,
+`think_end_token: </mm:think>`), and checkpoint diagnostics for exactly BF16,
+in-house GPTQ, and cyankiwi AWQ.
+
+Inspect the launch plan:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile smoke --matrix "$MATRIX" --run-root "$RUN_ROOT" --dry-run
+```
+
+Expected: one synchronous two-node Ray topology check followed by three
+concurrent model arms with `total_nodes=4`. Then run it:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile smoke --matrix "$MATRIX" --run-root "$RUN_ROOT"
+SMOKE_RC=$?
+python -m json.tool "$RUN_ROOT/ray_preflight/gate.json"
+python -m json.tool "$RUN_ROOT/smoke_gate.json"
+```
+
+The Ray gate must show two alive nodes and at least 16 visible GPUs. Return
+`ray-preflight.out/err`, `ray_preflight/rank-*.log`, rank JSON, `ray_status.txt`,
+`ray_nodes.json`, and every BF16 `ray_runtime/` artifact even if topology fails.
+The launcher must still write `smoke_gate.json` for model/probe failures; stop
+before production unless `ready_for_production` is exactly true.
+
+After a passed smoke only:
+
+```bash
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile production --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  --smoke-gate "$RUN_ROOT/smoke_gate.json" --dry-run
+# Expected: 6 arms, total_nodes=8.
+
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile production --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  --smoke-gate "$RUN_ROOT/smoke_gate.json"
+```
+
+Commit and push the same complete artifact contract listed above: all preflight
+files, rank/Ray evidence, arm manifests and return codes, raw stdout/stderr,
+normalized samples, generation health, probe records/summaries, root matrix,
+gates and report, exact commands, Slurm job/step IDs and nodes, software
+versions, wall times, retries, and deviations. Do not begin AutoRound adapter or
+serving-performance work.

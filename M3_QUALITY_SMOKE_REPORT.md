@@ -48,13 +48,18 @@ elapsed probe time. Consequently, `smoke_gate.json` was not generated.
 ## Interpretation
 
 This is an evaluation configuration/infrastructure failure, not evidence that
-any model passed or failed model quality. The next run should first:
+any model passed or failed model quality. Raw-log analysis established that
+in-house GPTQ and cyankiwi AWQ successfully initialized their full 8-GPU vLLM
+engines before lm-eval rejected the reasoning arguments. MiniMax uses adaptive
+thinking by default, and lm-eval 0.4.12 disallows `enable_thinking=True` for the
+suite's multiple-choice/loglikelihood tasks. The retry therefore leaves
+`enable_thinking` unset and uses `think_end_token=</mm:think>` only for output
+stripping.
 
-1. Disable or correctly configure thinking mode by supplying
-   `think_end_token` for MiniMax models.
-2. Exclude AutoRound until its `weight_bits: 16` configuration is corrected or
-   the evaluator supports that value.
-3. Fix smoke-gate validation to report incomplete probe evidence instead of
-   raising on zero timing inputs.
-4. Rerun smoke and require `ready_for_production: true` before launching the
-   production matrix.
+AutoRound's top-level `bits: 16` is an unquantized-default sentinel over mixed
+2/3/4/8-bit module overrides. Faithful loading requires its pinned
+OneCompression plugin and repository-specific loader, so it is deferred rather
+than modified or counted as a quality failure. BF16 failed inside the
+two-node Ray bootstrap before writing an arm manifest; the retry adds a
+standalone topology gate and rank-local diagnostics. Smoke-gate validation is
+also fixed to write a structured failure for zero probe evidence.

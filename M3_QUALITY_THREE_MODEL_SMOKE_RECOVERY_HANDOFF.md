@@ -150,70 +150,45 @@ Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclus
 The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
 so benchmark failure cannot erase distribution evidence.
 
-```bash
-TASKS=$(python - "$RUN_ROOT/preflight/resolved_tasks.json" <<'PY'
-import json, sys
-a = json.load(open(sys.argv[1]))["aliases"]
-print(",".join(a[x] for x in (
-    "gpqa_diamond", "ifeval", "aime_2025", "mmlu_pro", "gsm8k"
-)))
-PY
-)
-
-srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 \
-  pipeline/slurm/test_m3_quality_eval_arm.sh \
-  --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
-  --model-label inhouse_gptq \
-  --model "$REPAIRED_GPTQ" \
-  --shard smoke --tasks "$TASKS" --tensor-parallel-size 8 \
-  --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048 \
-  >"$RUN_ROOT/logs/gptq-smoke.out" 2>"$RUN_ROOT/logs/gptq-smoke.err" &
-GPTQ_PID=$!
-
-srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 \
-  pipeline/slurm/test_m3_quality_eval_arm.sh \
-  --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
-  --model-label cyankiwi_awq \
-  --model /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4 \
-  --shard smoke --tasks "$TASKS" --tensor-parallel-size 8 \
-  --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048 \
-  >"$RUN_ROOT/logs/awq-smoke.out" 2>"$RUN_ROOT/logs/awq-smoke.err" &
-AWQ_PID=$!
-
-srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1 \
-  pipeline/slurm/test_m3_ray_placement_group.sh \
-  --out "$RUN_ROOT/ray_placement" --expected-bundles 16 --timeout-seconds 120 \
-  >"$RUN_ROOT/logs/ray-placement.out" 2>"$RUN_ROOT/logs/ray-placement.err" &
-RAY_PID=$!
-
-wait "$RAY_PID"; RAY_RC=$?
-```
-
-Do not enable `set -e` around the waits. Record all return codes. After the Ray
-diagnostic releases its nodes, run the BF16 arm with a hard initialization
-bound. Ten minutes is intentionally a diagnostic budget:
+The Cursor tool must not own any `srun` process. Start the unchanged four-arm
+controller through the tested detached tmux wrapper:
 
 ```bash
-timeout --signal=TERM --kill-after=60s 10m \
-  srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1 \
-  pipeline/slurm/test_m3_quality_eval_arm.sh \
-  --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
-  --model-label bf16 --model /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3 \
-  --shard smoke --tasks "$TASKS" --tensor-parallel-size 16 \
-  --distributed-executor-backend ray --run-probe 1 --probe-tokens 2048 \
-  >"$RUN_ROOT/logs/bf16-smoke.out" 2>"$RUN_ROOT/logs/bf16-smoke.err"
-BF16_RC=$?
-
-wait "$GPTQ_PID"; GPTQ_RC=$?
-wait "$AWQ_PID"; AWQ_RC=$?
-printf 'ray=%s\nbf16=%s\ngptq=%s\nawq=%s\n' \
-  "$RAY_RC" "$BF16_RC" "$GPTQ_RC" "$AWQ_RC" \
-  | tee "$RUN_ROOT/executor_return_codes.txt"
+export RUN_ID RUN_ROOT MATRIX REPAIRED_GPTQ
+DRY_RUN=1 SESSION_NAME="m3-quality-$RUN_ID" \
+  bash pipeline/slurm/start_m3_quality_smoke_tmux.sh
+SESSION_NAME="m3-quality-$RUN_ID" \
+  bash pipeline/slurm/start_m3_quality_smoke_tmux.sh
 ```
 
-If resource policy delays BF16 while both quantized arms occupy nodes, wait for
-one quantized arm; never cancel it. Do not extend the BF16 timeout without
-primary-agent approval.
+The launcher returns only after `tmux has-session` verifies the detached
+session. At that point the Cursor tool may exit without terminating `srun`.
+Record the printed session, controller log, and run root. Monitor independently:
+
+```bash
+tmux has-session -t "=m3-quality-$RUN_ID"
+tmux capture-pane -pt "=m3-quality-$RUN_ID" -S -80
+tail -f "$RUN_ROOT/logs/controller.log"
+squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
+cat "$RUN_ROOT/controller.rc"
+```
+
+Attaching is optional: `tmux attach-session -t "=m3-quality-$RUN_ID"`. Detach
+with `Ctrl-b d`; do not kill the tmux server. The controller starts repaired
+GPTQ, cyankiwi AWQ, and the Ray placement diagnostic concurrently, waits for
+Ray to release its nodes, then runs the ten-minute BF16 diagnostic. It records
+all four return codes in `executor_return_codes.txt` and its own final status
+atomically in `controller.rc`.
+
+If the tmux session disappears, first check `controller.rc`, the durable
+controller/arm logs, and Slurm state. A completed session normally disappears
+after writing `controller.rc`. If the file is absent while Slurm steps remain,
+do not relaunch or cancel them; report the scheduler state. Never reuse a stale
+`RUN_ROOT` or session name.
+
+If resource policy delays BF16 while both quantized arms occupy nodes, the
+controller waits; never cancel a quantized arm. Do not extend the BF16 timeout
+without primary-agent approval.
 
 ## Distribution comparisons
 

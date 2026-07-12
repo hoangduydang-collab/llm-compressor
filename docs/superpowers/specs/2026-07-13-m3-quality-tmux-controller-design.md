@@ -35,6 +35,7 @@ monitoring must confirm disjoint running node lists.
 
 ## Working BF16 baseline
 
-The quality controller uses BF16 TP8/mp on one exclusive 8xH100 node. Ray and
-TP16 are excluded from the baseline path. `QUALITY_ARM_FILTER=bf16` permits a
+The quality controller uses BF16 TP8×PP2/Ray on two exclusive 8xH100 nodes.
+TP16×PP1 is excluded from the baseline path; TP groups remain node-local while
+pipeline parallelism splits layers across nodes. `QUALITY_ARM_FILTER=bf16` permits a
 fresh baseline-only smoke without rerunning completed quantized controls.

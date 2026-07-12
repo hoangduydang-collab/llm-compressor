@@ -699,8 +699,8 @@ not reuse the one-arm result root.
 
 In parallel with the AWQ one-arm smoke, run a fresh BF16-only quality smoke
 from `M3_QUALITY_THREE_MODEL_SMOKE_RECOVERY_HANDOFF.md` with
-`QUALITY_ARM_FILTER=bf16`. BF16 now uses one exclusive 8xH100 node, TP8, and the
-`mp` backend; the failed TP16/Ray path is removed from the baseline workflow.
+`QUALITY_ARM_FILTER=bf16`. BF16 now uses two exclusive 8xH100 nodes, TP8×PP2, and the
+Ray backend; the failed TP16×PP1 path is removed from the baseline workflow.
 Return its paired probe and smoke metrics. Do not start production until the
 primary agent validates the BF16 comparison.
 

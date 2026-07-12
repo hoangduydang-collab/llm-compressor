@@ -91,3 +91,16 @@ def test_ray_placement_group_diagnostic_is_bounded_and_captures_state():
 def test_distributional_probe_receives_distributed_backend():
     arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
     assert '--distributed-executor-backend "$BACKEND"' in arm
+
+
+def test_multinode_arm_captures_vllm_placement_during_startup():
+    arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+    assert "placement-monitor.log" in arm
+    assert "ray list placement-groups --detail" in arm
+    assert "placement_monitor_pid" in arm
+
+
+def test_smoke_evidence_counts_tp_times_pp_workers():
+    arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+    assert '"$TP" "$PP" "$rc"' in arm
+    assert "'distributed_world_size':tp * pp" in arm

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,7 +13,7 @@ from pipeline.evalsuite.distributional import (
     normalize_prompt_logprobs,
 )
 from pipeline.evalsuite.probe_corpus import build_probe_corpus
-from pipeline.m3_distributional_probe import probe_with_engine
+from pipeline.m3_distributional_probe import build_vllm_engine_args, probe_with_engine
 
 
 class FakeTokenizer:
@@ -245,3 +246,15 @@ def test_distributional_pairing_rejects_nonfinite_logprobs():
             [_record()],
             [_record(observed_logprob=float("nan"))],
         )
+
+
+def test_probe_engine_args_forward_pipeline_parallelism():
+    args = SimpleNamespace(
+        tensor_parallel_size=8, pipeline_parallel_size=2, max_model_len=65536,
+        gpu_memory_utilization=0.85, kv_cache_dtype="fp8",
+        distributed_executor_backend="ray",
+    )
+    result = build_vllm_engine_args(args, Path("/tmp/model"))
+    assert result["tensor_parallel_size"] == 8
+    assert result["pipeline_parallel_size"] == 2
+    assert result["distributed_executor_backend"] == "ray"

@@ -56,11 +56,15 @@ awq=(srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=
   --matrix "$MATRIX" --model-label cyankiwi_awq --model "$AWQ"
   --shard smoke --tasks "$TASKS" --tensor-parallel-size 8
   --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048)
+ray=(srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1
+  pipeline/slurm/test_m3_ray_topology.sh --out "$RUN_ROOT/ray_preflight"
+  --stop-after-check)
 bf16=(timeout --signal=TERM --kill-after=60s 45m
-  srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1
+  srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1
   pipeline/slurm/test_m3_quality_eval_arm.sh --profile smoke --run-root "$RUN_ROOT"
   --matrix "$MATRIX" --model-label bf16 --model "$BF16" --shard smoke
-  --tasks "$TASKS" --tensor-parallel-size 8 --distributed-executor-backend mp
+  --tasks "$TASKS" --tensor-parallel-size 8 --pipeline-parallel-size 2
+  --distributed-executor-backend ray
   --run-probe 1 --probe-tokens 2048)
 
 selected=()
@@ -68,9 +72,13 @@ for name in gptq awq bf16; do
   [[ -z "$QUALITY_ARM_FILTER" || "$name" == "$QUALITY_ARM_FILTER" ]] || continue
   selected+=("$name")
 done
+plan=("${selected[@]}")
+if [[ " ${selected[*]} " == *" bf16 "* ]]; then
+  plan=(ray "${selected[@]}")
+fi
 
 if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
-  for name in "${selected[@]}"; do
+  for name in "${plan[@]}"; do
     declare -n command="$name"
     printf '%q ' "${command[@]}"
     printf '> %q 2> %q\n' "$LOG_ROOT/$name-smoke.out" "$LOG_ROOT/$name-smoke.err"
@@ -79,19 +87,33 @@ if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
 fi
 
 pids=()
+launched=()
 for name in "${selected[@]}"; do
+  [[ "$name" != bf16 ]] || continue
   declare -n command="$name"
   "${command[@]}" >"$LOG_ROOT/$name-smoke.out" 2>"$LOG_ROOT/$name-smoke.err" &
-  pids+=("$!")
+  pids+=("$!"); launched+=("$name")
   echo "$name pid=$!"
 done
 
 overall=0
 : >"$RUN_ROOT/executor_return_codes.txt"
+if [[ " ${selected[*]} " == *" bf16 "* ]]; then
+  ray_rc=0
+  "${ray[@]}" >"$LOG_ROOT/ray-smoke.out" 2>"$LOG_ROOT/ray-smoke.err" || ray_rc=$?
+  printf 'ray=%s\n' "$ray_rc" | tee -a "$RUN_ROOT/executor_return_codes.txt"
+  if [[ "$ray_rc" -eq 0 ]]; then
+    "${bf16[@]}" >"$LOG_ROOT/bf16-smoke.out" 2>"$LOG_ROOT/bf16-smoke.err" &
+    pids+=("$!"); launched+=(bf16)
+    echo "bf16 pid=$! layout=tp8-pp2"
+  else
+    overall=1
+  fi
+fi
 for index in "${!pids[@]}"; do
   rc=0
   wait "${pids[$index]}" || rc=$?
-  name="${selected[$index]}"
+  name="${launched[$index]}"
   printf '%s=%s\n' "$name" "$rc" | tee -a "$RUN_ROOT/executor_return_codes.txt"
   [[ "$rc" -eq 0 ]] || overall=1
 done

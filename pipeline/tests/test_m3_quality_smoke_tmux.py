@@ -27,14 +27,17 @@ def test_quality_controller_dry_run_preserves_three_model_plan(tmp_path):
         check=True, capture_output=True, text=True,
     )
     output = completed.stdout
-    assert output.count("srun --exclusive") == 3
+    assert output.count("srun --exclusive") == 4
     assert "inhouse_gptq" in output
     assert "cyankiwi_awq" in output
-    assert "test_m3_ray_topology.sh" not in output
+    assert "test_m3_ray_topology.sh" in output
+    assert "--stop-after-check" in output
     assert "m3_ray_placement_group" not in output
     assert "--model-label bf16" in output
     assert "--tensor-parallel-size 8" in output
-    assert "--distributed-executor-backend mp" in output
+    assert "--pipeline-parallel-size 2" in output
+    assert "--distributed-executor-backend ray" in output
+    assert "--nodes=2" in output
 
 
 def test_quality_tmux_wrapper_dry_run_prints_monitoring(tmp_path):
@@ -124,7 +127,7 @@ def test_quality_controller_can_run_bf16_only(tmp_path):
         check=True, capture_output=True, text=True,
     )
     output = completed.stdout
-    assert output.count("srun --exclusive") == 1
+    assert output.count("srun --exclusive") == 2
     assert "--model-label bf16" in output
     assert "inhouse_gptq" not in output
     assert "cyankiwi_awq" not in output

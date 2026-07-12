@@ -193,16 +193,12 @@ def _prepare_minimax_runtime(model: Path, model_source: str) -> dict[str, Any]:
     return result
 
 
-def run_vllm_probe(args: argparse.Namespace) -> dict[str, Any]:
-    model = Path(args.model).resolve()
-    corpus = load_probe_corpus(Path(args.corpus))
-    runtime = _prepare_minimax_runtime(model, args.model_source)
-
-    from vllm import LLM, SamplingParams
-
-    llm_kwargs = {
+def build_vllm_engine_args(args: argparse.Namespace, model: Path) -> dict[str, Any]:
+    """Build the shared vLLM probe arguments, including distributed layout."""
+    result = {
         "model": str(model),
         "tensor_parallel_size": args.tensor_parallel_size,
+        "pipeline_parallel_size": args.pipeline_parallel_size,
         "max_model_len": args.max_model_len,
         "gpu_memory_utilization": args.gpu_memory_utilization,
         "trust_remote_code": True,
@@ -213,9 +209,18 @@ def run_vllm_probe(args: argparse.Namespace) -> dict[str, Any]:
         "kv_cache_dtype": args.kv_cache_dtype,
     }
     if args.distributed_executor_backend:
-        llm_kwargs["distributed_executor_backend"] = (
-            args.distributed_executor_backend
-        )
+        result["distributed_executor_backend"] = args.distributed_executor_backend
+    return result
+
+
+def run_vllm_probe(args: argparse.Namespace) -> dict[str, Any]:
+    model = Path(args.model).resolve()
+    corpus = load_probe_corpus(Path(args.corpus))
+    runtime = _prepare_minimax_runtime(model, args.model_source)
+
+    from vllm import LLM, SamplingParams
+
+    llm_kwargs = build_vllm_engine_args(args, model)
     engine = LLM(**llm_kwargs)
     sampling = SamplingParams(
         temperature=0.0,
@@ -314,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--corpus", required=True)
     run.add_argument("--out", required=True)
     run.add_argument("--tensor-parallel-size", type=int, default=8)
+    run.add_argument("--pipeline-parallel-size", type=int, default=1)
     run.add_argument("--max-model-len", type=int, default=65_536)
     run.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     run.add_argument("--kv-cache-dtype", default="fp8")

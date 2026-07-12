@@ -145,7 +145,7 @@ full quantization but does not replace final end-to-end quality evaluation.
 
 ## Parallel smoke execution
 
-Use three exclusive 8xH100 nodes when running the complete smoke. `sbatch` is unavailable; use only top-level `srun --exclusive`. Repaired GPTQ, AWQ, and BF16 TP8/mp run concurrently, one node each. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
+Use four exclusive 8xH100 nodes for the model arms in a complete smoke: one each for repaired GPTQ and AWQ, and two for BF16 TP8×PP2/Ray. `sbatch` is unavailable; use only top-level `srun --exclusive`. The two-node Ray topology preflight runs before BF16 and releases its allocation. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
 The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
 so benchmark failure cannot erase distribution evidence.
 
@@ -168,7 +168,7 @@ SESSION_NAME="m3-quality-$RUN_ID" \
 
 To obtain the missing working baseline without rerunning completed quantized
 controls, use a fresh preflight/run root and set `QUALITY_ARM_FILTER=bf16` for
-both dry and real wrapper calls. The BF16 arm uses TP8, `mp`, and a 45-minute
+both dry and real wrapper calls. The BF16 arm uses TP8, PP2, `ray`, and a 45-minute
 bound:
 
 ```bash
@@ -189,13 +189,13 @@ squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
 cat "$RUN_ROOT/controller.rc"
 ```
 
-For an unfiltered run, confirm GPTQ, AWQ, and BF16 have three distinct
-single-node `NODELIST` values. For `QUALITY_ARM_FILTER=bf16`, require exactly one
-exclusive node. Do not accept colocated running arms.
+For an unfiltered run, confirm GPTQ and AWQ each have a distinct single-node
+allocation and BF16 has a disjoint two-node allocation. For
+`QUALITY_ARM_FILTER=bf16`, require exactly two exclusive nodes. Do not accept colocated running arms.
 
 Attaching is optional: `tmux attach-session -t "=m3-quality-$RUN_ID"`. Detach
 with `Ctrl-b d`; do not kill the tmux server. The controller starts the selected
-arms concurrently. BF16 uses one exclusive 8xH100 node with TP8/mp and the same
+arms concurrently. BF16 uses two exclusive 8xH100 nodes with TP8×PP2/Ray and the same
 probe/evaluation contract as the quantized controls. It records selected return
 codes in `executor_return_codes.txt` and its own final status atomically in
 `controller.rc`.
@@ -206,7 +206,7 @@ after writing `controller.rc`. If the file is absent while Slurm steps remain,
 do not relaunch or cancel them; report the scheduler state. Never reuse a stale
 `RUN_ROOT` or session name.
 
-Do not change BF16 to TP16/Ray in this handoff. If TP8 fails, return its exact
+Do not change BF16 back to TP16×PP1 in this handoff. If TP8×PP2 fails, return its exact
 OOM or runtime evidence rather than retrying another topology.
 
 ## Distribution comparisons
@@ -251,7 +251,7 @@ handoff.
   next offline-dequant-versus-loaded localization.
 - Close teacher-forced GPTQ but garbage autoregressive output: return rendered
   prompts, token IDs, health, and vLLM logs; focus shifts to generation/KV-cache.
-- BF16 TP8 OOM: return memory evidence; do not silently fall back to TP16/Ray.
+- BF16 TP8×PP2 OOM: return memory evidence; do not silently fall back to TP16×PP1.
 - Benchmark failure after a successful probe: preserve it; diagnose the task
   failure but do not immediately rerun or change the experiment.
 
@@ -278,6 +278,6 @@ Keep observations separate from hypotheses. Explicitly answer:
 3. Is the reference argmax absent from GPTQ top-20, rank-displaced, or retained?
 4. Are GPTQ generations now health-applicable, and what are cap, loop,
    repetition, and answer-extraction rates versus AWQ?
-5. Did BF16 TP8/mp complete its paired probe and smoke tasks? If not, where did it stop?
+5. Did BF16 TP8×PP2/Ray complete its paired probe and smoke tasks? If not, where did it stop?
 6. Is the returned evidence sufficient for full primary-agent analysis without
    another cluster round trip?

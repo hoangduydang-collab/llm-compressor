@@ -40,6 +40,6 @@ monitoring must confirm disjoint running node lists.
 
 ### Task 3: Replace blocked TP16/Ray baseline
 
-- [x] Run BF16 on one exclusive node with TP8/mp and a 45-minute bound.
-- [x] Remove Ray preflight from the quality controller.
+- [x] Run BF16 on two exclusive nodes with TP8×PP2/Ray and a 45-minute bound.
+- [x] Restore the proven Ray topology preflight for the PP2 layout.
 - [x] Add a BF16-only filter and update the executor handoff.

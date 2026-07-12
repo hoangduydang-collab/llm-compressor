@@ -87,6 +87,19 @@ def test_distributional_metrics_use_observed_token_and_topk():
     assert "kl_divergence" not in result
 
 
+def test_distributional_metrics_report_argmax_flips_and_rank_displacement():
+    reference = [_record(top=((10, -0.1), (11, -1.0)))]
+    candidate = [_record(top=((12, -0.2), (10, -0.9)))]
+
+    result = compare_distributional_records(reference, candidate)
+
+    assert result["argmax_flip_ratio"] == 1.0
+    assert result["mean_abs_observed_logprob_error"] == 0.0
+    assert result["reference_argmax_candidate_rank"]["mean"] == 2.0
+    assert result["reference_argmax_candidate_rank"]["p95"] == 2.0
+    assert result["reference_argmax_missing_topk_rate"] == 0.0
+
+
 @pytest.mark.parametrize(
     "candidate,match",
     [

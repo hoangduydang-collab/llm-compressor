@@ -143,6 +143,18 @@ def _compare_pairs(pairs: list[tuple[dict, dict]]) -> dict[str, Any]:
         and _top_ids(reference, 1)[0] in set(_top_ids(candidate, 20))
         for reference, candidate in pairs
     ]
+    reference_argmax_candidate_ranks: list[int] = []
+    missing_reference_argmax = 0
+    for reference, candidate in pairs:
+        reference_top = _top_ids(reference, 1)
+        candidate_top = _top_ids(candidate, 20)
+        if not reference_top or reference_top[0] not in candidate_top:
+            missing_reference_argmax += 1
+            continue
+        reference_argmax_candidate_ranks.append(
+            candidate_top.index(reference_top[0]) + 1
+        )
+    absolute_drifts = [abs(value) for value in drifts]
     return {
         "paired_tokens": len(pairs),
         "reference_nll": reference_nll,
@@ -153,12 +165,28 @@ def _compare_pairs(pairs: list[tuple[dict, dict]]) -> dict[str, Any]:
         "bits_per_token_increase": (candidate_nll - reference_nll) / math.log(2),
         "mean_observed_logprob_drift": sum(drifts) / len(drifts),
         "median_observed_logprob_drift": _quantile(drifts, 0.5),
-        "p95_abs_observed_logprob_drift": _quantile([abs(value) for value in drifts], 0.95),
-        "p99_abs_observed_logprob_drift": _quantile([abs(value) for value in drifts], 0.99),
+        "mean_abs_observed_logprob_error": sum(absolute_drifts) / len(absolute_drifts),
+        "median_abs_observed_logprob_error": _quantile(absolute_drifts, 0.5),
+        "p95_abs_observed_logprob_drift": _quantile(absolute_drifts, 0.95),
+        "p99_abs_observed_logprob_drift": _quantile(absolute_drifts, 0.99),
         "top1_agreement": sum(top1) / len(top1),
+        "argmax_flip_ratio": 1.0 - sum(top1) / len(top1),
         "top5_jaccard": sum(top5) / len(top5),
         "top20_jaccard": sum(top20) / len(top20),
         "bf16_top1_retained_top20": sum(retained) / len(retained),
+        "reference_argmax_candidate_rank": {
+            "count": len(reference_argmax_candidate_ranks),
+            "mean": (
+                sum(reference_argmax_candidate_ranks)
+                / len(reference_argmax_candidate_ranks)
+                if reference_argmax_candidate_ranks
+                else None
+            ),
+            "median": _quantile(reference_argmax_candidate_ranks, 0.5),
+            "p95": _quantile(reference_argmax_candidate_ranks, 0.95),
+            "max": max(reference_argmax_candidate_ranks, default=None),
+        },
+        "reference_argmax_missing_topk_rate": missing_reference_argmax / len(pairs),
     }
 
 

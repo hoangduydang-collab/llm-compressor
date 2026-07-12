@@ -55,8 +55,11 @@ timeouts:
 
 ## Recommended next action
 
-Rerun both AWQ variants with the same calibration/configuration, but increase
-the Slurm wall time and preserve stdout/stderr plus a completion marker. Before
-serving, verify that each output contains a complete `config.json`,
+Rerun both AWQ variants unchanged from a login shell outside any parent Slurm
+allocation. Clear `SRUN_ARGS` and explicitly retain the launcher's 96-hour
+limit; the launcher already defaulted to 96 hours, so merely increasing its
+configured default would not explain or prevent the observed simultaneous
+cancellation. Preserve stdout/stderr and scheduler accounting. Before serving,
+verify that each output contains a complete `config.json`,
 `model.safetensors.index.json`, all referenced shards, and a successful
 quantization completion record. Only then launch the AWQ/GPTQ serving matrix.

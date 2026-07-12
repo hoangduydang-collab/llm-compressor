@@ -413,3 +413,31 @@ neither output directory is a valid checkpoint. See
 `M3_AWQ_REQUANTIZATION_REPORT.md` for exact paths, nodes, timestamps, log
 evidence, and the rerun requirements. Do not serve or publish either partial
 output.
+
+### Immediate rerun
+
+Treat the simultaneous cancellation as a likely transient infrastructure
+failure. Do not change calibration, AWQ mappings, smoothing, or checkpoint
+export for this retry. From a login shell that is **not** inside an existing
+Slurm allocation, pull the latest commit and run:
+
+    test -z "${SLURM_JOB_ID:-}" || { echo "leave parent allocation first"; exit 1; }
+    unset SRUN_ARGS
+    TIME_LIMIT=96:00:00 bash pipeline/slurm/run_m3_awq_gptq_prepare_srun.sh
+
+The already completed GPTQ preparation should be a cheap no-op; the two AWQ
+variants must restart and run concurrently. Do not reuse or serve either
+partial timestamped checkpoint from the interrupted attempt.
+
+If both AWQ variants finish, verify each portable checkpoint has `config.json`,
+`model.safetensors.index.json`, and every shard referenced by that index. Then
+run only the pending AWQ finish phase against the existing staged matrix:
+
+    MATRIX_ID=20260712-045912-awq-gptq-staged \
+      bash pipeline/slurm/run_m3_awq_repair_finish_srun.sh
+
+Commit the preparation logs, exact output paths, return codes, checkpoint
+validation, the six AWQ arm artifacts, and the regenerated `comparison.json`.
+If a preparation arm exits early again, do not retry dynamically: commit its
+complete log plus the output of `sacct`/`scontrol` for the allocation and step,
+including requested/effective time limit, state, exit code, reason, and node.

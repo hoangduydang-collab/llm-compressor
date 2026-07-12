@@ -8,14 +8,14 @@
     "mmlu_pro",
     "gsm8k"
   ],
-  "completed_tasks": [],
-  "pending_tasks": [
-    "gpqa_diamond_zeroshot",
-    "ifeval",
+  "completed_tasks": [
     "aime25",
-    "mmlu_pro",
-    "gsm8k"
+    "gpqa_diamond_zeroshot",
+    "gsm8k",
+    "ifeval",
+    "mmlu_pro"
   ],
+  "pending_tasks": [],
   "log_samples": true,
   "checkpoint_after_each_task": true
 }

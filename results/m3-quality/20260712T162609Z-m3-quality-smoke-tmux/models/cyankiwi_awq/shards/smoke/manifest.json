@@ -1,0 +1,15 @@
+{
+  "model": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "out_dir": "results/m3-quality/20260712T162609Z-m3-quality-smoke-tmux/models/cyankiwi_awq/shards/smoke",
+  "static": {
+    "gate_passed": null,
+    "sample_counts": {
+      "gpqa_diamond_zeroshot": 2,
+      "ifeval": 2,
+      "aime25": 2,
+      "mmlu_pro": 14,
+      "gsm8k": 4
+    }
+  },
+  "agentic": null
+}

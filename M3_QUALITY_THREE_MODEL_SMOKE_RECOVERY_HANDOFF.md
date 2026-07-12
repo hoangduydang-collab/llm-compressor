@@ -1,140 +1,225 @@
-# MiniMax-M3 Three-Model Smoke Recovery Handoff
+# MiniMax-M3 GPTQ Discriminator Executor Handoff
 
-## Outcome
+## Objective and role split
 
-The final three-model smoke attempt did not produce a usable smoke gate.
-Production evaluation was not launched.
+Determine whether the in-house GPTQ quality failure comes from quantization and
+calibration or from export, loading, or runtime behavior. Quality is primary;
+serving performance, AutoRound, production evaluation, and fresh
+re-quantization remain deferred.
 
-Run root:
+The primary agent owns experimental interpretation and code changes. The
+capable-cluster executor owns runtime checks, safe operational diagnosis,
+execution, artifact collection, and factual reporting. Fix transient environment
+issues such as a missing package or stale Ray process when necessary, but do
+not change checkpoints, prompts, sample identities, probe corpus, or
+quantization settings without recording the deviation and stopping when it
+breaks comparability.
 
-`results/m3-quality/20260712-102451-m3-quality-3model`
+Checkpoints:
 
-Models in scope:
+- BF16: `/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3`
+- GPTQ: `/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123`
+- AWQ control: `/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4`
 
-- BF16 MiniMax-M3
-- in-house GPTQ portable checkpoint
-- cyankiwi AWQ reference
+## Pull and CPU validation
 
-AutoRound was correctly deferred by the new handoff because its mixed-bit
-loader requires external repository-specific integration.
-
-## What was fixed and verified
-
-The initial Ray preflight failed because compute hostnames such as `gpu-h113`
-are not DNS-resolvable from the nodes. The topology script was updated to:
-
-- derive a routable `10.2.x.x` address using `ip -4 route get`;
-- fall back to `hostname -I`;
-- share the head IP through the output directory;
-- connect the gate to the explicit head IP;
-- wait for the expected number of active Ray nodes and GPUs;
-- retain rank-local logs and status files.
-
-The evaluation venv was missing Ray. Installed:
-
-```text
-ray==2.56.0
-msgpack==1.2.1
+```bash
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+git pull
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD"
+python -m pytest -q \
+  pipeline/tests/test_m3_quality_eval.py \
+  pipeline/tests/test_eval_health.py \
+  pipeline/tests/test_static_checkpoint.py \
+  pipeline/tests/test_eval_distributional.py \
+  pipeline/tests/test_m3_quality_eval_runner.py
 ```
 
-The topology gate then passed:
+Use this working environment throughout. Ray 2.56.0 may be installed if still
+missing; record any installation and exact versions.
 
-```json
-{
-  "ready": true,
-  "expected_nodes": 2,
-  "alive_nodes": 2,
-  "visible_gpus": 16.0
-}
+## Fresh preflight
+
+```bash
+RUN_ID="$(date +%Y%m%d-%H%M%S)-m3-gptq-discriminator"
+RUN_ROOT="results/m3-quality/$RUN_ID"
+MATRIX=pipeline/configs/minimax_m3_quality_matrix.yaml
+mkdir -p "$RUN_ROOT/logs"
+python -m pipeline.m3_quality_preflight \
+  --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  2>&1 | tee "$RUN_ROOT/preflight.log"
 ```
 
-The relevant preflight and Ray evidence is under:
+Confirm every MMLU-Pro leaf in `preflight/resolved_tasks.json` has its filtered
+subject size rather than 12,032. Validate both manifests before allocating GPUs:
 
-- `ray_preflight/`
-- `ray_debug6/`
-- `models/bf16/shards/smoke/ray_runtime/`
-
-Focused runner tests passed after the changes:
-
-```text
-4 passed
+```bash
+python - "$RUN_ROOT" <<'PY'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1]) / "preflight"
+resolved = json.load(open(root / "resolved_tasks.json"))
+sizes, aliases = resolved["leaf_sizes"], resolved["aliases"]
+reverse = {installed: canonical for canonical, installed in aliases.items()}
+for profile in ("smoke", "production"):
+    tasks = json.load(open(root / f"{profile}_sample_manifest.json"))["tasks"]
+    for task, leaves in tasks.items():
+        canonical = reverse[task]
+        for leaf, indices in leaves.items():
+            assert not indices or max(indices) < sizes[canonical][leaf], (
+                profile, task, leaf, sizes[canonical][leaf], max(indices)
+            )
+print("sample bounds valid")
+PY
 ```
 
-## Final smoke result
+Stop on failure and return the preflight tree and traceback. Never edit a
+generated manifest manually.
 
-The launcher started all three arms with `srun` on four nodes. The Ray gate
-passed and the BF16 arm connected to the two-node Ray cluster.
+## Parallel smoke execution
 
-The two quantized arms failed during task evaluation with the same lm-eval
-sample-index error:
+Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclusive`. GPTQ, AWQ, and the Ray placement diagnostic run concurrently.
+The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
+so benchmark failure cannot erase distribution evidence.
 
-```text
-AssertionError: Elements of --samples should be in the interval [0,k-1]
-where k is the number of total examples. In this case, k=717.
+```bash
+TASKS=$(python - "$RUN_ROOT/preflight/resolved_tasks.json" <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1]))["aliases"]
+print(",".join(a[x] for x in (
+    "gpqa_diamond", "ifeval", "aime_2025", "mmlu_pro", "gsm8k"
+)))
+PY
+)
+
+srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 \
+  pipeline/slurm/test_m3_quality_eval_arm.sh \
+  --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
+  --model-label inhouse_gptq \
+  --model /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123 \
+  --shard smoke --tasks "$TASKS" --tensor-parallel-size 8 \
+  --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048 \
+  >"$RUN_ROOT/logs/gptq-smoke.out" 2>"$RUN_ROOT/logs/gptq-smoke.err" &
+GPTQ_PID=$!
+
+srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 \
+  pipeline/slurm/test_m3_quality_eval_arm.sh \
+  --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
+  --model-label cyankiwi_awq \
+  --model /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4 \
+  --shard smoke --tasks "$TASKS" --tensor-parallel-size 8 \
+  --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048 \
+  >"$RUN_ROOT/logs/awq-smoke.out" 2>"$RUN_ROOT/logs/awq-smoke.err" &
+AWQ_PID=$!
+
+srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1 \
+  pipeline/slurm/test_m3_ray_placement_group.sh \
+  --out "$RUN_ROOT/ray_placement" --expected-bundles 16 --timeout-seconds 120 \
+  >"$RUN_ROOT/logs/ray-placement.out" 2>"$RUN_ROOT/logs/ray-placement.err" &
+RAY_PID=$!
+
+wait "$RAY_PID"; RAY_RC=$?
 ```
 
-Affected logs:
+Do not enable `set -e` around the waits. Record all return codes. After the Ray
+diagnostic releases its nodes, run the BF16 arm with a hard initialization
+bound. Ten minutes is intentionally a diagnostic budget:
 
-- `logs/smoke-inhouse_gptq-smoke.err`
-- `logs/smoke-cyankiwi_awq-smoke.err`
+```bash
+timeout --signal=TERM --kill-after=60s 10m \
+  srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1 \
+  pipeline/slurm/test_m3_quality_eval_arm.sh \
+  --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
+  --model-label bf16 --model /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3 \
+  --shard smoke --tasks "$TASKS" --tensor-parallel-size 16 \
+  --distributed-executor-backend ray --run-probe 1 --probe-tokens 2048 \
+  >"$RUN_ROOT/logs/bf16-smoke.out" 2>"$RUN_ROOT/logs/bf16-smoke.err"
+BF16_RC=$?
 
-Both arms wrote `return_code.txt` containing `1`. They produced partial
-artifacts for three tasks, but no complete comparable result; their
-`smoke_evidence.json` files record zero probe tokens and zero probe time.
-They must not be interpreted as model-quality failures because evaluation
-aborted before the configured task set completed.
+wait "$GPTQ_PID"; GPTQ_RC=$?
+wait "$AWQ_PID"; AWQ_RC=$?
+printf 'ray=%s\nbf16=%s\ngptq=%s\nawq=%s\n' \
+  "$RAY_RC" "$BF16_RC" "$GPTQ_RC" "$AWQ_RC" \
+  | tee "$RUN_ROOT/executor_return_codes.txt"
+```
 
-The BF16 arm remained active for about 35 minutes with no output after
-connecting to Ray and remained pending all five tasks. It was cancelled as
-job `12798` after producing no scores or samples. Its evidence shows:
+If resource policy delays BF16 while both quantized arms occupy nodes, wait for
+one quantized arm; never cancel it. Do not extend the BF16 timeout without
+primary-agent approval.
 
-- Ray connected at `10:47:22 UTC`;
-- `completed_tasks: []`;
-- all five tasks remained pending;
-- no `arm_complete.json` was produced.
+## Distribution comparisons
 
-Relevant BF16 files:
+Prefer BF16 when its probe completes. Otherwise compare GPTQ against AWQ so the
+primary agent still receives a same-corpus discriminator; do not describe AWQ
+as numerically equivalent to BF16.
 
-- `logs/smoke-bf16-smoke.out`
-- `logs/smoke-bf16-smoke.err`
-- `models/bf16/shards/smoke/eval_meta.json`
-- `models/bf16/shards/smoke/ray_runtime/`
+```bash
+GPTQ="$RUN_ROOT/models/inhouse_gptq/shards/smoke/distributional_probe.jsonl"
+AWQ="$RUN_ROOT/models/cyankiwi_awq/shards/smoke/distributional_probe.jsonl"
+BF16="$RUN_ROOT/models/bf16/shards/smoke/distributional_probe.jsonl"
+if [[ -s "$GPTQ" && -s "$AWQ" ]]; then
+  python -m pipeline.m3_distributional_probe compare \
+    --reference "$AWQ" --candidate "$GPTQ" \
+    --out "$RUN_ROOT/gptq_vs_awq_distributional.json"
+fi
+if [[ -s "$GPTQ" && -s "$BF16" ]]; then
+  python -m pipeline.m3_distributional_probe compare \
+    --reference "$BF16" --candidate "$GPTQ" \
+    --out "$RUN_ROOT/gptq_vs_bf16_distributional.json"
+fi
+if [[ -s "$AWQ" && -s "$BF16" ]]; then
+  python -m pipeline.m3_distributional_probe compare \
+    --reference "$BF16" --candidate "$AWQ" \
+    --out "$RUN_ROOT/awq_vs_bf16_distributional.json"
+fi
+```
 
-## Diagnosis
+Report globally, by length bucket, and by position quartile:
+`argmax_flip_ratio`, top-5/top-20 Jaccard, observed-token NLL and perplexity
+ratio, mean/median/p95/p99 absolute log-probability error, reference-argmax
+candidate-rank distribution, and missing-top-k rate. Do not label a top-k-only
+calculation as full-vocabulary KL divergence.
 
-There were three separate blockers:
+## Stop/go decisions
 
-1. Ray topology initially failed on hostname resolution.
-2. Ray was absent from the active evaluation venv.
-3. After both were fixed, lm-eval rejected the shared sample manifest for
-   both quantized arms because at least one task received an index outside its
-   actual dataset size (`k=717`).
+Do not launch production, layer-boundary reruns, or re-quantization in this
+handoff.
 
-The BF16 arm additionally appears to hang inside the first evaluation stage
-after model/Ray initialization. This is separate from the quantized sample
-index failure.
+- Large GPTQ teacher-forced drift with coherent AWQ: return evidence for the
+  next offline-dequant-versus-loaded localization.
+- Close teacher-forced GPTQ but garbage autoregressive output: return rendered
+  prompts, token IDs, health, and vLLM logs; focus shifts to generation/KV-cache.
+- Ready 16-bundle Ray group but BF16 vLLM timeout: classify as vLLM-Ray
+  integration evidence and retain both nodes' Ray logs.
+- Benchmark failure after a successful probe: preserve it; diagnose the task
+  failure but do not immediately rerun or change the experiment.
 
-The smoke gate is therefore not a trustworthy quality result, and
-`ready_for_production` must remain false. Do not launch production.
+## Required return package
 
-## Suggested next investigation
+Commit and push the complete run root, excluding checkpoints. Include:
 
-1. Trace how the sample manifest is converted into lm-eval `--samples` for
-   each task. Validate indices against each task's resolved leaf size rather
-   than applying one global sample index set to every task.
-2. Add a preflight assertion that every task-specific sample index is within
-   that task's split length, and emit the task name, split, size, and maximum
-   index.
-3. Re-run only a CPU/minimal task-request construction test before allocating
-   GPUs.
-4. Investigate BF16's first-task hang separately with a bounded single-task
-   run and explicit progress logging around model initialization, request
-   construction, and evaluation.
-5. Preserve the current run root as evidence; do not overwrite it.
+- preflight log, resolved tasks/config, exact manifests and hashes, probe corpus,
+  run manifest, and checkpoint diagnostics;
+- every arm's stdout/stderr, manifest, return code, completion marker, smoke
+  evidence, aggregates, samples, generation health, rendered prompts/token IDs,
+  distribution JSONL, and summary;
+- all distribution comparison JSON;
+- placement-group JSON, before/after placement listings and `ray status`,
+  topology gate/rank files, both rank Ray-log archives, and cleanup output;
+- Python, CUDA, PyTorch, vLLM, Ray, lm-eval, transformers, and llm-compressor
+  versions plus node/GPU identities;
+- `executor_return_codes.txt` and `EXECUTOR_NOTES.md` with exact commands,
+  timestamps, allocation, deviations, retries, observations, hypotheses, and
+  every missing artifact plus reason.
 
-## Exact evidence contract
+Keep observations separate from hypotheses. Explicitly answer:
 
-The pushed run root contains the preflight manifests, resolved evaluation
-configuration, checkpoint diagnostics, launch plan, Ray rank logs/status,
-per-arm manifests, return codes, partial evidence, and all smoke stdout/stderr.
-No model checkpoint payloads are included.
+1. Did all completed probes use the same corpus hash and paired token count?
+2. Does GPTQ drift exist on short inputs or grow by position and length?
+3. Is the reference argmax absent from GPTQ top-20, rank-displaced, or retained?
+4. Are GPTQ generations now health-applicable, and what are cap, loop,
+   repetition, and answer-extraction rates versus AWQ?
+5. Did the 16-bundle Ray group become ready? If so, where did BF16 vLLM stop?
+6. Is the returned evidence sufficient for full primary-agent analysis without
+   another cluster round trip?

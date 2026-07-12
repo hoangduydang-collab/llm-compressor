@@ -50,6 +50,7 @@ def test_runner_scripts_are_valid_bash():
         SCRIPT,
         Path("pipeline/slurm/test_m3_quality_eval_arm.sh"),
         Path("pipeline/slurm/test_m3_ray_topology.sh"),
+        Path("pipeline/slurm/test_m3_ray_placement_group.sh"),
     ):
         result = subprocess.run(["bash", "-n", str(script)], capture_output=True)
         assert result.returncode == 0, result.stderr.decode()
@@ -72,3 +73,16 @@ def test_smoke_probe_runs_before_eval_and_failure_skips_eval():
     assert 'if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then' in arm
     assert 'if ((rc == 0)); then\n  "${eval_cmd[@]}"' in arm
     assert 'if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then' in arm
+
+
+def test_ray_placement_group_diagnostic_is_bounded_and_captures_state():
+    script = Path("pipeline/slurm/test_m3_ray_placement_group.sh").read_text()
+
+    assert 'EXPECTED_BUNDLES=16' in script
+    assert 'TIMEOUT_SECONDS=120' in script
+    assert 'placement_group([{"GPU": 1}] * expected' in script
+    assert 'ray.get(group.ready(), timeout=timeout)' in script
+    assert 'ray list placement-groups' in script
+    assert 'ray-logs-rank-$rank.tar.gz' in script
+    assert 'driver-done' in script
+    assert 'ray stop --force' in script

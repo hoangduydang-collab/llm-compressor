@@ -224,6 +224,75 @@ Use `srun`, not `sbatch`.
 
 ### Pull, environment, and dynamic preflight
 
+The AutoRound checkpoint is not preinstalled on the executor cluster. Download
+the exact Hugging Face repository to the path already configured in
+`pipeline/configs/minimax_m3_quality_matrix.yaml` before running preflight:
+
+```bash
+AUTOROUND_REPO=aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx
+AUTOROUND_REV=40b00366dcb6bcf16b1710f242b12ce76dd34b9f
+AUTOROUND_DIR=/mnt/nfs/hoangduy/hf_assets/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx
+
+mkdir -p "$(dirname "$AUTOROUND_DIR")"
+hf download "$AUTOROUND_REPO" \
+  --revision "$AUTOROUND_REV" \
+  --local-dir "$AUTOROUND_DIR"
+printf '%s\n' "$AUTOROUND_REV" > "$AUTOROUND_DIR/DOWNLOAD_REVISION"
+```
+
+Source: <https://huggingface.co/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx>.
+The pinned revision prevents a multi-hour evaluation from silently changing if
+the model repository is updated. The model card reports an approximately
+176-GiB checkpoint, so check shared-filesystem capacity first. `hf download` is
+resumable; rerun the identical command after a network interruption. If the
+`hf` command is unavailable, install/update `huggingface_hub` in the executor's
+virtual environment (`python -m pip install -U huggingface_hub`) and retry.
+
+Verify every file referenced by the safetensors index rather than relying only
+on directory existence:
+
+```bash
+python - "$AUTOROUND_DIR" "$AUTOROUND_REV" <<'PYVERIFY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+revision = sys.argv[2]
+required = [root / "config.json", root / "model.safetensors.index.json"]
+missing = [str(path) for path in required if not path.is_file()]
+if not missing:
+    index = json.loads(required[1].read_text())
+    shards = sorted(set(index["weight_map"].values()))
+    missing.extend(str(root / shard) for shard in shards if not (root / shard).is_file())
+else:
+    shards = []
+if missing:
+    raise SystemExit("incomplete AutoRound download; missing:\n" + "\n".join(missing[:20]))
+recorded = (root / "DOWNLOAD_REVISION").read_text().strip()
+if recorded != revision:
+    raise SystemExit(f"revision mismatch: expected {revision}, recorded {recorded}")
+print(f"AutoRound checkpoint ready: {root} ({len(shards)} indexed shards, revision {revision})")
+PYVERIFY
+```
+
+The pinned index currently references **36 weight files**: 35 numbered files
+(`model-00001-of-00035.safetensors` through
+`model-00035-of-00035.safetensors`) plus `model_extra_tensors.safetensors`.
+If the verification prints another count, preserve the output and stop for
+primary-agent review rather than editing the matrix or selecting a different
+checkpoint.
+
+The model card's canonical serving recipe uses OneCompression at tag
+`m3-serving-v1` plus repository-specific loader glue. Do not install that plugin
+into the shared environment merely to make preflight pass. Run our mandatory
+matrix smoke first. If the AutoRound arm fails with an unknown
+`autoround_mixed` quantization method, missing OneCompression plugin, or loader
+key mismatch, stop before production and return its complete logs and smoke
+artifacts. That is an integration incompatibility for the primary agent to
+resolve; do not silently switch only this arm to the model card's custom server,
+because doing so would invalidate the paired direct-vLLM comparison.
+
 ```bash
 git pull
 cd /mnt/nfs/hoangduy/projects/llm-compressor

@@ -20,7 +20,8 @@ eval:
   backend: vllm
   apply_chat_template: true
   fewshot_as_multiturn: true
-  enable_thinking: true
+  enable_thinking: null
+  think_end_token: "</mm:think>"
   lm_eval_batch_size: auto
   log_samples: true
   bootstrap_seed: 42

@@ -31,6 +31,15 @@ class ModelSpec:
 
 
 @dataclass(frozen=True)
+class DeferredModelSpec:
+    label: str
+    path: Path
+    kind: str
+    reason: str
+    revision: str | None = None
+
+
+@dataclass(frozen=True)
 class ShardSpec:
     name: str
     tasks: tuple[str, ...]
@@ -61,6 +70,7 @@ class MatrixSpec:
     model_source: Path
     eval_config: Path
     models: tuple[ModelSpec, ...]
+    deferred_models: tuple[DeferredModelSpec, ...]
     shards: tuple[ShardSpec, ...]
     task_aliases: dict[str, tuple[str, ...]]
     sampling: dict[str, Any]
@@ -130,6 +140,18 @@ def load_matrix(path: str | Path) -> MatrixSpec:
         )
         for item in raw.get("models") or []
     )
+    deferred_models = tuple(
+        DeferredModelSpec(
+            label=str(item["label"]),
+            path=Path(item["path"]),
+            kind=str(item["kind"]),
+            reason=str(item["reason"]),
+            revision=str(item["revision"]) if item.get("revision") else None,
+        )
+        for item in raw.get("deferred_models") or []
+    )
+    if {model.label for model in models} & {model.label for model in deferred_models}:
+        raise ValueError("active and deferred model labels must be disjoint")
     shards = tuple(
         ShardSpec(
             str(item["name"]),
@@ -154,6 +176,7 @@ def load_matrix(path: str | Path) -> MatrixSpec:
         model_source=Path(raw["model_source"]),
         eval_config=Path(raw["eval_config"]),
         models=models,
+        deferred_models=deferred_models,
         shards=shards,
         task_aliases={
             str(name): tuple(str(alias) for alias in aliases)
@@ -174,6 +197,21 @@ def load_matrix(path: str | Path) -> MatrixSpec:
         ),
     )
 
+
+
+def validate_reasoning_config(raw: dict[str, Any]) -> None:
+    """Reject MiniMax/lm-eval reasoning combinations before GPU allocation."""
+    eval_raw = raw.get("eval") or {}
+    if eval_raw.get("enable_thinking") is True:
+        raise ValueError(
+            "lm-eval 0.4.12 disallows enable_thinking=True for the mixed "
+            "multiple-choice/loglikelihood and generative MiniMax suite; leave "
+            "it unset to use the chat template's adaptive mode"
+        )
+    if eval_raw.get("think_end_token") != "</mm:think>":
+        raise ValueError(
+            "MiniMax-M3 quality evaluation requires think_end_token='</mm:think>'"
+        )
 
 
 def resolve_task_aliases(

@@ -18,6 +18,7 @@ from pipeline.m3_quality_eval import (
     build_profile_sample_manifests,
     load_matrix,
     resolve_task_aliases,
+    validate_reasoning_config,
 )
 
 
@@ -63,6 +64,8 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
     from transformers import AutoTokenizer
 
     spec = load_matrix(matrix_path)
+    raw = yaml.safe_load(spec.eval_config.read_text(encoding="utf-8"))
+    validate_reasoning_config(raw)
     out = run_root / "preflight"; out.mkdir(parents=True, exist_ok=True)
     for model in spec.models:
         if not model.path.is_dir() or not (model.path / "config.json").is_file():
@@ -82,7 +85,6 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         seed=int(spec.sampling["seed"]), output_dir=out, harness_revision=revision,
     )
 
-    raw = yaml.safe_load(spec.eval_config.read_text(encoding="utf-8"))
     for task in raw["eval"]["tasks"]:
         task["name"] = resolved[task["name"]]
     resolved_config = out / "resolved_eval_config.yaml"

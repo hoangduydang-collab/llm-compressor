@@ -17,6 +17,7 @@ from pipeline.m3_quality_eval import (
     render_matrix_report,
     build_profile_sample_manifests,
     resolve_task_aliases,
+    validate_reasoning_config,
     validate_and_merge,
     validate_smoke_gate,
 )
@@ -25,23 +26,26 @@ from pipeline.m3_quality_eval import (
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
 
 
-def test_default_matrix_has_four_models_and_eight_arms():
+def test_default_matrix_has_three_active_models_and_autoround_deferred():
     spec = load_matrix(MATRIX)
 
     assert [model.label for model in spec.models] == [
         "bf16",
         "inhouse_gptq",
         "cyankiwi_awq",
-        "aquaman_autoround",
     ]
+    assert [model.label for model in spec.deferred_models] == [
+        "aquaman_autoround"
+    ]
+    assert "OneCompression" in spec.deferred_models[0].reason
     assert [shard.name for shard in spec.shards] == ["reasoning", "broad"]
-    assert len(spec.expected_arms) == 8
+    assert len(spec.expected_arms) == 6
     assert spec.models[0].nodes == 2
     assert spec.models[0].tensor_parallel_size == 16
     assert all(model.nodes == 1 for model in spec.models[1:])
     assert all(model.tensor_parallel_size == 8 for model in spec.models[1:])
-    assert spec.smoke_node_count == 5
-    assert spec.production_node_count == 10
+    assert spec.smoke_node_count == 4
+    assert spec.production_node_count == 8
     assert spec.probe.total_tokens == 49_152
     assert spec.probe.max_overhead_seconds == 1_800
 
@@ -80,6 +84,31 @@ def test_task_alias_resolution_is_explicit_and_fails_missing():
     }
     with pytest.raises(ValueError, match="gpqa_diamond"):
         resolve_task_aliases(aliases, {"ifeval"})
+
+
+def test_reasoning_config_uses_adaptive_minimax_mode_and_strip_token():
+    validate_reasoning_config(
+        {
+            "eval": {
+                "enable_thinking": None,
+                "think_end_token": "</mm:think>",
+                "tasks": [{"name": "gpqa"}, {"name": "aime25"}],
+            }
+        }
+    )
+
+
+def test_reasoning_config_rejects_enable_thinking_before_gpu_load():
+    with pytest.raises(ValueError, match="lm-eval 0.4.12"):
+        validate_reasoning_config(
+            {
+                "eval": {
+                    "enable_thinking": True,
+                    "think_end_token": "</mm:think>",
+                    "tasks": [{"name": "gpqa"}],
+                }
+            }
+        )
 
 
 def test_build_exact_sample_manifest_writes_stratified_hash(tmp_path):
@@ -135,14 +164,14 @@ def test_smoke_gate_requires_every_model_and_projects_probe_budget():
 def test_smoke_gate_rejects_missing_or_looping_model():
     spec = load_matrix(MATRIX)
     report = _passing_smoke_report(spec)
-    report["models"].pop("aquaman_autoround")
-    report["models"]["cyankiwi_awq"]["periodic_loop_count"] = 1
+    report["models"].pop("cyankiwi_awq")
+    report["models"]["inhouse_gptq"]["periodic_loop_count"] = 1
 
     result = validate_smoke_gate(spec, report)
 
     assert result["ready_for_production"] is False
-    assert "aquaman_autoround" in result["missing_models"]
-    assert result["models"]["cyankiwi_awq"]["passed"] is False
+    assert "cyankiwi_awq" in result["missing_models"]
+    assert result["models"]["inhouse_gptq"]["passed"] is False
 
 
 def _write_arm(
@@ -327,19 +356,19 @@ def test_matrix_report_surfaces_quantization_metrics_and_gates():
     assert "PASS" in report
 
 
-def test_launch_plan_parallelizes_smoke_then_eight_production_arms(tmp_path):
+def test_launch_plan_parallelizes_three_smoke_then_six_production_arms(tmp_path):
     spec = load_matrix(MATRIX)
     smoke = build_launch_plan(spec, profile="smoke")
-    assert len(smoke["arms"]) == 4
-    assert sum(arm["nodes"] for arm in smoke["arms"]) == 5
+    assert len(smoke["arms"]) == 3
+    assert sum(arm["nodes"] for arm in smoke["arms"]) == 4
     assert all(len(arm["tasks"]) == 5 for arm in smoke["arms"])
 
     gate = tmp_path / "smoke_gate.json"
     gate.write_text(json.dumps({"ready_for_production": True}))
     production = build_launch_plan(spec, profile="production", smoke_gate=gate)
-    assert len(production["arms"]) == 8
-    assert sum(arm["nodes"] for arm in production["arms"]) == 10
-    assert production["max_parallel_arms"] == 8
+    assert len(production["arms"]) == 6
+    assert sum(arm["nodes"] for arm in production["arms"]) == 8
+    assert production["max_parallel_arms"] == 6
 
 
 def test_production_launch_plan_refuses_failed_smoke_gate(tmp_path):

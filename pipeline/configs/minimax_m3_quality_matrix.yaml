@@ -24,12 +24,13 @@ models:
     nodes: 1
     tensor_parallel_size: 8
     distributed_executor_backend: mp
+
+deferred_models:
   - label: aquaman_autoround
     path: /mnt/nfs/hoangduy/hf_assets/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx
     kind: autoround-3.2bit
-    nodes: 1
-    tensor_parallel_size: 8
-    distributed_executor_backend: mp
+    revision: 40b00366dcb6bcf16b1710f242b12ce76dd34b9f
+    reason: OneCompression mixed-bit plugin and repository loader integration deferred
 
 shards:
   - name: reasoning

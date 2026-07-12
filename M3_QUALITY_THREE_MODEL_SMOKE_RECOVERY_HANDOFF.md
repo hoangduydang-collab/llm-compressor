@@ -146,7 +146,7 @@ full quantization but does not replace final end-to-end quality evaluation.
 
 ## Parallel smoke execution
 
-Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclusive`. Repaired GPTQ, AWQ, and the Ray placement diagnostic run concurrently. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
+Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclusive`. Repaired GPTQ, AWQ, and the two-node Ray topology preflight run concurrently. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
 The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
 so benchmark failure cannot erase distribution evidence.
 
@@ -180,13 +180,14 @@ cat "$RUN_ROOT/controller.rc"
 ```
 
 Confirm concurrent running jobs have disjoint `NODELIST` values: GPTQ and AWQ
-one node each, and Ray two other nodes. BF16 later receives two exclusive nodes
+one node each, and the Ray topology preflight two other nodes. BF16 later receives two exclusive nodes
 after Ray finishes. Do not accept colocated running arms.
 
 Attaching is optional: `tmux attach-session -t "=m3-quality-$RUN_ID"`. Detach
 with `Ctrl-b d`; do not kill the tmux server. The controller starts repaired
-GPTQ, cyankiwi AWQ, and the Ray placement diagnostic concurrently, waits for
-Ray to release its nodes, then runs the ten-minute BF16 diagnostic. It records
+GPTQ, cyankiwi AWQ, and the proven two-node Ray topology preflight concurrently,
+waits for Ray to write `ray_preflight/gate.json` and release its nodes, then runs
+the ten-minute BF16 diagnostic. It records
 all four return codes in `executor_return_codes.txt` and its own final status
 atomically in `controller.rc`.
 
@@ -257,7 +258,7 @@ Commit and push the complete run root, excluding checkpoints. Include:
   evidence, aggregates, samples, generation health, rendered prompts/token IDs,
   distribution JSONL, and summary;
 - all distribution comparison JSON;
-- placement-group JSON, before/after placement listings and `ray status`,
+- Ray topology gate, rank records/logs, node list, and `ray status`,
   topology gate/rank files, both rank Ray-log archives, and cleanup output;
 - Python, CUDA, PyTorch, vLLM, Ray, lm-eval, transformers, and llm-compressor
   versions plus node/GPU identities;

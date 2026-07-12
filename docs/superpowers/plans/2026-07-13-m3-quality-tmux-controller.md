@@ -30,3 +30,9 @@ The real tmux launcher and direct controller must run outside any Slurm
 allocation. They reject an inherited `SLURM_JOB_ID`; only top-level
 `srun --exclusive` provides the required whole-node allocations. Executor
 monitoring must confirm disjoint running node lists.
+
+### Task 2: Correct failed Ray gate contract
+
+- [x] Reproduce the placement-output versus `ray_preflight/gate.json` mismatch.
+- [x] Replace the placement diagnostic with the proven bounded topology preflight.
+- [x] Preserve the four-arm resource plan and BF16 initialization timeout.

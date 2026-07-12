@@ -158,8 +158,9 @@ class AWQModifier(Modifier):
     _smooth_activation_stats: dict[str, list[torch.Tensor]] = PrivateAttr(
         default_factory=dict
     )
-    # List to store error metrics for each layer
+    # Lists to store completed and explicitly skipped mapping metrics.
     _error_metrics: list[dict] = PrivateAttr(default_factory=list)
+    _skipped_error_metrics: list[dict] = PrivateAttr(default_factory=list)
 
     def on_initialize(self, state: State, **kwargs) -> bool:
         """
@@ -273,6 +274,7 @@ class AWQModifier(Modifier):
         self._smooth_activation_stats.clear()
         self._resolved_mappings.clear()
         self._error_metrics.clear()
+        self._skipped_error_metrics.clear()
 
         return True
 
@@ -507,6 +509,13 @@ class AWQModifier(Modifier):
                         "found to scale. This can occasionally occur in MoE models "
                         "when certain experts are not activated by calibration samples."
                     )
+                    self._skipped_error_metrics.append(
+                        {
+                            "layer_name": mapping.smooth_name,
+                            "parent_name": mapping.parent_name,
+                            "reason": "no_parent_outputs",
+                        }
+                    )
                     del self._smooth_activation_stats[mapping.smooth_name]
                     continue
                 if not all(
@@ -520,6 +529,13 @@ class AWQModifier(Modifier):
                         "are incorrectly set and modifying the model in undesired "
                         "ways. If you encounter this consistently, raise an issue at "
                         "https://github.com/vllm-project/llm-compressor/issues"
+                    )
+                    self._skipped_error_metrics.append(
+                        {
+                            "layer_name": mapping.smooth_name,
+                            "parent_name": mapping.parent_name,
+                            "reason": "nonfinite_parent_outputs",
+                        }
                     )
                     del self._smooth_activation_stats[mapping.smooth_name]
                     continue
@@ -836,6 +852,7 @@ class AWQModifier(Modifier):
             },
             "total_layers": len(self._error_metrics),
             "metrics": self._error_metrics,
+            "skipped_metrics": self._skipped_error_metrics,
         }
 
         # Save to disk
@@ -843,6 +860,12 @@ class AWQModifier(Modifier):
 
         # Also print summary statistics
         reductions = [m["reduction"] for m in self._error_metrics]
+        if not reductions:
+            logger.warning(
+                "AWQ produced no completed mapping metrics; "
+                f"skipped_mappings={len(self._skipped_error_metrics)}"
+            )
+            return
         avg_reduction = sum(reductions) / len(reductions)
         min_reduction = min(reductions)
         max_reduction = max(reductions)

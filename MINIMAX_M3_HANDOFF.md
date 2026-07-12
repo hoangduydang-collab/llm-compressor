@@ -665,10 +665,49 @@ paths listed in the report, with SHA256 hashes recorded there. Do not
 start a full AWQ rebuild until the empty-metric failure is analyzed and the
 representative diagnostic is corrected.
 
+
+## Active correction handoff: AWQ lifecycle smoke and repaired GPTQ validation
+
+The prior exclusive-node representative run was infrastructure-clean but all
+six arms finalized with zero AWQ mapping metrics. Pull the latest commit. The
+AWQ core now records explicit skipped mappings and safely handles an empty
+summary; the representative harness persists `lifecycle.json` with resolved,
+completed, skipped, and unprocessed mappings.
+
+First run exactly one arm from a login/control shell outside Slurm. Use a fresh
+ID and tmux session:
+
+```bash
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-awq-one-arm"
+SESSION_NAME="m3-awq-$RUN_ID"
+DRY_RUN=1 ARM_FILTER=offsetfix-layer8 RUN_ID="$RUN_ID" \
+  SESSION_NAME="$SESSION_NAME" \
+  bash pipeline/slurm/start_m3_awq_representative_tmux.sh
+ARM_FILTER=offsetfix-layer8 RUN_ID="$RUN_ID" SESSION_NAME="$SESSION_NAME" \
+  bash pipeline/slurm/start_m3_awq_representative_tmux.sh
+```
+
+A useful smoke requires `controller.rc=0`, `offsetfix-layer8/rc=0`, a nonempty
+`lifecycle.json`, `completed_mapping_count > 0`, and `arm.json`. If it fails,
+return lifecycle evidence and the complete log immediately; do not run the
+other five arms. The counts now distinguish uncached/unprocessed mappings from
+explicit `no_parent_outputs` or `nonfinite_parent_outputs` skips.
+
+If and only if the one-arm smoke passes, immediately start a fresh unfiltered
+six-arm tmux run on six exclusive nodes using the standard commands above. Do
+not reuse the one-arm result root.
+
+In parallel with the AWQ one-arm smoke, rerun the three-model quality smoke
+from `M3_QUALITY_THREE_MODEL_SMOKE_RECOVERY_HANDOFF.md`. Its controller now uses
+`test_m3_ray_topology.sh --out "$RUN_ROOT/ray_preflight" --stop-after-check`,
+which both terminates cleanly and writes the exact `ray_preflight/gate.json`
+required by BF16. Return BF16, repaired GPTQ, and cyankiwi AWQ evidence; do not
+start production until the primary agent validates the BF16 comparison.
+
 ## Active handoff pointer
 
-The active cluster task is **Superseding handoff: representative-layer AWQ
-diagnostic** above. The three-model quality matrix in the immediately preceding
-historical section is deferred until the AWQ direction is resolved. Run only
-`pipeline/slurm/start_m3_awq_representative_tmux.sh`; it owns
-`run_m3_awq_representative_srun.sh` inside tmux. Return the evidence and stop.
+The active cluster tasks are the two parallel tracks in **Active correction
+handoff** above: one filtered AWQ lifecycle smoke (expanding to six arms only on
+success) and the corrected three-model quality smoke including BF16. Both must
+use their tmux wrappers from outside every Slurm allocation. Return evidence and
+stop before production or full-model re-quantization.

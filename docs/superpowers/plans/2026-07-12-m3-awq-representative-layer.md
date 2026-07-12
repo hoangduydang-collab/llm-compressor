@@ -78,3 +78,12 @@
 - [ ] **Step 1: Update the handoff** to supersede another full AWQ retry with the representative-layer matrix, including dry-run/run commands, stop conditions, scheduler evidence, and interpretation rules.
 - [ ] **Step 2: Run** `pytest -q pipeline/tests/test_m3_awq_representative.py pipeline/tests/test_minimax_m3_config.py tests/llmcompressor/modeling/test_offset_norm_minimax_m3.py`, `bash -n pipeline/slurm/run_m3_awq_representative_srun.sh`, launcher dry run, and `git diff --check`.
 - [ ] **Step 3: Review the diff against every global constraint, commit, and push `duy-branch` for the cluster agent.**
+
+
+### Task 5: Empty-metric lifecycle recovery
+
+- [x] Reproduce the zero-completed-metric finalizer failure from executor logs.
+- [x] Guard AWQ summary statistics and record explicit mapping skip reasons.
+- [x] Persist resolved/completed/skipped/unprocessed lifecycle evidence.
+- [x] Add an `ARM_FILTER` one-arm smoke gate through srun and tmux.
+- [x] Update the handoff to expand to six arms only after a passing smoke.

@@ -15,6 +15,7 @@ RESULT_ROOT="${RESULT_ROOT:-/mnt/nfs/hoangduy/results/m3-awq-representative/$RUN
 CONTROLLER_LOG="${CONTROLLER_LOG:-$LOG_ROOT/controller.log}"
 TIME_LIMIT="${TIME_LIMIT:-12:00:00}"
 SRUN_ARGS="${SRUN_ARGS:-}"
+ARM_FILTER="${ARM_FILTER:-}"
 CONTROLLER_SCRIPT="$RESULT_ROOT/controller.sh"
 
 if [[ ! "$SESSION_NAME" =~ ^[A-Za-z0-9_.-]+$ ]]; then
@@ -42,9 +43,9 @@ if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
   echo "CONTROLLER_LOG=$CONTROLLER_LOG"
   echo "controller executes: $SCRIPT_DIR/run_m3_awq_representative_srun.sh"
   print_commands
-  echo "six-arm srun dry run:"
+  echo "representative srun dry run:"
   DRY_RUN=1 RUN_ID="$RUN_ID" LOG_ROOT="$LOG_ROOT" RESULT_ROOT="$RESULT_ROOT" \
-    TIME_LIMIT="$TIME_LIMIT" SRUN_ARGS="$SRUN_ARGS" \
+    TIME_LIMIT="$TIME_LIMIT" SRUN_ARGS="$SRUN_ARGS" ARM_FILTER="$ARM_FILTER" \
     bash "$SCRIPT_DIR/run_m3_awq_representative_srun.sh"
   exit 0
 fi
@@ -84,6 +85,7 @@ mkdir -p "$LOG_ROOT" "$RESULT_ROOT"
   printf 'export RESULT_ROOT=%q\n' "$RESULT_ROOT"
   printf 'export TIME_LIMIT=%q\n' "$TIME_LIMIT"
   printf 'export SRUN_ARGS=%q\n' "$SRUN_ARGS"
+  printf 'export ARM_FILTER=%q\n' "$ARM_FILTER"
   printf 'CONTROLLER_LOG=%q\n' "$CONTROLLER_LOG"
   printf 'RC_FILE=%q\n' "$RESULT_ROOT/controller.rc"
   echo 'exec >>"$CONTROLLER_LOG" 2>&1'

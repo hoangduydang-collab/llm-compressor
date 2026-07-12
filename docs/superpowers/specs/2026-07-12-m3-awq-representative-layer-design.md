@@ -113,3 +113,17 @@ classification, aggregation with partial failures, dry-run command generation,
 and the guarantee that the diagnostic never calls checkpoint save/export.
 Existing MiniMax configuration, offset-norm, and AWQ mapping tests remain in
 the verification set.
+
+
+## Empty-metric recovery
+
+A representative arm must persist AWQ lifecycle evidence before interpreting
+quality. The evidence separates resolved mappings into completed grid searches,
+explicit skips (`no_parent_outputs` or `nonfinite_parent_outputs`), and
+unprocessed mappings that never received cached activation statistics. Empty
+summary statistics must not divide by zero. Zero completed mappings is an
+actionable infrastructure failure, never a quality pass.
+
+A filtered one-arm tmux smoke for `offsetfix-layer8` gates the six-arm matrix.
+The full matrix uses a fresh run root only after that smoke produces nonempty
+lifecycle evidence and `arm.json`.

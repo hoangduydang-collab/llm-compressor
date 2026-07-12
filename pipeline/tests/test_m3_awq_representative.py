@@ -341,3 +341,24 @@ def test_arm_recipe_constructs_ordered_audited_capture_modifiers():
     assert recipe[0] is awq
     assert recipe[1].capture_owner is awq
     assert recipe[1].expected_targets == expected
+
+
+def test_audited_awq_retains_completed_and_skipped_lifecycle_metrics():
+    pytest.importorskip("torch")
+    pytest.importorskip("compressed_tensors")
+    source = PipelineConfig()
+    source.quantization.method = "awq"
+    source.quantization.scheme = "W4AFP8"
+    recipe, awq = build_arm_recipe(
+        source, layer=8, variant="offsetfix",
+        expected=["model.language_model.layers.8.mlp.experts.0.up_proj"],
+    )
+    awq._error_metrics.append({"layer_name": "completed", "reduction": 0.5})
+    awq._skipped_error_metrics.append(
+        {"layer_name": "skipped", "reason": "no_parent_outputs"}
+    )
+
+    awq._log_error_metrics()
+
+    assert awq.lifecycle_audit["completed_metrics"][0]["layer_name"] == "completed"
+    assert awq.lifecycle_audit["skipped_metrics"][0]["reason"] == "no_parent_outputs"

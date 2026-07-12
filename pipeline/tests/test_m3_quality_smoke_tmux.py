@@ -30,7 +30,10 @@ def test_quality_controller_dry_run_preserves_four_arm_plan(tmp_path):
     assert output.count("srun --exclusive") == 4
     assert "inhouse_gptq" in output
     assert "cyankiwi_awq" in output
-    assert "m3_ray_placement_group" in output
+    assert "test_m3_ray_topology.sh" in output
+    assert "ray_preflight" in output
+    assert "--stop-after-check" in output
+    assert "m3_ray_placement_group" not in output
     assert "--model-label bf16" in output
     assert "timeout --signal=TERM --kill-after=60s 10m" in output
 

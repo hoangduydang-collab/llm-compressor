@@ -369,6 +369,7 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
         audit_variant: str
         expected_targets: list[str]
         _audit_snapshot: list[dict[str, Any]] = PrivateAttr(default_factory=list)
+        _lifecycle_audit: dict[str, Any] = PrivateAttr(default_factory=dict)
         _capture_phase: str = PrivateAttr(default="reference")
         _captures: dict[str, dict[str, list[Any]]] = PrivateAttr(
             default_factory=lambda: {
@@ -433,9 +434,33 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
             self._capture_phase = "candidate"
             return result
 
+        def _log_error_metrics(self):
+            resolved = [mapping.smooth_name for mapping in self._resolved_mappings]
+            completed = [dict(metric) for metric in self._error_metrics]
+            skipped = [dict(metric) for metric in self._skipped_error_metrics]
+            accounted = {
+                metric["layer_name"] for metric in [*completed, *skipped]
+            }
+            self._lifecycle_audit = {
+                "resolved_mapping_count": len(resolved),
+                "resolved_mappings": resolved,
+                "completed_mapping_count": len(completed),
+                "completed_metrics": completed,
+                "skipped_mapping_count": len(skipped),
+                "skipped_metrics": skipped,
+                "unprocessed_mappings": [
+                    name for name in resolved if name not in accounted
+                ],
+            }
+            return super()._log_error_metrics()
+
         @property
         def audit_snapshot(self) -> list[dict[str, Any]]:
             return list(self._audit_snapshot)
+
+        @property
+        def lifecycle_audit(self) -> dict[str, Any]:
+            return copy.deepcopy(self._lifecycle_audit)
 
         @property
         def boundary_captures(self) -> dict[str, dict[str, list[Any]]]:
@@ -659,6 +684,16 @@ def run_arm(
     mapping_snapshot = audited_awq.audit_snapshot
     if not mapping_snapshot:
         raise RuntimeError("AWQ lifecycle audit snapshot was not retained")
+    lifecycle_audit = audited_awq.lifecycle_audit
+    _write_json_atomic(output_dir / "lifecycle.json", lifecycle_audit)
+    if lifecycle_audit.get("completed_mapping_count", 0) == 0:
+        raise RuntimeError(
+            "AWQ completed zero mapping grid searches: "
+            f"resolved={lifecycle_audit.get('resolved_mapping_count', 0)} "
+            f"skipped={lifecycle_audit.get('skipped_mapping_count', 0)} "
+            f"unprocessed={len(lifecycle_audit.get('unprocessed_mappings', []))}; "
+            f"see {output_dir / 'lifecycle.json'}"
+        )
 
     per_probe, metrics = fidelity_from_captures(audited_awq.boundary_captures)
     classification = classify_boundaries(metrics)
@@ -672,6 +707,7 @@ def run_arm(
         "per_probe": per_probe,
         "targeted_modules": expected,
         "resolved_awq_mappings": mapping_snapshot,
+        "awq_lifecycle": lifecycle_audit,
         "probe_manifest": probe_manifest,
         "configuration": {
             "config_path": str(config_path),

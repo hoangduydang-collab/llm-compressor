@@ -104,3 +104,19 @@ def test_launcher_defaults_to_run_specific_roots():
     assert 'RUN_ID="${RUN_ID:-' in text
     assert '/$RUN_ID}"' in text
     assert "read -r -a EXTRA_SRUN_ARGS" in text
+
+
+def test_launcher_can_smoke_exactly_one_named_arm(tmp_path):
+    completed = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=LAUNCHER.parents[2],
+        env={
+            **os.environ, "DRY_RUN": "1", "RUN_ID": "one-arm",
+            "ARM_FILTER": "offsetfix-layer8",
+            "LOG_ROOT": str(tmp_path / "logs"),
+            "RESULT_ROOT": str(tmp_path / "results"),
+        },
+        check=True, capture_output=True, text=True,
+    )
+    lines = completed.stdout.splitlines()
+    assert len(lines) == 1
+    assert "--layer 8 --variant offsetfix" in lines[0]

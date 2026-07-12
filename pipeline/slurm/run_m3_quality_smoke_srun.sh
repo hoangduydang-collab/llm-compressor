@@ -52,8 +52,8 @@ awq=(srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=
   --shard smoke --tasks "$TASKS" --tensor-parallel-size 8
   --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048)
 ray=(srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1
-  pipeline/slurm/test_m3_ray_placement_group.sh --out "$RUN_ROOT/ray_placement"
-  --expected-bundles 16 --timeout-seconds 120)
+  pipeline/slurm/test_m3_ray_topology.sh --out "$RUN_ROOT/ray_preflight"
+  --stop-after-check)
 bf16=(timeout --signal=TERM --kill-after=60s 10m
   srun --exclusive --nodes=2 --ntasks=2 --gpus-per-node=8 --kill-on-bad-exit=1
   pipeline/slurm/test_m3_quality_eval_arm.sh --profile smoke --run-root "$RUN_ROOT"

@@ -15,6 +15,7 @@ RESULT_ROOT="${RESULT_ROOT:-/mnt/nfs/hoangduy/results/m3-awq-representative/$RUN
 ENV_FILE="${ENV_FILE:-/mnt/nfs/hoangduy/env.sh}"
 VENV_ACTIVATE="${VENV_ACTIVATE:-/mnt/nfs/hoangduy/venvs/quant/bin/activate}"
 SRUN_ARGS="${SRUN_ARGS:-}"
+ARM_FILTER="${ARM_FILTER:-}"
 read -r -a EXTRA_SRUN_ARGS <<< "$SRUN_ARGS"
 
 names=(
@@ -24,6 +25,12 @@ names=(
 variants=(offsetfix offsetfix offsetfix nosmooth nosmooth nosmooth)
 layers=(8 31 59 8 31 59)
 pids=()
+launched_names=()
+if [[ -n "$ARM_FILTER" ]]; then
+  valid=0
+  for name in "${names[@]}"; do [[ "$name" == "$ARM_FILTER" ]] && valid=1; done
+  ((valid == 1)) || { echo "unknown ARM_FILTER=$ARM_FILTER" >&2; exit 2; }
+fi
 
 if [[ "$DRY_RUN" != 1 && "$DRY_RUN" != true ]]; then
   if [[ -n "${SLURM_JOB_ID:-}" ]]; then
@@ -49,6 +56,8 @@ fi
 
 for index in "${!names[@]}"; do
   name="${names[$index]}"
+  [[ -z "$ARM_FILTER" || "$name" == "$ARM_FILTER" ]] || continue
+  launched_names+=("$name")
   output_dir="$RESULT_ROOT/$name"
   command=(
     srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --time="$TIME_LIMIT"
@@ -100,16 +109,19 @@ overall=0
 for index in "${!pids[@]}"; do
   rc=0
   wait "${pids[$index]}" || rc=$?
-  echo "${names[$index]} rc=$rc log=$LOG_ROOT/${names[$index]}.log"
+  echo "${launched_names[$index]} rc=$rc log=$LOG_ROOT/${launched_names[$index]}.log"
   [[ "$rc" -eq 0 ]] || overall=1
 done
 
-aggregate_rc=0
-python -m pipeline.m3_awq_representative aggregate \
-  --result-root "$RESULT_ROOT" \
-  --matrix-json "$RESULT_ROOT/matrix.json" \
-  --report-md "$RESULT_ROOT/report.md" || aggregate_rc=$?
-[[ "$aggregate_rc" -eq 0 ]] || overall=1
-
-echo "aggregate rc=$aggregate_rc matrix=$RESULT_ROOT/matrix.json report=$RESULT_ROOT/report.md"
+if [[ -z "$ARM_FILTER" ]]; then
+  aggregate_rc=0
+  python -m pipeline.m3_awq_representative aggregate \
+    --result-root "$RESULT_ROOT" \
+    --matrix-json "$RESULT_ROOT/matrix.json" \
+    --report-md "$RESULT_ROOT/report.md" || aggregate_rc=$?
+  [[ "$aggregate_rc" -eq 0 ]] || overall=1
+  echo "aggregate rc=$aggregate_rc matrix=$RESULT_ROOT/matrix.json report=$RESULT_ROOT/report.md"
+else
+  echo "one-arm smoke complete arm=$ARM_FILTER rc=$overall result=$RESULT_ROOT/$ARM_FILTER"
+fi
 exit "$overall"

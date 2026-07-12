@@ -1,0 +1,9 @@
+{
+  "rank": 1,
+  "world_size": 2,
+  "hostname": "h115-gpu-polaris.pod4.lab.bitdeer.ai",
+  "vllm_host_ip": "10.2.4.19",
+  "cuda_visible_devices": "0,1,2,3,4,5,6,7",
+  "python": "3.12.13",
+  "ray": "ray, version 2.56.0"
+}

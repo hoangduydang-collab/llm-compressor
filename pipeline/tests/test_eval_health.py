@@ -144,3 +144,21 @@ def test_enrich_samples_file_rewrites_rows_and_health_summary(tmp_path):
     assert summary["periodic_loop_count"] == 1
     summary_path = tmp_path / "generation_health" / "gsm8k.json"
     assert json.loads(summary_path.read_text()) == summary
+
+
+def test_enrich_generation_rows_unwraps_nested_text_but_not_likelihood():
+    rows = [
+        {"response": ["loop"], "health": {"applicable": False}},
+        {"response": [[-1.2, False]], "health": {"applicable": False}},
+    ]
+
+    enriched = enrich_generation_rows(
+        rows,
+        encode=lambda _: [1, 2] * 8,
+        max_gen_toks=16,
+    )
+
+    assert enriched[0]["response"] == "loop"
+    assert enriched[0]["health"]["applicable"] is True
+    assert enriched[0]["health"]["periodic_loop"] is True
+    assert enriched[1] == rows[1]

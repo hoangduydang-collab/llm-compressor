@@ -9,6 +9,13 @@ from pathlib import Path
 from typing import Any
 
 
+def unwrap_singleton(value: Any) -> Any:
+    """Unwrap backend singleton containers without flattening structured data."""
+    while isinstance(value, (list, tuple)) and len(value) == 1:
+        value = value[0]
+    return value
+
+
 def _periodic_suffix(token_ids: Sequence[int]) -> tuple[bool, int | None, int]:
     values = list(token_ids)
     for period in range(1, min(16, len(values)) + 1):
@@ -85,10 +92,11 @@ def enrich_generation_rows(
     for original in rows:
         row = dict(original)
         health = dict(row.get("health") or {})
-        response = row.get("response")
+        response = unwrap_singleton(row.get("response"))
+        if isinstance(response, str):
+            row["response"] = response
         if (
-            health.get("applicable", True)
-            and isinstance(response, str)
+            isinstance(response, str)
             and health.get("token_count") is None
         ):
             token_ids = [int(token_id) for token_id in encode(response)]

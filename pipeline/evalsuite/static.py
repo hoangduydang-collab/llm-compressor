@@ -9,6 +9,7 @@ from pipeline.config import EvalConfig, EvalTask, PipelineConfig
 from pipeline.evalsuite.health import (
     analyze_generation,
     summarize_generation_health,
+    unwrap_singleton,
 )
 from pipeline.evalsuite.sampling import stable_sample_uid
 from pipeline.eval_gate import _gate_metric
@@ -108,18 +109,18 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
 
 def _first_response(sample: dict):
     for key in ("resps", "response", "filtered_resps"):
-        val = sample.get(key)
-        if isinstance(val, list) and val:
-            return val[0]
-        if isinstance(val, str):
-            return val
+        value = sample.get(key)
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)) and value:
+            return unwrap_singleton(value)
     return None
 
 
 def _first_filtered_response(sample: dict):
     value = sample.get("filtered_resps")
-    if isinstance(value, list) and value:
-        return value[0]
+    if isinstance(value, (list, tuple)) and value:
+        return unwrap_singleton(value)
     return None
 
 

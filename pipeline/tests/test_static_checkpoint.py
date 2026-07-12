@@ -207,3 +207,32 @@ def test_loglikelihood_response_is_not_treated_as_missing_generation(tmp_path: P
     )
     assert health["samples"] == 0
     assert health["not_applicable_count"] == 1
+
+
+def test_nested_singleton_text_response_is_generation(tmp_path: Path):
+    task = EvalTask(name="ifeval", metric="exact_match,strict-match")
+    batch = {
+        "results": {"ifeval": {"exact_match,strict-match": 0.0}},
+        "samples": {
+            "ifeval": [
+                {
+                    "doc_id": 0,
+                    "exact_match,strict-match": 0.0,
+                    "resps": [["coherent generated text"]],
+                    "filtered_resps": [[None]],
+                }
+            ]
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate={},
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert rows[0]["response"] == "coherent generated text"
+    assert rows[0]["health"]["applicable"] is True

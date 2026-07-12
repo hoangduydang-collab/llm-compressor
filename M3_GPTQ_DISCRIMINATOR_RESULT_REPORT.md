@@ -70,18 +70,29 @@ Relevant logs:
 - `logs/awq-smoke.out`
 - `logs/awq-smoke.err`
 
-## BF16 status
+## BF16 result
 
-A bounded 10-minute BF16 diagnostic is currently running as Slurm job
-`12803` on two nodes. The first invocation failed before model loading because
-the arm runner expected `ray_preflight/gate.json`, while this discriminator's
-validated placement evidence was at `ray_placement/topology/gate.json`. The
-existing validated gate was copied into the expected path and the diagnostic
-was relaunched without changing model, prompt, corpus, or runtime settings.
+The bounded BF16 diagnostic was relaunched as Slurm job `12803` after wiring
+the validated placement gate into the arm runner's expected
+`ray_preflight/gate.json` path. It then failed before model loading in the
+distributional probe:
 
-At report creation time, the BF16 stdout file is still empty and the job has
-run for approximately one minute. Its final return code and artifacts will be
-added in a follow-up if needed.
+```text
+Value error, World size (16) is larger than the number of available GPUs (8)
+in this node. If this is intentional and you are using:
+- ray, set '--distributed-executor-backend ray'.
+```
+
+The BF16 benchmark runner received the Ray backend, but the separate
+distributional probe did not and attempted TP=16 on one 8-GPU process. This is
+a runner wiring defect, not evidence against BF16 or Ray capacity. Full BF16
+logs and Ray runtime artifacts are under:
+
+- `logs/bf16-smoke.out`
+- `logs/bf16-smoke.err`
+- `models/bf16/shards/smoke/ray_runtime/`
+
+The final return code was `bf16=1`.
 
 ## Environment and deviations
 
@@ -100,6 +111,7 @@ added in a follow-up if needed.
 
 Do not launch production or start fresh re-quantization from this evidence.
 The probe artifacts are suitable for the primary agent's GPTQ-vs-AWQ
-distribution comparison. The next code fix should correct the `mmlu_pro`
-metric mapping and make the BF16 gate path explicit instead of relying on a
-hardcoded `ray_preflight` directory.
+distribution comparison. The next code fixes should correct the `mmlu_pro`
+metric mapping, pass the distributed executor backend into the BF16
+distributional probe, and make the BF16 gate path explicit instead of relying
+on a hardcoded `ray_preflight` directory.

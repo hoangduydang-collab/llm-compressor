@@ -1,0 +1,23 @@
+======== Autoscaler status: 2026-07-12 10:33:51.724068 ========
+Node status
+---------------------------------------------------------------
+Active:
+ 1 node_5a44df7f745af3fe164b65cf885d661d6990bf6af6d6d3d7bfe11ef5
+ 1 node_7756b63fb5073bf6e381c88462dce8b8af78d5c78e78f9e6b32ff361
+Pending:
+ (no pending nodes)
+Recent failures:
+ (no failures)
+
+Resources
+---------------------------------------------------------------
+Total Usage:
+ 0.0/384.0 CPU
+ 0.0/16.0 GPU
+ 0B/3.51TiB memory
+ 0B/372.53GiB object_store_memory
+
+From request_resources:
+ (none)
+Pending Demands:
+ (no resource demands)

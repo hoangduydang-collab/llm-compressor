@@ -1,0 +1,53 @@
+{
+  "ready_for_production": false,
+  "missing_models": [
+    "bf16"
+  ],
+  "unexpected_models": [],
+  "models": {
+    "inhouse_gptq": {
+      "passed": false,
+      "checks": {
+        "infrastructure": false,
+        "artifacts": false,
+        "all_tasks_scored": false,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true,
+        "probe_budget": false
+      },
+      "distributed_world_size": 8,
+      "probe_projection": {
+        "smoke_tokens": 0,
+        "smoke_elapsed_seconds": 0.0,
+        "production_tokens": 49152,
+        "budget_seconds": 1800.0,
+        "within_budget": false,
+        "reason": "missing positive smoke probe timing"
+      }
+    },
+    "cyankiwi_awq": {
+      "passed": false,
+      "checks": {
+        "infrastructure": false,
+        "artifacts": false,
+        "all_tasks_scored": false,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true,
+        "probe_budget": false
+      },
+      "distributed_world_size": 8,
+      "probe_projection": {
+        "smoke_tokens": 0,
+        "smoke_elapsed_seconds": 0.0,
+        "production_tokens": 49152,
+        "budget_seconds": 1800.0,
+        "within_budget": false,
+        "reason": "missing positive smoke probe timing"
+      }
+    }
+  }
+}

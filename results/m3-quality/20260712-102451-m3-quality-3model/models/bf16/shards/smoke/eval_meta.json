@@ -1,0 +1,21 @@
+{
+  "model_path": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "backend": "vllm",
+  "tasks": [
+    "gpqa_diamond_zeroshot",
+    "ifeval",
+    "aime25",
+    "mmlu_pro",
+    "gsm8k"
+  ],
+  "completed_tasks": [],
+  "pending_tasks": [
+    "gpqa_diamond_zeroshot",
+    "ifeval",
+    "aime25",
+    "mmlu_pro",
+    "gsm8k"
+  ],
+  "log_samples": true,
+  "checkpoint_after_each_task": true
+}

@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "valid": true,
+  "checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "checkpoint_bytes": 258055294472,
+  "config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+  "index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+  "tensor_keys": 89764,
+  "quantized_modules": 22116,
+  "plain_modules": 982,
+  "quantized_module_coverage": 0.9574854965797904,
+  "bf16_fallback_fraction": 0.04251450342020954,
+  "coverage_by_component": {
+    "attention": {
+      "quantized_modules": 228,
+      "plain_modules": 126
+    },
+    "dense_mlp": {
+      "quantized_modules": 0,
+      "plain_modules": 9
+    },
+    "lm_head": {
+      "quantized_modules": 0,
+      "plain_modules": 1
+    },
+    "msa_indexer": {
+      "quantized_modules": 0,
+      "plain_modules": 0
+    },
+    "norms": {
+      "quantized_modules": 0,
+      "plain_modules": 355
+    },
+    "other": {
+      "quantized_modules": 0,
+      "plain_modules": 3
+    },
+    "routed_experts": {
+      "quantized_modules": 21888,
+      "plain_modules": 0
+    },
+    "routers": {
+      "quantized_modules": 0,
+      "plain_modules": 57
+    },
+    "shared_experts": {
+      "quantized_modules": 0,
+      "plain_modules": 171
+    },
+    "vision": {
+      "quantized_modules": 0,
+      "plain_modules": 260
+    }
+  },
+  "quantization": {
+    "method": "compressed-tensors",
+    "format": "pack-quantized",
+    "weight_bits": 4,
+    "activation_bits": null,
+    "group_size": 32,
+    "ignore": [
+      "re:.*vision_tower[.].*",
+      "re:.*multi_modal_projector[.].*",
+      "re:.*patch_merge_mlp[.].*",
+      "re:.*block_sparse_moe[.]gate",
+      "re:.*block_sparse_moe[.]shared_experts[.].*",
+      "re:.*self_attn[.]index_[qk]_proj",
+      "re:.*layers[.][0-2][.]self_attn[.][qkvo]_proj",
+      "re:.*layers[.][0-2][.]self_attn[.]qkv_proj",
+      "re:.*layers[.][0-2][.]mlp[.](gate|up|down)_proj",
+      "re:.*layers[.][0-2][.]mlp[.]gate_up_proj",
+      "re:.*lm_head"
+    ],
+    "raw": {
+      "config_groups": {
+        "group_0": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "Linear"
+          ],
+          "weights": {
+            "actorder": null,
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 32,
+            "num_bits": 4,
+            "observer": "mse",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": false,
+            "type": "int",
+            "zp_dtype": "torch.int8"
+          }
+        }
+      },
+      "format": "pack-quantized",
+      "global_compression_ratio": null,
+      "ignore": [
+        "re:.*vision_tower[.].*",
+        "re:.*multi_modal_projector[.].*",
+        "re:.*patch_merge_mlp[.].*",
+        "re:.*block_sparse_moe[.]gate",
+        "re:.*block_sparse_moe[.]shared_experts[.].*",
+        "re:.*self_attn[.]index_[qk]_proj",
+        "re:.*layers[.][0-2][.]self_attn[.][qkvo]_proj",
+        "re:.*layers[.][0-2][.]self_attn[.]qkv_proj",
+        "re:.*layers[.][0-2][.]mlp[.](gate|up|down)_proj",
+        "re:.*layers[.][0-2][.]mlp[.]gate_up_proj",
+        "re:.*lm_head"
+      ],
+      "kv_cache_scheme": null,
+      "quant_method": "compressed-tensors",
+      "quantization_status": "compressed",
+      "sparsity_config": {},
+      "transform_config": {},
+      "version": "0.1.dev490+gdde82c8"
+    }
+  },
+  "compression": {
+    "baseline_bytes": 854200513514,
+    "checkpoint_bytes": 258055294472,
+    "ratio_to_baseline": 3.310145274336482,
+    "effective_stored_bits_per_original_parameter": {
+      "status": "unavailable",
+      "reason": "tensor shapes are not available from the index alone"
+    }
+  },
+  "scale_statistics": {
+    "status": "unavailable",
+    "reason": "scale tensor sampling failed: TypeError: data type 'bfloat16' not understood"
+  },
+  "packed_saturation": {
+    "status": "available",
+    "sampled_tensors": [
+      "language_model.model.layers.10.block_sparse_moe.experts.0.w1.weight_packed",
+      "language_model.model.layers.10.block_sparse_moe.experts.0.w2.weight_packed",
+      "language_model.model.layers.10.block_sparse_moe.experts.0.w3.weight_packed",
+      "language_model.model.layers.10.block_sparse_moe.experts.1.w1.weight_packed"
+    ],
+    "weight_bits": 4,
+    "codes": 1048576,
+    "minimum_code_fraction": 0.04411888122558594,
+    "maximum_code_fraction": 0.043570518493652344,
+    "extreme_code_fraction": 0.08768939971923828
+  },
+  "calibration_metrics": {
+    "status": "unavailable",
+    "reason": "no GPTQ/AWQ calibration metric artifact found"
+  }
+}

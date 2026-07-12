@@ -1,0 +1,3 @@
+srun: error: gpu-h115: task 0: Exited with exit code 2
+srun: launch/slurm: _step_signal: Terminating StepId=12783.0
+srun: error: gpu-h116: task 1: Exited with exit code 2

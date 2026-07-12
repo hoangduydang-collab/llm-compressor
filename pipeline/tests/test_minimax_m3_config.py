@@ -258,3 +258,17 @@ def test_ensure_vllm_serve_config_forces_hidden_act_even_if_source_coerced(tmp_p
     saved = json.loads((ckpt / "config.json").read_text(encoding="utf-8"))
     assert saved["text_config"]["hidden_act"] == "swigluoai"
     assert saved["text_config"]["swiglu_alpha"] == 1.702
+
+
+def test_minimax_m3_awq_can_disable_only_mlp_input_smoothing():
+    from pipeline.minimax_m3_config import get_minimax_m3_awq_mappings
+
+    mappings = get_minimax_m3_awq_mappings(disable_mlp_input_smoothing=True)
+
+    assert len(mappings) == 3
+    assert "input_layernorm" in mappings[0].smooth_layer
+    assert "v_proj" in mappings[1].smooth_layer
+    assert "up_proj" in mappings[2].smooth_layer
+    assert not any(
+        "post_attention_layernorm" in mapping.smooth_layer for mapping in mappings
+    )

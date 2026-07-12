@@ -145,3 +145,30 @@ W4A8 offline diagnostics, repaired W4A16 offline diagnostics, and repaired W4A8
 canonical HTTP concurrently on three exclusive eight-GPU nodes through `srun`.
 Return and commit the complete compact bundle, then stop for primary-agent
 analysis. Do not enable CUDA graphs or begin the second issue in this run.
+
+
+## Current handoff: AWQ offset-norm repair plus GPTQ control
+
+The layer-boundary matrix localized the first AWQ corruption to layer 8 between
+attention output and MoE input. MiniMax-M3's Transformers class is
+MiniMaxM3VLRMSNorm, a Gemma-style norm with effective weight 1 + weight.
+The existing offset-norm calibration registry did not recognize this class, so
+generic AWQ divided the zero-centered raw parameter instead of the effective
+weight.
+
+Prepare three checkpoints concurrently using only srun:
+
+    DRY_RUN=1 bash pipeline/slurm/run_m3_awq_gptq_prepare_srun.sh
+    bash pipeline/slurm/run_m3_awq_gptq_prepare_srun.sh
+
+This re-exports the existing GPTQ checkpoint and separately quantizes AWQ with
+the corrected offset norm and with MLP-input smoothing disabled. After all
+three preparation jobs succeed, launch the twelve-node matrix:
+
+    DRY_RUN=1 bash pipeline/slurm/run_m3_awq_gptq_repair_srun.sh
+    bash pipeline/slurm/run_m3_awq_gptq_repair_srun.sh
+
+Every offline arm probes all sparse layers 3-59. Return the complete
+results/m3-awq-gptq-repair/<matrix-id>/ tree, preparation and matrix logs,
+checkpoint paths, job/node/return codes, deviations, retries, and retained-log
+hashes. Do not start CUDA-graph work.

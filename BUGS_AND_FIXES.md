@@ -1,3 +1,15 @@
+# MiniMax-M3 AWQ quality: offset RMSNorm smoothing (investigating)
+
+The 20260712 layer-boundary matrix localizes the first catastrophic value to
+layer 8 after attention and before MoE: candidate MoE input norm is about
+176,845 versus reference 177. MiniMax-M3 uses MiniMaxM3VLRMSNorm, whose
+forward multiplies by 1 + weight. The shared offset-norm calibration registry
+handled Gemma and Qwen aliases but not the MiniMax class, so AWQ could smooth
+the raw zero-centered parameter incorrectly. The repair registers the exact
+class and tests a fresh AWQ checkpoint against both a no-MLP-smoothing control
+and the repaired GPTQ checkpoint. Validation covers sparse layers 3-59 and
+canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
+
 # Bugs and fixes (llm-compressor pipeline)
 
 ## Active priority: repair MiniMax-M3 shared-expert loading before CUDA-graph RCA (2026-07-11)

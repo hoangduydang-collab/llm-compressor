@@ -22,11 +22,25 @@ case "$ARM" in
   candidate_w4a8_ep_autokv) ROLE=candidate; SCHEME=w4a8; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=auto; ROUTER_ALIAS=0 ;;
   candidate_w4a16_ep_autokv) ROLE=candidate; SCHEME=w4a16; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=auto; ROUTER_ALIAS=0 ;;
   candidate_w4a8_router_http) ROLE=candidate; SCHEME=w4a8; INTERFACE=http; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=1 ;;
+  reference_w4a16) ROLE=reference; SCHEME=w4a16; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_control_w4a8) ROLE=awq; SCHEME=w4a8; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  gptq_w4a8) ROLE=gptq; SCHEME=w4a8; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  gptq_w4a16) ROLE=gptq; SCHEME=w4a16; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  gptq_http) ROLE=gptq; SCHEME=w4a8; INTERFACE=http; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_offsetfix_w4a8) ROLE=awq_offsetfix; SCHEME=w4a8; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_offsetfix_w4a16) ROLE=awq_offsetfix; SCHEME=w4a16; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_offsetfix_http) ROLE=awq_offsetfix; SCHEME=w4a8; INTERFACE=http; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_nosmooth_w4a8) ROLE=awq_nosmooth; SCHEME=w4a8; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_nosmooth_w4a16) ROLE=awq_nosmooth; SCHEME=w4a16; INTERFACE=offline; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
+  awq_nosmooth_http) ROLE=awq_nosmooth; SCHEME=w4a8; INTERFACE=http; ENABLE_EP=1; KV_DTYPE=fp8; ROUTER_ALIAS=0 ;;
   *) echo "ERROR: unknown ARM=$ARM" >&2; exit 2 ;;
 esac
 
 REFERENCE_CKPT="${REFERENCE_CKPT:-/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4}"
 CANDIDATE_CKPT="${CANDIDATE_CKPT:-/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/MiniMax-M3-awq-W4AFP8/20260709-064104/checkpoint-vllm-w123}"
+GPTQ_CKPT="${GPTQ_CKPT:-/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123}"
+AWQ_OFFSETFIX_CKPT="${AWQ_OFFSETFIX_CKPT:-/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/awq-offsetfix-checkpoint-vllm-w123}"
+AWQ_NOSMOOTH_CKPT="${AWQ_NOSMOOTH_CKPT:-/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/awq-nosmooth-checkpoint-vllm-w123}"
 MODEL_ID="${MODEL_ID:-/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}"
 CONFIG="${CONFIG:-pipeline/configs/minimax_m3_full_calib.yaml}"
 RESULTS_ROOT="${RESULTS_ROOT:-/mnt/nfs/hoangduy/logs/m3-layer-boundary}"
@@ -37,6 +51,14 @@ RUN_DIR="$RESULTS_ROOT/$MATRIX_ID/$ARM"
 EVIDENCE_DIR="$EVIDENCE_ROOT/$MATRIX_ID/$ARM"
 SOURCE_CKPT="$CANDIDATE_CKPT"
 [[ "$ROLE" == reference ]] && SOURCE_CKPT="$REFERENCE_CKPT"
+[[ "$ROLE" == gptq ]] && SOURCE_CKPT="$GPTQ_CKPT"
+[[ "$ROLE" == awq_offsetfix ]] && SOURCE_CKPT="$AWQ_OFFSETFIX_CKPT"
+[[ "$ROLE" == awq_nosmooth ]] && SOURCE_CKPT="$AWQ_NOSMOOTH_CKPT"
+
+MANIFEST_MODULE=pipeline.m3_layer_boundary_diagnostics
+if [[ "$ARM" == reference_w4a16 || "$ROLE" == awq || "$ROLE" == gptq || "$ROLE" == awq_offsetfix || "$ROLE" == awq_nosmooth ]]; then
+  MANIFEST_MODULE=pipeline.m3_awq_gptq_repair
+fi
 
 if [[ ! -f "$SOURCE_CKPT/config.json" || ! -f "$SOURCE_CKPT/model.safetensors.index.json" ]]; then
   echo "ERROR: checkpoint metadata missing: $SOURCE_CKPT" >&2
@@ -49,10 +71,10 @@ overlay_args=(
   python -m pipeline.m3_routed_diagnostics prepare-overlay
   --source "$SOURCE_CKPT" --destination "$CHECKPOINT_VIEW"
 )
-if [[ "$ROLE" == candidate ]]; then
+if [[ "$ROLE" != reference ]]; then
   overlay_args+=(--add-vllm-shared-expert-ignore)
 fi
-if [[ "$SCHEME" == w4a16 && "$ROLE" == candidate ]]; then
+if [[ "$SCHEME" == w4a16 && "$ROLE" != reference ]]; then
   overlay_args+=(--disable-activations)
 fi
 if [[ "$ROUTER_ALIAS" == 1 ]]; then
@@ -61,7 +83,7 @@ fi
 "${overlay_args[@]}"
 
 manifest_args=(
-  python -m pipeline.m3_layer_boundary_diagnostics manifest
+  python -m "$MANIFEST_MODULE" manifest
   --arm "$ARM" --run-dir "$RUN_DIR" --evidence-dir "$EVIDENCE_DIR"
   --source-checkpoint "$SOURCE_CKPT" --overlay-checkpoint "$CHECKPOINT_VIEW"
   --model-id "$MODEL_ID"
@@ -86,7 +108,7 @@ _cleanup() {
     fi
   fi
   echo "$rc" >"$RUN_DIR/return_code.txt"
-  python -m pipeline.m3_layer_boundary_diagnostics bundle-arm \
+  python -m "$MANIFEST_MODULE" bundle-arm \
     --run-dir "$RUN_DIR" --evidence-dir "$EVIDENCE_DIR" || true
   exit "$rc"
 }
@@ -104,9 +126,10 @@ export PYTHONPATH="$REPO_ROOT"
 export PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 export FLASHINFER_USE_CUDA_NORM=1 VLLM_DISABLE_SHARED_EXPERTS_STREAM=1
 if [[ "$INTERFACE" == offline ]]; then
+  DIAGNOSTIC_LAYERS="${M3_DIAGNOSTIC_LAYERS:-3,4,5,6,7,8,9}"
   export M3_LOAD_AUDIT=1 M3_PARAM_FINGERPRINT=1
-  export M3_PARAM_FINGERPRINT_LAYERS=3,4,5,6,7,8,9
-  export M3_LAYER_BOUNDARY=1 M3_LAYER_BOUNDARY_LAYERS=3,4,5,6,7,8,9
+  export M3_PARAM_FINGERPRINT_LAYERS="$DIAGNOSTIC_LAYERS"
+  export M3_LAYER_BOUNDARY=1 M3_LAYER_BOUNDARY_LAYERS="$DIAGNOSTIC_LAYERS"
   export M3_LAYER_BOUNDARY_MAX_TOKENS=256 M3_QUALITY_CASE="$ARM"
   export M3_MOE_PROBE=0 M3_MOE_PROBE_RECOMPUTE=0
 else

@@ -1,0 +1,71 @@
+{
+  "arm": "reference_w4a16_tp_fp8kv",
+  "checkpoint_role": "reference",
+  "config_overlay": {
+    "input_activations": "unchanged",
+    "router_ignore": null,
+    "shared_expert_ignore": null
+  },
+  "deviations": [
+    {
+      "changes_quality_variable": false,
+      "name": "direct srun partition override",
+      "reason": "sbatch is unavailable on the cluster; the launcher used separate exclusive srun allocations with --partition=compute."
+    },
+    {
+      "changes_quality_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled owned-process signalling; no process cleanup was performed."
+    }
+  ],
+  "diagnostics": {
+    "M3_LAYER_BOUNDARY": "1",
+    "M3_LAYER_BOUNDARY_LAYERS": "3,4,5,6,7,8,9",
+    "M3_LOAD_AUDIT": "1",
+    "M3_PARAM_FINGERPRINT": "1",
+    "M3_PARAM_FINGERPRINT_LAYERS": "3,4,5,6,7,8,9"
+  },
+  "dry_run": false,
+  "enable_ep": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-layer-boundary/20260712-024512-layer-boundary/reference_w4a16_tp_fp8kv",
+  "finished_at": "2026-07-12T03:09:30.169911+00:00",
+  "git_commit": "3b90f47db50d48444c52d54a209487c12ecb64fe",
+  "git_status_short": "?? results/m3-layer-boundary/",
+  "host": "h116-gpu-polaris.pod4.lab.bitdeer.ai",
+  "interface": "offline",
+  "kv_cache_dtype": "fp8",
+  "matrix_id": "20260712-024512-layer-boundary",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "overlay_checkpoint": "/mnt/nfs/hoangduy/logs/m3-layer-boundary/20260712-024512-layer-boundary/reference_w4a16_tp_fp8kv/checkpoint",
+  "overlay_config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "quality_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "disable_shared_experts_stream": true,
+    "enable_expert_parallel": false,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "max_tokens": 64,
+    "temperature": 0.0,
+    "tensor_parallel_size": 8,
+    "thinking_mode": "disabled"
+  },
+  "retries": [],
+  "return_code": 0,
+  "router_alias": false,
+  "scheduler": {
+    "SLURM_JOB_ID": "12765",
+    "SLURM_JOB_NODELIST": "gpu-h116"
+  },
+  "scheduler_log": "/mnt/nfs/hoangduy/logs/m3-layer-boundary-srun/20260712-024512-layer-boundary-reference_w4a16_tp_fp8kv.log",
+  "schema_version": 1,
+  "scheme": "w4a16",
+  "source_checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "source_config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+  "source_index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+  "started_at": "2026-07-12T02:45:36.808326+00:00"
+}

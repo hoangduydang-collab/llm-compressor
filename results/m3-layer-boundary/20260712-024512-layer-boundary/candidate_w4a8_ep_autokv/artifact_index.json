@@ -1,0 +1,14 @@
+[
+  {
+    "bytes": 722902,
+    "path": "/mnt/nfs/hoangduy/logs/m3-layer-boundary/20260712-024512-layer-boundary/candidate_w4a8_ep_autokv/serve.log",
+    "retention_until_utc": "2026-07-26T00:00:00Z",
+    "sha256": "614dda5204fac0d4ba647123f94f971d9cf3e6c6dd8dc1015124bb8cfcc2695f"
+  },
+  {
+    "bytes": 723234,
+    "path": "/mnt/nfs/hoangduy/logs/m3-layer-boundary-srun/20260712-024512-layer-boundary-candidate_w4a8_ep_autokv.log",
+    "retention_until_utc": "2026-07-26T00:00:00Z",
+    "sha256": "1a681fbd52fe6781abafee5bd56402d00136089eabcf9c4c142a1d8ca3683f77"
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "arm": "candidate_w4a8_tp_fp8kv",
+  "checkpoint_role": "candidate",
+  "fingerprint_summaries": [],
+  "fingerprints": [],
+  "infrastructure_ok": false,
+  "interface": "offline",
+  "layer_boundary_records": [],
+  "loader_audit_lines": [],
+  "moe_probe_lines": [],
+  "moe_probe_records": [],
+  "quality_cases": [],
+  "quality_ok": false,
+  "scheme": "w4a8",
+  "shared_expert_bad": false
+}

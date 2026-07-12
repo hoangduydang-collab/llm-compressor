@@ -47,3 +47,20 @@
 
 - [ ] Make the ABI report a mandatory executor-side CPU gate and return artifact.
 - [ ] Run all affected tests, shell syntax, diff checks, commit, and push.
+
+
+### Task 5: Aggregate gate and portable repair view
+
+**Files:** Modify `pipeline/m3_quality_preflight.py`,
+`pipeline/m3_routed_diagnostics.py`, their focused tests, and the executor
+handoff.
+
+- [ ] Add failing tests proving every model report is written before aggregate
+  failure and overlay provenance proves index identity.
+- [ ] Collect ABI failures, raise once before dynamic imports/task work, and
+  return structured per-label failure summaries.
+- [ ] Extend the immutable overlay command to write source/overlay hashes and
+  require an unchanged Safetensors index.
+- [ ] Document direct-fail, repaired-pass, and control static checks before the
+  2,047-token parallel probes.
+- [ ] Run focused tests and shell syntax, then commit and push.

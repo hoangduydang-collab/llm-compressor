@@ -262,15 +262,15 @@ def prepare_checkpoint_overlay(
     disable_activations: bool,
     add_vllm_shared_expert_ignore: bool = False,
     add_vllm_router_ignore: bool = False,
-) -> None:
-    """Create a metadata-only overlay without mutating the source checkpoint."""
+) -> dict[str, Any]:
+    """Create a metadata-only overlay and record its immutable provenance."""
 
     source = source.resolve()
     if destination.exists():
         raise FileExistsError(f"overlay already exists: {destination}")
     destination.mkdir(parents=True)
     for item in source.iterdir():
-        if item.name == "config.json":
+        if item.name in {"config.json", "overlay_provenance.json"}:
             continue
         (destination / item.name).symlink_to(item.resolve())
     config = _read_json(source / "config.json")
@@ -292,6 +292,35 @@ def prepare_checkpoint_overlay(
         for group in groups.values():
             group["input_activations"] = None
     _write_json(destination / "config.json", config)
+    index_name = "model.safetensors.index.json"
+    source_index_sha256 = _sha256(source / index_name)
+    overlay_index_sha256 = _sha256(destination / index_name)
+    provenance = {
+        "schema_version": 1,
+        "source": str(source),
+        "overlay": str(destination.resolve()),
+        "source_config_sha256": _sha256(source / "config.json"),
+        "overlay_config_sha256": _sha256(destination / "config.json"),
+        "source_index_sha256": source_index_sha256,
+        "overlay_index_sha256": overlay_index_sha256,
+        "tensor_payload_unchanged": (
+            source_index_sha256 is not None
+            and source_index_sha256 == overlay_index_sha256
+        ),
+        "added_ignore_rules": [
+            rule
+            for enabled, rule in (
+                (add_vllm_shared_expert_ignore, VLLM_SHARED_EXPERT_IGNORE),
+                (add_vllm_router_ignore, VLLM_ROUTER_IGNORE),
+            )
+            if enabled
+        ],
+        "activations_disabled": disable_activations,
+    }
+    if not provenance["tensor_payload_unchanged"]:
+        raise ValueError("overlay Safetensors index differs from source")
+    _write_json(destination / "overlay_provenance.json", provenance)
+    return provenance
 
 
 def write_arm_manifest(

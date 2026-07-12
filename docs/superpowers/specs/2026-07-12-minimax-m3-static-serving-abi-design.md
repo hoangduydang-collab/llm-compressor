@@ -21,9 +21,16 @@ ignore rule. Every packed module must have a scale. Required categories with
 only source-side matches are fatal namespace mismatches, and required rules
 matching no runtime modules are fatal.
 
-The preflight writes one ABI report per active quantized checkpoint and raises
-before launch-plan or GPU execution when any report fails. BF16 is exempt from
-the compressed-tensors contract.
+The preflight writes one ABI report for every active checkpoint, collects all
+failures, and raises once before task preparation or GPU execution. A failure
+in an early matrix entry must not hide later static reports. BF16 is exempt
+from the compressed-tensors contract.
+
+Existing checkpoints may be repaired through an immutable metadata-only view.
+The view copies only `config.json`, appends the known vLLM router and shared
+expert aliases, symlinks every other payload, and writes provenance containing
+source/overlay config hashes plus source/overlay index hashes. The index hashes
+must match, demonstrating that the repair did not alter tensor routing or data.
 
 ## Related deterministic fixes
 

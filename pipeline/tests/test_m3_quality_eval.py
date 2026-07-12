@@ -452,6 +452,33 @@ def test_sample_index_validation_reports_resolved_leaf_bounds():
         validate_sample_indices(tasks, sizes)
 
 
+def test_static_serving_abi_gate_collects_all_model_reports_before_failure(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from pipeline import m3_quality_preflight as preflight
+
+    models = [
+        SimpleNamespace(label="broken", path=tmp_path / "broken"),
+        SimpleNamespace(label="control", path=tmp_path / "control"),
+    ]
+    reports = {
+        "broken": {"valid": False, "errors": [{"code": "namespace_miss"}]},
+        "control": {"valid": True, "errors": []},
+    }
+    monkeypatch.setattr(
+        preflight,
+        "inspect_checkpoint_serving_abi",
+        lambda path: reports[path.name],
+    )
+
+    failures = preflight.inspect_all_serving_abis(models, tmp_path / "reports")
+
+    assert [failure["label"] for failure in failures] == ["broken"]
+    assert (tmp_path / "reports" / "broken.json").is_file()
+    assert (tmp_path / "reports" / "control.json").is_file()
+    with pytest.raises(ValueError, match="broken.*namespace_miss"):
+        preflight.require_all_serving_abis(failures)
+
+
 def test_static_serving_abi_gate_rejects_before_runtime():
     from pipeline.m3_quality_preflight import require_valid_serving_abi
 

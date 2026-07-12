@@ -48,15 +48,50 @@ MiniMax-M3 names. Plain quantizable vLLM modules not ignored, ignored packed
 modules, packed/plain collisions, missing scales, malformed regexes, or invalid
 quantization targets abort preflight.
 
+First preserve the known direct-checkpoint failure as evidence, then build an
+immutable portable serving view. The direct check must fail with exactly the
+router/shared-expert namespace misses already diagnosed; a different failure is
+new evidence and must stop the run.
+
 ```bash
-RUN_ID="$(date +%Y%m%d-%H%M%S)-m3-gptq-discriminator"
+RUN_ID="$(date +%Y%m%d-%H%M%S)-m3-gptq-repaired"
 RUN_ROOT="results/m3-quality/$RUN_ID"
-MATRIX=pipeline/configs/minimax_m3_quality_matrix.yaml
-mkdir -p "$RUN_ROOT/logs"
+SOURCE_GPTQ=/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123
+REPAIRED_GPTQ="$RUN_ROOT/checkpoints/inhouse-gptq-portable"
+SOURCE_MATRIX=pipeline/configs/minimax_m3_quality_matrix.yaml
+MATRIX="$RUN_ROOT/repaired_matrix.yaml"
+mkdir -p "$RUN_ROOT/logs" "$RUN_ROOT/static_direct"
+
+if python -m pipeline.m3_serve_abi --checkpoint "$SOURCE_GPTQ" \
+  --out "$RUN_ROOT/static_direct/inhouse_gptq.json"; then
+  echo "ERROR: direct GPTQ unexpectedly passed; stop and report" >&2
+  exit 1
+fi
+python -m pipeline.m3_routed_diagnostics prepare-overlay \
+  --source "$SOURCE_GPTQ" --destination "$REPAIRED_GPTQ" \
+  --add-vllm-shared-expert-ignore --add-vllm-router-ignore
+python - "$SOURCE_MATRIX" "$MATRIX" "$REPAIRED_GPTQ" <<'PY'
+import sys, yaml
+from pathlib import Path
+source, destination, repaired = map(Path, sys.argv[1:])
+data = yaml.safe_load(source.read_text())
+model = next(m for m in data["models"] if m["label"] == "inhouse_gptq")
+model["path"] = str(repaired.resolve())
+destination.write_text(yaml.safe_dump(data, sort_keys=False))
+PY
+
 python -m pipeline.m3_quality_preflight \
   --matrix "$MATRIX" --run-root "$RUN_ROOT" \
   2>&1 | tee "$RUN_ROOT/preflight.log"
 ```
+
+The overlay must contain `overlay_provenance.json`. Require distinct source and
+overlay config hashes, identical source and overlay index hashes, both vLLM
+aliases in `added_ignore_rules`, and `tensor_payload_unchanged: true`. This is a
+metadata/export repair, not a new quantization. The full preflight now inspects
+BF16, repaired GPTQ, and cyankiwi AWQ before raising once, so return all three
+`preflight/serving_abi/*.json` files even when any model fails. Do not proceed to
+GPU unless all three are valid.
 
 Confirm every MMLU-Pro leaf in `preflight/resolved_tasks.json` has its filtered
 subject size rather than 12,032. Validate both manifests before allocating GPUs:
@@ -111,7 +146,7 @@ full quantization but does not replace final end-to-end quality evaluation.
 
 ## Parallel smoke execution
 
-Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclusive`. GPTQ, AWQ, and the Ray placement diagnostic run concurrently.
+Use at least four 8xH100 nodes. `sbatch` is unavailable; use only `srun --exclusive`. Repaired GPTQ, AWQ, and the Ray placement diagnostic run concurrently. Pass `--model "$REPAIRED_GPTQ"` to the GPTQ arm; never serve the direct source checkpoint in this run.
 The quantized arms now run a 2,048-token teacher-forced probe before lm-eval,
 so benchmark failure cannot erase distribution evidence.
 
@@ -129,7 +164,7 @@ srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 \
   pipeline/slurm/test_m3_quality_eval_arm.sh \
   --profile smoke --run-root "$RUN_ROOT" --matrix "$MATRIX" \
   --model-label inhouse_gptq \
-  --model /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123 \
+  --model "$REPAIRED_GPTQ" \
   --shard smoke --tasks "$TASKS" --tensor-parallel-size 8 \
   --distributed-executor-backend mp --run-probe 1 --probe-tokens 2048 \
   >"$RUN_ROOT/logs/gptq-smoke.out" 2>"$RUN_ROOT/logs/gptq-smoke.err" &

@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import yaml
+import pytest
 
 from pipeline.m3_routed_diagnostics import (
     EXPECTED_ARMS,
@@ -74,6 +75,7 @@ def test_repair_overlay_adds_vllm_shared_ignore_once_without_mutating_source():
             disable_activations=False,
             add_vllm_shared_expert_ignore=True,
         )
+        first_provenance = (first / "overlay_provenance.json").read_text()
         prepare_checkpoint_overlay(
             first,
             second,
@@ -81,12 +83,51 @@ def test_repair_overlay_adds_vllm_shared_ignore_once_without_mutating_source():
             add_vllm_shared_expert_ignore=True,
         )
 
+        assert (first / "overlay_provenance.json").read_text() == first_provenance
         assert (source / "config.json").read_text() == original
         config = json.loads((second / "config.json").read_text())
         ignore = config["quantization_config"]["ignore"]
         assert "re:.*mlp[.]shared_experts[.].*" in ignore
         assert ignore.count(VLLM_SHARED_EXPERT_IGNORE) == 1
         assert (second / "model-00001-of-00001.safetensors").is_symlink()
+
+
+def test_portable_overlay_records_provenance_and_preserves_index_hash():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        source = root / "source"
+        overlay = root / "overlay"
+        _checkpoint(source, with_activations=True)
+
+        provenance = prepare_checkpoint_overlay(
+            source,
+            overlay,
+            disable_activations=False,
+            add_vllm_shared_expert_ignore=True,
+            add_vllm_router_ignore=True,
+        )
+
+        assert provenance["source_config_sha256"] != provenance["overlay_config_sha256"]
+        assert provenance["source_index_sha256"] == provenance["overlay_index_sha256"]
+        assert provenance["tensor_payload_unchanged"] is True
+        assert json.loads((overlay / "overlay_provenance.json").read_text()) == provenance
+        assert (overlay / "model.safetensors.index.json").is_symlink()
+
+
+def test_portable_overlay_rejects_missing_safetensors_index():
+    with TemporaryDirectory() as raw_tmp:
+        root = Path(raw_tmp)
+        source = root / "source"
+        _checkpoint(source, with_activations=True)
+        (source / "model.safetensors.index.json").unlink()
+
+        with pytest.raises(ValueError, match="Safetensors index"):
+            prepare_checkpoint_overlay(
+                source,
+                root / "overlay",
+                disable_activations=False,
+                add_vllm_router_ignore=True,
+            )
 
 
 def test_router_overlay_adds_vllm_runtime_alias_once():

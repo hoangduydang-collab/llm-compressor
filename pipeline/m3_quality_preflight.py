@@ -75,11 +75,35 @@ def require_valid_serving_abi(label: str, report: dict) -> None:
     )
 
 
-def run_preflight(matrix_path: Path, run_root: Path) -> dict:
-    from datasets import load_dataset
-    from lm_eval.tasks import TaskManager
-    from transformers import AutoTokenizer
+def inspect_all_serving_abis(models, output_dir: Path) -> list[dict]:
+    """Persist every static report and return invalid model summaries."""
 
+    failures = []
+    for model in models:
+        report = inspect_checkpoint_serving_abi(model.path)
+        _write(output_dir / f"{model.label}.json", report)
+        if report.get("valid") is not True:
+            failures.append({"label": model.label, "report": report})
+    return failures
+
+
+def require_all_serving_abis(failures: list[dict]) -> None:
+    if not failures:
+        return
+    summaries = []
+    for failure in failures:
+        report = failure["report"]
+        examples = ", ".join(
+            str(error.get("module") or error.get("code"))
+            for error in (report.get("errors") or [])[:3]
+        )
+        summaries.append(f"{failure['label']}: {examples}")
+    raise ValueError(
+        "static serving ABI validation failed: " + "; ".join(summaries)
+    )
+
+
+def run_preflight(matrix_path: Path, run_root: Path) -> dict:
     spec = load_matrix(matrix_path)
     raw = yaml.safe_load(spec.eval_config.read_text(encoding="utf-8"))
     validate_reasoning_config(raw)
@@ -88,10 +112,12 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         if not model.path.is_dir() or not (model.path / "config.json").is_file():
             raise FileNotFoundError(f"checkpoint is missing or incomplete: {model.label}={model.path}")
 
-    for model in spec.models:
-        report = inspect_checkpoint_serving_abi(model.path)
-        _write(out / "serving_abi" / f"{model.label}.json", report)
-        require_valid_serving_abi(model.label, report)
+    abi_failures = inspect_all_serving_abis(spec.models, out / "serving_abi")
+    require_all_serving_abis(abi_failures)
+
+    from datasets import load_dataset
+    from lm_eval.tasks import TaskManager
+    from transformers import AutoTokenizer
 
     manager = TaskManager()
     available = set(manager.all_tasks)

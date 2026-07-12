@@ -52,10 +52,11 @@ def test_probe_corpus_has_fixed_nonoverlapping_length_buckets():
 
     assert first == second
     assert Counter(row["length_bucket"] for row in first) == {
-        "short": 8,
-        "8k": 4,
-        "32k": 2,
+        "short": 4,
+        "8k": 1,
+        "32k": 1,
     }
+    assert sum(len(row["prompt_token_ids"]) for row in first) == 49_152
     assert {len(row["prompt_token_ids"]) for row in first} == {2048, 8192, 32768}
     spans = sorted((row["start_token"], row["end_token"]) for row in first)
     assert all(left[1] <= right[0] for left, right in zip(spans, spans[1:]))

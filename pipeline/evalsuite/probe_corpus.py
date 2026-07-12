@@ -7,10 +7,11 @@ from collections.abc import Iterable
 from typing import Any
 
 
+# Bounded to 49,152 tokens/model so the probe stays secondary to benchmark eval.
 DEFAULT_BUCKETS = {
-    "short": (8, 2_048),
-    "8k": (4, 8_192),
-    "32k": (2, 32_768),
+    "short": (4, 2_048),
+    "8k": (1, 8_192),
+    "32k": (1, 32_768),
 }
 
 

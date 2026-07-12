@@ -404,3 +404,12 @@ flip/regression/recovery rates, exact/asymptotic McNemar evidence, score
 recovery, teacher-forced NLL/perplexity/top-k drift, generation degeneration,
 and checkpoint quantization coverage/scales/saturation. Serving latency and
 throughput remain explicitly out of scope until quality is resolved.
+
+## AWQ re-quantization interruption
+
+The latest AWQ preparation attempt did not complete. Both `awq-offsetfix` and
+`awq-nosmooth` were terminated by Slurm step timeout during expert smoothing;
+neither output directory is a valid checkpoint. See
+`M3_AWQ_REQUANTIZATION_REPORT.md` for exact paths, nodes, timestamps, log
+evidence, and the rerun requirements. Do not serve or publish either partial
+output.

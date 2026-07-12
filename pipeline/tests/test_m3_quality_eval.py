@@ -18,6 +18,7 @@ from pipeline.m3_quality_eval import (
     build_profile_sample_manifests,
     resolve_task_aliases,
     validate_reasoning_config,
+    validate_sample_indices,
     validate_and_merge,
     validate_smoke_gate,
 )
@@ -421,7 +422,29 @@ def test_profile_manifests_make_tiny_smoke_and_mmlu_only_production(tmp_path):
 def test_preflight_inspects_loaded_leaf_evaluation_splits():
     from types import SimpleNamespace
     from pipeline.m3_quality_preflight import inspect_leaf_sizes
-    task_a = SimpleNamespace(config=SimpleNamespace(test_split="test"), dataset={"test": range(7)})
-    task_b = SimpleNamespace(config=SimpleNamespace(validation_split="validation"), dataset={"validation": range(3)})
+    task_a = SimpleNamespace(
+        config=SimpleNamespace(test_split="test"),
+        dataset={"test": range(70)},
+        eval_docs=range(7),
+    )
+    task_b = SimpleNamespace(
+        config=SimpleNamespace(validation_split="validation"),
+        dataset={"validation": range(30)},
+        eval_docs=range(3),
+    )
     manager = SimpleNamespace(load=lambda names: {"tasks": {"leaf_a": task_a, "leaf_b": task_b}})
     assert inspect_leaf_sizes(manager, "group") == {"leaf_a": 7, "leaf_b": 3}
+
+
+def test_sample_index_validation_reports_resolved_leaf_bounds():
+    tasks = {"mmlu_pro": {"mmlu_pro_biology": [0, 716, 6382]}}
+    sizes = {"mmlu_pro": {"mmlu_pro_biology": 717}}
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"task=mmlu_pro leaf=mmlu_pro_biology size=717 "
+            r"max_selected_index=6382"
+        ),
+    ):
+        validate_sample_indices(tasks, sizes)

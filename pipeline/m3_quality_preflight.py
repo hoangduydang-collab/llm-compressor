@@ -53,8 +53,8 @@ def inspect_leaf_sizes(manager, installed_task: str) -> dict[str, int]:
         raise ValueError(f"lm-eval loaded no leaf tasks for {installed_task!r}")
     sizes = {}
     for leaf, task in tasks.items():
-        split = _task_split(task)
-        sizes[str(leaf)] = len(task.dataset[split])
+        eval_docs = task.eval_docs
+        sizes[str(leaf)] = len(eval_docs)
     return sizes
 
 

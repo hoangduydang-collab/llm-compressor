@@ -233,6 +233,32 @@ def resolve_task_aliases(
     return resolved
 
 
+def validate_sample_indices(
+    tasks: dict[str, dict[str, list[int]]],
+    leaf_sizes: dict[str, dict[str, int]],
+) -> None:
+    """Validate exact indices against lm-eval's filtered leaf documents."""
+    for task_name, leaves in tasks.items():
+        sizes = leaf_sizes.get(task_name)
+        if sizes is None:
+            raise ValueError(f"sample manifest has no leaf sizes for task={task_name}")
+        for leaf_name, indices in leaves.items():
+            if leaf_name not in sizes:
+                raise ValueError(
+                    f"sample manifest has unknown leaf: task={task_name} "
+                    f"leaf={leaf_name}"
+                )
+            size = int(sizes[leaf_name])
+            maximum = max(indices) if indices else None
+            minimum = min(indices) if indices else None
+            if minimum is not None and (minimum < 0 or maximum >= size):
+                raise ValueError(
+                    f"sample index out of range: task={task_name} "
+                    f"leaf={leaf_name} size={size} "
+                    f"max_selected_index={maximum}"
+                )
+
+
 def build_exact_sample_manifest(
     *,
     task_name: str,
@@ -282,6 +308,11 @@ def build_profile_sample_manifests(
     }
     outputs = {}
     for profile, tasks in (("smoke", smoke_tasks), ("production", production_tasks)):
+        installed_leaf_sizes = {
+            resolved_tasks[canonical]: sizes
+            for canonical, sizes in leaf_sizes.items()
+        }
+        validate_sample_indices(tasks, installed_leaf_sizes)
         data: dict[str, Any] = {
             "schema_version": 1,
             "seed": seed,

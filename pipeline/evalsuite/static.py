@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
+from pipeline.evalsuite.sampling import stable_sample_uid
 from pipeline.eval_gate import _gate_metric
 from pipeline.lmeval_runner import evaluate_tasks
 from pipeline.metrics_lmeval import (
@@ -59,7 +60,11 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
                 used_metric = key
                 break
 
+    subtask = str(sample.get("_eval_subtask") or task.name)
     row: dict = {
+        "sample_uid": stable_sample_uid(task.name, subtask, doc_id),
+        "task": task.name,
+        "subtask": subtask,
         "doc_id": doc_id,
         "target": sample.get("target"),
         "response": _first_response(sample),
@@ -90,7 +95,10 @@ def _first_response(sample: dict):
 
 def _write_samples(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = sorted(rows, key=lambda r: (str(r.get("doc_id")),))
+    rows = sorted(
+        rows,
+        key=lambda r: (str(r.get("sample_uid") or ""), str(r.get("doc_id"))),
+    )
     with path.open("w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -124,30 +132,32 @@ def pending_eval_tasks(
     return [t for t in tasks if t.name not in completed]
 
 
-def _collect_task_samples(batch: dict, task_name: str) -> list[dict]:
-    """Collect logged samples for a leaf task or lm-eval group (e.g. mmlu, bbh).
+def _tag_samples(samples: list[dict], subtask: str) -> list[dict]:
+    return [{**sample, "_eval_subtask": subtask} for sample in samples]
 
-    Group tasks store per-document samples under subtask keys
-    (``mmlu_abstract_algebra``, …), not the group name.
-    """
+
+def _collect_task_samples(batch: dict, task_name: str) -> list[dict]:
+    """Collect samples while preserving their leaf-task namespace."""
     samples_map = batch.get("samples") or {}
     direct = samples_map.get(task_name)
     if direct:
-        return list(direct)
+        return _tag_samples(list(direct), task_name)
 
     subtasks = (batch.get("group_subtasks") or {}).get(task_name)
     if subtasks:
         merged: list[dict] = []
         for subtask in subtasks:
-            merged.extend(samples_map.get(subtask) or [])
+            merged.extend(
+                _tag_samples(list(samples_map.get(subtask) or []), subtask)
+            )
         if merged:
             return merged
 
     prefix = f"{task_name}_"
     merged = []
-    for key, vals in samples_map.items():
-        if key.startswith(prefix) and vals:
-            merged.extend(vals)
+    for subtask, values in samples_map.items():
+        if subtask.startswith(prefix) and values:
+            merged.extend(_tag_samples(list(values), subtask))
     return merged
 
 

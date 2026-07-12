@@ -189,6 +189,26 @@ def evaluate_tasks(
             f"gen_kwargs={ev.gen_kwargs}"
         )
 
+    from pipeline.evalsuite.sampling import (
+        load_sample_manifest,
+        sample_map_for_task,
+    )
+
+    manifest = (
+        load_sample_manifest(ev.samples_manifest)
+        if ev.samples_manifest
+        else None
+    )
+    exact_samples = {
+        task.name: sample_map_for_task(manifest, task.name) if manifest else None
+        for task in tasks
+    }
+    for task in tasks:
+        if exact_samples[task.name] is not None and task.limit is not None:
+            raise ValueError(
+                f"task {task.name}: exact samples and limit are mutually exclusive"
+            )
+
     lm = _load_lm_model(cfg, model_path)
     merged: dict = {}
 
@@ -208,7 +228,10 @@ def evaluate_tasks(
                 kwargs["fewshot_as_multiturn"] = True
             if ev.gen_kwargs:
                 kwargs["gen_kwargs"] = ev.gen_kwargs
-            if task.limit is not None:
+            sample_map = exact_samples[task.name]
+            if sample_map is not None:
+                kwargs["samples"] = sample_map
+            elif task.limit is not None:
                 kwargs["limit"] = task.limit
             if log_samples:
                 kwargs["log_samples"] = True

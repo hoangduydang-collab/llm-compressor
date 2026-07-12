@@ -150,6 +150,10 @@ class EvalConfig:
     # Per-sample logging for post-hoc flip-rate comparison (evalsuite).
     log_samples: bool = True
     samples_dir: str | None = None  # defaults to <out>/samples at runtime
+    # Exact lm-eval sample indices shared across paired checkpoint runs.
+    samples_manifest: str | None = None
+    bootstrap_seed: int = 42
+    bootstrap_iters: int = 10_000
     tasks: list[EvalTask] = field(default_factory=full_static_tasks)
 
 

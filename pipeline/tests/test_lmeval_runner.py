@@ -1,7 +1,12 @@
 """Unit tests for per-task lm-eval kwargs (no GPU)."""
 
+import json
 import os
+import sys
+from types import SimpleNamespace
 from pathlib import Path
+
+import pytest
 
 from pipeline.config import EvalTask, PipelineConfig, ServeConfig, load_config
 from pipeline._env import apply_lm_eval_sglang_compat, apply_sglang_compat_env
@@ -250,3 +255,69 @@ def test_apply_lm_eval_sglang_compat_maps_max_tokens():
     apply_lm_eval_sglang_compat()
     params = SamplingParams(max_tokens=32, temperature=0.0)
     assert params.max_new_tokens == 32
+
+
+def test_evaluate_tasks_passes_exact_samples(monkeypatch, tmp_path):
+    from pipeline.lmeval_runner import evaluate_tasks
+
+    sample_path = tmp_path / "samples.json"
+    sample_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "seed": 42,
+                "tasks": {"mmlu_pro": {"mmlu_pro_math": [0, 4]}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = PipelineConfig()
+    cfg.eval.samples_manifest = str(sample_path)
+    task = EvalTask(name="mmlu_pro", limit=None)
+    calls = []
+
+    fake_lm = SimpleNamespace(clean=lambda: None)
+    monkeypatch.setattr("pipeline.lmeval_runner._load_lm_model", lambda *_: fake_lm)
+    monkeypatch.setitem(
+        sys.modules,
+        "lm_eval",
+        SimpleNamespace(
+            simple_evaluate=lambda **kwargs: calls.append(kwargs)
+            or {"results": {"mmlu_pro": {"acc,none": 1.0}}}
+        ),
+    )
+
+    evaluate_tasks("/model", cfg, [task])
+
+    assert calls[0]["samples"] == {"mmlu_pro_math": [0, 4]}
+    assert "limit" not in calls[0]
+
+
+def test_evaluate_tasks_rejects_limit_with_exact_samples(monkeypatch, tmp_path):
+    from pipeline.lmeval_runner import evaluate_tasks
+
+    sample_path = tmp_path / "samples.json"
+    sample_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "seed": 42,
+                "tasks": {"mmlu_pro": {"mmlu_pro_math": [0]}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = PipelineConfig()
+    cfg.eval.samples_manifest = str(sample_path)
+    monkeypatch.setattr(
+        "pipeline.lmeval_runner._load_lm_model",
+        lambda *_: SimpleNamespace(clean=lambda: None),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "lm_eval",
+        SimpleNamespace(simple_evaluate=lambda **_: {}),
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        evaluate_tasks("/model", cfg, [EvalTask(name="mmlu_pro", limit=10)])

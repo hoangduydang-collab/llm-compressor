@@ -107,3 +107,33 @@ def test_checkpoint_task_result_mmlu_group_samples(tmp_path: Path):
 
     assert len(rows) == 1
     assert (tmp_path / "samples" / "mmlu.jsonl").is_file()
+
+
+def test_group_rows_namespace_duplicate_doc_ids_by_subtask(tmp_path: Path):
+    task = EvalTask(name="mmlu_pro", metric="acc,none")
+    aggregate: dict[str, dict[str, float]] = {}
+    batch = {
+        "groups": {"mmlu_pro": {"acc,none": 0.5}},
+        "group_subtasks": {"mmlu_pro": ["mmlu_pro_math", "mmlu_pro_history"]},
+        "samples": {
+            "mmlu_pro_math": [
+                {"doc_id": 0, "acc,none": 1.0, "target": "A", "resps": ["A"]}
+            ],
+            "mmlu_pro_history": [
+                {"doc_id": 0, "acc,none": 0.0, "target": "B", "resps": ["A"]}
+            ],
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate=aggregate,
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert [row["subtask"] for row in rows] == ["mmlu_pro_math", "mmlu_pro_history"]
+    assert rows[0]["doc_id"] == rows[1]["doc_id"] == 0
+    assert rows[0]["sample_uid"] != rows[1]["sample_uid"]

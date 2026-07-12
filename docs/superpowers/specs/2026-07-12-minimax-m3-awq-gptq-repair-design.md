@@ -47,3 +47,11 @@ boundary is reported separately.
 The executor returns checkpoint preparation manifests, the static scale audit,
 all arm reports and boundary records, exact job/node/return codes, deviations,
 retries, and retained-log hashes. `srun` is the only scheduler interface.
+
+
+## Staged execution
+
+Execution is staged to minimize wall time. As soon as GPTQ re-export finishes,
+five serving controls plus the tensor audit run under one matrix ID. The six
+fresh-AWQ arms later append to that same evidence directory and perform final
+aggregation; completed early arms are never rerun.

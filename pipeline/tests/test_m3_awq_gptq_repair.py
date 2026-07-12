@@ -1,6 +1,12 @@
 """CPU classifier tests for the MiniMax-M3 AWQ/GPTQ repair matrix."""
 
-from pipeline.m3_awq_gptq_repair import EXPECTED_ARMS, classify_matrix
+from pipeline.m3_awq_gptq_repair import (
+    EARLY_ARMS,
+    EXPECTED_ARMS,
+    FINISH_ARMS,
+    classify_early_matrix,
+    classify_matrix,
+)
 
 
 def _records(explosive: bool) -> list[dict]:
@@ -53,3 +59,17 @@ def test_repaired_gptq_passes_isolates_awq():
 
 def test_same_gptq_boundary_points_to_shared_logic():
     assert classify_matrix(_arms())["verdict"] == "shared_compression_export_boundary"
+
+
+def test_staged_arm_sets_partition_the_full_matrix():
+    assert set(EARLY_ARMS).isdisjoint(FINISH_ARMS)
+    assert set(EARLY_ARMS) | set(FINISH_ARMS) == set(EXPECTED_ARMS)
+
+
+def test_early_gptq_pass_isolates_awq_without_fresh_checkpoints():
+    arms = {name: _arm(False) for name in EARLY_ARMS}
+    arms["reference_w4a16"] = _arm(True, False)
+    for name in ("gptq_w4a8", "gptq_w4a16", "gptq_http"):
+        arms[name] = _arm(True, False)
+
+    assert classify_early_matrix(arms)["verdict"] == "gptq_pass_awq_specific"

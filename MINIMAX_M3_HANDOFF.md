@@ -168,6 +168,19 @@ three preparation jobs succeed, launch the twelve-node matrix:
     DRY_RUN=1 bash pipeline/slurm/run_m3_awq_gptq_repair_srun.sh
     bash pipeline/slurm/run_m3_awq_gptq_repair_srun.sh
 
+The GPTQ portable checkpoint finishes much earlier than either AWQ rebuild. Do
+not wait: launch the early six-node phase while both quantizations continue:
+
+    bash pipeline/slurm/run_m3_gptq_early_srun.sh
+
+Record the printed MATRIX_ID. Once both AWQ variants finish, add only their six
+arms to the same evidence directory:
+
+    MATRIX_ID=<printed-id> bash pipeline/slurm/run_m3_awq_repair_finish_srun.sh
+
+The early phase writes comparison_early.json; the finish phase writes the final
+comparison.json without rerunning reference, GPTQ, AWQ control, or tensor audit.
+
 Every offline arm probes all sparse layers 3-59. Return the complete
 results/m3-awq-gptq-repair/<matrix-id>/ tree, preparation and matrix logs,
 checkpoint paths, job/node/return codes, deviations, retries, and retained-log

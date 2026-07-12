@@ -43,6 +43,14 @@ ARM_SPECS = {
     "awq_nosmooth_http": RepairArmSpec("awq_nosmooth", "w4a8", "http"),
 }
 EXPECTED_ARMS = tuple(ARM_SPECS)
+EARLY_ARMS = (
+    "reference_w4a16",
+    "awq_control_w4a8",
+    "gptq_w4a8",
+    "gptq_w4a16",
+    "gptq_http",
+)
+FINISH_ARMS = tuple(name for name in EXPECTED_ARMS if name not in EARLY_ARMS)
 
 
 def _boundary(arms: dict[str, dict[str, Any]], name: str) -> dict[str, Any] | None:
@@ -117,6 +125,42 @@ def classify_matrix(arms: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {"verdict": verdict, "complete": True, **details}
 
 
+def classify_early_matrix(arms: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    missing = [name for name in EARLY_ARMS if name not in arms]
+    if missing:
+        return {"verdict": "inconclusive_missing_early_arms", "complete": False,
+                "missing_arms": missing}
+    failed = [name for name in EARLY_ARMS
+              if arms[name].get("infrastructure_ok") is not True]
+    if failed:
+        return {"verdict": "early_infrastructure_failure", "complete": True,
+                "failed_arms": failed}
+    if arms["reference_w4a16"].get("quality_ok") is not True:
+        return {"verdict": "invalid_reference", "complete": True}
+
+    boundaries = {
+        name: _boundary(arms, name)
+        for name in ("awq_control_w4a8", "gptq_w4a8", "gptq_w4a16")
+    }
+    details = {"boundaries": boundaries}
+    if all(arms[name].get("quality_ok") is True for name in (
+        "gptq_w4a8", "gptq_w4a16", "gptq_http"
+    )):
+        return {"verdict": "gptq_pass_awq_specific", "complete": True, **details}
+
+    awq_boundary = boundaries["awq_control_w4a8"]
+    gptq_boundaries = [boundaries[name] for name in ("gptq_w4a8", "gptq_w4a16")]
+    if awq_boundary and all(
+        boundary and boundary.get("layer") == awq_boundary.get("layer")
+        and boundary.get("boundary") == awq_boundary.get("boundary")
+        for boundary in gptq_boundaries
+    ):
+        verdict = "gptq_shared_compression_export_boundary"
+    else:
+        verdict = "gptq_distinct_boundary"
+    return {"verdict": verdict, "complete": True, **details}
+
+
 def write_manifest(
     arm: str,
     run_dir: Path,
@@ -167,17 +211,20 @@ def write_manifest(
     return manifest
 
 
-def aggregate(evidence_root: Path) -> dict[str, Any]:
+def aggregate(evidence_root: Path, phase: str = "final") -> dict[str, Any]:
+    expected = EARLY_ARMS if phase == "early" else EXPECTED_ARMS
     arms = {
         name: _read_json(evidence_root / name / "arm_report.json")
-        for name in EXPECTED_ARMS
+        for name in expected
         if (evidence_root / name / "arm_report.json").is_file()
     }
-    result = {**classify_matrix(arms), "arms": arms}
+    classifier = classify_early_matrix if phase == "early" else classify_matrix
+    result = {**classifier(arms), "phase": phase, "arms": arms}
     audit = _read_json(evidence_root / "checkpoint_scale_audit.json")
     if audit:
         result["checkpoint_scale_audit"] = audit
-    _write_json(evidence_root / "comparison.json", result)
+    output = "comparison_early.json" if phase == "early" else "comparison.json"
+    _write_json(evidence_root / output, result)
     return result
 
 
@@ -197,6 +244,7 @@ def main() -> int:
     bundle.add_argument("--evidence-dir", type=Path, required=True)
     aggregate_parser = sub.add_parser("aggregate")
     aggregate_parser.add_argument("--evidence-root", type=Path, required=True)
+    aggregate_parser.add_argument("--phase", choices=("early", "final"), default="final")
     args = parser.parse_args()
     if args.command == "manifest":
         write_manifest(args.arm, args.run_dir, args.evidence_dir,
@@ -205,7 +253,7 @@ def main() -> int:
     elif args.command == "bundle-arm":
         bundle_arm(args.run_dir, args.evidence_dir)
     else:
-        aggregate(args.evidence_root)
+        aggregate(args.evidence_root, args.phase)
     return 0
 
 

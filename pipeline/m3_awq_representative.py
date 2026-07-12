@@ -370,6 +370,9 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
         expected_targets: list[str]
         _audit_snapshot: list[dict[str, Any]] = PrivateAttr(default_factory=list)
         _lifecycle_audit: dict[str, Any] = PrivateAttr(default_factory=dict)
+        _skipped_error_metrics: list[dict[str, Any]] = PrivateAttr(
+            default_factory=list
+        )
         _capture_phase: str = PrivateAttr(default="reference")
         _captures: dict[str, dict[str, list[Any]]] = PrivateAttr(
             default_factory=lambda: {

@@ -47,7 +47,7 @@ for index in "${!names[@]}"; do
   name="${names[$index]}"
   output_dir="$RESULT_ROOT/$name"
   command=(
-    srun --nodes=1 --ntasks=1 --gres=gpu:1 --time="$TIME_LIMIT"
+    srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1 --time="$TIME_LIMIT"
     --kill-on-bad-exit=0 "${EXTRA_SRUN_ARGS[@]}"
     python -m pipeline.m3_awq_representative arm
     --layer "${layers[$index]}"

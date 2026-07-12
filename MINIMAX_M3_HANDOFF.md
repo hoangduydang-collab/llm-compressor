@@ -478,6 +478,12 @@ process cancels the Slurm steps. Do not use plain shell backgrounding or the
 older detached-process wrappers for this matrix. A detached tmux server must
 own the controller.
 
+Each representative arm must also request an exclusive node. A one-GPU
+request alone is insufficient: Slurm can place multiple full-model arms on the
+same eight-GPU node, exhausting host RAM and producing `rc=137` (SIGKILL/OOM).
+The launcher therefore includes `srun --exclusive --nodes=1`; preserve this
+flag in all future runs and verify the six arms land on six distinct nodes.
+
 First print and inspect the tmux launch plus the exact evidence roots. This is
 read-only and does not create a session:
 

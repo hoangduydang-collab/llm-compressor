@@ -36,6 +36,7 @@ def test_launcher_exposes_required_overrides_and_uses_only_srun():
         assert f"{variable}=" in text
     assert "srun" in text
     assert "sbatch" not in text
+    assert "--exclusive" in text
     assert "--nodes=1" in text
     assert "--ntasks=1" in text
     assert "--gres=gpu:1" in text

@@ -41,6 +41,8 @@ The article will avoid exposing private absolute paths, node names, credentials,
 
 The NVFP4 fallback section will be rewritten if verification does not support the initial formulation. In particular, the post will not equate weight storage format with arithmetic precision, nor claim that Marlin performs an NVFP4-to-W4A16 conversion unless official vLLM source or documentation establishes that exact path.
 
+The verified Marlin behavior will be presented directly as the authoritative description, not framed as a correction to an earlier draft. The subsection heading and prose will state what the FP4 Marlin path does without mentioning that a previous formulation was changed.
+
 Newly merged reports supersede the earlier shorthand that “GPTQ passed while AWQ failed.” The blog will distinguish the repaired in-house GPTQ checkpoint, the coherent external AWQ control, and the unresolved in-house AWQ W4AFP8 artifact. Small smoke-task scores are diagnostic only and will not be presented as statistically meaningful benchmark results.
 
 The reader-facing term for the checkpoint-side static check is **post-quantization gate**. Its first use will explain plainly that it verifies whether checkpoint metadata, tensor inventory, packing, scales, ignored modules, and names match what the inference engine expects. Historical report filenames and implementation identifiers containing `ABI` remain unchanged as repository references, but the article will not use “Application Binary Interface” as its conceptual label.

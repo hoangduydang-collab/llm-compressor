@@ -52,7 +52,7 @@ GPTQ interacts with the model differently: it uses approximate second-order info
 
 The inference engine is the fixed target. Our exporter or checkpoint-repair path must produce the names, packing, metadata, ignored-module policy, and tensor layout that the selected runtime expects.
 
-We call this the checkpoint's serving **Application Binary Interface (ABI)**: the concrete contract between the saved artifact and the loader that reconstructs executable modules from it. It includes more than `config.json`; it covers the relationship among module namespaces, packed weights, scales, unquantized components, target declarations, and backend-specific expectations.
+The **post-quantization gate** checks whether the saved checkpoint's metadata and tensors match what the inference engine expects. It covers more than `config.json`: module namespaces, packed weights, scales, unquantized components, target declarations, ignored modules, and backend-specific loading expectations must agree.
 
 This boundary is why “the quantization job finished” is not an acceptance criterion.
 
@@ -80,7 +80,7 @@ flowchart TB
     subgraph L3[Layer 3 · Full run and acceptance]
       G --> H[Full-calibration quantization]
       H --> I[Candidate checkpoint]
-      I --> J{Post-quant serving ABI gate}
+      I --> J{Post-quantization gate}
       J -- No --> J1[Hold: export / packing / metadata report]
       J -- Yes --> K[Inference-engine load + serve smoke]
       K --> L{Runtime and generation health?}
@@ -94,7 +94,7 @@ flowchart TB
     I -. checkpoint boundary .-> J
 ```
 
-**Plain-text path:** intake → pre-quantization static gate → all-layer smoke quantization with live probes → full-calibration run → post-quantization serving ABI gate → runtime smoke → paired quality evaluation → publish or hold with evidence.
+**Plain-text path:** intake → pre-quantization static gate → all-layer smoke quantization with live probes → full-calibration run → post-quantization gate → runtime smoke → paired quality evaluation → publish or hold with evidence.
 
 ### Layer 1 — static compatibility gates
 
@@ -120,7 +120,7 @@ A confirmed violation writes the diagnostic record first, then terminates the ru
 
 ### Layer 3 — full calibration and end-to-end acceptance
 
-Only a smoke-qualified recipe advances to the full calibration set. The resulting checkpoint then passes through the post-quantization ABI gate, a bounded inference-engine smoke, generation-health checks, a paired teacher-forced distributional probe, and task evaluation against comparator checkpoints.
+Only a smoke-qualified recipe advances to the full calibration set. The resulting checkpoint then passes through the post-quantization gate, a bounded inference-engine smoke, generation-health checks, a paired teacher-forced distributional probe, and task evaluation against comparator checkpoints.
 
 Static success remains necessary but insufficient. It cannot prove tensor values, activation semantics, kernel correctness, KV-cache behavior, or model quality. The final acceptance decision belongs to the paired runtime and evaluation evidence.
 
@@ -130,8 +130,7 @@ MiniMax-M3 compressed a large amount of debugging into one useful lesson: differ
 
 | Artifact | What the evidence says | Current use |
 |---|---|---|
-| Original in-house GPTQ | Failed the CPU-only serving ABI gate with 228 runtime namespace/ignore mismatches. | Held; not a valid serving baseline. |
-| Metadata-repaired in-house GPTQ | A portable overlay changed configuration metadata while preserving the tensor payload and Safetensors index; it passed preflight and produced coherent smoke generations. | Working in-house GPTQ candidate for controlled evaluation. |
+| In-house GPTQ | The checkpoint initially failed the CPU-only post-quantization gate with 228 runtime namespace/ignore mismatches. A portable overlay then repaired its configuration metadata while preserving the tensor payload and Safetensors index; the same checkpoint passed preflight and produced coherent smoke generations. | Working candidate for controlled evaluation. |
 | External AWQ control | Passed the same static preflight and completed the paired 2,047-token teacher-forced probe and small smoke suite without empty outputs or periodic loops. | Comparator/control, not evidence that our in-house AWQ recipe is correct. |
 | In-house AWQ W4AFP8 | Full-calibration output remained unhealthy; later repair builds did not produce a completed replacement checkpoint, and some diagnostic harnesses exposed their own tracing/lifecycle failures. | Unresolved; continue through guarded all-layer diagnostics. |
 
@@ -146,7 +145,7 @@ The first real pre-quantization CLI run also justified Layer 1: it stopped on a 
 | Area | Status | Boundary |
 |---|---|---|
 | Pre-quant AWQ/GPTQ structural planner | Implemented; MiniMax-M3 regression profile; real cluster rerun pending after local fix | Model → quantizer |
-| MiniMax-M3 post-quant ABI checker | Proven on the documented `compressed-tensors` profile | Checkpoint → vLLM loader |
+| MiniMax-M3 post-quantization gate | Proven on the documented `compressed-tensors` profile | Checkpoint → vLLM loader |
 | Guarded all-layer diagnostic runner | Implemented with durable abort/progress evidence | Quantization lifecycle |
 | Repaired in-house GPTQ smoke | Coherent, suitable for the next controlled comparison | Runtime health |
 | In-house AWQ W4AFP8 | Unresolved | Algorithm-specific quality |
@@ -163,7 +162,9 @@ A robust multimodal pipeline will eventually need modality-aware sample construc
 
 Official NVFP4 checkpoints are valuable as quality and memory baselines, especially when reproducing the original quantization recipe is expensive.
 
-The initial shorthand for Hopper fallback needs one correction. Current vLLM includes an FP4 Marlin path that supports FP4 weight-only execution on SM80+ hardware, including Hopper. The kernel consumes packed FP4 weights and higher-precision activations; it is more precise to call this an **NVFP4-weight / A16-style execution path** than a runtime conversion of the checkpoint into a new W4A16 checkpoint. The storage benefit remains, and weight bandwidth can still improve, but Hopper does not gain Blackwell's native NVFP4 Tensor Core path. [Supported upstream: vLLM FP4 Marlin source/API](https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/) and [vLLM hardware table](https://docs.vllm.ai/en/stable/features/quantization/index.html)
+### FP4 Marlin on Hopper
+
+Current vLLM includes an FP4 Marlin path that supports FP4 weight-only execution on SM80+ hardware, including Hopper. The kernel consumes packed FP4 weights and higher-precision activations, making this an **NVFP4-weight / A16-style execution path** rather than a runtime conversion of the checkpoint into a new W4A16 checkpoint. The storage benefit remains, and weight bandwidth can still improve, but Hopper does not gain Blackwell's native NVFP4 Tensor Core path. [Supported upstream: vLLM FP4 Marlin source/API](https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/) and [vLLM hardware table](https://docs.vllm.ai/en/stable/features/quantization/index.html)
 
 NVIDIA's own CUDA documentation distinguishes NVFP4 GEMM support on Blackwell from FP8 inputs on Hopper. [Supported upstream: CUDA library release notes](https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf)
 
@@ -191,8 +192,8 @@ The longer-term product is model-agnostic orchestration backed by explicit compa
 ### Observed in this fork
 
 - [Pre-quantization real CLI failure and local fix status](../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md)
-- [Static serving ABI gate result](../M3_STATIC_ABI_GATE_REPORT.md)
-- [Repaired GPTQ ABI preflight](../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md)
+- [Static post-quantization gate result](../M3_STATIC_ABI_GATE_REPORT.md)
+- [Repaired GPTQ preflight](../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md)
 - [Compact repaired-GPTQ versus external-AWQ smoke result](../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md)
 - [AWQ re-quantization status](../M3_AWQ_REQUANTIZATION_REPORT.md)
 - [AWQ representative diagnostic and why it was superseded](../M3_AWQ_REPRESENTATIVE_RERUN_REPORT.md)

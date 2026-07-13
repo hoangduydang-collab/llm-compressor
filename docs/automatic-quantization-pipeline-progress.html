@@ -314,7 +314,7 @@
             <p>The inference engine is the fixed target. Our export or repair path must align module names, ignored components, packing, scales, metadata, and layout with the loader.</p>
           </div>
 
-          <p>We call this the serving <strong>Application Binary Interface (ABI)</strong>: the concrete contract between the saved checkpoint and the runtime that reconstructs executable modules. Completing a quantization job is not proof that this contract is valid.</p>
+          <p>The <strong>post-quantization gate</strong> checks whether the saved checkpoint's metadata and tensors match what the inference engine expects: module names, ignored components, packing, scales, target declarations, and loading policy must agree. Completing a quantization job is not proof that these checks will pass.</p>
         </section>
 
         <section id="pipeline" class="wide">
@@ -349,7 +349,7 @@
               </li>
               <li class="stage">
                 <span class="layer-tag">Layer 1</span>
-                <div class="stage-core"><b>Post-quantization serving ABI gate</b><small>Inventory · scales · packed/plain policy · aliases · targets · ignores</small></div>
+                <div class="stage-core"><b>Post-quantization gate</b><small>Inventory · scales · packed/plain policy · aliases · targets · ignores</small></div>
                 <div class="branch">FAIL → export, packing or metadata diagnosis</div>
               </li>
               <li class="stage">
@@ -363,7 +363,7 @@
           <div class="layers">
             <div class="layer-card" data-layer="LAYER 1"><h3>Static compatibility</h3><p>Cheap checks at both boundaries. Unknown models or formats must fail as unsupported, never silently pass.</p></div>
             <div class="layer-card" data-layer="LAYER 2"><h3>All-layer live probes</h3><p>Production-shaped smoke quantization verifies coverage, mapping execution and numerical health before hours are spent.</p></div>
-            <div class="layer-card" data-layer="LAYER 3"><h3>Full acceptance</h3><p>Full calibration, checkpoint ABI, runtime health and paired quality evidence form one acceptance chain.</p></div>
+            <div class="layer-card" data-layer="LAYER 3"><h3>Full acceptance</h3><p>Full calibration, the post-quantization gate, runtime health and paired quality evidence form one acceptance chain.</p></div>
           </div>
 
           <h3>Why the canary changed</h3>
@@ -376,11 +376,10 @@
           <p class="lead">The useful story is not every debugging step. It is that each discriminator isolated a different contract.</p>
           <div class="table-scroll">
             <table>
-              <caption>Keep the four artifacts separate</caption>
+              <caption>Current checkpoint evidence</caption>
               <thead><tr><th>Artifact</th><th>Evidence</th><th>Status</th></tr></thead>
               <tbody>
-                <tr><td>Original in-house GPTQ</td><td>Failed the CPU-only serving ABI gate with 228 runtime namespace/ignore mismatches.</td><td><span class="status hold">Hold</span></td></tr>
-                <tr><td>Metadata-repaired GPTQ</td><td>Tensor-preserving configuration overlay passed preflight and produced coherent smoke generations.</td><td><span class="status working">Working candidate</span></td></tr>
+                <tr><td>In-house GPTQ</td><td>The checkpoint initially failed the CPU-only post-quantization gate with 228 runtime namespace/ignore mismatches. A tensor-preserving configuration overlay then repaired its metadata; the same checkpoint passed preflight and produced coherent smoke generations.</td><td><span class="status working">Working candidate</span></td></tr>
                 <tr><td>External AWQ control</td><td>Passed preflight and paired 2,047-token probe; no empty outputs or periodic loops in the small smoke.</td><td><span class="status working">Comparator</span></td></tr>
                 <tr><td>In-house AWQ W4AFP8</td><td>Unhealthy output remains unresolved; repair builds did not yield a completed replacement checkpoint.</td><td><span class="status hold">Unresolved</span></td></tr>
               </tbody>
@@ -391,7 +390,7 @@
             <h3><span class="evidence-chip observed">Observed in this fork</span> A static failure predicted a real runtime defect</h3>
             <p>The original GPTQ artifact held 21,888 packed routed-expert modules while 57 routers and 171 shared-expert projections remained plain under runtime names not covered by its ignore rules. A metadata-only overlay added the required aliases without changing tensor payloads. Coherent generation after repair validated the diagnosis.</p>
           </div>
-          <p>The repaired GPTQ and external AWQ control each completed the small five-task workflow and generation-health checks. These are diagnostic samples—not statistically meaningful benchmark conclusions. Read the <a href="../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md">compact smoke report</a>, <a href="../M3_STATIC_ABI_GATE_REPORT.md">static ABI report</a>, and <a href="../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md">repaired preflight report</a>.</p>
+          <p>The repaired GPTQ and external AWQ control each completed the small five-task workflow and generation-health checks. These are diagnostic samples—not statistically meaningful benchmark conclusions. Read the <a href="../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md">compact smoke report</a>, <a href="../M3_STATIC_ABI_GATE_REPORT.md">static post-quantization gate report</a>, and <a href="../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md">repaired preflight report</a>.</p>
           <p>The first real pre-quantization CLI run also failed usefully: it found a meta-device MoE offload boundary before calibration data or GPU allocation. A narrow local fix and CPU regression coverage exist; the real cluster rerun remains pending. <a href="../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md">Pre-quantization report</a></p>
 
           <div class="table-scroll">
@@ -400,7 +399,7 @@
               <thead><tr><th>Area</th><th>Status</th><th>Boundary</th></tr></thead>
               <tbody>
                 <tr><td>Pre-quant AWQ/GPTQ planner</td><td>Implemented; M3 regression; cluster rerun pending</td><td>Model → quantizer</td></tr>
-                <tr><td>M3 post-quant ABI checker</td><td>Proven on documented compressed-tensors profile</td><td>Checkpoint → vLLM</td></tr>
+                <tr><td>M3 post-quantization gate</td><td>Proven on documented compressed-tensors profile</td><td>Checkpoint → vLLM</td></tr>
                 <tr><td>Guarded all-layer diagnostics</td><td>Implemented with durable abort evidence</td><td>Quantization lifecycle</td></tr>
                 <tr><td>Repaired in-house GPTQ</td><td>Coherent smoke candidate</td><td>Runtime health</td></tr>
                 <tr><td>In-house AWQ W4AFP8</td><td>Unresolved</td><td>Algorithm-specific quality</td></tr>
@@ -418,9 +417,9 @@
 
         <section id="fallback">
           <h2><span class="number">06 / Problem 3</span>Official-checkpoint fallback</h2>
-          <p>Official NVFP4 checkpoints are useful memory and quality baselines when reproducing the original recipe is expensive. The Hopper fallback, however, needs precise wording.</p>
-          <aside class="callout warning" aria-label="Technical correction">
-            <h3>Correction: Marlin does not create a new W4A16 checkpoint</h3>
+          <p>Official NVFP4 checkpoints are useful memory and quality baselines when reproducing the original recipe is expensive. On Hopper, the relevant vLLM execution path is FP4 Marlin.</p>
+          <aside class="callout" aria-label="FP4 Marlin on Hopper">
+            <h3>FP4 Marlin on Hopper</h3>
             <p>vLLM's FP4 Marlin path supports weight-only FP4 execution on SM80+ hardware, including Hopper. It consumes packed FP4 weights with higher-precision activations. That is best described as an NVFP4-weight / A16-style execution path—not a runtime checkpoint conversion. Four-bit storage and weight-bandwidth benefits remain, but Hopper does not gain Blackwell's native NVFP4 Tensor Core path.</p>
           </aside>
           <p><a href="https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/"><span class="evidence-chip upstream">Supported upstream</span> vLLM FP4 Marlin API</a> · <a href="https://docs.vllm.ai/en/stable/features/quantization/index.html">hardware compatibility</a> · <a href="https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf">NVIDIA CUDA release notes</a></p>
@@ -446,14 +445,14 @@
           <h2><span class="number">08 / Ledger</span>Evidence &amp; references</h2>
           <ul class="references">
             <li><span class="ref-type">Observed in this fork</span><a href="../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md">Pre-quantization real CLI failure and local fix</a></li>
-            <li><span class="ref-type">Observed in this fork</span><a href="../M3_STATIC_ABI_GATE_REPORT.md">Static serving ABI gate result</a></li>
-            <li><span class="ref-type">Observed in this fork</span><a href="../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md">Repaired GPTQ ABI preflight</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_STATIC_ABI_GATE_REPORT.md">Static post-quantization gate result</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md">Repaired GPTQ preflight</a></li>
             <li><span class="ref-type">Observed in this fork</span><a href="../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md">Repaired GPTQ / external AWQ smoke</a></li>
             <li><span class="ref-type">Observed in this fork</span><a href="../M3_AWQ_REQUANTIZATION_REPORT.md">AWQ re-quantization status</a></li>
             <li><span class="ref-type">Observed in this fork</span><a href="../M3_AWQ_REPRESENTATIVE_RERUN_REPORT.md">Superseded representative diagnostic</a></li>
             <li><span class="ref-type">Observed in this fork</span><a href="quantization-static-serving-preflight-status-and-roadmap.md">Static preflight scope and roadmap</a></li>
             <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/prequant_compatibility.py">Pre-quant compatibility CLI</a></li>
-            <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/m3_serve_abi.py">MiniMax-M3 serving ABI checker</a></li>
+            <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/m3_serve_abi.py">MiniMax-M3 post-quantization gate</a></li>
             <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/m3_guarded_full.py">Guarded all-layer runner</a></li>
             <li><span class="ref-type">Upstream</span><a href="https://github.com/vllm-project/llm-compressor">LLM Compressor schemes and algorithms</a></li>
             <li><span class="ref-type">Upstream</span><a href="https://docs.vllm.ai/en/latest/features/quantization/llm_compressor/">vLLM / LLM Compressor integration</a></li>

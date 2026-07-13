@@ -819,6 +819,9 @@ env_log.json
 uv.lock
 .venv/
 
+# Local Superpowers visual-companion sessions
+.superpowers/
+
 # Versioned CUDA-graph RCA evidence (omit model artifacts and large logs/dumps).
 !artifacts/
 !artifacts/m3-cudagraph-rca/

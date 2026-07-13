@@ -461,3 +461,43 @@ Arm log:
 Controller log:
 /mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T075500Z-m3-awq-structural-layer8/controller.log
 ```
+
+## Zero-cost partition check (2026-07-13)
+
+Before launching another arm, the existing lifecycle artifact was inspected as
+requested. Its complete sequential timeline contains exactly one entry:
+
+```json
+{
+  "smooth_activation_stats_timeline": [
+    {
+      "epoch": 0,
+      "smooth_activation_stats_len": 0,
+      "total_balance_forward_events": 0
+    }
+  ]
+}
+```
+
+Therefore the existing run implies:
+
+```text
+inferred num_sequential_epochs = 1
+```
+
+This is consistent with the sequential target producing no partition boundary.
+Combined with `mlp=0`, it moves the leading suspicion toward the layer
+execution/partition path rather than any expert dispatch implementation.
+
+The zero-cost artifact cannot fully distinguish these two remaining cases,
+because the original probe did not instrument the enclosing decoder or
+language-model layers:
+
+1. layer 8 was omitted from the executed subgraph; or
+2. layer 8 executed but its decoder forward skipped the sparse-MoE block.
+
+No rerun or GPU allocation was performed for this check. The next diagnostic,
+if needed, is the planner's upward probe recording
+`language_model -> layers -> decoder -> {input_layernorm, self_attn,
+post_attention_layernorm, mlp}` fire counts and the explicit sequential-epoch
+count.

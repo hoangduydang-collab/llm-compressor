@@ -562,3 +562,79 @@ if needed, is the planner's upward probe recording
 `language_model -> layers -> decoder -> {input_layernorm, self_attn,
 post_attention_layernorm, mlp}` fire counts and the explicit sequential-epoch
 count.
+
+## Diag3 and production-faithful diag4 results (2026-07-13)
+
+Both requested single-arm runs completed. The second run used the planner's
+production-tracing change from commit `97ff419e`, which keeps the configured
+class-name sequential target (`MiniMaxM3VLDecoderLayer`) instead of forcing the
+single decoder instance path.
+
+| Run | Job | Node | `num_sequential_epochs` | Completed | RC |
+|---|---:|---|---:|---:|---:|
+| `diag3-layer8-offsetfix` | 12861 | `gpu-h123` | 1 | 0 | 1 |
+| `diag4-classname-layer8-offsetfix` | 12862 | `gpu-h117` | 1 | 0 | 1 |
+
+The upward probe in `diag4` recorded zero at every level:
+
+```json
+{
+  "language_model": 0,
+  "layers": 0,
+  "decoder": 0,
+  "decoder.input_layernorm": 0,
+  "decoder.self_attn": 0,
+  "decoder.post_attention_layernorm": 0,
+  "mlp": 0,
+  "mlp.shared_experts": 0,
+  "mlp.gate": 0,
+  "mlp.experts": 0,
+  "mlp.experts.0": 0,
+  "mlp.experts.0.gate_proj": 0
+}
+```
+
+Both runs also had:
+
+```text
+resolved_mapping_count=129
+completed_mapping_count=0
+total_balance_forward_events=0
+smooth_activation_stats_len=0
+```
+
+Consequently, the class-name tracing change did not create a partition
+boundary in the real arm: the whole model still produced one sequential
+subgraph, and no live language-model or decoder module fired. The proposed
+fix therefore did not resolve the runtime behavior; the partition/tracing
+mechanism still needs investigation before this can be treated as a
+production-path AWQ result.
+
+The targeted CPU regression suite also exposed one stale expectation after the
+intentional behavior change:
+
+```text
+46 passed, 1 failed
+FAILED pipeline/tests/test_m3_awq_representative.py::
+test_prepare_arm_config_isolates_one_layer_without_mutating_source
+```
+
+That test still expects the old instance-path sequential target, while the
+implementation now intentionally preserves the production class-name target.
+No checkpoint or quality verdict was produced.
+
+Durable evidence:
+
+```text
+Diag3 lifecycle:
+/mnt/nfs/hoangduy/results/m3-awq-representative/diag3-layer8-offsetfix/offsetfix-layer8/lifecycle.json
+
+Diag4 lifecycle:
+/mnt/nfs/hoangduy/results/m3-awq-representative/diag4-classname-layer8-offsetfix/offsetfix-layer8/lifecycle.json
+
+Diag3 logs:
+/mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T083700Z-m3-awq-diag3-layer8/
+
+Diag4 logs:
+/mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T084500Z-m3-awq-diag4-classname-layer8/
+```

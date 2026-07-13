@@ -15,6 +15,7 @@ from pipeline.minimax_m3_config import (
     patch_minimax_m3_for_text_calibration,
     register_minimax_m3_awq_mappings,
 )
+from pipeline.provenance import log_model_provenance
 from pipeline.recipe import build_recipe, describe_recipe
 from pipeline.vl_artifacts import ensure_vl_processor_artifacts
 from pipeline import metrics, versioning
@@ -122,6 +123,16 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     from llmcompressor import oneshot
 
     model, tokenizer = _load_model_and_tokenizer(cfg)
+    # Capture load/environment provenance BEFORE calibration: where the loaded
+    # modeling code comes from (installed transformers vs trust_remote_code) and
+    # whether sequential_targets match any module. A zero match count is the
+    # direct cause of the sequential-trace collapse (single subgraph -> no
+    # calibration -> un-smoothed weights). Written next to the checkpoint.
+    log_model_provenance(
+        model,
+        cfg.calibration.sequential_targets,
+        out_path=run_dir / "model_provenance.json",
+    )
     if patch_minimax_m3_for_text_calibration(model):
         print("[pipeline] patched MiniMax-M3 get_placeholder_mask for text-only calibration")
         register_minimax_m3_awq_mappings()

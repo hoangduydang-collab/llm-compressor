@@ -1,4 +1,77 @@
+# MiniMax-M3 AWQ quality: offset RMSNorm smoothing (investigating)
+
+The 20260712 layer-boundary matrix localizes the first catastrophic value to
+layer 8 after attention and before MoE: candidate MoE input norm is about
+176,845 versus reference 177. MiniMax-M3 uses MiniMaxM3VLRMSNorm, whose
+forward multiplies by 1 + weight. The shared offset-norm calibration registry
+handled Gemma and Qwen aliases but not the MiniMax class, so AWQ could smooth
+the raw zero-centered parameter incorrectly. The repair registers the exact
+class and tests a fresh AWQ checkpoint against both a no-MLP-smoothing control
+and the repaired GPTQ checkpoint. Validation covers sparse layers 3-59 and
+canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
+
 # Bugs and fixes (llm-compressor pipeline)
+
+## Pre-quantization gate: meta-device MoE linearization offload (fixed, 2026-07-13)
+
+**Symptom:** The first real MiniMax-M3 CLI run of the pre-quantization
+compatibility gate (`python -m pipeline.prequant_compatibility`) died with
+`NotImplementedError: Offload of type meta and distributed=False has not been
+implemented` while constructing the meta model. No GPU, calibration data, or
+checkpoint weights were involved.
+
+**Root cause:** The gate builds a disposable model under
+`accelerate.init_empty_weights` and calls `linearize_moe`, which reaches
+`LinearExperts2D.from_experts_module`. That method unconditionally initialized
+runtime offload for every submodule via `compressed_tensors.offload.offload_module`.
+With a meta source, `get_cache_init_kwargs` resolves `offload_device` to `meta`,
+and `compressed-tensors` intentionally has no `meta` offload backend, so
+`OffloadCache.cls_from_device("meta")` raises. The synthetic gate tests stubbed the
+analyzer and the existing offload tests are GPU-only, so the meta boundary was
+uncovered.
+
+**Fix:** In `src/llmcompressor/modeling/moe/linear_experts.py`, skip the offload
+loop when the resolved `offload_device` is `meta`, leaving the linearized modules
+meta-only. The guard keys off the exact device `offload_module` would reject; CPU,
+CUDA, and disk offload paths are unchanged. Covered by a new CPU-only regression,
+`tests/llmcompressor/modeling/test_linearize_meta.py`, which reproduces the crash
+under `init_empty_weights` before the fix.
+
+## Static quantization serving preflight (MiniMax-M3 proven; generalization deferred)
+
+The CPU-only serving ABI gate correctly rejected the original in-house GPTQ
+checkpoint with 228 plain router/shared-expert modules whose Transformers
+ignore rules did not match vLLM runtime names. A metadata-only alias overlay
+then passed with a byte-identical Safetensors index, and repaired GPTQ produced
+coherent results in two independent smoke runs. This closes the catastrophic
+GPTQ config/namespace mismatch at smoke level.
+
+The current checker is deliberately MiniMax-M3-specific; it must not be
+treated as a generic AWQ/GPTQ/FP8 validator yet. See
+`docs/quantization-static-serving-preflight-status-and-roadmap.md` for the
+proven contract, limitations, and the future adapter-based design required
+before making this gate mandatory for every newly quantized model.
+
+## Active priority: repair MiniMax-M3 shared-expert loading before CUDA-graph RCA (2026-07-11)
+
+Canonical matrix `20260711-135100-canonical-chat` proved that cyankiwi passes
+offline and HTTP while the candidate fails identically through both interfaces.
+Routed matrix `20260711-144120-routed-diagnostics` then localized the failure.
+Both candidate schemes see 171 shared-expert checkpoint tensors but leave exactly
+171 unmatched on every rank. vLLM constructs zero packed shared parameters; all
+48 candidate probes have `shared_norm=0` and `dropped=true`. The reference loads
+BF16 shared weights and all 48 shared outputs are nonzero. Candidate W4A8 and
+W4A16 first-MoE inputs match on all ranks, while LM-head hashes match reference.
+
+Root cause: the checkpoint correctly stores BF16 shared experts and persists the
+Transformers ignore path `mlp.shared_experts`, but vLLM constructs them as
+`block_sparse_moe.shared_experts`. Compressed Tensors therefore applies the
+quantized scheme at runtime and creates packed placeholders that cannot accept
+the BF16 tensors. Active next step: the config-only alias repair and three-node
+`srun` validation in `MINIMAX_M3_QUALITY_RUNBOOK.md`.
+
+Do not re-quantize, rewrite tensor shards, or resume CUDA-graph RCA until W4A8
+passes canonical offline and HTTP quality with healthy shared-expert evidence.
 
 ## HTTP async cudagraph IMA — RCA matrix protocol (cyankiwi, 2026-07-10)
 
@@ -1117,3 +1190,33 @@ finiteness + group-scale-shape checks:
 python -m pipeline.verify_quant_checkpoint --ckpt artifacts/MiniMax-M3-awq-W4AFP8/<ts>/checkpoint
 python -m pipeline.verify_quant_checkpoint --ckpt <dir> --check-tensors   # opens shards
 ```
+
+
+## Pre-quantization compatibility gate (original model + recipe)
+
+Long calibration runs must now be preceded by the planner-only gate:
+
+```bash
+python -m pipeline.prequant_compatibility \
+  --config pipeline/configs/minimax_m3.yaml \
+  --output artifacts/preflight/minimax-m3-awq.json
+```
+
+The command builds a disposable meta model, mirrors MoE linearization, constructs the
+exact pipeline recipe, and invokes llm-compressor's real quantization initialization,
+target matching, group-divisibility checks, dynamic AWQ mappings, and AWQ mapping
+resolver. It never loads checkpoint tensors or calibration data, installs hooks, runs
+a forward, or allocates a GPU. Exit status is `0` for structural compatibility and `2`
+for a persisted incompatibility report.
+
+For MiniMax-M3 AWQ, the report verifies that every resolved
+`MiniMaxM3VLRMSNorm` smooth layer is backed by `CalibrationOffsetNorm`; removing that
+adapter is a hard `missing_offset_norm_adapter` failure before calibration. The report
+also preserves resolved targets, ignores, quantized module names, AWQ smooth/balance
+mappings, failures, warnings, and properties that remain unverified.
+
+This does not replace the representative-layer canary, post-quantization serving ABI
+gate, runtime smoke, or quality evaluation. The required order is: pre-quantization
+gate, representative canary for expensive/new recipes, full quantization, serving ABI
+gate, runtime smoke, then quality evaluation. Version one supports GPTQ and AWQ; other
+methods fail as unsupported rather than receiving a guessed pass.

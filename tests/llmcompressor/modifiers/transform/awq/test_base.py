@@ -871,3 +871,7 @@ def test_awq_nvfp4_saves_fused_global_scale(tmp_path):
 
     # Verify QKV and gate/up are NOT fused together
     assert abs(q_gs - gate_gs) > 1e-6, f"QKV and gate/up incorrectly fused: {q_gs}"
+
+
+def test_empty_error_metrics_summary_does_not_divide_by_zero():
+    AWQModifier()._log_error_metrics()

@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "expected_bundles": 16,
+  "timeout_seconds": 120.0,
+  "ready": true,
+  "table": {
+    "placement_group_id": "4ebac13775b9207617fba8b7a55801000000",
+    "name": "",
+    "bundles": {
+      "0": {
+        "GPU": 1.0
+      },
+      "1": {
+        "GPU": 1.0
+      },
+      "2": {
+        "GPU": 1.0
+      },
+      "3": {
+        "GPU": 1.0
+      },
+      "4": {
+        "GPU": 1.0
+      },
+      "5": {
+        "GPU": 1.0
+      },
+      "6": {
+        "GPU": 1.0
+      },
+      "7": {
+        "GPU": 1.0
+      },
+      "8": {
+        "GPU": 1.0
+      },
+      "9": {
+        "GPU": 1.0
+      },
+      "10": {
+        "GPU": 1.0
+      },
+      "11": {
+        "GPU": 1.0
+      },
+      "12": {
+        "GPU": 1.0
+      },
+      "13": {
+        "GPU": 1.0
+      },
+      "14": {
+        "GPU": 1.0
+      },
+      "15": {
+        "GPU": 1.0
+      }
+    },
+    "bundles_to_node_id": {
+      "0": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "1": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "2": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "3": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "4": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "5": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "6": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "7": "0648b563f93361ebb653256eeccf906aa107d67826b26d884e814467",
+      "8": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "9": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "10": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "11": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "12": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "13": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "14": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92",
+      "15": "726a681c0e931833a7988f43b2309f132ca3829c1fdbc42af0c44c92"
+    },
+    "strategy": "PACK",
+    "state": "CREATED",
+    "stats": {
+      "end_to_end_creation_latency_ms": 6.138,
+      "scheduling_latency_ms": 6.047,
+      "scheduling_attempt": 1,
+      "highest_retry_delay_ms": 0.0,
+      "scheduling_state": "FINISHED"
+    }
+  },
+  "elapsed_seconds": 66.94093400705606
+}

@@ -1,0 +1,37 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "logprobs": null,
+      "message": {
+        "annotations": null,
+        "audio": null,
+        "content": "mathrm{ \\ \\m \\}ingHingant\\section6 ( (\n \\ \\ \\}is 1\ufffd \\\ufffdmathrm \\\ufffd \\ \\ \\ \\ \\ \\ \\ionsig \\mathrm \\o \\ \\ \\ \\ \\ \\ \\ \\ \\\ufffd\ufffd \\ \\ \\ \\ \\tr\ufffd\n\n13\n\n",
+        "function_call": null,
+        "reasoning": null,
+        "refusal": null,
+        "role": "assistant"
+      },
+      "routed_experts": null,
+      "stop_reason": null,
+      "token_ids": null
+    }
+  ],
+  "created": 1783784110,
+  "id": "chatcmpl-a1b387e684df87eb",
+  "kv_transfer_params": null,
+  "model": "m3-shared-repair",
+  "object": "chat.completion",
+  "prompt_logprobs": null,
+  "prompt_text": null,
+  "prompt_token_ids": null,
+  "service_tier": null,
+  "system_fingerprint": "vllm-0.24.0-tp8-ep-f60cece5",
+  "usage": {
+    "completion_tokens": 64,
+    "prompt_tokens": 168,
+    "prompt_tokens_details": null,
+    "total_tokens": 232
+  }
+}

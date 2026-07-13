@@ -19,6 +19,7 @@ trace; absent features appear as non-``None`` proxies, so ``image_features.numel
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import MethodType
 from typing import Any
@@ -297,8 +298,11 @@ _M3_SPARSE_LAYER = r"(?:[3-9]|[1-5][0-9])"
 _M3_LM = r".*language_model[.]layers[.]"
 
 
-def get_minimax_m3_awq_mappings() -> list:
-    """Return AWQ smooth/balance mappings for MiniMax-M3 sparse layers (3-59).
+def get_minimax_m3_awq_mappings(
+    disable_mlp_input_smoothing: bool | None = None,
+    layer: int | None = None,
+) -> list:
+    """Return AWQ mappings for all sparse layers or one selected sparse layer.
 
     Mirrors the keep-bf16 strategy from ``cyankiwi/MiniMax-M3-AWQ-INT4``, translated
     to transformers 5.12.1 module names (``self_attn.indexer.*``, ``mlp.experts.N.*``).
@@ -308,9 +312,16 @@ def get_minimax_m3_awq_mappings() -> list:
     """
     from llmcompressor.modifiers.transform.awq import AWQMapping
 
-    s = _M3_SPARSE_LAYER
+    if layer is not None and layer not in range(3, 60):
+        raise ValueError(f"expected sparse MiniMax-M3 layer in [3, 59], got {layer}")
+    s = _M3_SPARSE_LAYER if layer is None else str(layer)
     lm = _M3_LM
-    return [
+    if disable_mlp_input_smoothing is None:
+        disable_mlp_input_smoothing = os.environ.get(
+            "M3_AWQ_DISABLE_MLP_INPUT_SMOOTH", "0"
+        ).lower() in {"1", "true", "yes"}
+
+    mappings = [
         AWQMapping(
             rf"re:{lm}{s}[.]input_layernorm$",
             [
@@ -326,19 +337,24 @@ def get_minimax_m3_awq_mappings() -> list:
             [rf"re:{lm}{s}[.]self_attn[.]o_proj$"],
         ),
         AWQMapping(
-            rf"re:{lm}{s}[.]post_attention_layernorm$",
-            [
-                rf"re:{lm}{s}[.]mlp[.]gate$",
-                rf"re:{lm}{s}[.]mlp[.]shared_experts[.]gate_up_proj$",
-                rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
-                rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
-            ],
-        ),
-        AWQMapping(
             rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
             [rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]down_proj$"],
         ),
     ]
+    if not disable_mlp_input_smoothing:
+        mappings.insert(
+            2,
+            AWQMapping(
+                rf"re:{lm}{s}[.]post_attention_layernorm$",
+                [
+                    rf"re:{lm}{s}[.]mlp[.]gate$",
+                    rf"re:{lm}{s}[.]mlp[.]shared_experts[.]gate_up_proj$",
+                    rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
+                    rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
+                ],
+            ),
+        )
+    return mappings
 
 
 def register_minimax_m3_awq_mappings() -> None:

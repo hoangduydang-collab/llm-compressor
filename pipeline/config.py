@@ -89,6 +89,9 @@ class ServeConfig:
     # Skip vLLM custom all-reduce (NCCL fallback for that path only). Optional
     # escape hatch — does not disable M3's FlashInfer fused AR (BUGS_AND_FIXES.md).
     disable_custom_all_reduce: bool = False
+    # Extra typed kwargs forwarded to lm-eval's vLLM model constructor.
+    # This is required for topology settings such as Ray-backed multi-node TP.
+    vllm_kwargs: dict[str, Any] = field(default_factory=dict)
     # Extra raw flags appended to ``vllm serve`` / passed to ``LLM(...)``.
     extra_args: list[str] = field(default_factory=list)
     # SGLang-only kwargs forwarded to ``sgl.Engine`` when ``eval.backend: sglang``
@@ -150,6 +153,10 @@ class EvalConfig:
     # Per-sample logging for post-hoc flip-rate comparison (evalsuite).
     log_samples: bool = True
     samples_dir: str | None = None  # defaults to <out>/samples at runtime
+    # Exact lm-eval sample indices shared across paired checkpoint runs.
+    samples_manifest: str | None = None
+    bootstrap_seed: int = 42
+    bootstrap_iters: int = 10_000
     tasks: list[EvalTask] = field(default_factory=full_static_tasks)
 
 

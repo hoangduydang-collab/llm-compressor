@@ -4,12 +4,14 @@ import math
 
 import pytest
 
+from pipeline.config import PipelineConfig
 from pipeline.evalsuite.compare import (
     chi2_sf_df1,
     cohens_kappa,
     compare_eval_dirs,
     mcnemar_test,
     _pair_binary,
+    _pair_perplexity,
 )
 
 
@@ -79,6 +81,62 @@ class TestPairBinary:
         assert r["flip_rate"] is None
 
 
+    def test_reports_quantization_conditionals_and_recovery(self):
+        a = {"a": 1, "b": 1, "c": 0, "d": 0}
+        b = {"a": 1, "b": 0, "c": 1, "d": 0}
+
+        r = _pair_binary(self._rows(a), self._rows(b), seed=7, iterations=200)
+
+        assert r["conditional_regression_rate"] == 0.5
+        assert r["conditional_recovery_rate"] == 0.5
+        assert r["net_harmful_flips"] == 0
+        assert r["score_recovery_ratio"] == 1.0
+        assert r["bootstrap"]["accuracy_delta"]["iterations"] == 200
+
+    def test_reports_unpaired_coverage(self):
+        r = _pair_binary(self._rows({0: 1, 1: 0}), self._rows({1: 0, 2: 1}))
+        assert r["n_a"] == 2
+        assert r["n_b"] == 2
+        assert r["missing_in_a"] == 1
+        assert r["missing_in_b"] == 1
+        assert r["paired_coverage"] == 0.5
+
+    def test_rejects_duplicate_stable_ids(self):
+        rows_a = [
+            {"sample_uid": "same", "doc_id": 0, "correct": 1},
+            {"sample_uid": "same", "doc_id": 1, "correct": 0},
+        ]
+        with pytest.raises(ValueError, match="duplicate"):
+            _pair_binary(rows_a, [{"sample_uid": "same", "correct": 1}])
+
+
+class TestPairPerplexity:
+    def test_reports_paired_drift_and_bootstrap(self):
+        rows_a = [
+            {"sample_uid": "a", "doc_id": 0, "metric_value": 2.0},
+            {"sample_uid": "b", "doc_id": 1, "metric_value": 4.0},
+        ]
+        rows_b = [
+            {"sample_uid": "a", "doc_id": 8, "metric_value": 3.0},
+            {"sample_uid": "b", "doc_id": 9, "metric_value": 5.0},
+        ]
+
+        result = _pair_perplexity(
+            rows_a,
+            rows_b,
+            "word_perplexity",
+            seed=3,
+            iterations=25,
+        )
+
+        assert result["n_paired"] == 2
+        assert result["mean_a"] == 3.0
+        assert result["mean_b"] == 4.0
+        assert result["delta"] == 1.0
+        assert result["bootstrap"]["iterations"] == 25
+        assert result["paired_coverage"] == 1.0
+
+
 class TestCompareEvalDirs:
     def test_end_to_end_self_compare(self, tmp_path):
         import json
@@ -99,17 +157,54 @@ class TestCompareEvalDirs:
                 json.dump({"mmlu": {"acc,none": 0.67}}, fh)
 
         out = tmp_path / "compare"
+        cfg = PipelineConfig()
+        cfg.eval.bootstrap_seed = 9
+        cfg.eval.bootstrap_iters = 17
         report = compare_eval_dirs(
             tmp_path / "original",
             tmp_path / "quant",
             out_dir=out,
+            cfg=cfg,
             label_a="original",
             label_b="quant",
         )
 
         assert report["tasks"]["mmlu"]["flip_rate"] == 0.0
+        assert (
+            report["tasks"]["mmlu"]["bootstrap"]["accuracy_delta"]["iterations"]
+            == 17
+        )
+        assert (
+            report["tasks"]["mmlu"]["bootstrap"]["accuracy_delta"]["seed"]
+            == 9
+        )
         assert report["summary"]["micro_flip_rate"] == 0.0
         assert (out / "compare.json").exists()
+
+
+    def test_candidate_only_samples_are_not_silently_skipped(self, tmp_path):
+        import json
+
+        original = tmp_path / "original"
+        candidate = tmp_path / "candidate"
+        (original / "samples").mkdir(parents=True)
+        (candidate / "samples").mkdir(parents=True)
+        (original / "aggregate.json").write_text(
+            json.dumps({"mmlu": {"acc,none": 0.0}}), encoding="utf-8"
+        )
+        (candidate / "aggregate.json").write_text(
+            json.dumps({"mmlu": {"acc,none": 1.0}}), encoding="utf-8"
+        )
+        (candidate / "samples" / "mmlu.jsonl").write_text(
+            json.dumps({"sample_uid": "x", "correct": 1}) + "\n",
+            encoding="utf-8",
+        )
+
+        report = compare_eval_dirs(original, candidate)
+
+        assert report["tasks"]["mmlu"]["n_a"] == 0
+        assert report["tasks"]["mmlu"]["n_b"] == 1
+        assert report["tasks"]["mmlu"]["missing_in_a"] == 1
 
 
 class TestChi2:

@@ -1,0 +1,15 @@
+{
+  "chat_template_kwargs": {
+    "enable_thinking": false,
+    "thinking_mode": "disabled"
+  },
+  "max_tokens": 64,
+  "messages": [
+    {
+      "content": "The capital of France is",
+      "role": "user"
+    }
+  ],
+  "model": "m3-quality-reference_http_chat",
+  "temperature": 0.0
+}

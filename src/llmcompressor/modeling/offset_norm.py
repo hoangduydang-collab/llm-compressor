@@ -59,6 +59,7 @@ class NormCalibrationModule(ABC, torch.nn.Module, RegistryMixin):
         "Qwen3NextRMSNorm",
         "Qwen3_5RMSNorm",
         "Qwen3_5MoeRMSNorm",
+        "MiniMaxM3VLRMSNorm",
     ],
 )
 class CalibrationOffsetNorm(NormCalibrationModule):

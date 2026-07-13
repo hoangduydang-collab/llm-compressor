@@ -1,0 +1,77 @@
+{
+  "arm": "reference_http_chat",
+  "checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "checkpoint_chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "checkpoint_config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+  "checkpoint_index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+  "checkpoint_role": "reference",
+  "checkpoint_tokenizer_config_sha256": "00e925479ed1eb199876b8b9173b535f2e8cf2fd9287743e447246bdf73c3e28",
+  "command": [
+    "bash",
+    "pipeline/slurm/run_vllm_http_serve_smoke.sh",
+    "CKPT=/mnt/nfs/hoangduy/logs/m3-chat-quality/20260711-135100-canonical-chat/reference_http_chat/checkpoint",
+    "MAX_MODEL_LEN=2048",
+    "GPU_UTIL=0.85",
+    "ENFORCE_EAGER=1",
+    "ENABLE_EP=1",
+    "DISABLE_CUSTOM_AR=1",
+    "LANGUAGE_MODEL_ONLY=1",
+    "DEBUG_CUDAGRAPH=0"
+  ],
+  "deviations": [
+    {
+      "changes_quality_variable": false,
+      "name": "direct srun submission",
+      "reason": "sbatch failed from the compute node before creating a job; this arm used an equivalent exclusive direct srun allocation on gpu-h100."
+    },
+    {
+      "changes_quality_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled the owned-process signal path; the allocated GPUs were already free."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "0",
+    "M3_MOE_PROBE": "0",
+    "M3_PARAM_FINGERPRINT": "0"
+  },
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-chat-quality/20260711-135100-canonical-chat/reference_http_chat",
+  "finished_at": "2026-07-11T14:09:12.163568+00:00",
+  "git_commit": "7379337bf5b539b1726f7dd4bbbd4aaeda76aee5",
+  "git_status_short": "?? results/m3-chat-quality/",
+  "host": "h100-gpu-polaris.pod4.lab.bitdeer.ai",
+  "interface": "http",
+  "matrix_id": "20260711-135100-canonical-chat",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "model_id_chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "model_id_tokenizer_config_sha256": "15caca9f74fbce9b86dc014e9324cbefa56703d81ccd6d56020faa1c41d2eae5",
+  "platform": "Linux-5.15.0-173-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "quality_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "enable_expert_parallel": true,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "max_tokens": 64,
+    "temperature": 0.0,
+    "tensor_parallel_size": 8,
+    "thinking_mode": "disabled"
+  },
+  "retries": [],
+  "return_code": 0,
+  "runtime_context": {},
+  "scheduler": {
+    "SLURM_JOB_ID": "12747",
+    "SLURM_JOB_NODELIST": "gpu-h100"
+  },
+  "scheduler_logs": {
+    "stderr": null,
+    "stdout": null
+  },
+  "schema_version": 1,
+  "started_at": "2026-07-11T13:50:43.054977+00:00"
+}

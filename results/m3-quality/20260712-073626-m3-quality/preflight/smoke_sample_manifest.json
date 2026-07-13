@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "seed": 42,
+  "harness_revision": "0.4.12",
+  "selection": "seeded_proportional_stratified_without_replacement",
+  "tasks": {
+    "gpqa_diamond_zeroshot": {
+      "gpqa_diamond_zeroshot": [
+        22,
+        195
+      ]
+    },
+    "ifeval": {
+      "ifeval": [
+        236,
+        455
+      ]
+    },
+    "aime25": {
+      "aime25": [
+        7,
+        16
+      ]
+    },
+    "mmlu_pro": {
+      "mmlu_pro_biology": [
+        6382
+      ],
+      "mmlu_pro_business": [
+        8802
+      ],
+      "mmlu_pro_chemistry": [],
+      "mmlu_pro_computer_science": [],
+      "mmlu_pro_economics": [],
+      "mmlu_pro_engineering": [],
+      "mmlu_pro_health": [],
+      "mmlu_pro_history": [],
+      "mmlu_pro_law": [],
+      "mmlu_pro_math": [],
+      "mmlu_pro_other": [],
+      "mmlu_pro_philosophy": [],
+      "mmlu_pro_physics": [],
+      "mmlu_pro_psychology": []
+    },
+    "gsm8k": {
+      "gsm8k": [
+        605,
+        859
+      ]
+    }
+  },
+  "sha256": "1a26b896232c9d0222d05b00faa73f5c79897e9d1c22c15de4669c26701a523c"
+}

@@ -7,7 +7,7 @@ related to data, hardware, and model compression.
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from loguru import logger
@@ -105,6 +105,8 @@ class State:
     loss_masks: list[torch.Tensor] | None = None
     current_batch_idx: int = -1
     sequential_prefetch: bool = False
+    sequential_trace_callback: Callable[[dict[str, Any]], None] | None = None
+    post_sequential_propagation_callback: Callable[..., None] | None = None
     enable_compile: bool = False
 
     @property

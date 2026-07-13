@@ -1,0 +1,9 @@
+{
+  "finding": "Disabling parameter fingerprinting removed the prior CUDA device-side assertion; cyankiwi loaded and generated, but the arithmetic quality case was empty.",
+  "generation_reached": true,
+  "loaded": true,
+  "next": "Analyze the reference quality/sampler failure before running the candidate.",
+  "quality_ok": false,
+  "return_code": 1,
+  "verdict": "reference_failed_without_fingerprint"
+}

@@ -818,6 +818,7 @@ env_log.json
 # uv artifacts
 uv.lock
 .venv/
+.venv-*/
 
 # Local Superpowers visual-companion sessions
 .superpowers/
@@ -830,3 +831,6 @@ uv.lock
 !artifacts/m3-cudagraph-shared-stream/
 !artifacts/m3-cudagraph-shared-stream/20260710-072629/
 !artifacts/m3-cudagraph-shared-stream/20260710-072629/**
+
+# Isolated local agent worktrees.
+.worktrees/

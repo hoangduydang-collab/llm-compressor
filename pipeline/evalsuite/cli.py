@@ -6,11 +6,26 @@ import argparse
 import sys
 from pathlib import Path
 
-from pipeline.config import PipelineConfig, load_config
+from pipeline.config import EvalTask, PipelineConfig, load_config
 from pipeline.evalsuite.agentic import run_agentic_eval
 from pipeline.evalsuite.compare import compare_eval_dirs
 from pipeline.evalsuite.report import render_report
 from pipeline.evalsuite.static import run_static_eval
+
+
+def _select_tasks(tasks: list[EvalTask], requested: str) -> list[EvalTask]:
+    names = [name.strip() for name in requested.split(",") if name.strip()]
+    if not names:
+        raise ValueError("--tasks must contain at least one task name")
+    by_name = {task.name: task for task in tasks}
+    unknown = [name for name in names if name not in by_name]
+    if unknown:
+        raise ValueError(
+            f"unknown eval task(s) {unknown}; configured: {sorted(by_name)}"
+        )
+    if len(set(names)) != len(names):
+        raise ValueError("--tasks contains duplicate task names")
+    return [by_name[name] for name in names]
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -22,6 +37,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         cfg.validate()
     if args.agentic:
         cfg.agentic.enabled = True
+    if args.tasks:
+        cfg.eval.tasks = _select_tasks(cfg.eval.tasks, args.tasks)
+    if args.samples_manifest:
+        cfg.eval.samples_manifest = args.samples_manifest
 
     model_path = args.model or cfg.model.id
     out_dir = Path(args.out)
@@ -85,6 +104,14 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--config", required=True, help="pipeline YAML config")
     run_p.add_argument("--model", help="model path or HF id (default: config.model.id)")
     run_p.add_argument("--out", required=True, help="output directory for eval artifacts")
+    run_p.add_argument(
+        "--tasks",
+        help="comma-separated configured task names for this shard",
+    )
+    run_p.add_argument(
+        "--samples-manifest",
+        help="exact shared sample-index manifest for paired evaluation",
+    )
     run_p.add_argument("--agent-base", help="OpenAI-compatible base URL for agentic (tau2)")
     run_p.add_argument("--agent-model", help="model name served at agent-base")
     run_p.add_argument(

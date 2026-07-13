@@ -1,0 +1,119 @@
+{
+  "arm": "reference_http_chat",
+  "checkpoint_role": "reference",
+  "complete": true,
+  "errors": [],
+  "infrastructure_ok": true,
+  "interface": "http",
+  "prompt_mode": "chat_completions",
+  "quality_cases": [
+    {
+      "case_id": "capital_france",
+      "expected_any": [
+        "paris"
+      ],
+      "expected_match": true,
+      "finish_reason": "stop",
+      "nonempty": true,
+      "normalized": "the capital of france is **paris**.",
+      "passed": true,
+      "prompt": "The capital of France is",
+      "raw_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "The capital of France is **Paris**.",
+              "function_call": null,
+              "reasoning": null,
+              "refusal": null,
+              "role": "assistant"
+            },
+            "routed_experts": null,
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1783778495,
+        "id": "chatcmpl-abc8b32730782ba3",
+        "kv_transfer_params": null,
+        "model": "m3-quality-reference_http_chat",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_text": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.24.0-tp8-ep-5292da56",
+        "usage": {
+          "completion_tokens": 9,
+          "prompt_tokens": 168,
+          "prompt_tokens_details": null,
+          "total_tokens": 177
+        }
+      },
+      "repetition_reasons": [],
+      "repetitive": false,
+      "stop_reason": null,
+      "text": "The capital of France is **Paris**."
+    },
+    {
+      "case_id": "arithmetic_2_plus_2",
+      "expected_any": [
+        "4",
+        "four"
+      ],
+      "expected_match": true,
+      "finish_reason": "stop",
+      "nonempty": true,
+      "normalized": "4",
+      "passed": true,
+      "prompt": "What is 2 + 2? Answer with only the number.",
+      "raw_response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "4",
+              "function_call": null,
+              "reasoning": null,
+              "refusal": null,
+              "role": "assistant"
+            },
+            "routed_experts": null,
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1783778504,
+        "id": "chatcmpl-904a10f0483b34f3",
+        "kv_transfer_params": null,
+        "model": "m3-quality-reference_http_chat",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_text": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.24.0-tp8-ep-5292da56",
+        "usage": {
+          "completion_tokens": 2,
+          "prompt_tokens": 177,
+          "prompt_tokens_details": null,
+          "total_tokens": 179
+        }
+      },
+      "repetition_reasons": [],
+      "repetitive": false,
+      "stop_reason": null,
+      "text": "4"
+    }
+  ],
+  "quality_ok": true
+}

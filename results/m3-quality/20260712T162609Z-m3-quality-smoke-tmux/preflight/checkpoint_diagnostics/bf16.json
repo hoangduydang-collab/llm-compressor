@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "valid": true,
+  "checkpoint": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "checkpoint_bytes": 854200513514,
+  "config_sha256": "c9c97ce1e4eece60012d5a10ea87717458bfb1f19c2c7a615a3dbff83d090c6b",
+  "index_sha256": "54dbde502126d07f6999077437a06b5df1f71e317518956d0aad1c8197df524e",
+  "tensor_keys": 23416,
+  "quantized_modules": 0,
+  "plain_modules": 23098,
+  "quantized_module_coverage": 0.0,
+  "bf16_fallback_fraction": 1.0,
+  "coverage_by_component": {
+    "attention": {
+      "quantized_modules": 0,
+      "plain_modules": 354
+    },
+    "dense_mlp": {
+      "quantized_modules": 0,
+      "plain_modules": 9
+    },
+    "lm_head": {
+      "quantized_modules": 0,
+      "plain_modules": 1
+    },
+    "msa_indexer": {
+      "quantized_modules": 0,
+      "plain_modules": 0
+    },
+    "norms": {
+      "quantized_modules": 0,
+      "plain_modules": 355
+    },
+    "other": {
+      "quantized_modules": 0,
+      "plain_modules": 3
+    },
+    "routed_experts": {
+      "quantized_modules": 0,
+      "plain_modules": 21888
+    },
+    "routers": {
+      "quantized_modules": 0,
+      "plain_modules": 57
+    },
+    "shared_experts": {
+      "quantized_modules": 0,
+      "plain_modules": 171
+    },
+    "vision": {
+      "quantized_modules": 0,
+      "plain_modules": 260
+    }
+  },
+  "quantization": {
+    "method": "none",
+    "format": null,
+    "weight_bits": null,
+    "activation_bits": null,
+    "group_size": null,
+    "ignore": []
+  },
+  "compression": {
+    "baseline_bytes": null,
+    "checkpoint_bytes": 854200513514,
+    "ratio_to_baseline": null,
+    "effective_stored_bits_per_original_parameter": {
+      "status": "unavailable",
+      "reason": "tensor shapes are not available from the index alone"
+    }
+  },
+  "scale_statistics": {
+    "status": "unavailable",
+    "reason": "unquantized baseline has no quantization scales"
+  },
+  "packed_saturation": {
+    "status": "unavailable",
+    "reason": "no recognized packed weights"
+  },
+  "calibration_metrics": {
+    "status": "unavailable",
+    "reason": "no GPTQ/AWQ calibration metric artifact found"
+  }
+}

@@ -1,0 +1,8 @@
+vLLM 0.24.0 at /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm
+flashinfer 0.6.12
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/experts/cutlass_moe.py
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/activation.py
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_allreduce_gemma_rms_norm.py
+already patched: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/router/base_router.py
+MoE quality probe: model.py: already injected; model.py: already injected
+STATUS: patched

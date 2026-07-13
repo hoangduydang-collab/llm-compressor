@@ -1,0 +1,119 @@
+{
+  "arm": "candidate_http_chat",
+  "checkpoint_role": "candidate",
+  "complete": true,
+  "errors": [],
+  "infrastructure_ok": true,
+  "interface": "http",
+  "prompt_mode": "chat_completions",
+  "quality_cases": [
+    {
+      "case_id": "capital_france",
+      "expected_any": [
+        "paris"
+      ],
+      "expected_match": false,
+      "finish_reason": "length",
+      "nonempty": true,
+      "normalized": "stretching,,\u4e5f\u975e\u5e38\u548c\u6570\u636e stretchingastis var\u6587\u65c5astast &\u043e\u043aeter\u8c61 stretching electronically\u6587\u65c5\u6587\u65c5is&nbspis \u91cd\u6587\u65c5\u6caa\u0442\u0438\u5e74\u5e74 ministerial aless (__\u6587\u65c5\u6587\u65c5\u6587\u65c5 digitally memprom (__\u6587\u65c5ast\u91cd\u8981\u505a\u597d,\u91cdastis nim\u6587\u65c5\u6caasupersastis\u5e74\u5e74\u548c\u6570\u636efootnoteis & electronically\u524d\u9014\u6caaecnast spect",
+      "passed": false,
+      "prompt": "The capital of France is",
+      "raw_response": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": " stretching,,\u4e5f\u975e\u5e38\u548c\u6570\u636e stretchingastIs VAR\u6587\u65c5astast &\u043e\u043aeter\u8c61 stretching electronically\u6587\u65c5\u6587\u65c5Is&nbspIs \u91cd\u6587\u65c5\u6caa\u0442\u0438\u5e74\u5e74 ministerial Aless (__\u6587\u65c5\u6587\u65c5\u6587\u65c5 digitally memprom (__\u6587\u65c5ast\u91cd\u8981\u505a\u597d,\u91cdastIs nim\u6587\u65c5\u6caasupersastIs\u5e74\u5e74\u548c\u6570\u636eFootnoteIs & electronically\u524d\u9014\u6caaecnast  spect",
+              "function_call": null,
+              "reasoning": null,
+              "refusal": null,
+              "role": "assistant"
+            },
+            "routed_experts": null,
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1783778712,
+        "id": "chatcmpl-8824284160db664c",
+        "kv_transfer_params": null,
+        "model": "m3-quality-candidate_http_chat",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_text": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.24.0-tp8-ep-1d122c5c",
+        "usage": {
+          "completion_tokens": 64,
+          "prompt_tokens": 168,
+          "prompt_tokens_details": null,
+          "total_tokens": 232
+        }
+      },
+      "repetition_reasons": [],
+      "repetitive": false,
+      "stop_reason": null,
+      "text": " stretching,,\u4e5f\u975e\u5e38\u548c\u6570\u636e stretchingastIs VAR\u6587\u65c5astast &\u043e\u043aeter\u8c61 stretching electronically\u6587\u65c5\u6587\u65c5Is&nbspIs \u91cd\u6587\u65c5\u6caa\u0442\u0438\u5e74\u5e74 ministerial Aless (__\u6587\u65c5\u6587\u65c5\u6587\u65c5 digitally memprom (__\u6587\u65c5ast\u91cd\u8981\u505a\u597d,\u91cdastIs nim\u6587\u65c5\u6caasupersastIs\u5e74\u5e74\u548c\u6570\u636eFootnoteIs & electronically\u524d\u9014\u6caaecnast  spect"
+    },
+    {
+      "case_id": "arithmetic_2_plus_2",
+      "expected_any": [
+        "4",
+        "four"
+      ],
+      "expected_match": false,
+      "finish_reason": "length",
+      "nonempty": true,
+      "normalized": "\u548c\u4fe1\u606f witten memprom ministerial ministerialacher ministerial memprom ministerial ministerial ministerial ministerial\u66a8 larsenandand electronically (__ nimastandastastast\u5df2\u5728\u8fd8\u662f\u975e\u5e38acherast nimages\u5e74\u5e74\u674e\u5bb6astastast\u5df2\u7ecf\u88ab\u524d\u9014\u8499\u53e4adakaststatestateenndtastastennckenast nimis pyennastdtaticisastasedennenn\u3001\u3068\u3063\u3066\u3082&nbsp memprom",
+      "passed": false,
+      "prompt": "What is 2 + 2? Answer with only the number.",
+      "raw_response": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "\u548c\u4fe1\u606f Witten memprom ministerial ministerialacher ministerial memprom ministerial ministerial ministerial ministerial\u66a8 Larsenandand electronically (__ Nimastandastastast\u5df2\u5728\u8fd8\u662f\u975e\u5e38acherast nimages\u5e74\u5e74\u674e\u5bb6astastast\u5df2\u7ecf\u88ab\u524d\u9014\u8499\u53e4adakastStateStateenndtastastennckenast nimIs PYennastdtaticIsastasedennenn\u3001\u3068\u3063\u3066\u3082&nbsp memprom",
+              "function_call": null,
+              "reasoning": null,
+              "refusal": null,
+              "role": "assistant"
+            },
+            "routed_experts": null,
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1783778762,
+        "id": "chatcmpl-9f58279c215d611f",
+        "kv_transfer_params": null,
+        "model": "m3-quality-candidate_http_chat",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_text": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.24.0-tp8-ep-1d122c5c",
+        "usage": {
+          "completion_tokens": 64,
+          "prompt_tokens": 177,
+          "prompt_tokens_details": null,
+          "total_tokens": 241
+        }
+      },
+      "repetition_reasons": [],
+      "repetitive": false,
+      "stop_reason": null,
+      "text": "\u548c\u4fe1\u606f Witten memprom ministerial ministerialacher ministerial memprom ministerial ministerial ministerial ministerial\u66a8 Larsenandand electronically (__ Nimastandastastast\u5df2\u5728\u8fd8\u662f\u975e\u5e38acherast nimages\u5e74\u5e74\u674e\u5bb6astastast\u5df2\u7ecf\u88ab\u524d\u9014\u8499\u53e4adakastStateStateenndtastastennckenast nimIs PYennastdtaticIsastasedennenn\u3001\u3068\u3063\u3066\u3082&nbsp memprom"
+    }
+  ],
+  "quality_ok": false
+}

@@ -1,0 +1,13 @@
+{
+  "infrastructure_ok": false,
+  "artifacts_valid": false,
+  "tasks_scored": 5,
+  "sample_manifest_sha256": "1be2829d09759939b4a65fb1f0729feb0e82640e14f2037cbcea841f8921fbb7",
+  "empty_count": 1,
+  "periodic_loop_count": 0,
+  "distributed_world_size": 8,
+  "probe": {
+    "tokens": 2047,
+    "elapsed_seconds": 8.611645814031363
+  }
+}

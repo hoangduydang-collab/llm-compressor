@@ -1,0 +1,16 @@
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": [], "missing": ["attention_qkv", "lm_head", "msa_indexer", "routed_expert", "shared_expert"], "scope": "MiniMaxM3Model"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}
+{"case": "repaired_w4a8_offline", "errors": [], "found": ["attention_qkv", "lm_head", "routed_expert", "shared_expert"], "missing": ["msa_indexer"], "scope": "MiniMaxM3SparseForConditionalGeneration"}

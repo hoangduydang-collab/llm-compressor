@@ -1,0 +1,34 @@
+# Small-model GPU plumbing smoke for the production-safe quantization worker.
+# This validates runner/save/static-check integration, not MiniMax-M3 numerics.
+name: qwen3_0_6b_safe_smoke
+
+model:
+  id: Qwen/Qwen3-0.6B
+  trust_remote_code: false
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: null
+
+quantization:
+  method: quant_only
+  scheme: W4AFP8
+  ignore:
+    - lm_head
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 2
+  max_seq_length: 128
+  moe_calibrate_all_experts: false
+  sequential_targets:
+    - Qwen3DecoderLayer
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /tmp/qwen3_0_6b_safe_smoke

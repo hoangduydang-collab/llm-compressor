@@ -1,0 +1,6 @@
+Usage: ray list [OPTIONS] {actors|jobs|placement-
+                groups|nodes|workers|tasks|objects|runtime-envs|cluster-
+                events}
+Try 'ray list --help' for help.
+
+Error: Failed to make request to http://127.0.0.1:8265/api/v0/placement_groups. Failed to connect to API server. Please check the API server log for details. Make sure dependencies are installed with `pip install ray[default]`. Please also check dashboard is available, and included when starting ray cluster, i.e. `ray start --include-dashboard=True --head`. 

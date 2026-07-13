@@ -1,0 +1,11 @@
+{
+  "run_id": "20260712-115317-m3-gptq-discriminator",
+  "git_commit": "8ac3dabc299bdcc0092d5947684e0a29315e425d",
+  "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+  "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "schema_version": 1,
+  "model_label": "bf16",
+  "shard": "smoke",
+  "sample_manifest_sha256": "1be2829d09759939b4a65fb1f0729feb0e82640e14f2037cbcea841f8921fbb7",
+  "eval_config_sha256": "288551cee87968d87892ea23c45ca337a32f02778cec1541864d08e68fe9342f"
+}

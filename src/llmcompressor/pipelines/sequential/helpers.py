@@ -1,6 +1,6 @@
 import contextlib
 import inspect
-from collections import UserDict, deque
+from collections import Counter, UserDict, deque
 from dataclasses import dataclass
 from functools import wraps
 from types import FunctionType, MethodType
@@ -87,6 +87,7 @@ def trace_subgraphs(
     sequential_targets: list[str],
     ignore: list[str],
     targets_per_subgraph: int = 1,
+    diagnostics: dict[str, Any] | None = None,
 ) -> list[Subgraph]:
     """
     Trace a model to produce subgraphs, where each sequential target belongs to exactly
@@ -99,13 +100,29 @@ def trace_subgraphs(
     :param sequential_targets: list of patterns matching sequential targets
     :param ignore: function and method names to skip during tracing
     :param targets_per_subgraph: number of targets to include per subgraph
+    :param diagnostics: optional mutable sink populated with JSON-serializable trace
+        evidence. Supplying this does not alter tracing or partitioning behavior.
     :return: a list of Subgraphs in order of execution
     """
     # find modules
-    targets = set(
-        module for _, module in match_named_modules(model, sequential_targets)
-    )
+    matched_targets = list(match_named_modules(model, sequential_targets))
+    targets = {module for _, module in matched_targets}
     ancestors = get_sequential_ancestors(model, targets)
+    if diagnostics is not None:
+        module_names = {module: name for name, module in model.named_modules()}
+        diagnostics.update(
+            {
+                "sequential_targets": list(sequential_targets),
+                "matched_target_paths": [name for name, _ in matched_targets],
+                "matched_target_count": len(matched_targets),
+                "ancestor_paths": sorted(
+                    module_names[module]
+                    for module in ancestors
+                    if module in module_names
+                ),
+                "ancestor_count": len(ancestors),
+            }
+        )
 
     # initialize arguments
     tracer = SequentialTracer(ancestors)
@@ -151,10 +168,45 @@ def trace_subgraphs(
     graph.class_for_deserialization = model.__class__
     graph.device = model.device
 
+    if diagnostics is not None:
+        nodes = list(graph.graph.nodes)
+        target_nodes = find_target_nodes(graph, targets)
+        diagnostics.update(
+            {
+                "graph_node_count": len(nodes),
+                "node_op_counts": dict(Counter(node.op for node in nodes)),
+                "call_module_targets": [
+                    str(node.target) for node in nodes if node.op == "call_module"
+                ],
+                "target_node_targets": [
+                    str(node.target) for node in nodes if node in target_nodes
+                ],
+                "target_node_count": len(target_nodes),
+                "nodes": [
+                    {
+                        "name": node.name,
+                        "op": node.op,
+                        "target": str(node.target),
+                        "users": [user.name for user in node.users],
+                    }
+                    for node in nodes
+                ],
+                "graph_code": graph.code,
+            }
+        )
+
     # perform subgraph partition
     partitions = topological_partition(graph, targets, targets_per_subgraph)
     subgraphs = partition_graph(model, partitions)
     trace_consumed_names(subgraphs)
+    if diagnostics is not None:
+        diagnostics.update(
+            {
+                "partition_count": len(partitions),
+                "partition_sizes": [len(partition) for partition in partitions],
+                "subgraph_count": len(subgraphs),
+            }
+        )
 
     # As currently implemented, `topological_partition` generates an extra subgraph at
     # the beginning which does not contain a target. This adds a little more runtime,

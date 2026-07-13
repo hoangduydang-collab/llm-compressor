@@ -1,0 +1,9 @@
+verified detached tmux session: m3-quality-20260712T162609Z-m3-quality-smoke-tmux
+The Cursor tool may exit now; do not kill the tmux server.
+tmux new-session -d -s m3-quality-20260712T162609Z-m3-quality-smoke-tmux -c /mnt/nfs/hoangduy/projects/llm-compressor bash\ results/m3-quality/20260712T162609Z-m3-quality-smoke-tmux/controller.sh 
+tmux has-session -t =m3-quality-20260712T162609Z-m3-quality-smoke-tmux 
+tmux capture-pane -pt =m3-quality-20260712T162609Z-m3-quality-smoke-tmux -S -80 
+tmux attach-session -t =m3-quality-20260712T162609Z-m3-quality-smoke-tmux 
+tail -f results/m3-quality/20260712T162609Z-m3-quality-smoke-tmux/logs/controller.log
+squeue -u "$USER" -o %.18i\ %.28j\ %.8T\ %.10M\ %.10l\ %.6D\ %R
+cat results/m3-quality/20260712T162609Z-m3-quality-smoke-tmux/controller.rc

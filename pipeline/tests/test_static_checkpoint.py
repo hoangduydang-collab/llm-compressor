@@ -107,3 +107,132 @@ def test_checkpoint_task_result_mmlu_group_samples(tmp_path: Path):
 
     assert len(rows) == 1
     assert (tmp_path / "samples" / "mmlu.jsonl").is_file()
+
+
+def test_group_rows_namespace_duplicate_doc_ids_by_subtask(tmp_path: Path):
+    task = EvalTask(name="mmlu_pro", metric="acc,none")
+    aggregate: dict[str, dict[str, float]] = {}
+    batch = {
+        "groups": {"mmlu_pro": {"acc,none": 0.5}},
+        "group_subtasks": {"mmlu_pro": ["mmlu_pro_math", "mmlu_pro_history"]},
+        "samples": {
+            "mmlu_pro_math": [
+                {"doc_id": 0, "acc,none": 1.0, "target": "A", "resps": ["A"]}
+            ],
+            "mmlu_pro_history": [
+                {"doc_id": 0, "acc,none": 0.0, "target": "B", "resps": ["A"]}
+            ],
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate=aggregate,
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert [row["subtask"] for row in rows] == ["mmlu_pro_math", "mmlu_pro_history"]
+    assert rows[0]["doc_id"] == rows[1]["doc_id"] == 0
+    assert rows[0]["sample_uid"] != rows[1]["sample_uid"]
+
+
+
+def test_checkpoint_writes_generation_health_with_periodic_loop(tmp_path: Path):
+    task = EvalTask(name="gsm8k", metric="exact_match,strict-match")
+    batch = {
+        "results": {"gsm8k": {"exact_match,strict-match": 0.0}},
+        "samples": {
+            "gsm8k": [
+                {
+                    "doc_id": 0,
+                    "target": "42",
+                    "exact_match,strict-match": 0.0,
+                    "resps": ["one two one two"],
+                    "filtered_resps": [None],
+                    "response_token_ids": [1, 2] * 8,
+                    "max_gen_toks": 16,
+                }
+            ]
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate={},
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert rows[0]["response"] == "one two one two"
+    assert rows[0]["health"]["periodic_loop"] is True
+    health_path = tmp_path / "generation_health" / "gsm8k.json"
+    health = json.loads(health_path.read_text(encoding="utf-8"))
+    assert health["periodic_loop_count"] == 1
+    assert health["length_cap_hit_count"] == 1
+
+
+
+def test_loglikelihood_response_is_not_treated_as_missing_generation(tmp_path: Path):
+    task = EvalTask(name="mmlu_pro", metric="acc,none")
+    batch = {
+        "results": {"mmlu_pro": {"acc,none": 1.0}},
+        "samples": {
+            "mmlu_pro": [
+                {
+                    "doc_id": 0,
+                    "acc,none": 1.0,
+                    "resps": [[(-1.2, True)]],
+                }
+            ]
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate={},
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert rows[0]["health"] == {"applicable": False}
+    health = json.loads(
+        (tmp_path / "generation_health" / "mmlu_pro.json").read_text()
+    )
+    assert health["samples"] == 0
+    assert health["not_applicable_count"] == 1
+
+
+def test_nested_singleton_text_response_is_generation(tmp_path: Path):
+    task = EvalTask(name="ifeval", metric="exact_match,strict-match")
+    batch = {
+        "results": {"ifeval": {"exact_match,strict-match": 0.0}},
+        "samples": {
+            "ifeval": [
+                {
+                    "doc_id": 0,
+                    "exact_match,strict-match": 0.0,
+                    "resps": [["coherent generated text"]],
+                    "filtered_resps": [[None]],
+                }
+            ]
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate={},
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert rows[0]["response"] == "coherent generated text"
+    assert rows[0]["health"]["applicable"] is True

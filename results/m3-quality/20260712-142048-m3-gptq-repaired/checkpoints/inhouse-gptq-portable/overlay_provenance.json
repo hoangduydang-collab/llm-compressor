@@ -1,0 +1,15 @@
+{
+  "activations_disabled": false,
+  "added_ignore_rules": [
+    "re:.*block_sparse_moe[.]shared_experts[.].*",
+    "re:.*block_sparse_moe[.]gate$"
+  ],
+  "overlay": "/mnt/nfs/hoangduy/projects/llm-compressor/results/m3-quality/20260712-142048-m3-gptq-repaired/checkpoints/inhouse-gptq-portable",
+  "overlay_config_sha256": "3dc9343f2e2a14aeaa54f18099b2b29918c5e1ac25254339ba1c8ce4a68903d5",
+  "overlay_index_sha256": "3447e12c56ba4bef11a975f191d91b37b984a390a2dde05614104c4333131368",
+  "schema_version": 1,
+  "source": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123",
+  "source_config_sha256": "e3840724abf81f69df1213ea94d8ec3e9479f0329144773a4f360ca779cad507",
+  "source_index_sha256": "3447e12c56ba4bef11a975f191d91b37b984a390a2dde05614104c4333131368",
+  "tensor_payload_unchanged": true
+}

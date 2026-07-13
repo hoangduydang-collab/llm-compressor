@@ -1,0 +1,16 @@
+[
+  {
+    "bytes": 131911,
+    "case": "cyankiwi_reference",
+    "path": "/mnt/nfs/hoangduy/logs/m3-paired-quality/20260711-125747-reference-sequential/cyankiwi_reference/serve.log",
+    "retention_until_utc": "2026-07-25T00:00:00Z",
+    "sha256": "10100486b7ede52befb0ea3857d888ec2e4cda85631403f764932eb8333d9aba"
+  },
+  {
+    "bytes": 132898,
+    "case": "operator",
+    "path": "/mnt/nfs/hoangduy/logs/m3-paired-quality-20260711-125747-reference-sequential-operator.log",
+    "retention_until_utc": "2026-07-25T00:00:00Z",
+    "sha256": "e9a84c8c887934d99665d8174e9c3edd166745ae9b7de80b89aed1672d0c9a63"
+  }
+]

@@ -1,0 +1,44 @@
+(APIServer pid=3142666) WARNING 07-12 05:05:13 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(APIServer pid=3142666) WARNING 07-12 05:05:13 [vllm.py:1100] VLLM_USE_BREAKABLE_CUDAGRAPH is set, disabling vLLM's torch.compile pipeline. Equivalent to -cc.mode=none.
+(APIServer pid=3142666) WARNING 07-12 05:05:13 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(EngineCore pid=3143274) WARNING 07-12 05:05:54 [multiproc_executor.py:1063] Reducing Torch parallelism from 2 threads to 1 to avoid unnecessary CPU contention. Set OMP_NUM_THREADS in the external environment to tune this value as needed.
+(Worker_TP1_EP1 pid=3143351) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP1_EP1 pid=3143351) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:07:26 [vllm.py:1100] VLLM_USE_BREAKABLE_CUDAGRAPH is set, disabling vLLM's torch.compile pipeline. Equivalent to -cc.mode=none.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP7_EP7 pid=3143358) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP7_EP7 pid=3143358) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP5_EP5 pid=3143356) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP5_EP5 pid=3143356) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP4_EP4 pid=3143355) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP4_EP4 pid=3143355) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP2_EP2 pid=3143353) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP2_EP2 pid=3143353) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP6_EP6 pid=3143357) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP6_EP6 pid=3143357) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP3_EP3 pid=3143354) WARNING 07-12 05:07:26 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(Worker_TP3_EP3 pid=3143354) WARNING 07-12 05:07:26 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(Worker_TP0_EP0 pid=3143350) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP6_EP6 pid=3143357) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP5_EP5 pid=3143356) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP1_EP1 pid=3143351) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP4_EP4 pid=3143355) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP3_EP3 pid=3143354) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP2_EP2 pid=3143353) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(Worker_TP7_EP7 pid=3143358) INFO 07-12 05:13:42 [jit_monitor.py:60] Kernel JIT monitor activated — Triton JIT compilations during inference will be logged as warnings.
+(EngineCore pid=3143274) WARNING 07-12 05:13:47 [vllm.py:1062] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+(EngineCore pid=3143274) WARNING 07-12 05:13:47 [vllm.py:1100] VLLM_USE_BREAKABLE_CUDAGRAPH is set, disabling vLLM's torch.compile pipeline. Equivalent to -cc.mode=none.
+(EngineCore pid=3143274) WARNING 07-12 05:13:47 [vllm.py:1110] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(APIServer pid=3142666) WARNING 07-12 05:13:48 [model.py:1477] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:56 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _compute_slot_mapping_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:57 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _index_block_score_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:57 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _topk_index_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:57 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _gqa_sparse_fwd_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:59 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _decode_index_score_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:59 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _topk_index_partial_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:59 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _topk_index_merge_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:59 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _gqa_sparse_decode_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0_EP0 pid=3143350) WARNING 07-12 05:13:59 [jit_monitor.py:106] Triton kernel JIT compilation during inference: _merge_topk_attn_out_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(APIServer pid=3142666) WARNING 07-12 05:14:02 [utils.py:620] [shutdown] Process manager: force killing remaining processes count=1

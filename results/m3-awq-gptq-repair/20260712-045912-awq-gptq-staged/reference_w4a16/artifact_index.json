@@ -1,0 +1,14 @@
+[
+  {
+    "bytes": 5949328,
+    "path": "/mnt/nfs/hoangduy/logs/m3-awq-gptq-repair/20260712-045912-awq-gptq-staged/reference_w4a16/serve.log",
+    "retention_until_utc": "2026-07-26T00:00:00Z",
+    "sha256": "217014ecdcada027342dfe31859676d6b6f03a21c3fb36113a55f770e4961c32"
+  },
+  {
+    "bytes": 5949660,
+    "path": "/mnt/nfs/hoangduy/logs/m3-awq-gptq-repair-srun/20260712-045912-awq-gptq-staged-reference_w4a16.log",
+    "retention_until_utc": "2026-07-26T00:00:00Z",
+    "sha256": "424c715251e90b925cadfa9c837e42be233efaf108fbd98ec869b0d0877bfb2f"
+  }
+]

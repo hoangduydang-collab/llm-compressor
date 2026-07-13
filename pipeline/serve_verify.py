@@ -83,6 +83,35 @@ def _is_w4a8_moe_scheme(quant_config: dict) -> bool:
     return False
 
 
+def _install_minimax_m3_site_diagnostics(
+    ckpt: Path,
+    *,
+    diagnostic_installer=None,
+    w4a8_patch_installer=None,
+) -> dict:
+    """Install M3 diagnostics for every scheme and execution patches for W4A8."""
+
+    if not _is_minimax_m3_checkpoint(ckpt):
+        return {"diagnostics": "skipped (not MiniMax-M3)", "w4a8_patches": False}
+    if diagnostic_installer is None or w4a8_patch_installer is None:
+        from pipeline.slurm.patch_vllm_m3_serve import (
+            ensure_m3_quality_diagnostics,
+            ensure_vllm_m3_patches,
+        )
+
+        diagnostic_installer = (
+            diagnostic_installer or ensure_m3_quality_diagnostics
+        )
+        w4a8_patch_installer = (
+            w4a8_patch_installer or ensure_vllm_m3_patches
+        )
+    diagnostic_status = diagnostic_installer()
+    w4a8 = _is_w4a8_moe_scheme(_read_quant_config(ckpt))
+    if w4a8:
+        w4a8_patch_installer()
+    return {"diagnostics": diagnostic_status, "w4a8_patches": w4a8}
+
+
 _EXPERT_COUNT_KEYS = ("num_local_experts", "n_routed_experts", "num_experts")
 
 
@@ -360,6 +389,73 @@ def _print_serve_failure_hints(ckpt: Path, cfg: PipelineConfig) -> None:
         )
 
 
+def _run_generation_smoke(
+    llm,
+    *,
+    is_m3: bool,
+    configured_prompt: str,
+    sampling_params_cls,
+) -> dict:
+    """Generate smoke outputs and assess M3 quality separately from readiness."""
+
+    if is_m3:
+        from pipeline.m3_quality_evidence import (
+            M3_QUALITY_CASES,
+            assess_quality_outputs,
+        )
+
+        prompts = [case.prompt for case in M3_QUALITY_CASES]
+        tokenizer = llm.get_tokenizer()
+        generation_prompts = [
+            tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                thinking_mode="disabled",
+            )
+            for prompt in prompts
+        ]
+    else:
+        prompts = [configured_prompt]
+        generation_prompts = prompts
+    sampling_params = sampling_params_cls(max_tokens=64, temperature=0.0)
+    if is_m3:
+        # Keep requests independent so one sequence cannot affect scheduling,
+        # padding, or termination of the other reference-quality case.
+        outputs = []
+        for prompt in generation_prompts:
+            outputs.extend(llm.generate([prompt], sampling_params))
+    else:
+        outputs = llm.generate(generation_prompts, sampling_params)
+    texts = [item.outputs[0].text for item in outputs]
+    generation_completed = len(texts) == len(prompts) and all(
+        bool(text and text.strip()) for text in texts
+    )
+    result = {
+        "sample_prompt": prompts[0],
+        "sample_output": texts[0] if texts else "",
+        "generation_completed": generation_completed,
+        "sane_output": generation_completed,
+        "quality_ok": None,
+        "prompt_mode": "chat_template" if is_m3 else "raw",
+    }
+    if is_m3:
+        result.update(assess_quality_outputs(texts))
+        for quality_case, rendered_prompt, request_output in zip(
+            result["quality_cases"], generation_prompts, outputs
+        ):
+            completion = request_output.outputs[0]
+            quality_case["rendered_prompt"] = rendered_prompt
+            quality_case.update(
+                {
+                    "token_ids": list(getattr(completion, "token_ids", []) or []),
+                    "finish_reason": getattr(completion, "finish_reason", None),
+                    "stop_reason": getattr(completion, "stop_reason", None),
+                }
+            )
+    return result
+
+
 def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
     """Boot vLLM on ``ckpt`` and return a verification report dict."""
     report: dict = {
@@ -406,6 +502,32 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         "VLLM_DISABLE_SHARED_EXPERTS_STREAM"
     )
 
+    if _is_minimax_m3_checkpoint(ckpt):
+        try:
+            site_status = _install_minimax_m3_site_diagnostics(ckpt)
+            report["m3_site_diagnostics"] = site_status
+            print(
+                "[pipeline] M3 quality diagnostics (site-packages): "
+                f"{site_status['diagnostics']}"
+            )
+            if site_status["w4a8_patches"]:
+                print(
+                    "[pipeline] verified vLLM M3 W4A8 serve patches in "
+                    "site-packages (4/4)"
+                )
+        except Exception as exc:
+            enabled = any(
+                os.environ.get(name) == "1"
+                for name in (
+                    "M3_LOAD_AUDIT",
+                    "M3_MOE_PROBE",
+                    "M3_PARAM_FINGERPRINT",
+                )
+            )
+            if enabled:
+                raise
+            print(f"[pipeline] M3 dormant diagnostics install skipped: {exc!r}")
+
     # VL checkpoints need preprocessor_config.json for vLLM multimodal init even
     # when running a text-only smoke prompt. Older quant runs may lack these files.
     if cfg.model.auto_class == "AutoModelForImageTextToText":
@@ -433,29 +555,6 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         # W4A8 MoE kernel accepts M3's SWIGLUOAI_UNINTERLEAVE activation. No-op if
         # the checkpoint is not a W4A8 MoE scheme or the build lacks W4A8 MoE.
         if _is_w4a8_moe_scheme(_read_quant_config(ckpt)):
-            # Persistent site-packages patches (required for Worker_TP* subprocesses).
-            from pipeline.slurm.patch_vllm_m3_serve import (
-                ensure_m3_moe_probe,
-                ensure_vllm_m3_patches,
-            )
-
-            ensure_vllm_m3_patches()
-            print("[pipeline] verified vLLM M3 serve patches in site-packages (4/4)")
-
-            # Optional runtime MoE/shared-expert diagnostic probe. Dormant unless
-            # M3_MOE_PROBE=1 is exported (it reaches Worker_TP* because it is
-            # injected into site-packages). Best-effort: never block serve.
-            try:
-                probe_status = ensure_m3_moe_probe()
-                print(f"[pipeline] M3 MoE probe (site-packages): {probe_status}")
-                if os.environ.get("M3_MOE_PROBE") == "1":
-                    print(
-                        "[pipeline] M3_MOE_PROBE=1 — Worker_TP* will log per-MoE-layer "
-                        "shared-expert / moe_out norms (grep 'M3_MOE_PROBE#')"
-                    )
-            except Exception as exc:  # noqa: BLE001
-                print(f"[pipeline] M3 MoE probe install skipped: {exc!r}")
-
             from pipeline.vllm_m3_patches import (
                 patch_vllm_w4a8_swigluoai_uninterleave,
                 read_swiglu_params,
@@ -504,19 +603,27 @@ def verify_serve(cfg: PipelineConfig, ckpt: Path) -> dict:
         return report
     report["loaded"] = True
 
-    out = llm.generate(
-        [s.prompt], SamplingParams(max_tokens=64, temperature=0.0)
+    generation = _run_generation_smoke(
+        llm,
+        is_m3=_is_minimax_m3_checkpoint(ckpt),
+        configured_prompt=s.prompt,
+        sampling_params_cls=SamplingParams,
     )
-    text = out[0].outputs[0].text
-    report["sample_prompt"] = s.prompt
-    report["sample_output"] = text
-    report["sane_output"] = bool(text and text.strip())
-    report["ok"] = report["loaded"] and report["sane_output"]
+    report.update(generation)
+    report["ok"] = report["loaded"] and report["generation_completed"]
 
     print("\n========== vLLM SERVE CHECK ==========")
     print(f"checkpoint: {ckpt}")
     print(f"quant: {report['quantization_config'].get('format')}")
-    print(f"prompt: {s.prompt!r}")
-    print(f"output: {text!r}")
+    if report.get("quality_cases"):
+        for case in report["quality_cases"]:
+            print(
+                f"quality[{case['case_id']}]: passed={case['passed']} "
+                f"prompt={case['prompt']!r} output={case['text']!r}"
+            )
+        print(f"quality_ok: {report['quality_ok']}")
+    else:
+        print(f"prompt: {report['sample_prompt']!r}")
+        print(f"output: {report['sample_output']!r}")
     print("======================================\n")
     return report

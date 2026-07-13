@@ -1,0 +1,65 @@
+schema_version: 1
+name: minimax-m3-vllm-quality
+backend: vllm
+baseline_label: bf16
+model_source: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+eval_config: pipeline/configs/eval_minimax_m3_quality.yaml
+
+models:
+  - label: bf16
+    path: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+    kind: bf16
+    nodes: 2
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 2
+    distributed_executor_backend: ray
+  - label: inhouse_gptq
+    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123
+    kind: gptq-w4a8
+    nodes: 1
+    tensor_parallel_size: 8
+    distributed_executor_backend: mp
+  - label: cyankiwi_awq
+    path: /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+    kind: awq-w4a16
+    nodes: 1
+    tensor_parallel_size: 8
+    distributed_executor_backend: mp
+
+deferred_models:
+  - label: aquaman_autoround
+    path: /mnt/nfs/hoangduy/hf_assets/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx
+    kind: autoround-3.2bit
+    revision: 40b00366dcb6bcf16b1710f242b12ce76dd34b9f
+    reason: OneCompression mixed-bit plugin and repository loader integration deferred
+
+shards:
+  - name: reasoning
+    tasks: [gpqa_diamond, ifeval, aime_2025]
+    distributional_probe: false
+  - name: broad
+    tasks: [mmlu_pro, gsm8k]
+    distributional_probe: true
+
+task_aliases:
+  gpqa_diamond: [gpqa_diamond_zeroshot, gpqa_diamond, leaderboard_gpqa]
+  ifeval: [ifeval, leaderboard_ifeval]
+  aime_2025: [aime25, aime_2025]
+  mmlu_pro: [mmlu_pro, leaderboard_mmlu_pro]
+  gsm8k: [gsm8k]
+
+sampling:
+  seed: 42
+  mmlu_pro_samples: 2000
+
+probe:
+  total_tokens: 49152
+  top_k: 20
+  max_overhead_seconds: 1800
+
+gates:
+  max_task_drop: 0.02
+  min_macro_recovery: 0.98
+  max_conditional_regression: 0.05
+  max_perplexity_increase: 0.10
+  max_degeneration_failures: 0

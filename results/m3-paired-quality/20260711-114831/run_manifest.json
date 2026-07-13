@@ -1,0 +1,129 @@
+{
+  "case_order": [
+    "cyankiwi_reference",
+    "portable_awq_w4a8"
+  ],
+  "cases": [
+    {
+      "checkpoint": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+      "command": [
+        "python",
+        "-m",
+        "pipeline.run",
+        "--config",
+        "pipeline/configs/minimax_m3_full_calib.yaml",
+        "--stage",
+        "serve",
+        "--checkpoint",
+        "/mnt/nfs/hoangduy/logs/m3-paired-quality/20260711-114831/cyankiwi_reference/checkpoint",
+        "--set",
+        "model.id=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+        "--set",
+        "serve.tensor_parallel_size=8",
+        "--set",
+        "serve.enable_expert_parallel=true",
+        "--set",
+        "serve.block_size=128",
+        "--set",
+        "serve.kv_cache_dtype=fp8",
+        "--set",
+        "serve.max_model_len=2048",
+        "--set",
+        "serve.gpu_memory_utilization=0.85",
+        "--set",
+        "serve.enforce_eager=true",
+        "--set",
+        "serve.disable_custom_all_reduce=true",
+        "--set",
+        "eval.enabled=false"
+      ],
+      "config_sha256": "a4db794c80d685eb4a2beecb7e5a88a33c76f415f2e7f0ac561fe1a0f37e745a",
+      "finished_at": "2026-07-11T12:01:08+00:00",
+      "index_sha256": "5eb67db3d48c479d15fa6e53ab8863283dfbfc091b88d09680bf44fdb7e4dfc4",
+      "name": "cyankiwi_reference",
+      "return_code": 1,
+      "started_at": "2026-07-11T11:51:15+00:00"
+    },
+    {
+      "checkpoint": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/MiniMax-M3-awq-W4AFP8/20260709-064104/checkpoint-vllm-w123",
+      "command": [
+        "python",
+        "-m",
+        "pipeline.run",
+        "--config",
+        "pipeline/configs/minimax_m3_full_calib.yaml",
+        "--stage",
+        "serve",
+        "--checkpoint",
+        "/mnt/nfs/hoangduy/logs/m3-paired-quality/20260711-114831/portable_awq_w4a8/checkpoint",
+        "--set",
+        "model.id=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+        "--set",
+        "serve.tensor_parallel_size=8",
+        "--set",
+        "serve.enable_expert_parallel=true",
+        "--set",
+        "serve.block_size=128",
+        "--set",
+        "serve.kv_cache_dtype=fp8",
+        "--set",
+        "serve.max_model_len=2048",
+        "--set",
+        "serve.gpu_memory_utilization=0.85",
+        "--set",
+        "serve.enforce_eager=true",
+        "--set",
+        "serve.disable_custom_all_reduce=true",
+        "--set",
+        "eval.enabled=false"
+      ],
+      "config_sha256": "3251c9715dc13852768209c3f9d88036542954f1a6a3fc92ed5c08bcb6c7ebb9",
+      "index_sha256": "3447e12c56ba4bef11a975f191d91b37b984a390a2dde05614104c4333131368",
+      "name": "portable_awq_w4a8"
+    }
+  ],
+  "comparison_envelope": {
+    "block_size": 128,
+    "disable_custom_all_reduce": true,
+    "enable_expert_parallel": true,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.85,
+    "kv_cache_dtype": "fp8",
+    "max_model_len": 2048,
+    "tensor_parallel_size": 8
+  },
+  "config": "pipeline/configs/minimax_m3_full_calib.yaml",
+  "deviations": [
+    {
+      "changes_comparison_variable": false,
+      "name": "FORCE=0 GPU preflight",
+      "reason": "Disabled the runner's owned-process signal path; all eight allocated GPUs were already free, so no process was signalled."
+    },
+    {
+      "changes_comparison_variable": false,
+      "name": "reference engine initialization failure",
+      "reason": "cyankiwi stopped with a CUDA device-side assertion while compressed-tensors converted k_scale to a scalar; candidate was skipped by the reference-baseline gate."
+    }
+  ],
+  "diagnostics": {
+    "M3_LOAD_AUDIT": "1",
+    "M3_MOE_PROBE": "1",
+    "M3_PARAM_FINGERPRINT": "1"
+  },
+  "dry_run": false,
+  "evidence_dir": "/mnt/nfs/hoangduy/projects/llm-compressor/.worktrees/m3-paired-quality-run/results/m3-paired-quality/20260711-114831",
+  "finished_at": "2026-07-11T12:01:08.761474+00:00",
+  "git_commit": "7ddd6b12b90535308e222323608046c4f423ba1c",
+  "git_status_short": "",
+  "host": "h105-gpu-polaris.pod4.lab.bitdeer.ai",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
+  "python": "3.12.13",
+  "run_id": "20260711-114831",
+  "scheduler": {
+    "SLURM_JOB_ID": "12741",
+    "SLURM_JOB_NODELIST": "gpu-h105"
+  },
+  "schema_version": 1,
+  "started_at": "2026-07-11T11:48:31.926470+00:00"
+}

@@ -1,0 +1,122 @@
+{
+  "arm": "repaired_w4a8_http",
+  "fingerprint_summaries": [],
+  "fingerprints": [],
+  "infrastructure_ok": true,
+  "interface": "http",
+  "loader_audit_lines": [],
+  "moe_probe_lines": [],
+  "moe_probe_records": [],
+  "quality_cases": [
+    {
+      "case_id": "capital_france",
+      "expected_any": [
+        "paris"
+      ],
+      "expected_match": false,
+      "finish_reason": "length",
+      "nonempty": true,
+      "normalized": "mathrm{ \\ \\m \\}inghingant\\section6 ( ( \\ \\ \\}is 1\ufffd \\\ufffdmathrm \\\ufffd \\ \\ \\ \\ \\ \\ \\ionsig \\mathrm \\o \\ \\ \\ \\ \\ \\ \\ \\ \\\ufffd\ufffd \\ \\ \\ \\ \\tr\ufffd 13",
+      "passed": false,
+      "prompt": "The capital of France is",
+      "raw_response": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "mathrm{ \\ \\m \\}ingHingant\\section6 ( (\n \\ \\ \\}is 1\ufffd \\\ufffdmathrm \\\ufffd \\ \\ \\ \\ \\ \\ \\ionsig \\mathrm \\o \\ \\ \\ \\ \\ \\ \\ \\ \\\ufffd\ufffd \\ \\ \\ \\ \\tr\ufffd\n\n13\n\n",
+              "function_call": null,
+              "reasoning": null,
+              "refusal": null,
+              "role": "assistant"
+            },
+            "routed_experts": null,
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1783784110,
+        "id": "chatcmpl-a1b387e684df87eb",
+        "kv_transfer_params": null,
+        "model": "m3-shared-repair",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_text": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.24.0-tp8-ep-f60cece5",
+        "usage": {
+          "completion_tokens": 64,
+          "prompt_tokens": 168,
+          "prompt_tokens_details": null,
+          "total_tokens": 232
+        }
+      },
+      "repetition_reasons": [],
+      "repetitive": false,
+      "stop_reason": null,
+      "text": "mathrm{ \\ \\m \\}ingHingant\\section6 ( (\n \\ \\ \\}is 1\ufffd \\\ufffdmathrm \\\ufffd \\ \\ \\ \\ \\ \\ \\ionsig \\mathrm \\o \\ \\ \\ \\ \\ \\ \\ \\ \\\ufffd\ufffd \\ \\ \\ \\ \\tr\ufffd\n\n13\n\n"
+    },
+    {
+      "case_id": "arithmetic_2_plus_2",
+      "expected_any": [
+        "4",
+        "four"
+      ],
+      "expected_match": false,
+      "finish_reason": "length",
+      "nonempty": true,
+      "normalized": "{ \\mathrm \\mathrm \\ \\ \\mathrm \\ \\ \\ \\ \\ \\}{| \\ \\ \\ \\ \\} ( personomen({ \\ \\ \\}ch ( \\ \\trtrtrtrtrtrtrtr \\ \\trtrtrtrtr \\ \\ \\ \\ \\ \\ \\ \\ \\tr \\ic> s",
+      "passed": false,
+      "prompt": "What is 2 + 2? Answer with only the number.",
+      "raw_response": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+              "annotations": null,
+              "audio": null,
+              "content": "{ \\mathrm \\mathrm \\ \\ \\mathrm \\ \\ \\ \\ \\ \\}{| \\ \\ \\ \\ \\} ( personomen({ \\ \\ \\}ch ( \\ \\trtrtrtrtrtrtrtr \\ \\trtrtrtrtr \\ \\ \\ \\ \\ \\ \\\n\n \\ \\tr \\ic> s",
+              "function_call": null,
+              "reasoning": null,
+              "refusal": null,
+              "role": "assistant"
+            },
+            "routed_experts": null,
+            "stop_reason": null,
+            "token_ids": null
+          }
+        ],
+        "created": 1783784158,
+        "id": "chatcmpl-8192e2a6141ecf60",
+        "kv_transfer_params": null,
+        "model": "m3-shared-repair",
+        "object": "chat.completion",
+        "prompt_logprobs": null,
+        "prompt_text": null,
+        "prompt_token_ids": null,
+        "service_tier": null,
+        "system_fingerprint": "vllm-0.24.0-tp8-ep-f60cece5",
+        "usage": {
+          "completion_tokens": 64,
+          "prompt_tokens": 177,
+          "prompt_tokens_details": null,
+          "total_tokens": 241
+        }
+      },
+      "repetition_reasons": [],
+      "repetitive": false,
+      "stop_reason": null,
+      "text": "{ \\mathrm \\mathrm \\ \\ \\mathrm \\ \\ \\ \\ \\ \\}{| \\ \\ \\ \\ \\} ( personomen({ \\ \\ \\}ch ( \\ \\trtrtrtrtrtrtrtr \\ \\trtrtrtrtr \\ \\ \\ \\ \\ \\ \\\n\n \\ \\tr \\ic> s"
+    }
+  ],
+  "quality_ok": false,
+  "scheme": "w4a8",
+  "shared_expert_bad": false
+}

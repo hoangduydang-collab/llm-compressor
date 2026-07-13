@@ -1,0 +1,11 @@
+(EngineCore pid=4058348) 2026-07-12 18:19:13,767	INFO worker.py:1683 -- Using address auto set in the environment variable RAY_ADDRESS
+(EngineCore pid=4058348) 2026-07-12 18:19:13,890	INFO worker.py:1833 -- Connecting to existing Ray cluster at address: 10.2.4.17:6379...
+(EngineCore pid=4058348) 2026-07-12 18:19:13,967	INFO worker.py:2024 -- Connected to Ray cluster.
+srun: forcing job termination
+srun: got SIGCONT
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd-gpu-h113: error: *** STEP 12834.0 ON gpu-h113 CANCELLED AT 2026-07-12T18:26:51 ***
+srun: error: gpu-h114: task 1: Killed
+srun: launch/slurm: _step_signal: Terminating StepId=12834.0
+srun: error: gpu-h113: task 0: Killed
+srun: Force Terminated StepId=12834.0

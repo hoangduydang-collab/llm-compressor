@@ -1,0 +1,19 @@
+{
+  "comparison_to_20260711-122317-reference-no-fingerprint": {
+    "arithmetic_2_plus_2": {
+      "current_finish_reason": "stop",
+      "current_output_empty": true,
+      "prior_output_empty": true
+    },
+    "capital_france": {
+      "current_finish_reason": "length",
+      "current_repetitive": true,
+      "prior_repetitive_under_old_evaluator": false
+    }
+  },
+  "generation_reached": true,
+  "generation_calls": 2,
+  "loaded": true,
+  "quality_ok": false,
+  "verdict": "reference_sequential_quality_fail"
+}

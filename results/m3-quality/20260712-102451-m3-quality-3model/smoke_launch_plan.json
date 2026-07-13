@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "profile": "smoke",
+  "arms": [
+    {
+      "model_label": "bf16",
+      "model_path": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+      "model_kind": "bf16",
+      "shard": "smoke",
+      "nodes": 2,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 16,
+      "distributed_executor_backend": "ray",
+      "tasks": [
+        "gpqa_diamond",
+        "ifeval",
+        "aime_2025",
+        "mmlu_pro",
+        "gsm8k"
+      ],
+      "distributional_probe": true,
+      "samples_per_task": 2,
+      "probe_tokens": 2048
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "model_path": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123",
+      "model_kind": "gptq-w4a8",
+      "shard": "smoke",
+      "nodes": 1,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "distributed_executor_backend": "mp",
+      "tasks": [
+        "gpqa_diamond",
+        "ifeval",
+        "aime_2025",
+        "mmlu_pro",
+        "gsm8k"
+      ],
+      "distributional_probe": true,
+      "samples_per_task": 2,
+      "probe_tokens": 2048
+    },
+    {
+      "model_label": "cyankiwi_awq",
+      "model_path": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+      "model_kind": "awq-w4a16",
+      "shard": "smoke",
+      "nodes": 1,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "distributed_executor_backend": "mp",
+      "tasks": [
+        "gpqa_diamond",
+        "ifeval",
+        "aime_2025",
+        "mmlu_pro",
+        "gsm8k"
+      ],
+      "distributional_probe": true,
+      "samples_per_task": 2,
+      "probe_tokens": 2048
+    }
+  ],
+  "max_parallel_arms": 3,
+  "total_nodes": 4
+}

@@ -1,0 +1,24 @@
+{
+  "run_slug": "MiniMax-M3-awq-W4AFP8",
+  "created_utc": "2026-07-11T12:24:37.632564+00:00",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "method": "awq",
+  "scheme": "W4AFP8",
+  "git_sha": "b6a26d4fa45c066ec6333f110db2c12e69ba785f",
+  "python": "3.12.13",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
+  "packages": {
+    "llmcompressor": "0.1.dev3082+g6f51d96",
+    "compressed-tensors": "0.17.0",
+    "transformers": "5.12.1",
+    "vllm": "0.24.0",
+    "lm_eval": "0.4.12"
+  },
+  "gpu": {
+    "torch": "2.11.0+cu130",
+    "cuda_available": true,
+    "device_count": 8,
+    "device_name": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0"
+  }
+}

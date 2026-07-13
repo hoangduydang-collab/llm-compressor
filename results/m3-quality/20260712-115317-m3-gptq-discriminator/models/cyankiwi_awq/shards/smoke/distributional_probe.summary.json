@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "corpus_sha256": "f1e6e4a3c7323bf0d43cd0a670adce667b8e1e0cdc7982879298ef41afdb0704",
+  "prompts": 1,
+  "resumed_prompts": 0,
+  "tokens": 2047,
+  "elapsed_seconds": 8.611645814031363,
+  "model": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "model_source": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "runtime": {
+    "cache_redirects": {
+      "FLASHINFER_WORKSPACE_DIR": "/mnt/nfs/hoangduy/cache/flashinfer"
+    },
+    "environment": [
+      "VLLM_DISABLE_SHARED_EXPERTS_STREAM=1"
+    ],
+    "runtime_patches": []
+  },
+  "engine_args": {
+    "model": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+    "tensor_parallel_size": 8,
+    "max_model_len": 65536,
+    "gpu_memory_utilization": 0.85,
+    "trust_remote_code": true,
+    "enforce_eager": true,
+    "disable_custom_all_reduce": true,
+    "enable_expert_parallel": true,
+    "block_size": 128,
+    "kv_cache_dtype": "fp8"
+  },
+  "sampling": {
+    "temperature": 0.0,
+    "max_tokens": 1,
+    "top_k": 20,
+    "seed": 42
+  },
+  "python": "3.12.13",
+  "pid": 4002849
+}

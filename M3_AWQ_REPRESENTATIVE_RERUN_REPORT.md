@@ -326,3 +326,80 @@ pinpoints the fix:
 
 Do not allocate GPUs for quality eval or begin re-quantization — this is a
 single standard calibration arm.
+
+## Structural probe result (2026-07-13)
+
+The requested single-arm rerun was launched in detached tmux with one
+exclusive GPU:
+
+```text
+Slurm job: 12860
+Node: gpu-h123
+Run: 20260713T075500Z-m3-awq-structural-layer8
+Arm: offsetfix-layer8
+Controller finished: 2026-07-13T08:21:33+00:00
+Controller rc: 1
+Arm rc: 1
+```
+
+The arm reached the lifecycle guard and wrote its evidence. It resolved 129
+AWQ mappings but completed zero grid searches:
+
+```text
+resolved_mapping_count=129
+completed_mapping_count=0
+skipped_mapping_count=0
+unprocessed_mappings=129
+total_balance_forward_events=0
+smooth_activation_stats_len=0
+```
+
+The structural dispatch probe recorded:
+
+```json
+{
+  "fire_counts": {
+    "mlp": 0,
+    "mlp.shared_experts": 0,
+    "mlp.gate": 0,
+    "mlp.experts": 0,
+    "mlp.experts.0": 0,
+    "mlp.experts.0.gate_proj": 0
+  },
+  "types": {
+    "mlp": "MiniMaxM3VLSparseMoeBlock",
+    "mlp.shared_experts": "MiniMaxM3VLDenseMLP",
+    "mlp.gate": "MiniMaxM3VLTopKRouter",
+    "mlp.experts": "LinearExperts2D",
+    "mlp.experts.0": "ExpertMLPWithGate",
+    "mlp.experts.0.gate_proj": "Linear"
+  },
+  "num_experts": 129,
+  "resolved_object_is_live": true
+}
+```
+
+This is more specific than the previous hook-only result. The first zero is
+the enclosing `mlp` itself: layer 8's sparse-MoE block is never entered during
+the calibration pass. Because the live object identity check is true, this
+rules out stale AWQ mappings. Because every deeper level is also zero, it also
+rules out `LinearExperts2D` child dispatch and expert `Linear` wiring.
+
+The remaining investigation target is the layer execution/sequential
+calibration path before MoE dispatch: inspect the traced subgraph and the
+MiniMax text-calibration patch to determine why the selected decoder layer is
+not being called. This run is an infrastructure/calibration-path failure, not
+a quantized-quality verdict.
+
+Durable evidence:
+
+```text
+Result:
+/mnt/nfs/hoangduy/results/m3-awq-representative/20260713T075500Z-m3-awq-structural-layer8/offsetfix-layer8/lifecycle.json
+
+Arm log:
+/mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T075500Z-m3-awq-structural-layer8/offsetfix-layer8.log
+
+Controller log:
+/mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T075500Z-m3-awq-structural-layer8/controller.log
+```

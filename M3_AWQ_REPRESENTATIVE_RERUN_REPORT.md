@@ -205,3 +205,42 @@ The arm still exits non-zero at the `completed=0` guard, but writes
 
 Do not allocate GPUs for quality eval or start full re-quantization for this
 diagnostic — it is a single standard calibration arm.
+
+## Instrumented executor result (2026-07-13)
+
+The requested single `offsetfix-layer8` diagnostic was queued with `srun` in
+detached tmux and moved to the `debug` partition when compute resources were
+busy:
+
+```text
+Slurm job: 12854
+Partition/node: debug/gpu-h125
+Result: /mnt/nfs/hoangduy/results/m3-awq-representative/diag-layer8-offsetfix
+Log: /mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T065500Z-m3-awq-diag-layer8-offsetfix.log
+```
+
+The arm completed with `return_code=1` after writing `lifecycle.json`. Its
+diagnostics are decisive:
+
+```text
+resolved_mapping_count=129
+completed_mapping_count=0
+skipped_mapping_count=0
+unprocessed_mappings=129
+total_balance_forward_events=0
+balance_layers_never_fired_count=129
+smooth_activation_stats_timeline=[{epoch: 0, smooth_activation_stats_len: 0,
+                                   total_balance_forward_events: 0}]
+```
+
+This confirms that none of the 129 MiniMax balance-layer targets executed
+during the calibration pass. AWQ therefore collected no activation statistics,
+performed no smoothing, and launched no grid searches. The result is an
+infrastructure/calibration-path failure, not a quality verdict.
+
+The diagnostic did not encounter a resource, launcher, CUDA, or model-loading
+failure. The evidence supports the FX/sequential-tracing hypothesis: the
+linearized MiniMax expert linears are not traversed as executable module
+forwards, so the AWQ activation hooks never fire. Do not begin full
+re-quantization until the tracing/dispatch path is corrected and this
+instrumented arm reports nonzero balance forward events.

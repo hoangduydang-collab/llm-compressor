@@ -73,6 +73,68 @@ NFS) and update this document with:
 Stop after pushing this evidence for analysis. Do not serve the checkpoints, run the
 five-hour accuracy suite, delete older checkpoints, or begin the CUDA-graph issue.
 
+### Returned guarded-matrix result (2026-07-13)
+
+Run/session:
+
+```text
+run: 20260713T130600Z-m3-guarded-full
+tmux: m3-guarded-20260713T130600Z-m3-guarded-full
+commit: 4ff9f39bacc6a4641e1a609137994b67a0390736
+results: /mnt/nfs/hoangduy/results/m3-guarded-full/20260713T130600Z-m3-guarded-full
+logs: /mnt/nfs/hoangduy/logs/m3-guarded-full/20260713T130600Z-m3-guarded-full
+```
+
+Preflight passed:
+
+```text
+prequant compatibility: PASS
+quantized_modules=21888
+awq_mappings=7353
+failures=0
+
+trace smoke: PASS
+full_wrapper: matched=60 partitions=61 subgraphs=61
+language_model: matched=60 partitions=61 subgraphs=61
+classification=trace_structure_healthy
+```
+
+The three production arms all aborted before completing the first layer:
+
+| Arm | Slurm job | Node | Return code | Result |
+|---|---:|---|---:|---|
+| `offsetfix` | 12866 | `gpu-h117` | 1 | CUDA diagnostic failure |
+| `nosmooth` | 12867 | `gpu-h118` | 1 | CUDA diagnostic failure |
+| `quant_only` | recorded in controller | separate arm node | 1 | CUDA diagnostic failure |
+
+All three hit the same immediate failure in the guard callback:
+
+```text
+pipeline/m3_guarded_full.py:628
+if scheme is None or not hasattr(module, "weight_scale"):
+torch.AcceleratorError: CUDA error: device-side assert triggered
+```
+
+The attribute check enters compressed-tensors offload/onload and surfaces the
+device-side assertion. CUDA errors are asynchronous, so this identifies the
+diagnostic boundary where the error becomes visible, not necessarily the
+original kernel that first asserted.
+
+No arm produced a completed layer, quantization metrics, checkpoint, or quality
+evidence. The existing trace and prequant passes are valid; the full-arm result
+is an infrastructure/guard failure and must not be interpreted as an AWQ
+quality verdict. `abort.json`, `failure.json`, and `heartbeat.json` are retained
+for each arm. No arm was cancelled or manually restarted.
+
+Controller:
+
+```text
+/mnt/nfs/hoangduy/logs/m3-guarded-full/20260713T130600Z-m3-guarded-full/controller.log
+```
+
+This result should be handed back for a narrow fix to the guard's
+`weight_scale` inspection/offload interaction before rerunning the matrix.
+
 ## Goal and current status
 
 Verify full-calibration MiniMax-M3 W4A8 AWQ/GPTQ checkpoints with the

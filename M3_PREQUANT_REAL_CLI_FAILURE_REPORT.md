@@ -80,3 +80,46 @@ rerun:
 4. the real MiniMax CLI command above.
 
 Do not allocate GPUs or run calibration as part of this fix.
+
+## Resolution status (planner, 2026-07-13)
+
+The code fix and regression coverage are implemented and verified locally on a
+CPU-only environment (`.venv-dev`, torch 2.12.1+cpu, transformers 5.12.1,
+accelerate 1.14.0). Remaining work needs the cluster and is left to the executor.
+
+### Implemented
+
+- **Guard** in `src/llmcompressor/modeling/moe/linear_experts.py`
+  (`LinearExperts2D.from_experts_module`): the offload loop is skipped when the
+  resolved `offload_device` is `meta`, keyed off the exact device
+  `offload_module` would reject. CPU, CUDA, and disk offload are unchanged.
+- **Regression test** `tests/llmcompressor/modeling/test_linearize_meta.py`
+  (CPU-only, no `@requires_gpu`): builds fused experts under
+  `accelerate.init_empty_weights` and linearizes them. Confirmed to fail before
+  the fix with the exact `NotImplementedError` above, and to pass after.
+- **Docs**: RCA/fix entry added to `BUGS_AND_FIXES.md`.
+
+### Verified locally
+
+- Related suite: 43 passed, 16 skipped (skips are the GPU-only offload
+  integration tests) across the new test, `test_linear_experts`,
+  `test_linearize`, offset-norm MiniMax, group-size, AWQ dynamic mappings,
+  `tests/llmcompressor/preflight/`, and `pipeline/tests/test_prequant_compatibility.py`.
+- Ruff clean on the changed lines (local ruff 0.4.10; pre-existing line 225 is
+  out of scope). `git diff --check` clean; both changed files compile.
+
+### Deferred to executor (requires cluster)
+
+1. Run the real MiniMax CLI command above in `/mnt/nfs/hoangduy/venvs/quant`
+   with the MiniMax config/weights, and confirm it writes the report and exits
+   `0`/`2` on the gate verdict instead of crashing with exit `1`. No GPU or
+   calibration.
+2. Re-run Ruff at the pinned `0.15.21` on the two changed files.
+
+### Implementation caveat
+
+The meta `copy_` in `copy_from_experts_module` only succeeds because
+`accelerate.init_empty_weights` no-ops it. On a torch/accelerate combination
+where that is not true, a separate failure could surface at the weight copy
+before the offload step. This is not the case in the reported environment and is
+out of scope for this fix.

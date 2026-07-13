@@ -12,6 +12,31 @@ canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
 
 # Bugs and fixes (llm-compressor pipeline)
 
+## Pre-quantization gate: meta-device MoE linearization offload (fixed, 2026-07-13)
+
+**Symptom:** The first real MiniMax-M3 CLI run of the pre-quantization
+compatibility gate (`python -m pipeline.prequant_compatibility`) died with
+`NotImplementedError: Offload of type meta and distributed=False has not been
+implemented` while constructing the meta model. No GPU, calibration data, or
+checkpoint weights were involved.
+
+**Root cause:** The gate builds a disposable model under
+`accelerate.init_empty_weights` and calls `linearize_moe`, which reaches
+`LinearExperts2D.from_experts_module`. That method unconditionally initialized
+runtime offload for every submodule via `compressed_tensors.offload.offload_module`.
+With a meta source, `get_cache_init_kwargs` resolves `offload_device` to `meta`,
+and `compressed-tensors` intentionally has no `meta` offload backend, so
+`OffloadCache.cls_from_device("meta")` raises. The synthetic gate tests stubbed the
+analyzer and the existing offload tests are GPU-only, so the meta boundary was
+uncovered.
+
+**Fix:** In `src/llmcompressor/modeling/moe/linear_experts.py`, skip the offload
+loop when the resolved `offload_device` is `meta`, leaving the linearized modules
+meta-only. The guard keys off the exact device `offload_module` would reject; CPU,
+CUDA, and disk offload paths are unchanged. Covered by a new CPU-only regression,
+`tests/llmcompressor/modeling/test_linearize_meta.py`, which reproduces the crash
+under `init_empty_weights` before the fix.
+
 ## Static quantization serving preflight (MiniMax-M3 proven; generalization deferred)
 
 The CPU-only serving ABI gate correctly rejected the original in-house GPTQ

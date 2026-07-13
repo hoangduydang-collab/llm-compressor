@@ -229,8 +229,13 @@ class LinearExperts2D(torch.nn.ModuleList):
 
         # copy offloading from original
         offload_kwargs = get_cache_init_kwargs(experts)
-        for module in self.modules():
-            offload_module(module, **offload_kwargs)
+        # `compressed-tensors` has no `meta` offload backend, so a meta source (e.g. the
+        # disposable `init_empty_weights` model used by the pre-quantization gate) must
+        # stay meta-only. Key the guard off the exact `offload_device` that
+        # `offload_module` would reject; CPU, CUDA, and disk offload are unchanged.
+        if torch.device(offload_kwargs["offload_device"]).type != "meta":
+            for module in self.modules():
+                offload_module(module, **offload_kwargs)
 
         return self
 

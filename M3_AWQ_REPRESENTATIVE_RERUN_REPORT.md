@@ -810,3 +810,52 @@ directly instead of leaving it to guesswork. `pipeline/provenance.py`
 against it: a decoder class name ≠ `MiniMaxM3VLDecoderLayer` and/or
 `match_count=0` confirms the root cause; a transformers/llmcompressor version
 skew would show up in the package diff.
+
+## Cluster provenance result (2026-07-13)
+
+The load-only provenance probe completed successfully with `rc=0` on node
+`h111-gpu-polaris.pod4.lab.bitdeer.ai`. It loaded the exact production model
+configuration with `trust_remote_code: true` but did not run `oneshot`,
+calibration, quantization, or quality evaluation.
+
+The decisive fields are:
+
+```text
+model:
+  class: MiniMaxM3SparseForConditionalGeneration
+  module: transformers.models.minimax_m3_vl.modeling_minimax_m3_vl
+  is_remote_code: false
+
+decoder:
+  class: MiniMaxM3VLDecoderLayer
+  count: 60
+  module: transformers.models.minimax_m3_vl.modeling_minimax_m3_vl
+
+target:
+  MiniMaxM3VLDecoderLayer
+  match_count: 60
+```
+
+This rules out the planner's trust-remote-code class-name mismatch hypothesis:
+the loaded model uses the expected installed Transformers implementation and
+the configured sequential target matches every decoder layer.
+
+The cluster environment does differ from the local baseline in several
+versions:
+
+```text
+transformers:        5.12.1  (same)
+torch:               2.11.0  (cluster) vs 2.12.1+cpu (local baseline)
+llmcompressor:       0.1.dev3227+g57a54d3 (cluster metadata)
+compressed_tensors:  0.17.2a20260707 (cluster)
+accelerate:          1.14.0  (same)
+```
+
+The target match is therefore not the cause of the one-subgraph collapse. The
+remaining failure is a runtime/sequential-tracing interaction that occurs
+despite correct model classes and 60 valid target matches. The full provenance
+artifact is:
+
+```text
+/mnt/nfs/hoangduy/results/m3-provenance/20260713T100000Z-m3-provenance-load/model_provenance.json
+```

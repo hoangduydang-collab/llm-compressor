@@ -45,3 +45,12 @@ CPU tests reproduce the failing checkpoint shape: Transformers shared-expert
 ignore names with vLLM `block_sparse_moe` tensor names must fail. Compact
 cyankiwi-style vLLM regexes must pass. Tests also cover packed-module conflicts,
 MMLU leaf allocation, the metric contract, and BF16 backend propagation.
+
+
+## Future scope
+
+The current implementation is intentionally MiniMax-M3-specific. The proven
+results, limitations, and deferred model-agnostic design are recorded in
+`docs/quantization-static-serving-preflight-status-and-roadmap.md`. Do not apply
+the M3 alias/classification policy to unrelated models until the adapter-based
+generalization described there is implemented and tested.

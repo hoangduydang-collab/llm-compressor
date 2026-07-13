@@ -12,6 +12,21 @@ canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
 
 # Bugs and fixes (llm-compressor pipeline)
 
+## Static quantization serving preflight (MiniMax-M3 proven; generalization deferred)
+
+The CPU-only serving ABI gate correctly rejected the original in-house GPTQ
+checkpoint with 228 plain router/shared-expert modules whose Transformers
+ignore rules did not match vLLM runtime names. A metadata-only alias overlay
+then passed with a byte-identical Safetensors index, and repaired GPTQ produced
+coherent results in two independent smoke runs. This closes the catastrophic
+GPTQ config/namespace mismatch at smoke level.
+
+The current checker is deliberately MiniMax-M3-specific; it must not be
+treated as a generic AWQ/GPTQ/FP8 validator yet. See
+`docs/quantization-static-serving-preflight-status-and-roadmap.md` for the
+proven contract, limitations, and the future adapter-based design required
+before making this gate mandatory for every newly quantized model.
+
 ## Active priority: repair MiniMax-M3 shared-expert loading before CUDA-graph RCA (2026-07-11)
 
 Canonical matrix `20260711-135100-canonical-chat` proved that cyankiwi passes

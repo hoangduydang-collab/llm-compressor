@@ -18,21 +18,16 @@ The post is not a product announcement or a claim of universal model support. It
 1. **Opening thesis:** Day-zero quantization is a compatibility problem, not only a bit-width conversion problem.
 2. **Goal:** Accept a newly released model, produce several target formats, and send candidates through a repeatable quality-evaluation pipeline.
 3. **Problem 1 — compatibility across two boundaries:**
-   - Pre-quantization: the quantizer must understand architecture, module mappings, fused layouts, and algorithm-specific transformations.
-   - Post-quantization: the serving engine must interpret checkpoint metadata, tensor packing, model-specific components, and kernel layout correctly.
-   - MiniMax-M3 case evidence is now presented as a sequence of discriminating gates rather than a simple GPTQ-pass/AWQ-fail comparison:
-     - the original in-house GPTQ checkpoint failed a CPU-only serving-ABI gate with 228 runtime namespace/ignore mismatches;
-     - a metadata-only portable overlay preserved tensor payloads, passed the gate, and subsequently produced coherent smoke generations;
-     - repaired GPTQ and the external cyankiwi AWQ control both completed paired 2,047-token probes and five-task smoke runs without empty outputs or periodic loops;
-     - the in-house AWQ W4AFP8 artifact remains unresolved, and attempted repair re-quantizations did not produce complete checkpoints;
-     - representative AWQ diagnostics exposed additional harness/tracing failure modes, so they are evidence for fail-fast instrumentation, not yet a verdict on the production smoothing bug.
-4. **Three-layer control system:**
-   - Layer 1: pre- and post-quantization static gates. The pre-quantization planner is implemented for AWQ/GPTQ and MiniMax-M3 is its first regression profile, but the first real CLI run exposed a meta-device MoE offload incompatibility. A narrow fix and CPU regression test exist; cluster verification remains pending. The post-quantization ABI checker is proven for the documented MiniMax-M3 compressed-tensors profile, not model-agnostic.
-   - Layer 2: representative-layer canaries and diagnostic probes inside the run, with fail-fast termination and durable per-layer evidence. Current AWQ harness results also demonstrate that a probe must validate its own execution coverage before drawing a model-quality conclusion.
-   - Layer 3: guarded full-calibration quantization followed by serving smoke, teacher-forced distributional probes, generation-health checks, and paired evaluation gates.
+   - Pre-quantization: adapt the source model's configuration and module representation to the contracts expected by the selected quantization algorithm. Validate targets, ignores, mappings, fused layouts, group sizes, and algorithm-specific transformations before loading calibration data.
+   - Post-quantization: export or repair the quantized checkpoint so its names, ignored modules, packing, metadata, and layout match the target inference engine's loading contract. The serving engine is treated as the fixed target; compatibility work happens in our checkpoint/export path.
+   - MiniMax-M3 is a concise case study rather than a debugging chronology. The original in-house GPTQ checkpoint failed a CPU-only serving Application Binary Interface (ABI) gate; a tensor-preserving metadata overlay aligned it with vLLM and restored coherent smoke generations. The external AWQ control also served coherently, while the in-house AWQ W4AFP8 path remains unresolved. This is enough evidence to motivate algorithm-specific gates without reproducing every intermediate incident.
+4. **Three-layer control system — the article's centerpiece:**
+   - Layer 1: pre- and post-quantization static gates. The current implementations are MiniMax-M3-first and method-specific. The intended direction is model-family coverage through explicit, versioned compatibility profiles, progressing toward model-agnostic orchestration without allowing unknown models or formats to silently pass.
+   - Layer 2: diagnostic probes embedded in an all-layer smoke quantization. The run uses reduced calibration work to save time, but it exercises the production all-layer path. Coverage, mapping execution, numerical health, and per-layer evidence are checked continuously; a confirmed anomaly terminates the run and preserves diagnostics.
+   - Layer 3: the full-calibration quantization run, followed by the post-quantization static gate, serving smoke, teacher-forced distributional probes, generation-health checks, and paired evaluation against comparator checkpoints.
 5. **Problem 2 — multimodality:** explain why modality-specific calibration coverage matters, then explicitly defer implementation.
 6. **Problem 3 — official-checkpoint fallback:** verify and carefully scope claims about NVFP4 checkpoints, Hopper support, Marlin, and W4A16 fallback. Separate established upstream behavior from the proposed runtime W4A8/W4AFP8 conversion research question.
-7. **Near-term plan and collaboration requests:** harden the text-only pipeline first; seek kernel expertise for the fallback experiment; leave multimodality as a later workstream.
+7. **Near-term plan and collaboration requests:** produce working in-house MiniMax-M3 checkpoints for common quantization algorithms, then run a controlled evaluation against clearly identified comparator models. Continue hardening the text-only pipeline, seek kernel expertise for the fallback experiment, and leave multimodality as a later workstream.
 
 ## Evidence and claim policy
 
@@ -50,7 +45,7 @@ Newly merged reports supersede the earlier shorthand that “GPTQ passed while A
 
 ## Main visualization
 
-The pipeline diagram will emphasize two compatibility boundaries and three layers of protection:
+The pipeline diagram will emphasize two compatibility boundaries and three layers of protection. It will not include the abandoned representative-layer canary; Layer 2 is an all-layer smoke quantization with built-in probes.
 
 ```text
 New model + target format + target runtime
@@ -60,11 +55,11 @@ Architecture + format intake
    │
    ├── Pre-quant static gate ── fail → compatibility report
    ▼
-Representative-layer canary
-   │     └── coverage + numerical probes ── anomaly → stop early
+All-layer smoke quantization
+   │     └── embedded coverage + numerical probes ── anomaly → stop early
    ▼
-Guarded full calibration / quantization
-   │     └── per-layer diagnostics ── anomaly → stop + preserve evidence
+Full-calibration quantization
+   │     └── preserve provenance + per-layer evidence
    ▼
 Candidate checkpoint + provenance
    │

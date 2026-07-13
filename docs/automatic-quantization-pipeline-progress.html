@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Internal engineering update on a three-layer, evidence-gated automatic quantization pipeline and current MiniMax-M3 progress.">
+  <title>Toward a Day-Zero Quantization Pipeline · Engineering Field Note</title>
+  <style>
+    :root {
+      --paper: #f1ecdf;
+      --paper-light: #faf7ef;
+      --ink: #17201d;
+      --muted: #62665f;
+      --rule: #b9b19f;
+      --oxide: #b3482d;
+      --oxide-dark: #78311f;
+      --verified: #2f6a53;
+      --verified-light: #dce9df;
+      --amber: #d59b35;
+      --blueprint: #183a47;
+      --shadow: rgba(23, 32, 29, .14);
+      --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --mono: "Cascadia Mono", "IBM Plex Mono", Consolas, monospace;
+      --sans: "Aptos Narrow", "Arial Narrow", sans-serif;
+      --reading: 760px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, transparent 49.8%, rgba(56, 50, 39, .025) 50%, transparent 50.2%),
+        repeating-linear-gradient(0deg, rgba(60, 54, 44, .018) 0, rgba(60, 54, 44, .018) 1px, transparent 1px, transparent 5px),
+        var(--paper);
+      font-family: var(--serif);
+      font-size: 18px;
+      line-height: 1.68;
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: var(--oxide-dark); text-decoration-thickness: 1px; text-underline-offset: .18em; }
+    a:hover { color: var(--oxide); }
+    a:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; border-radius: 2px; }
+    code { font: .86em/1.3 var(--mono); background: rgba(23,32,29,.07); padding: .08em .3em; border-radius: 2px; }
+    strong { font-weight: 750; }
+
+    .issue-strip {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 8px clamp(18px, 4vw, 64px);
+      background: var(--ink);
+      color: var(--paper-light);
+      font: 700 11px/1.2 var(--mono);
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .issue-strip .live { color: #99d1b7; }
+    .issue-strip .live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: #6fc39a; box-shadow: 0 0 0 4px rgba(111,195,154,.12); }
+
+    header.hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 660px;
+      padding: clamp(56px, 8vw, 118px) clamp(22px, 7vw, 112px) 64px;
+      border-bottom: 1px solid var(--ink);
+    }
+    header.hero::after {
+      content: "W4";
+      position: absolute;
+      right: -2vw;
+      bottom: -11vw;
+      color: rgba(179,72,45,.07);
+      font: 900 clamp(220px, 34vw, 520px)/.75 var(--sans);
+      letter-spacing: -.12em;
+      pointer-events: none;
+    }
+    .kicker { margin: 0 0 28px; color: var(--oxide); font: 800 12px/1.2 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    h1 {
+      max-width: 1020px;
+      margin: 0;
+      font: 750 clamp(56px, 9.5vw, 136px)/.88 var(--serif);
+      letter-spacing: -.055em;
+    }
+    h1 em { color: var(--oxide); font-weight: 500; }
+    .deck {
+      position: relative;
+      z-index: 1;
+      max-width: 720px;
+      margin: 42px 0 0 clamp(0px, 12vw, 180px);
+      padding-left: 24px;
+      border-left: 6px solid var(--ink);
+      font-size: clamp(20px, 2.1vw, 28px);
+      line-height: 1.35;
+    }
+    .hero-meta {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 54px;
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .stamp { padding: 10px 12px; border: 1px solid var(--ink); background: rgba(250,247,239,.56); }
+
+    .layout { display: grid; grid-template-columns: minmax(190px, 260px) minmax(0, 1fr); gap: clamp(30px, 6vw, 110px); max-width: 1320px; margin: 0 auto; padding: 70px clamp(20px, 4vw, 54px) 110px; }
+    nav.toc { position: sticky; top: 28px; align-self: start; border-top: 7px solid var(--ink); padding-top: 18px; }
+    .toc-label { margin: 0 0 14px; color: var(--oxide); font: 800 10px/1.2 var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+    nav.toc ol { margin: 0; padding: 0; list-style: none; counter-reset: toc; }
+    nav.toc li { counter-increment: toc; border-top: 1px solid var(--rule); }
+    nav.toc a { display: grid; grid-template-columns: 24px 1fr; gap: 7px; padding: 10px 2px; color: var(--muted); font: 700 12px/1.35 var(--mono); text-decoration: none; transition: color .2s, padding-left .2s; }
+    nav.toc a::before { content: counter(toc, decimal-leading-zero); color: var(--rule); }
+    nav.toc a:hover, nav.toc a[aria-current="true"] { color: var(--oxide); padding-left: 5px; }
+
+    article { min-width: 0; }
+    section { scroll-margin-top: 30px; margin: 0 auto 100px; max-width: var(--reading); }
+    section.wide { max-width: 1040px; }
+    h2 { margin: 0 0 30px; font: 720 clamp(36px, 5vw, 64px)/1 var(--serif); letter-spacing: -.035em; }
+    h2 .number { display: block; margin-bottom: 12px; color: var(--oxide); font: 800 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    h3 { margin: 48px 0 15px; font: 720 26px/1.15 var(--serif); }
+    p { margin: 0 0 1.25em; }
+    .lead { font-size: 24px; line-height: 1.5; }
+    .dropcap::first-letter { float: left; margin: .08em .12em 0 0; color: var(--oxide); font: 760 4.2em/.72 var(--serif); }
+
+    .question-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; margin: 38px 0; border: 1px solid var(--ink); background: var(--ink); }
+    .question { min-height: 180px; padding: 24px; background: var(--paper-light); }
+    .question b { display: block; margin-bottom: 16px; color: var(--oxide); font: 800 11px/1 var(--mono); letter-spacing: .12em; }
+    .question p { margin: 0; font-size: 18px; line-height: 1.4; }
+
+    .boundary { margin: 30px 0; padding: 28px 30px; border-left: 8px solid var(--oxide); background: var(--paper-light); box-shadow: 10px 10px 0 rgba(23,32,29,.06); }
+    .boundary.runtime { border-left-color: var(--blueprint); }
+    .boundary .eyebrow { margin-bottom: 10px; font: 800 10px/1 var(--mono); color: var(--muted); letter-spacing: .14em; text-transform: uppercase; }
+    .boundary h3 { margin: 0 0 12px; }
+    .boundary p:last-child { margin-bottom: 0; }
+
+    .evidence-chip { display: inline-flex; align-items: center; gap: 7px; margin: 2px 4px 2px 0; padding: 6px 9px; border-radius: 999px; font: 750 10px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; vertical-align: middle; }
+    .observed { color: #fff; background: var(--oxide-dark); }
+    .upstream { color: #fff; background: var(--verified); }
+    .proposed { color: var(--ink); background: #e6bf68; }
+
+    .schematic-wrap { max-width: 1160px; margin: 45px auto 0; padding: clamp(20px, 4vw, 48px); color: #e9eee9; background: var(--ink); box-shadow: 18px 18px 0 rgba(179,72,45,.18); }
+    .schematic-head { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 30px; padding-bottom: 16px; border-bottom: 1px solid #60706a; }
+    .schematic-head h3 { margin: 0; color: #fff; font: 700 27px/1.1 var(--serif); }
+    .schematic-head span { color: #93a29c; font: 700 10px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .pipeline { margin: 0; padding: 0; list-style: none; }
+    .stage { position: relative; display: grid; grid-template-columns: 88px minmax(0,1fr) minmax(150px, 230px); gap: 20px; align-items: center; padding: 22px 0; border-bottom: 1px solid #42514c; }
+    .stage:last-child { border-bottom: 0; }
+    .stage:not(:last-child)::after { content: "↓"; position: absolute; bottom: -15px; left: 42px; z-index: 2; display: grid; place-items: center; width: 24px; height: 28px; color: #e6bf68; background: var(--ink); font: 700 20px/1 var(--mono); }
+    .layer-tag { align-self: stretch; display: grid; place-items: center; padding: 8px; border: 1px solid #71817b; color: #b7c6c0; font: 800 10px/1.3 var(--mono); letter-spacing: .09em; text-align: center; text-transform: uppercase; }
+    .stage-core b { display: block; color: #fff; font: 700 20px/1.2 var(--serif); }
+    .stage-core small { display: block; margin-top: 5px; color: #aab8b3; font: 12px/1.45 var(--mono); }
+    .branch { padding: 12px 14px; border-left: 3px solid #cb6b4f; color: #dfaaa0; background: rgba(179,72,45,.12); font: 11px/1.45 var(--mono); }
+    .branch.pass { border-color: #66aa87; color: #a8d3ba; background: rgba(47,106,83,.18); }
+
+    .layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 40px 0; }
+    .layer-card { position: relative; padding: 28px 24px 24px; border: 1px solid var(--ink); background: rgba(250,247,239,.7); }
+    .layer-card::before { content: attr(data-layer); position: absolute; top: -13px; left: 18px; padding: 5px 8px; color: #fff; background: var(--oxide); font: 800 9px/1 var(--mono); letter-spacing: .1em; }
+    .layer-card h3 { margin: 4px 0 12px; font-size: 23px; }
+    .layer-card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+    .table-scroll { overflow-x: auto; margin: 34px 0; border-top: 6px solid var(--ink); }
+    table { width: 100%; border-collapse: collapse; background: rgba(250,247,239,.56); font-size: 15px; line-height: 1.45; }
+    caption { padding: 14px 0; color: var(--muted); font: 700 11px/1.3 var(--mono); text-align: left; letter-spacing: .08em; text-transform: uppercase; }
+    th, td { padding: 16px 14px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font: 800 10px/1.2 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+    td:first-child { font-weight: 750; }
+    .status { display: inline-block; white-space: nowrap; padding: 5px 7px; font: 800 9px/1 var(--mono); text-transform: uppercase; }
+    .status.working { color: #fff; background: var(--verified); }
+    .status.hold { color: #fff; background: var(--oxide); }
+    .status.planned { color: var(--ink); background: #e7c36d; }
+
+    .callout { margin: 36px 0; padding: 26px 28px; border: 1px solid var(--rule); border-top: 7px solid var(--verified); background: var(--verified-light); }
+    .callout.warning { border-top-color: var(--oxide); background: #f1dfd6; }
+    .callout h3 { margin: 0 0 10px; font-size: 22px; }
+    .callout p:last-child { margin-bottom: 0; }
+
+    .roadmap { margin: 36px 0 0; padding: 0; list-style: none; counter-reset: road; }
+    .roadmap li { counter-increment: road; display: grid; grid-template-columns: 54px 1fr; gap: 18px; padding: 22px 0; border-top: 1px solid var(--rule); }
+    .roadmap li::before { content: counter(road, decimal-leading-zero); color: var(--oxide); font: 800 26px/1 var(--mono); }
+
+    .references { columns: 2; column-gap: 44px; margin: 0; padding: 0; list-style: none; }
+    .references li { break-inside: avoid; margin: 0 0 12px; padding: 0 0 12px; border-bottom: 1px solid var(--rule); font-size: 14px; line-height: 1.45; }
+    .references .ref-type { display: block; margin-bottom: 5px; color: var(--muted); font: 800 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+
+    footer { padding: 40px clamp(20px, 6vw, 90px); border-top: 1px solid var(--ink); background: var(--ink); color: #b8c4bf; font: 12px/1.5 var(--mono); }
+    footer strong { color: #fff; }
+
+    @media (max-width: 900px) {
+      .layout { display: block; padding-top: 32px; }
+      nav.toc { position: static; margin-bottom: 70px; columns: 2; border-top-width: 5px; }
+      .layers { grid-template-columns: 1fr; gap: 26px; }
+      .stage { grid-template-columns: 72px minmax(0, 1fr); }
+      .branch { grid-column: 2; }
+      .stage:not(:last-child)::after { left: 32px; }
+    }
+    @media (max-width: 620px) {
+      body { font-size: 16px; }
+      header.hero { width: 100%; min-height: auto; padding: 48px 24px 44px; }
+      h1 { max-width: 100%; font-size: 45px; line-height: .94; overflow-wrap: anywhere; word-break: normal; }
+      .deck { max-width: 100%; margin-left: 0; padding-left: 17px; font-size: 20px; overflow-wrap: anywhere; }
+      .issue-strip { align-items: flex-start; flex-direction: column; gap: 5px; font-size: 9px; }
+      .issue-strip span { max-width: 100%; overflow-wrap: anywhere; }
+      .stamp { max-width: 100%; overflow-wrap: anywhere; }
+      .layout { width: 100%; max-width: 100%; padding-left: 17px; padding-right: 17px; overflow: hidden; }
+      article, section, .question, .stage-core, .branch { min-width: 0; max-width: 100%; }
+      p, li, td { overflow-wrap: break-word; }
+      nav.toc { columns: 1; }
+      .question-grid { grid-template-columns: 1fr; }
+      .question { min-height: auto; }
+      .schematic-wrap { margin-left: -10px; margin-right: -10px; padding: 19px 16px; box-shadow: 8px 8px 0 rgba(179,72,45,.18); }
+      .schematic-head { align-items: start; flex-direction: column; }
+      .stage { grid-template-columns: 52px minmax(0,1fr); gap: 12px; }
+      .layer-tag { padding: 6px 3px; font-size: 8px; }
+      .stage-core b { font-size: 17px; }
+      .branch { grid-column: 1 / -1; margin-left: 64px; }
+      .stage:not(:last-child)::after { left: 17px; }
+      .references { columns: 1; }
+      th, td { min-width: 145px; padding: 12px 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+    @media print {
+      :root { --paper: #fff; --paper-light: #fff; }
+      body { background: #fff; font-size: 11pt; }
+      .issue-strip, nav.toc { display: none; }
+      header.hero { min-height: auto; padding: 35pt 28pt; }
+      header.hero::after { display: none; }
+      .layout { display: block; max-width: none; padding: 28pt; }
+      section { max-width: none; margin-bottom: 38pt; }
+      .schematic-wrap { color: #111; background: #fff; border: 2px solid #111; box-shadow: none; }
+      .schematic-head h3, .stage-core b { color: #111; }
+      .schematic-head span, .stage-core small, .layer-tag { color: #333; }
+      .stage, .schematic-head { border-color: #777; }
+      .branch, .branch.pass { color: #111; background: #fff; }
+      a { color: #111; text-decoration: none; }
+      a[href^="http"]::after { content: " (" attr(href) ")"; font: 8pt var(--mono); overflow-wrap: anywhere; }
+      footer { color: #111; background: #fff; border-top: 1px solid #111; }
+    }
+  </style>
+</head>
+<body>
+  <div class="issue-strip">
+    <span>Internal engineering update · Issue 01 · 14 July 2026</span>
+    <span class="live">Research &amp; implementation in progress</span>
+  </div>
+
+  <header class="hero">
+    <p class="kicker">Automatic quantization / engineering field note</p>
+    <h1>Toward a <em>Day-Zero</em> Quantization Pipeline</h1>
+    <p class="deck">From a newly released model to multiple inference-ready checkpoints—each stopped early when it is wrong, and validated before it is trusted.</p>
+    <div class="hero-meta" aria-label="Article metadata">
+      <span class="stamp">MiniMax-M3 case study</span>
+      <span class="stamp">Three-layer control system</span>
+      <span class="stamp">Text path first</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Article sections">
+      <p class="toc-label">Field index</p>
+      <ol>
+        <li><a href="#goal">The goal</a></li>
+        <li><a href="#gap">Compatibility gap</a></li>
+        <li><a href="#pipeline">Three-layer pipeline</a></li>
+        <li><a href="#minimax">MiniMax-M3 lessons</a></li>
+        <li><a href="#multimodality">Multimodality</a></li>
+        <li><a href="#fallback">Checkpoint fallback</a></li>
+        <li><a href="#next">Near-term plan</a></li>
+        <li><a href="#evidence">Evidence</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <article>
+        <section id="goal">
+          <h2><span class="number">01 / Objective</span>The goal</h2>
+          <p class="lead dropcap">The hard part of automatic quantization is not selecting four bits instead of sixteen. It is making a new model architecture, a quantization algorithm, and an inference engine agree on the same contract.</p>
+          <p>Our fork of <code>llm-compressor</code> is becoming the control plane for that agreement. The intended outcome: supply a newly released model, request one or more target algorithms and formats, and receive candidates that have passed structural, runtime, and quality checks.</p>
+          <div class="question-grid" aria-label="Pipeline acceptance questions">
+            <div class="question"><b>Q / 01</b><p>Can the model representation satisfy the quantizer's expectations?</p></div>
+            <div class="question"><b>Q / 02</b><p>Did the intended transformations execute across the intended layers?</p></div>
+            <div class="question"><b>Q / 03</b><p>Does the checkpoint satisfy the inference engine's loading contract?</p></div>
+            <div class="question"><b>Q / 04</b><p>Does served behavior remain acceptable against a paired baseline?</p></div>
+          </div>
+          <p>A checkpoint can be structurally valid but low quality. It can be numerically healthy but exported under the wrong names. It can even load while silently misclassifying model components. We need separate evidence for each boundary.</p>
+        </section>
+
+        <section id="gap">
+          <h2><span class="number">02 / Problem 1</span>The compatibility gap</h2>
+          <p>New model releases regularly arrive before every quantization framework and inference backend has an explicit architecture profile. LLM Compressor supports GPTQ, AWQ, W4AFP8, NVFP4, MXFP4, FP8, and other schemes—but format support is not automatic architecture support. <a href="https://github.com/vllm-project/llm-compressor"><span class="evidence-chip upstream">Supported upstream</span> LLM Compressor capabilities</a></p>
+
+          <div class="boundary">
+            <div class="eyebrow">Boundary A · Before quantization</div>
+            <h3>Adapt the model to the quantizer</h3>
+            <p>The source model's configuration and module representation must satisfy the selected algorithm: targets, ignores, fused layouts, group sizes, AWQ smooth/balance mappings, GPTQ weighted targets, custom norms, and MoE expert representation.</p>
+          </div>
+
+          <p>AWQ uses activation statistics to identify salient channels and equivalent per-channel scaling to reduce weight-quantization error. That makes a wrong smoothing mapping an algorithm-specific failure, not a generic packing problem. <a href="https://arxiv.org/abs/2306.00978">AWQ paper</a></p>
+          <p>GPTQ uses approximate second-order information to quantize and compensate weights within a block. A layout working for GPTQ therefore does not prove that AWQ's smoothing path is correct. <a href="https://arxiv.org/abs/2210.17323">GPTQ paper</a></p>
+
+          <div class="boundary runtime">
+            <div class="eyebrow">Boundary B · After quantization</div>
+            <h3>Adapt the checkpoint to the runtime</h3>
+            <p>The inference engine is the fixed target. Our export or repair path must align module names, ignored components, packing, scales, metadata, and layout with the loader.</p>
+          </div>
+
+          <p>We call this the serving <strong>Application Binary Interface (ABI)</strong>: the concrete contract between the saved checkpoint and the runtime that reconstructs executable modules. Completing a quantization job is not proof that this contract is valid.</p>
+        </section>
+
+        <section id="pipeline" class="wide">
+          <h2><span class="number">03 / Centerpiece</span>The three-layer pipeline</h2>
+          <p class="lead">Static gates eliminate incompatible work. Embedded probes stop unhealthy all-layer runs. Full calibration proceeds only after the production path has survived both.</p>
+
+          <figure class="schematic-wrap" aria-labelledby="schematic-title">
+            <div class="schematic-head">
+              <h3 id="schematic-title">Reliability schematic</h3>
+              <span>Pass downward · fail sideways · preserve evidence</span>
+            </div>
+            <ol class="pipeline">
+              <li class="stage">
+                <span class="layer-tag">Intake</span>
+                <div class="stage-core"><b>Model + format + runtime profile</b><small>Resolve architecture, algorithm, numerical scheme, backend and hardware.</small></div>
+                <div class="branch pass">OUTPUT → explicit compatibility profile</div>
+              </li>
+              <li class="stage">
+                <span class="layer-tag">Layer 1</span>
+                <div class="stage-core"><b>Pre-quantization static gate</b><small>Targets · ignores · mappings · layout · group sizes · norms · provenance</small></div>
+                <div class="branch">FAIL → compatibility report before calibration or GPU work</div>
+              </li>
+              <li class="stage">
+                <span class="layer-tag">Layer 2</span>
+                <div class="stage-core"><b>All-layer smoke quantization</b><small>Reduced calibration workload; production layer path; embedded coverage and numerical probes.</small></div>
+                <div class="branch">ANOMALY → durable per-layer evidence, then terminate</div>
+              </li>
+              <li class="stage">
+                <span class="layer-tag">Layer 3</span>
+                <div class="stage-core"><b>Full-calibration quantization</b><small>Only a smoke-qualified recipe receives the expensive calibration budget.</small></div>
+                <div class="branch pass">OUTPUT → candidate checkpoint + provenance</div>
+              </li>
+              <li class="stage">
+                <span class="layer-tag">Layer 1</span>
+                <div class="stage-core"><b>Post-quantization serving ABI gate</b><small>Inventory · scales · packed/plain policy · aliases · targets · ignores</small></div>
+                <div class="branch">FAIL → export, packing or metadata diagnosis</div>
+              </li>
+              <li class="stage">
+                <span class="layer-tag">Layer 3</span>
+                <div class="stage-core"><b>Runtime smoke + paired evaluation</b><small>Loader · kernels · generation health · teacher-forced distribution · task quality</small></div>
+                <div class="branch pass">PASS → publish; otherwise hold with a scoped report</div>
+              </li>
+            </ol>
+          </figure>
+
+          <div class="layers">
+            <div class="layer-card" data-layer="LAYER 1"><h3>Static compatibility</h3><p>Cheap checks at both boundaries. Unknown models or formats must fail as unsupported, never silently pass.</p></div>
+            <div class="layer-card" data-layer="LAYER 2"><h3>All-layer live probes</h3><p>Production-shaped smoke quantization verifies coverage, mapping execution and numerical health before hours are spent.</p></div>
+            <div class="layer-card" data-layer="LAYER 3"><h3>Full acceptance</h3><p>Full calibration, checkpoint ABI, runtime health and paired quality evidence form one acceptance chain.</p></div>
+          </div>
+
+          <h3>Why the canary changed</h3>
+          <p>The representative-layer canary is no longer the primary path. Isolating a layer can accidentally change tracing or lifecycle behavior and turn the harness into a confounder. The guarded replacement uses all layers with a smaller calibration workload, then verifies that targets partition, mappings complete, intended modules receive calibration, scales stay healthy, and progress is durable.</p>
+          <p>The checkers are MiniMax-M3-first, not universal. The target architecture is a model-agnostic orchestrator backed by explicit, versioned model-family and storage-format profiles.</p>
+        </section>
+
+        <section id="minimax" class="wide">
+          <h2><span class="number">04 / Case evidence</span>What MiniMax-M3 taught us</h2>
+          <p class="lead">The useful story is not every debugging step. It is that each discriminator isolated a different contract.</p>
+          <div class="table-scroll">
+            <table>
+              <caption>Keep the four artifacts separate</caption>
+              <thead><tr><th>Artifact</th><th>Evidence</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>Original in-house GPTQ</td><td>Failed the CPU-only serving ABI gate with 228 runtime namespace/ignore mismatches.</td><td><span class="status hold">Hold</span></td></tr>
+                <tr><td>Metadata-repaired GPTQ</td><td>Tensor-preserving configuration overlay passed preflight and produced coherent smoke generations.</td><td><span class="status working">Working candidate</span></td></tr>
+                <tr><td>External AWQ control</td><td>Passed preflight and paired 2,047-token probe; no empty outputs or periodic loops in the small smoke.</td><td><span class="status working">Comparator</span></td></tr>
+                <tr><td>In-house AWQ W4AFP8</td><td>Unhealthy output remains unresolved; repair builds did not yield a completed replacement checkpoint.</td><td><span class="status hold">Unresolved</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout">
+            <h3><span class="evidence-chip observed">Observed in this fork</span> A static failure predicted a real runtime defect</h3>
+            <p>The original GPTQ artifact held 21,888 packed routed-expert modules while 57 routers and 171 shared-expert projections remained plain under runtime names not covered by its ignore rules. A metadata-only overlay added the required aliases without changing tensor payloads. Coherent generation after repair validated the diagnosis.</p>
+          </div>
+          <p>The repaired GPTQ and external AWQ control each completed the small five-task workflow and generation-health checks. These are diagnostic samples—not statistically meaningful benchmark conclusions. Read the <a href="../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md">compact smoke report</a>, <a href="../M3_STATIC_ABI_GATE_REPORT.md">static ABI report</a>, and <a href="../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md">repaired preflight report</a>.</p>
+          <p>The first real pre-quantization CLI run also failed usefully: it found a meta-device MoE offload boundary before calibration data or GPU allocation. A narrow local fix and CPU regression coverage exist; the real cluster rerun remains pending. <a href="../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md">Pre-quantization report</a></p>
+
+          <div class="table-scroll">
+            <table>
+              <caption>Current control-surface status</caption>
+              <thead><tr><th>Area</th><th>Status</th><th>Boundary</th></tr></thead>
+              <tbody>
+                <tr><td>Pre-quant AWQ/GPTQ planner</td><td>Implemented; M3 regression; cluster rerun pending</td><td>Model → quantizer</td></tr>
+                <tr><td>M3 post-quant ABI checker</td><td>Proven on documented compressed-tensors profile</td><td>Checkpoint → vLLM</td></tr>
+                <tr><td>Guarded all-layer diagnostics</td><td>Implemented with durable abort evidence</td><td>Quantization lifecycle</td></tr>
+                <tr><td>Repaired in-house GPTQ</td><td>Coherent smoke candidate</td><td>Runtime health</td></tr>
+                <tr><td>In-house AWQ W4AFP8</td><td>Unresolved</td><td>Algorithm-specific quality</td></tr>
+                <tr><td>General model-family profiles</td><td>Planned</td><td>Coverage expansion</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="multimodality">
+          <h2><span class="number">05 / Problem 2</span>Multimodality</h2>
+          <p>Text and non-text token streams can have materially different activation distributions and sensitivity to quantization error. Recent vision-language quantization research reports this calibration mismatch between visual and text tokens. <a href="https://arxiv.org/abs/2602.07899"><span class="evidence-chip upstream">Supported upstream</span> VLM calibration study</a></p>
+          <p>A robust multimodal path will need modality-aware samples, processor artifacts, placeholder/token alignment, and evaluations that actually exercise each modality. We are hardening the text path first. Multimodal calibration is deferred rather than implied by the current gates.</p>
+        </section>
+
+        <section id="fallback">
+          <h2><span class="number">06 / Problem 3</span>Official-checkpoint fallback</h2>
+          <p>Official NVFP4 checkpoints are useful memory and quality baselines when reproducing the original recipe is expensive. The Hopper fallback, however, needs precise wording.</p>
+          <aside class="callout warning" aria-label="Technical correction">
+            <h3>Correction: Marlin does not create a new W4A16 checkpoint</h3>
+            <p>vLLM's FP4 Marlin path supports weight-only FP4 execution on SM80+ hardware, including Hopper. It consumes packed FP4 weights with higher-precision activations. That is best described as an NVFP4-weight / A16-style execution path—not a runtime checkpoint conversion. Four-bit storage and weight-bandwidth benefits remain, but Hopper does not gain Blackwell's native NVFP4 Tensor Core path.</p>
+          </aside>
+          <p><a href="https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/"><span class="evidence-chip upstream">Supported upstream</span> vLLM FP4 Marlin API</a> · <a href="https://docs.vllm.ai/en/stable/features/quantization/index.html">hardware compatibility</a> · <a href="https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf">NVIDIA CUDA release notes</a></p>
+          <p>vLLM also exposes a separate utility that dequantizes NVFP4 back to a higher-precision dtype. It helps compatibility and diagnostics, but it is not a fast W4AFP8 compute path. <a href="https://docs.vllm.ai/en/latest/api/vllm/model_executor/layers/quantization/utils/nvfp4_emulation_utils/">NVFP4 emulation API</a></p>
+          <p><span class="evidence-chip proposed">Proposed work</span> Investigate load-time adaptation of an official NVFP4 checkpoint into a Hopper W4AFP8/W4A8 path: retain four-bit weight storage, use FP8 activations, and measure the quality trade-off. vLLM contains a compressed-tensors W4A8-FP8 scheme, but we found no official direct conversion from arbitrary NVFP4 checkpoints. Block-scale semantics make this more than a cast; the work likely needs a loader/repacking adapter and possibly a custom kernel or integration.</p>
+          <p>This would be a stronger comparator for in-house W4AFP8 than a weight-only A16 fallback. It is specialized systems work, so feasibility should be reviewed with colleagues who have kernel expertise before implementation.</p>
+        </section>
+
+        <section id="next">
+          <h2><span class="number">07 / Direction</span>Near-term plan</h2>
+          <ol class="roadmap">
+            <li>Produce working in-house MiniMax-M3 checkpoints for common algorithms, starting with repaired GPTQ and a healthy AWQ path.</li>
+            <li>Run all-layer smoke quantization with embedded probes before each expensive full calibration.</li>
+            <li>Export each candidate through a versioned MiniMax-M3/runtime compatibility profile.</li>
+            <li>Compare against BF16, the external AWQ control, and relevant official checkpoints with identical prompts, corpora, manifests and runtime settings.</li>
+            <li>Report quality, memory, and throughput separately. Loading is not quality; checkpoint size is not compute speed.</li>
+            <li>Generalize one model family and storage format at a time, backed by valid and corrupted fixtures.</li>
+          </ol>
+          <p class="lead">The longer-term product is model-agnostic orchestration backed by explicit compatibility knowledge—not a universal checker that guesses.</p>
+        </section>
+
+        <section id="evidence" class="wide">
+          <h2><span class="number">08 / Ledger</span>Evidence &amp; references</h2>
+          <ul class="references">
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md">Pre-quantization real CLI failure and local fix</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_STATIC_ABI_GATE_REPORT.md">Static serving ABI gate result</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md">Repaired GPTQ ABI preflight</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md">Repaired GPTQ / external AWQ smoke</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_AWQ_REQUANTIZATION_REPORT.md">AWQ re-quantization status</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="../M3_AWQ_REPRESENTATIVE_RERUN_REPORT.md">Superseded representative diagnostic</a></li>
+            <li><span class="ref-type">Observed in this fork</span><a href="quantization-static-serving-preflight-status-and-roadmap.md">Static preflight scope and roadmap</a></li>
+            <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/prequant_compatibility.py">Pre-quant compatibility CLI</a></li>
+            <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/m3_serve_abi.py">MiniMax-M3 serving ABI checker</a></li>
+            <li><span class="ref-type">Implemented entry point</span><a href="../pipeline/m3_guarded_full.py">Guarded all-layer runner</a></li>
+            <li><span class="ref-type">Upstream</span><a href="https://github.com/vllm-project/llm-compressor">LLM Compressor schemes and algorithms</a></li>
+            <li><span class="ref-type">Upstream</span><a href="https://docs.vllm.ai/en/latest/features/quantization/llm_compressor/">vLLM / LLM Compressor integration</a></li>
+            <li><span class="ref-type">Original paper</span><a href="https://arxiv.org/abs/2306.00978">AWQ</a></li>
+            <li><span class="ref-type">Original paper</span><a href="https://arxiv.org/abs/2210.17323">GPTQ</a></li>
+            <li><span class="ref-type">Upstream</span><a href="https://docs.vllm.ai/en/stable/features/quantization/index.html">vLLM hardware compatibility</a></li>
+            <li><span class="ref-type">Upstream source API</span><a href="https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/">FP4 Marlin implementation</a></li>
+            <li><span class="ref-type">Upstream source API</span><a href="https://docs.vllm.ai/en/latest/api/vllm/model_executor/layers/quantization/utils/nvfp4_emulation_utils/">NVFP4 emulation implementation</a></li>
+            <li><span class="ref-type">Hardware documentation</span><a href="https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf">NVIDIA CUDA toolkit release notes</a></li>
+            <li><span class="ref-type">Original paper</span><a href="https://arxiv.org/abs/2602.07899">VLM calibration study</a></li>
+          </ul>
+        </section>
+      </article>
+    </main>
+  </div>
+
+  <footer>
+    <strong>Field note status:</strong> internal research update, not a product-support statement. Claims are scoped to repository evidence dated 14 July 2026 and the linked upstream sources.
+  </footer>
+
+  <script>
+    (() => {
+      const links = [...document.querySelectorAll('.toc a')];
+      const targets = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+      if (!('IntersectionObserver' in window)) return;
+      const observer = new IntersectionObserver(entries => {
+        const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        links.forEach(link => link.removeAttribute('aria-current'));
+        const active = links.find(link => link.getAttribute('href') === `#${visible.target.id}`);
+        if (active) active.setAttribute('aria-current', 'true');
+      }, { rootMargin: '-15% 0px -65% 0px', threshold: [0, .15, .5] });
+      targets.forEach(target => observer.observe(target));
+    })();
+  </script>
+</body>
+</html>

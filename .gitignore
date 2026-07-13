@@ -818,6 +818,7 @@ env_log.json
 # uv artifacts
 uv.lock
 .venv/
+.venv-*/
 
 # Versioned CUDA-graph RCA evidence (omit model artifacts and large logs/dumps).
 !artifacts/

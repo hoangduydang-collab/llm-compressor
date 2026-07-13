@@ -1165,3 +1165,33 @@ finiteness + group-scale-shape checks:
 python -m pipeline.verify_quant_checkpoint --ckpt artifacts/MiniMax-M3-awq-W4AFP8/<ts>/checkpoint
 python -m pipeline.verify_quant_checkpoint --ckpt <dir> --check-tensors   # opens shards
 ```
+
+
+## Pre-quantization compatibility gate (original model + recipe)
+
+Long calibration runs must now be preceded by the planner-only gate:
+
+```bash
+python -m pipeline.prequant_compatibility \
+  --config pipeline/configs/minimax_m3.yaml \
+  --output artifacts/preflight/minimax-m3-awq.json
+```
+
+The command builds a disposable meta model, mirrors MoE linearization, constructs the
+exact pipeline recipe, and invokes llm-compressor's real quantization initialization,
+target matching, group-divisibility checks, dynamic AWQ mappings, and AWQ mapping
+resolver. It never loads checkpoint tensors or calibration data, installs hooks, runs
+a forward, or allocates a GPU. Exit status is `0` for structural compatibility and `2`
+for a persisted incompatibility report.
+
+For MiniMax-M3 AWQ, the report verifies that every resolved
+`MiniMaxM3VLRMSNorm` smooth layer is backed by `CalibrationOffsetNorm`; removing that
+adapter is a hard `missing_offset_norm_adapter` failure before calibration. The report
+also preserves resolved targets, ignores, quantized module names, AWQ smooth/balance
+mappings, failures, warnings, and properties that remain unverified.
+
+This does not replace the representative-layer canary, post-quantization serving ABI
+gate, runtime smoke, or quality evaluation. The required order is: pre-quantization
+gate, representative canary for expensive/new recipes, full quantization, serving ABI
+gate, runtime smoke, then quality evaluation. Version one supports GPTQ and AWQ; other
+methods fail as unsupported rather than receiving a guessed pass.

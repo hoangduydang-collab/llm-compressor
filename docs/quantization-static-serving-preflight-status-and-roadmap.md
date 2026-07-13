@@ -154,3 +154,36 @@ The checker is ready to apply automatically to every new model only when:
 
 Until those criteria are met, use the current checker only for the documented
 MiniMax-M3 compressed-tensors profiles.
+
+
+## Pre-quantization companion gate
+
+The original-model companion is implemented at
+`llmcompressor.preflight.quantization` with the pipeline entry point:
+
+```bash
+python -m pipeline.prequant_compatibility --config <pipeline.yaml> --output <report.json>
+```
+
+It operates on a disposable meta model and the exact AWQ/GPTQ modifier list. Unlike
+the serving ABI checker, it runs before weights or calibration data are loaded and
+asks whether llm-compressor can structurally apply the requested method: recipe
+resolution, target/ignore coverage, group-size divisibility, real AWQ mapping
+resolution, hook-target existence, balance-layer shape compatibility, and offset-norm
+adapter coverage. MiniMax-M3 is the first regression profile.
+
+The two gates cover different boundaries. A pre-quantization pass does not inspect the
+produced checkpoint or vLLM, while a post-quantization ABI pass does not prove that the
+calibration planner interpreted the original architecture correctly. Both reports
+explicitly retain unverified numerical/runtime properties. The intended lifecycle is:
+
+1. pre-quantization planner compatibility;
+2. representative-layer canary when the recipe or architecture is new;
+3. full quantization;
+4. post-quantization serving ABI compatibility;
+5. bounded runtime smoke; and
+6. paired model-quality evaluation.
+
+Version one intentionally supports AWQ and GPTQ only. Generalization should add method
+adapters around real modifier planner APIs, never parallel reimplementations of their
+target or mapping rules.

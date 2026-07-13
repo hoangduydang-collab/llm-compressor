@@ -782,3 +782,31 @@ tying and config/save plumbing, so it is the fallback, not the first choice.
 Local repro scripts (planner scratchpad, not committed): `repro_awq_moe_stats.py`
 (generic-path proof: classname & instance-path both complete) and
 `repro_minimax_trace.py` (VL trace matrix above).
+
+### Wired-in provenance logging (self-diagnosing on the real box)
+
+Because the collapse is an environment/load factor, the pipeline now records it
+directly instead of leaving it to guesswork. `pipeline/provenance.py`
+(`log_model_provenance`) runs in both the production quantize path
+(`pipeline/quantize.py`, before oneshot) and the representative arm
+(`pipeline/m3_awq_representative.py`, after target resolution). It writes
+`model_provenance.json` next to the run outputs and prints a summary capturing:
+
+- **Model-code origin**: loaded class name/module/file and `is_remote_code`
+  (`transformers_modules.*` ⇒ trust_remote_code loaded the checkpoint's own
+  modeling code), plus `config.auto_map`.
+- **Decoder-layer classes**: the actual class name(s) present and per-class
+  counts (installed vs remote), so a name that isn't `MiniMaxM3VLDecoderLayer`
+  is visible immediately.
+- **Target match**: `match_count` for each configured `sequential_targets`
+  entry, flagged `<-- ZERO MATCH (collapse cause)` when zero.
+- **Full environment**: python/platform/CUDA + a complete installed-package
+  snapshot (`environment.installed_packages`, pip-freeze equivalent) for exact
+  local-vs-cluster diffing.
+
+`LOCAL_ENV_PROVENANCE.json` (repo root) is the planner's local baseline
+(transformers 5.12.1, torch 2.12.1+cpu, 127 packages, `match_count=3`,
+`is_remote_code=false`). The executor diffs the cluster's `model_provenance.json`
+against it: a decoder class name ≠ `MiniMaxM3VLDecoderLayer` and/or
+`match_count=0` confirms the root cause; a transformers/llmcompressor version
+skew would show up in the package diff.

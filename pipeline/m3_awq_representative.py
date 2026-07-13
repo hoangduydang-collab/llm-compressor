@@ -849,6 +849,7 @@ def run_arm(
     from pipeline.calibration import build_calibration_dataset
     from pipeline.config import load_config
     from pipeline.minimax_m3_config import patch_minimax_m3_for_text_calibration
+    from pipeline.provenance import log_model_provenance
     from pipeline.quantize import _load_model_and_tokenizer
 
     _validate_layer(layer)
@@ -890,6 +891,14 @@ def run_arm(
         # is retained only for controlled comparison against the class-name path.
         decoder_name, _ = _selected_decoder(model, layer)
         config.calibration.sequential_targets = [decoder_name]
+    # Provenance AFTER final target resolution: records model-code origin
+    # (installed vs trust_remote_code) and whether the resolved sequential
+    # targets match any module. Zero match -> single-subgraph collapse.
+    log_model_provenance(
+        model,
+        config.calibration.sequential_targets,
+        out_path=output_dir / "model_provenance.json",
+    )
     dataset = build_calibration_dataset(config.calibration, tokenizer)
     token_hash = hashlib.sha256()
     for index in range(PROBE_COUNT):

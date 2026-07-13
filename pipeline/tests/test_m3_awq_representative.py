@@ -239,10 +239,27 @@ def test_prepare_arm_config_isolates_one_layer_without_mutating_source():
     prepared = prepare_arm_config(source, layer=31)
 
     assert prepared is not source
+    # Isolation is via the ignore list only; the production class-name sequential
+    # target is preserved so tracing/partitioning matches the real quant run
+    # (single-instance-path override is opt-in behind M3_AWQ_SINGLE_LAYER_TRACE).
     assert prepared.quantization.ignore[-1] == layer_exclusion_pattern(31)
-    assert prepared.calibration.sequential_targets == [sequential_target_pattern(31)]
+    assert prepared.calibration.sequential_targets == ["MiniMaxM3VLDecoderLayer"]
     assert source.quantization.ignore == ["lm_head", "re:.*self_attn[.].*"]
     assert source.calibration.sequential_targets == ["MiniMaxM3VLDecoderLayer"]
+
+
+def test_prepare_arm_config_single_layer_trace_flag_overrides_target(monkeypatch):
+    monkeypatch.setenv("M3_AWQ_SINGLE_LAYER_TRACE", "1")
+    source = PipelineConfig()
+    source.quantization.method = "awq"
+    source.quantization.scheme = "W4AFP8"
+    source.calibration.sequential_targets = ["MiniMaxM3VLDecoderLayer"]
+
+    prepared = prepare_arm_config(source, layer=31)
+
+    # Opt-in legacy behavior: force the single decoder instance path for A/B tracing.
+    assert prepared.calibration.sequential_targets == [sequential_target_pattern(31)]
+    assert prepared.quantization.ignore[-1] == layer_exclusion_pattern(31)
 
 
 def test_prepare_arm_config_rejects_nonproduction_recipe():

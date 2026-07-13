@@ -638,3 +638,147 @@ Diag3 logs:
 Diag4 logs:
 /mnt/nfs/hoangduy/logs/m3-awq-representative/20260713T084500Z-m3-awq-diag4-classname-layer8/
 ```
+
+## Planner root cause: the VL multimodal wrapper is not traceable (CPU, no GPU, no weights) — 2026-07-13
+
+The diag3/diag4 "1 subgraph, `completed=0`, all-zero probe" outcome is **not**
+a targeting-syntax problem and **not** an AWQ/MoE bug. It is a **sequential
+tracing failure specific to the MiniMax-M3-VL multimodal wrapper**. All three
+findings below were reproduced locally on CPU with tiny random-weight models
+(transformers 5.12, in-repo `llmcompressor`); no cluster job, no GPU, no real
+checkpoint.
+
+### 1. The generic AWQ + `linearize_moe` + sequential path is sound
+
+A tiny real `Qwen3MoeForCausalLM` taken through the exact
+`oneshot -> linearize_moe -> moe_calibration_context -> AWQModifier` path, with
+expert-level AWQ mappings mirroring the MiniMax MoE mapping shape:
+
+```text
+sequential_targets=["Qwen3MoeDecoderLayer"]  -> 5 subgraphs, experts fire
+                                                (2408 balance events), completed=20
+sequential_targets=[r"re:.*layers\.1$"]      -> 2 subgraphs, isolates layer 1,
+                                                completed=5
+```
+
+So **both** class-name and single-instance-path targeting partition correctly
+and drive expert forwards + grid searches to completion. The machinery works.
+(The first sequential epoch always shows `completed=0` because the head
+subgraph precedes the first target — an expected artifact, not the bug.)
+
+### 2. The class name is correct; the VL wrapper's forward is the blocker
+
+`MiniMaxM3VLDecoderLayer` exists (modeling line 632) and `match_named_modules`
+matches it (repro: 3/3 tiny decoder layers matched). But tracing a tiny
+`MiniMaxM3VLModel` (the vision+text wrapper) as root with a **text-only**
+sample **fails inside the multimodal front-matter**:
+
+```text
+File ".../modeling_minimax_m3_vl.py", line 1356, in get_placeholder_mask
+    inputs_embeds[special_image_mask].numel() == image_features.numel(),
+AttributeError: 'NoneType' object has no attribute 'numel'
+```
+
+Mechanism: the sequential tracer must symbolically execute everything *above*
+the decoder loop. In the VL wrapper that includes `get_image_features` (the
+vision tower), `get_placeholder_mask`, `masked_scatter`, and the
+`if pixel_values is not None` / `if image_features is not None` branches. The
+autowrapper rewrites the image/video branches into `torch.fx.wrap` functions
+that return **non-None Proxies**, so `image_features is not None` evaluates
+true during tracing and the image-token-count validation runs on symbolic
+values. The trace never reaches the decoder layers -> no target nodes ->
+degenerate single subgraph -> decoders never calibrated (`completed=0`,
+all-zero probe including `language_model`). Locally this surfaces as a hard
+`TraceError`; in the production arm, with different inputs/config, the same
+region instead degenerated silently to 1 subgraph.
+
+### 3. Tracing the language-model subtree as root partitions cleanly
+
+Same tiny model, root = `model.language_model` (`MiniMaxM3VLTextModel`),
+text-only sample:
+
+```text
+root= MiniMaxM3VLTextModel
+matched decoder layers: 3
+num_subgraphs= 4    (expected 4 = 3 layers + head)   PASS
+```
+
+### The `get_placeholder_mask` crash is real but ALREADY PATCHED in production
+
+`pipeline/quantize.py:125` calls `patch_minimax_m3_for_text_calibration(model)`
+(`pipeline/minimax_m3_config.py:257`), which coerces the non-Tensor
+`image_features`/`video_features` proxies to `None` before `get_placeholder_mask`
+runs — exactly neutralizing the `.numel()` crash above. So the raw crash is not
+what production hits.
+
+### CRITICAL NEGATIVE RESULT: the architecture alone traces fine — I cannot reproduce the production collapse offline
+
+With that same patch applied, I traced progressively more production-faithful
+tiny models, all text-only sample, all on CPU:
+
+| Root model | Attention | Patch | `num_subgraphs` (expected) |
+|---|---|---|---|
+| `MiniMaxM3VLModel` (VL wrapper) | full | no | **RAISES** (`.numel()` on None) |
+| `MiniMaxM3VLModel` | full | yes | 4 (4) ✓ |
+| `MiniMaxM3VLModel` | sparse (Lightning Indexer) | yes | 4 (4) ✓ |
+| `MiniMaxM3SparseForConditionalGeneration` (real root; path `model.language_model.layers.N`) | sparse | yes | 4 (4) ✓ |
+
+The last row matches production's structure (root wrapper → `self.model` VL →
+`language_model.layers`) and **still partitions correctly**. So neither the
+multimodal wrapper (once patched), the sparse Lightning-Indexer attention, nor
+the extra wrapper nesting reproduces the production `1 subgraph / completed=0`.
+`infer_sequential_targets` also passes `["MiniMaxM3VLDecoderLayer"]` through
+unchanged (ruled out).
+
+**Conclusion: the collapse is not architectural. It is a production
+load/environment factor my offline reconstruction lacks.** The dominant suspect
+is `trust_remote_code: true` (config: `id: MiniMaxAI/MiniMax-M3`,
+`auto_class: AutoModelForImageTextToText`): the checkpoint may load its own
+remote modeling `.py`, in which the decoder layer class is **not** literally
+named `MiniMaxM3VLDecoderLayer` (or lives in a `transformers_modules.*` module).
+Then `match_named_modules(model, ["MiniMaxM3VLDecoderLayer"])` matches **zero**
+modules → no target nodes → single degenerate subgraph → decoders never
+calibrated → `completed=0`, `smooth_activation_stats_len=0` → **an effectively
+un-smoothed 4-bit model, i.e. the original garbage-at-eval symptom.** This also
+explains why external `cyankiwi_awq` passed: a target that actually matches the
+loaded class.
+
+### Decisive GPU-free checks for the executor (single short probe, no rerun/quant)
+
+Load the model exactly as the arm does (`trust_remote_code=True`,
+`AutoModelForImageTextToText`) and print, before any calibration:
+
+```python
+dl = [m for _, m in model.named_modules()
+      if type(m).__name__.endswith("DecoderLayer")]
+print("decoder class:", type(dl[0]).__name__, "| module:", type(dl[0]).__module__)
+from compressed_tensors.utils.match import match_named_modules
+print("match count for MiniMaxM3VLDecoderLayer:",
+      len(list(match_named_modules(model, ["MiniMaxM3VLDecoderLayer"]))))
+```
+
+- **match count == 0** → confirmed root cause. Fix = set `sequential_targets`
+  to the *actual* loaded class name (what `type(dl[0]).__name__` prints), or
+  target by instance-path regex `re:.*language_model[.]layers[.]\d+$` (proven to
+  partition in the generic repro). No architecture change needed.
+- **match count == 61 (all decoders)** but trace still yields 1 subgraph →
+  grep the trace log for `Expected .* subgraphs, but only traced` (helpers.py:162)
+  and capture the traced graph's `call_module` targets; the remote-code forward is
+  then defeating FX/autowrap and needs a `tracing_ignore` / traceable wrapper.
+
+Also confirm (from the ORIGINAL production log) whether it wrote real smoothing
+scales / completed grid searches — expected zero if the trace degenerated.
+
+### Fix direction (independent of which check fires)
+
+AWQ modifies only the language model's Linear weights (smoothing scales fold
+into decoder-layer weights); the vision tower and projector are never quantized.
+So quantizing the text subtree yields bit-identical quantized weights. Preferred
+fix: keep the full model loaded but make `sequential_targets` match the real
+decoder class (or the `language_model.layers.N` instance path). Physical
+detach/reattach of the text model also works but risks `lm_head`↔`embed_tokens`
+tying and config/save plumbing, so it is the fallback, not the first choice.
+
+Local repro scripts (planner scratchpad, not committed): `repro_awq_moe_stats.py`
+(generic-path proof: classname & instance-path both complete) and
+`repro_minimax_trace.py` (VL trace matrix above).

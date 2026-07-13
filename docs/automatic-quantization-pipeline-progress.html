@@ -431,8 +431,8 @@
         <section id="next">
           <h2><span class="number">07 / Direction</span>Near-term plan</h2>
           <ol class="roadmap">
-            <li>Produce working in-house MiniMax-M3 checkpoints for common algorithms, starting with repaired GPTQ and a healthy AWQ path.</li>
-            <li>Run all-layer smoke quantization with embedded probes before each expensive full calibration.</li>
+            <li>Run all-layer smoke quantization with embedded probes to qualify each recipe before committing to a full-calibration run.</li>
+            <li>Run full-calibration quantization for qualified recipes to produce working in-house MiniMax-M3 checkpoints, starting with repaired GPTQ and a healthy AWQ path.</li>
             <li>Export each candidate through a versioned MiniMax-M3/runtime compatibility profile.</li>
             <li>Compare against BF16, the external AWQ control, and relevant official checkpoints with identical prompts, corpora, manifests and runtime settings.</li>
             <li>Report quality, memory, and throughput separately. Loading is not quality; checkpoint size is not compute speed.</li>

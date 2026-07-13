@@ -178,8 +178,8 @@ This would be a stronger comparator for our in-house W4AFP8 checkpoints than a w
 
 The immediate milestone is not “support every model.” It is narrower and measurable:
 
-1. Produce working in-house MiniMax-M3 checkpoints for the common quantization algorithms we intend to support, starting with repaired GPTQ and a healthy AWQ path.
-2. Run the all-layer smoke path with embedded probes before spending hours on each full calibration.
+1. Run all-layer smoke quantization with embedded probes to qualify each recipe before committing to a full-calibration run.
+2. Run full-calibration quantization for qualified recipes to produce working in-house MiniMax-M3 checkpoints, starting with repaired GPTQ and a healthy AWQ path.
 3. Export each candidate through a versioned MiniMax-M3/runtime compatibility profile.
 4. Compare in-house candidates against the BF16 source, the external AWQ control, and relevant official checkpoints using identical prompts, probe corpora, manifests, runtime settings, and task definitions.
 5. Report quality, memory, and throughput separately; do not use successful loading as a proxy for quality or reduced checkpoint size as a proxy for compute speed.

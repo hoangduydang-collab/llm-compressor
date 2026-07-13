@@ -42,9 +42,9 @@ shards:
     distributional_probe: true
 
 task_aliases:
-  gpqa_diamond: [gpqa_diamond, leaderboard_gpqa]
+  gpqa_diamond: [gpqa_diamond_zeroshot, gpqa_diamond, leaderboard_gpqa]
   ifeval: [ifeval, leaderboard_ifeval]
-  aime_2025: [aime_2025]
+  aime_2025: [aime25, aime_2025]
   mmlu_pro: [mmlu_pro, leaderboard_mmlu_pro]
   gsm8k: [gsm8k]
 

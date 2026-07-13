@@ -61,28 +61,8 @@
       "distributional_probe": true,
       "samples_per_task": 2,
       "probe_tokens": 2048
-    },
-    {
-      "model_label": "aquaman_autoround",
-      "model_path": "/mnt/nfs/hoangduy/hf_assets/aquaman164/MiniMax-M3-AutoRound-3.2bit-longctx",
-      "model_kind": "autoround-3.2bit",
-      "shard": "smoke",
-      "nodes": 1,
-      "gpus_per_node": 8,
-      "tensor_parallel_size": 8,
-      "distributed_executor_backend": "mp",
-      "tasks": [
-        "gpqa_diamond",
-        "ifeval",
-        "aime_2025",
-        "mmlu_pro",
-        "gsm8k"
-      ],
-      "distributional_probe": true,
-      "samples_per_task": 2,
-      "probe_tokens": 2048
     }
   ],
-  "max_parallel_arms": 4,
-  "total_nodes": 5
+  "max_parallel_arms": 3,
+  "total_nodes": 4
 }

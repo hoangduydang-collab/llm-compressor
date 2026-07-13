@@ -20,6 +20,7 @@ from typing import Any
 import torch
 
 VARIANTS = ("offsetfix", "nosmooth", "quant_only")
+DIAGNOSTIC_MODES = ("heavy", "light")
 BOUNDARIES = ("layer_input", "moe_input", "moe_output", "layer_output")
 DEFAULT_CONFIG = Path("pipeline/configs/minimax_m3_full_calib.yaml")
 DEFAULT_SKETCH_VALUES = 4096
@@ -236,7 +237,7 @@ def evaluate_layer_record(record: dict[str, Any]) -> dict[str, Any]:
                     )
                 )
 
-    if layer >= 3:
+    if layer >= 3 and record.get("diagnostic_mode", "heavy") == "heavy":
         quant = record.get("quantization", {})
         sampled = int(quant.get("sampled_module_count", 0))
         if sampled != 9:
@@ -404,10 +405,16 @@ def _layer_from_name(name: str | None) -> int | None:
 class FullGuardController:
     """Coordinate bounded hooks and durable evidence across recipe modifiers."""
 
-    def __init__(self, output_dir: Path, *, variant: str):
+    def __init__(
+        self, output_dir: Path, *, variant: str, diagnostic_mode: str = "heavy"
+    ):
+        if diagnostic_mode not in DIAGNOSTIC_MODES:
+            raise ValueError(f"unknown diagnostic mode {diagnostic_mode!r}")
         self.output_dir = Path(output_dir)
         self.variant = variant
+        self.diagnostic_mode = diagnostic_mode
         self.writer = LayerEvidenceWriter(self.output_dir, variant=variant)
+        self.diagnostic_stages: list[dict[str, Any]] = []
         self.model = None
         self.module_names: dict[Any, str] = {}
         self.layers: dict[int, Any] = {}
@@ -599,28 +606,56 @@ class FullGuardController:
         for layer in self._layers_for_modules(modules):
             self.phase[layer] = "candidate"
 
-    @torch.no_grad()
-    def note_quant_epoch(self, modules: list[Any]) -> None:
-        from compressed_tensors.quantization import (
-            enable_quantization,
-            forward_quantize,
+    def _synchronize_stage(self, stage: str, modules: list[Any]) -> None:
+        record = {
+            "schema_version": 1,
+            "stage": stage,
+            "status": "synchronizing"
+            if torch.cuda.is_available()
+            else "skipped_no_cuda",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "node": platform.node(),
+            "decoder_layers": self._layers_for_modules(modules),
+        }
+        self.diagnostic_stages.append(record)
+        _write_json_atomic(
+            self.output_dir / "diagnostic_stages.json", self.diagnostic_stages
         )
-        from compressed_tensors.quantization.utils import is_module_quantized
+        if not torch.cuda.is_available():
+            return
+        try:
+            torch.cuda.synchronize()
+        except Exception as exc:
+            record["status"] = "error"
+            record["exception_type"] = type(exc).__name__
+            record["message"] = str(exc)
+            _write_json_atomic(
+                self.output_dir / "diagnostic_stages.json", self.diagnostic_stages
+            )
+            raise
+        record["status"] = "complete"
+        record["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _write_json_atomic(
+            self.output_dir / "diagnostic_stages.json", self.diagnostic_stages
+        )
 
-        for module in modules:
-            if is_module_quantized(module):
-                module.apply(enable_quantization)
+    def _inspect_quant_params(self, modules: list[Any]) -> list[dict[str, Any]]:
+        from compressed_tensors.quantization.utils import is_module_quantized
 
         selected_suffixes = tuple(
             f"mlp.experts.{expert}.{projection}"
             for expert in (0, 64, 127)
             for projection in ("gate_proj", "up_proj", "down_proj")
         )
-        per_layer: dict[int, list[dict[str, Any]]] = {}
+        selected: list[dict[str, Any]] = []
         for module in modules:
             name = self.module_names.get(module, "")
             layer = _layer_from_name(name)
-            if layer is None or not name.endswith(selected_suffixes):
+            if (
+                layer is None
+                or not name.endswith(selected_suffixes)
+                or not is_module_quantized(module)
+            ):
                 continue
             scheme = getattr(
                 getattr(module, "quantization_scheme", None), "weights", None
@@ -634,8 +669,27 @@ class FullGuardController:
             zero_point = getattr(module, "weight_zero_point", None)
             if zero_point is not None:
                 item["weight_zero_point"] = tensor_summary(zero_point)
+            selected.append(
+                {
+                    "module_object": module,
+                    "layer": layer,
+                    "scheme": scheme,
+                    "evidence": item,
+                }
+            )
+        return selected
+
+    def _collect_fake_quant_evidence(self, selected: list[dict[str, Any]]) -> None:
+        from compressed_tensors.quantization import forward_quantize
+
+        per_layer: dict[int, list[dict[str, Any]]] = {}
+        for sample in selected:
+            module = sample["module_object"]
+            item = sample["evidence"]
             try:
-                dequantized = forward_quantize(module, module.weight, "weight", scheme)
+                dequantized = forward_quantize(
+                    module, module.weight, "weight", sample["scheme"]
+                )
                 reference = deterministic_sketch(module.weight)
                 candidate = deterministic_sketch(dequantized)
                 item["reconstruction"] = compare_sketches(reference, candidate)
@@ -649,12 +703,32 @@ class FullGuardController:
                     )
             except Exception as exc:
                 item["reconstruction_error"] = f"{type(exc).__name__}: {exc}"
-            per_layer.setdefault(layer, []).append(item)
+            per_layer.setdefault(sample["layer"], []).append(item)
         for layer, values in per_layer.items():
             self.quant_by_layer[layer] = {
                 "sampled_module_count": len(values),
                 "sampled_modules": values,
             }
+
+    @torch.no_grad()
+    def note_quant_epoch(self, modules: list[Any]) -> None:
+        from compressed_tensors.quantization import enable_quantization
+        from compressed_tensors.quantization.utils import is_module_quantized
+
+        self._synchronize_stage("post_native_quantization", modules)
+        for module in modules:
+            if is_module_quantized(module):
+                module.apply(enable_quantization)
+        self._synchronize_stage("post_enable_quantization", modules)
+
+        if self.diagnostic_mode == "heavy":
+            self._synchronize_stage("before_qparam_inspection", modules)
+            selected = self._inspect_quant_params(modules)
+            self._synchronize_stage("after_qparam_inspection", modules)
+            self._synchronize_stage("before_fake_quantization", modules)
+            self._collect_fake_quant_evidence(selected)
+            self._synchronize_stage("after_fake_quantization", modules)
+
         self.begin_candidate(modules)
 
     def after_propagation(
@@ -699,6 +773,7 @@ class FullGuardController:
         record = {
             "layer": layer,
             "variant": self.variant,
+            "diagnostic_mode": self.diagnostic_mode,
             "subgraph_index": subgraph_index,
             "num_subgraphs": num_subgraphs,
             "propagated": propagated,
@@ -732,13 +807,17 @@ class FullGuardController:
         self.mapping_handles.clear()
 
 
-def build_guarded_recipe(config: Any, variant: str, output_dir: Path):
+def build_guarded_recipe(
+    config: Any, variant: str, output_dir: Path, diagnostic_mode: str = "heavy"
+):
     """Build the production quantization recipe with full-run guards."""
     from llmcompressor.modifiers.quantization import QuantizationModifier
     from llmcompressor.modifiers.transform.awq import AWQModifier
     from pipeline.minimax_m3_config import get_minimax_m3_awq_mappings
 
-    controller = FullGuardController(output_dir, variant=variant)
+    controller = FullGuardController(
+        output_dir, variant=variant, diagnostic_mode=diagnostic_mode
+    )
 
     class GuardedQuantizationModifier(QuantizationModifier):
         guard: Any = None
@@ -823,7 +902,12 @@ def _git_revision() -> str | None:
 
 
 def run_guarded_full(
-    *, variant: str, config_path: Path, output_dir: Path, model_id: str | None = None
+    *,
+    variant: str,
+    config_path: Path,
+    output_dir: Path,
+    model_id: str | None = None,
+    diagnostic_mode: str = "heavy",
 ) -> dict[str, Any]:
     """Run one guarded full arm and save only after all layer guards pass."""
     import hashlib
@@ -856,6 +940,7 @@ def run_guarded_full(
             "schema_version": 1,
             "status": "started",
             "variant": variant,
+            "diagnostic_mode": diagnostic_mode,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "git_revision": _git_revision(),
             "command": [sys.executable, *sys.argv],
@@ -879,7 +964,9 @@ def run_guarded_full(
             out_path=output_dir / "model_provenance.json",
         )
         dataset = build_calibration_dataset(config.calibration, tokenizer)
-        recipe, controller = build_guarded_recipe(config, variant, output_dir)
+        recipe, controller = build_guarded_recipe(
+            config, variant, output_dir, diagnostic_mode=diagnostic_mode
+        )
         kwargs: dict[str, Any] = {
             "model": model,
             "processor": tokenizer,
@@ -947,6 +1034,7 @@ def run_guarded_full(
             "schema_version": 1,
             "status": "complete",
             "variant": variant,
+            "diagnostic_mode": diagnostic_mode,
             "completed_layers": completed,
             "checkpoint": str(checkpoint),
             "finished_at": datetime.now(timezone.utc).isoformat(),
@@ -959,6 +1047,7 @@ def run_guarded_full(
             "schema_version": 1,
             "status": "aborted" if isinstance(exc, GuardedRunAbort) else "error",
             "variant": variant,
+            "diagnostic_mode": diagnostic_mode,
             "exception_type": type(exc).__name__,
             "message": str(exc),
             "traceback": traceback.format_exc(),
@@ -1030,6 +1119,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     arm.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     arm.add_argument("--output-dir", type=Path, required=True)
     arm.add_argument("--model-id")
+    arm.add_argument("--diagnostic-mode", choices=DIAGNOSTIC_MODES, default="heavy")
     aggregate = subparsers.add_parser("aggregate", help="aggregate three arm roots")
     aggregate.add_argument("--result-root", type=Path, required=True)
     return parser.parse_args(argv)
@@ -1045,6 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
         config_path=args.config,
         output_dir=args.output_dir,
         model_id=args.model_id,
+        diagnostic_mode=args.diagnostic_mode,
     )
     return 0
 

@@ -1,6 +1,127 @@
 # MiniMax-M3 Quantized Checkpoint Handoff
 
-## Active handoff: guarded full AWQ hypothesis matrix (2026-07-13)
+## Active handoff: production-safe plus diagnostic full matrix (2026-07-13)
+
+Pull the latest `duy-branch` commit. This supersedes the failed guarded-only
+matrix. The immediate goal remains MiniMax-M3 checkpoint quality; do not start
+CUDA-graph or performance work.
+
+The new controller first runs the pre-quantization compatibility gate and real
+two-root trace smoke. It then starts five jobs concurrently, with every job in
+its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:
+
+- `safe-offsetfix`: ordinary production `pipeline.run`, all four AWQ mappings;
+- `safe-nosmooth`: ordinary production `pipeline.run`, only the MoE-input
+  smoothing mapping disabled;
+- `safe-quant_only`: ordinary production `pipeline.run`, no AWQ transforms;
+- `diag-heavy-offsetfix`: full guards plus staged CUDA synchronization around
+  native quantization, enablement, qparam reads, and fake quantization;
+- `diag-light-offsetfix`: AWQ lifecycle and activation evidence, but no qparam,
+  weight, or fake-quant inspection.
+
+The safe jobs contain no custom modifier, callback, model hook, manual
+quantization enablement, tensor inspection, per-layer forward, or fail-fast quality
+threshold. They save first, then run the static checkpoint checker with tensor
+inspection. One lane failing must not cancel any other lane.
+
+### 1. Dry-run
+
+From a login/control shell outside Slurm:
+
+```bash
+git pull --ff-only origin duy-branch
+DRY_RUN=1 RUN_ID=inspect-m3-safe-diag \
+  bash pipeline/slurm/start_m3_safe_diagnostic_full_tmux.sh
+```
+
+Verify the output has exactly six top-level exclusive-node commands: one trace
+smoke and five full lanes. Verify three safe commands delegate to
+`run_m3_safe_full_lane.sh`, two diagnostic commands use distinct
+`--diagnostic-mode` values, and no command contains `sbatch`.
+
+### 2. Executor-side smoke before the expensive matrix
+
+Use a fresh run ID and run only the probe-free `quant_only` lane with minimal
+calibration. This validates the production runner, output discovery, checkpoint
+save, and static tensor checker before committing five nodes to full runs:
+
+```bash
+SMOKE_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-safe-quant-smoke"
+LANE_FILTER=safe-quant_only \
+SAFE_NUM_SAMPLES=2 \
+SAFE_MAX_SEQ_LENGTH=128 \
+RUN_ID="$SMOKE_ID" \
+SESSION_NAME="m3-safe-smoke-$SMOKE_ID" \
+  bash pipeline/slurm/start_m3_safe_diagnostic_full_tmux.sh
+```
+
+Do not launch through a Cursor-owned foreground command. The launcher must print
+`verified detached tmux session` before Cursor returns. Monitor without taking
+ownership away from tmux:
+
+```bash
+tmux capture-pane -pt "m3-safe-smoke-$SMOKE_ID" -S -200
+tail -n 100 "/mnt/nfs/hoangduy/logs/m3-safe-diagnostic-full/$SMOKE_ID/controller.log"
+```
+
+The smoke passes only when `controller.rc`, `trace-smoke/rc`,
+`status/safe-quant_only.rc`, and
+`lanes/safe-quant_only/static_checkpoint_verification.rc` all exist and contain
+zero. It must also have exactly one nonempty `checkpoint.path`. If the smoke
+fails, stop and return its complete evidence; do not start the full matrix.
+
+### 3. Full five-lane run
+
+Unset every smoke-only override and use another fresh run ID:
+
+```bash
+unset LANE_FILTER SAFE_NUM_SAMPLES SAFE_MAX_SEQ_LENGTH
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-safe-diagnostic-full"
+SESSION_NAME="m3-safe-diag-$RUN_ID" \
+  bash pipeline/slurm/start_m3_safe_diagnostic_full_tmux.sh
+```
+
+The three safe lanes are the priority results. Do not terminate them because a
+diagnostic lane fails. Do not run canonical chat or the full quality suite until
+the controller finishes; after completion, stop and push all evidence so the
+primary agent can select statically valid checkpoints and issue the next quality
+handoff.
+
+### 4. Evidence to return
+
+Commit and push a concise result update plus the following artifacts or durable
+paths:
+
+- exact Git revision, run IDs, tmux session names, commands, environment/venv,
+  and every adaptation or retry;
+- every Slurm job/step ID, allocated node, elapsed time, terminal state, and exit
+  code, proving each lane used a distinct exclusive node;
+- prequant JSON/log/return code and trace report/log/return code;
+- `lane-status.tsv`, `controller.rc`, every `status/<lane>.rc`, and all five
+  complete lane logs with SHA-256 hashes;
+- for each safe lane: `command.txt`, resolved run directory, metadata,
+  recipe/config, `quant_metrics.jsonl`, checkpoint path, static-check log and
+  return code, or the complete failure boundary;
+- for each diagnostic lane: start/provenance, every completed layer record,
+  heartbeat/abort/failure/result, and `diagnostic_stages.json`;
+- the last successful synchronization stage and first failing operation for each
+  failed diagnostic lane;
+- confirmation that no safe lane used guarded code or in-process probes.
+
+Interpretation:
+
+- heavy fails while light passes: qparam/weight/fake-quant inspection is causal;
+- both fail at `post_native_quantization`: the native modifier launched the CUDA
+  failure;
+- light fails after `post_enable_quantization`: candidate activation setup is
+  implicated;
+- safe succeeds while diagnostics fail: diagnostic failure is instrumentation,
+  not checkpoint-quality evidence;
+- safe checkpoints pass static verification: return them for short canonical-chat
+  quality smoke selection.
+
+## Superseded handoff: guarded full AWQ hypothesis matrix (2026-07-13)
+
 
 Pull the latest `duy-branch` commit. This supersedes the representative-layer rerun as
 the primary experiment; do not start CUDA-graph/performance work.

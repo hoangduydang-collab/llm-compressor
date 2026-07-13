@@ -133,3 +133,86 @@ def test_aggregate_preserves_aborts_as_diagnostic_outcomes(tmp_path):
 def test_quantization_is_enabled_before_candidate_propagation_capture():
     source = inspect.getsource(FullGuardController.note_quant_epoch)
     assert source.index("enable_quantization") < source.index("begin_candidate")
+
+
+def _healthy_boundary():
+    return {
+        "finite_fraction": 1.0,
+        "norm_ratio": 1.0,
+        "cosine_similarity": 1.0,
+        "relative_rmse": 0.0,
+    }
+
+
+def test_light_mode_does_not_require_intentionally_omitted_quant_evidence():
+    record = {
+        "layer": 8,
+        "variant": "offsetfix",
+        "diagnostic_mode": "light",
+        "mapping_lifecycle": {
+            "expected_count": 1,
+            "resolved_count": 1,
+            "completed_count": 1,
+            "skipped_count": 0,
+            "unprocessed_count": 0,
+            "forward_event_count": 1,
+            "completed_metrics": [
+                {
+                    "layer_name": "mapping",
+                    "initial_error": 1.0,
+                    "best_error": 0.5,
+                    "reduction": 0.5,
+                    "best_ratio": 0.5,
+                }
+            ],
+        },
+        "scale_diagnostics": [
+            {
+                "layer_name": "mapping",
+                "scale": {"finite_fraction": 1.0, "zero_fraction": 0.0},
+                "inverse_compensation_max_relative_error": 0.0,
+            }
+        ],
+        "boundaries": {
+            name: _healthy_boundary()
+            for name in ("layer_input", "moe_input", "moe_output", "layer_output")
+        },
+    }
+    assert evaluate_layer_record(record) == {"status": "pass", "violations": []}
+
+
+def test_diagnostic_modes_persist_synchronization_boundaries(tmp_path, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    light = FullGuardController(
+        tmp_path / "light", variant="offsetfix", diagnostic_mode="light"
+    )
+    light.note_quant_epoch([])
+    light_stages = json.loads(
+        (tmp_path / "light" / "diagnostic_stages.json").read_text()
+    )
+    assert [item["stage"] for item in light_stages] == [
+        "post_native_quantization",
+        "post_enable_quantization",
+    ]
+    assert all(item["decoder_layers"] == [] for item in light_stages)
+
+    heavy = FullGuardController(
+        tmp_path / "heavy", variant="offsetfix", diagnostic_mode="heavy"
+    )
+    heavy.note_quant_epoch([])
+    heavy_stages = json.loads(
+        (tmp_path / "heavy" / "diagnostic_stages.json").read_text()
+    )
+    assert [item["stage"] for item in heavy_stages] == [
+        "post_native_quantization",
+        "post_enable_quantization",
+        "before_qparam_inspection",
+        "after_qparam_inspection",
+        "before_fake_quantization",
+        "after_fake_quantization",
+    ]
+    assert "weight_scale" not in inspect.getsource(FullGuardController.note_quant_epoch)
+    assert "forward_quantize" not in inspect.getsource(
+        FullGuardController.note_quant_epoch
+    )

@@ -27,7 +27,7 @@ The post is not a product announcement or a claim of universal model support. It
    - Layer 3: the full-calibration quantization run, followed by the post-quantization static gate, serving smoke, teacher-forced distributional probes, generation-health checks, and paired evaluation against comparator checkpoints.
 5. **Problem 2 — multimodality:** explain why modality-specific calibration coverage matters, then explicitly defer implementation.
 6. **Problem 3 — official-checkpoint fallback:** verify and carefully scope claims about NVFP4 checkpoints, Hopper support, Marlin, and W4A16 fallback. Separate established upstream behavior from the proposed runtime W4A8/W4AFP8 conversion research question.
-7. **Near-term plan and collaboration requests:** produce working in-house MiniMax-M3 checkpoints for common quantization algorithms, then run a controlled evaluation against clearly identified comparator models. Continue hardening the text-only pipeline, seek kernel expertise for the fallback experiment, and leave multimodality as a later workstream.
+7. **Near-term plan and collaboration requests:** qualify each recipe through all-layer smoke quantization with embedded probes before running full-calibration quantization to produce a working in-house MiniMax-M3 checkpoint. Export and check each resulting candidate through its versioned runtime compatibility profile, then run a controlled evaluation against clearly identified comparator models. Continue hardening the text-only pipeline, seek kernel expertise for the fallback experiment, and leave multimodality as a later workstream.
 
 ## Evidence and claim policy
 

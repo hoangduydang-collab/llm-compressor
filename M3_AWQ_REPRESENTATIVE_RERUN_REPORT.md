@@ -391,6 +391,64 @@ MiniMax text-calibration patch to determine why the selected decoder layer is
 not being called. This run is an infrastructure/calibration-path failure, not
 a quantized-quality verdict.
 
+## Planner analysis of the structural probe + layer-level probe (2026-07-13)
+
+The probe is decisive at the level it measured: `mlp` is the first zero, and
+`resolved_object_is_live: true`. That eliminates the entire "AWQ hooked the
+wrong object" family — AWQ resolved the exact live `gate_proj` that would
+execute — and eliminates every dispatch bug *inside* the linearized experts.
+The MoE block for layer 8 is simply never entered.
+
+**But `mlp = 0` on its own is not yet consistent with either tracing outcome**,
+which is why I traced the partition logic in `pipelines/sequential/helpers.py`:
+
+- If the sequential target **matched**, `get_sequential_ancestors` makes layer 8
+  a *leaf*: not traced into, executed as an opaque `call_module` against the live
+  model. Its `mlp` would then fire (this is exactly my passing CPU repro).
+- If the target **did not match** (empty target set), *every* module is a leaf,
+  so the trace stops at the top-level `self.model(...)` call and the whole model
+  runs eagerly — `mlp` would fire too.
+
+Neither predicts `mlp = 0`. The missing piece is one level up: **is layer 8's
+decoder `forward` executed at all during the calibration pass?** If it is, the
+fault is a sparse/dense dispatch or an inlined-MoE issue *inside* the layer; if
+it is not, the fault is in partitioning/tracing (the layer is absent from the
+executed subgraphs, or its subgraph never runs).
+
+### Extended probe (this commit)
+
+I widened the structural probe upward from the decoder layer:
+`language_model -> layers -> decoder -> {input_layernorm, self_attn,
+post_attention_layernorm, mlp} -> experts -> experts[0] -> gate_proj`. It also
+now emits `diagnostics.num_sequential_epochs` (the number of executed
+subgraphs — `1` means the sequential target produced no partition boundary and
+the whole model was traced as a single graph; `>1` means the layer partitioned
+as expected). Same fail-safe, no-verdict-impact, `M3_AWQ_HOOK_TRACE` toggle.
+
+### Executor: rerun the same single arm (no GPU quality eval)
+
+```bash
+python -m pipeline.m3_awq_representative arm \
+  --layer 8 --variant offsetfix \
+  --config pipeline/configs/minimax_m3_full_calib.yaml \
+  --output-dir results/m3-awq-representative/diag3-layer8-offsetfix
+```
+
+Read `diagnostics.num_sequential_epochs` and
+`diagnostics.structure_probe.fire_counts`. The combination is fully decisive:
+
+| Signal | Meaning | Fix locus |
+|---|---|---|
+| `num_sequential_epochs == 1` | target never partitioned; whole model = one traced graph | why `sequential_targets=[<instance path>]` fails to match/partition on the real VL model |
+| `decoder == 0` | layer 8's `forward` never executes in any subgraph | subgraph partition / trace omits the layer |
+| `decoder > 0` but `mlp == 0` | layer runs but skips its MoE block | sparse/dense dispatch, or MoE inlined into the trace (module `__call__` bypassed) |
+| `self_attn > 0`, `mlp == 0` | attention runs, MoE path specifically bypassed | MoE-block dispatch inside the layer forward |
+
+If it is cheap, also paste `diagnostics.smooth_activation_stats_timeline` from
+the **existing** `20260713T075500Z` `lifecycle.json` — its length already
+equals `num_sequential_epochs` and may answer the partition question with no
+rerun. Do not allocate GPUs for quality eval or begin re-quantization.
+
 Durable evidence:
 
 ```text

@@ -491,9 +491,28 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
             if not _hook_trace_enabled():
                 return
             try:
-                _, decoder = _selected_decoder(model, self.audit_layer)
+                decoder_name, decoder = _selected_decoder(model, self.audit_layer)
+                # Probe from the decoder layer downward so we can tell whether the
+                # layer itself executes (partition/trace reached it) before asking
+                # why its MoE block does not. `layers` is the parent ModuleList.
+                parent_name = decoder_name.rsplit(".", 2)[0]  # ...language_model
+                layers_name = decoder_name.rsplit(".", 1)[0]  # ...language_model.layers
+                targets: dict[str, Any] = {}
+                try:
+                    targets["language_model"] = model.get_submodule(parent_name)
+                    targets["layers"] = model.get_submodule(layers_name)
+                except Exception:
+                    pass
+                targets["decoder"] = decoder
+                targets["decoder.input_layernorm"] = getattr(
+                    decoder, "input_layernorm", None
+                )
+                targets["decoder.self_attn"] = getattr(decoder, "self_attn", None)
+                targets["decoder.post_attention_layernorm"] = getattr(
+                    decoder, "post_attention_layernorm", None
+                )
                 mlp = getattr(decoder, "mlp", None)
-                targets: dict[str, Any] = {"mlp": mlp}
+                targets["mlp"] = mlp
                 experts = getattr(mlp, "experts", None) if mlp is not None else None
                 targets["mlp.shared_experts"] = getattr(mlp, "shared_experts", None)
                 targets["mlp.gate"] = getattr(mlp, "gate", None)
@@ -641,6 +660,11 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
                     "balance_layers_never_fired": zero_fire,
                     "balance_forward_fire_counts": dict(self._diag_fire_counts),
                     "smooth_activation_stats_timeline": list(self._diag_timeline),
+                    # Length == number of on_sequential_epoch_end calls == number of
+                    # executed subgraphs. 1 => the sequential target produced no
+                    # partition boundary (whole model traced as one graph); >1 =>
+                    # the target layer was partitioned as expected.
+                    "num_sequential_epochs": len(self._diag_timeline),
                     "structure_probe": {
                         "fire_counts": dict(self._struct_fire_counts),
                         **self._struct_info,

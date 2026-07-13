@@ -1,5 +1,10 @@
 # MiniMax-M3 AWQ Representative-Layer Rerun
 
+> **Superseded as the primary experiment (2026-07-13):** the representative
+> layer matrix remains useful for targeted ablations, but the active workflow is the
+> guarded three-arm full quantization matrix in `MINIMAX_M3_HANDOFF.md`. It exercises
+> the exact production lifecycle and aborts with durable diagnostics after each layer.
+
 ## Verdict
 
 The six-arm diagnostic completed, but produced no usable AWQ mapping evidence.

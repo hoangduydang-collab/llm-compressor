@@ -633,6 +633,7 @@ class AWQModifier(Modifier):
         """
         history = []
         best_ratio = -1
+        best_duo_scaling = None
         best_scales = None
         best_error = float("inf")
         initial_error = None
@@ -728,6 +729,7 @@ class AWQModifier(Modifier):
                 if loss < best_error:
                     best_error = loss
                     best_ratio = ratio
+                    best_duo_scaling = use_duo_scaling
                     best_scales = scales.clone()
                 pbar.set_postfix({"best_error": f"{best_error:.3e}"})
 
@@ -756,6 +758,8 @@ class AWQModifier(Modifier):
                 "initial_error": initial_error,
                 "best_error": best_error,
                 "reduction": err_reduction,
+                "best_ratio": best_ratio,
+                "best_duo_scaling": best_duo_scaling,
             }
         )
 

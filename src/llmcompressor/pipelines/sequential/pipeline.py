@@ -24,6 +24,32 @@ if TYPE_CHECKING:
 __all__ = ["SequentialPipeline"]
 
 
+def _invoke_sequential_trace_callback(state, diagnostics: dict) -> None:
+    """Invoke an opt-in guard immediately after the production FX trace."""
+    callback = getattr(state, "sequential_trace_callback", None)
+    if callback is not None:
+        callback(diagnostics)
+
+
+def _invoke_post_sequential_propagation_callback(
+    state,
+    *,
+    subgraph_index: int,
+    num_subgraphs: int,
+    modules: list[torch.nn.Module],
+    propagated: bool,
+) -> None:
+    """Invoke an opt-in diagnostic boundary after sequential propagation."""
+    callback = getattr(state, "post_sequential_propagation_callback", None)
+    if callback is not None:
+        callback(
+            subgraph_index=subgraph_index,
+            num_subgraphs=num_subgraphs,
+            modules=modules,
+            propagated=propagated,
+        )
+
+
 def _get_batches(
     activations: IntermediatesCache,
     num_batches: int,
@@ -101,13 +127,19 @@ class SequentialPipeline(CalibrationPipeline):
 
         # trace subgraphs
         sample_input = next(iter(dataloader))
+        trace_diagnostics = (
+            {} if getattr(session.state, "sequential_trace_callback", None) else None
+        )
         subgraphs = trace_subgraphs(
             model,
             sample_input,
             sequential_targets,
             ignore,
             dataset_args.sequential_targets_per_subgraph,
+            diagnostics=trace_diagnostics,
         )
+        if trace_diagnostics is not None:
+            _invoke_sequential_trace_callback(session.state, trace_diagnostics)
         num_subgraphs = len(subgraphs)
 
         LifecycleCallbacks.calibration_start()
@@ -141,6 +173,7 @@ class SequentialPipeline(CalibrationPipeline):
                 # reduce memory movement by keeping modules onloaded
                 num_batches = len(dataloader)
                 with disable_offloading():
+                    subgraph_modules = subgraph.submodules(model)
                     # do a preliminary pass to trigger modifier hooks
                     for batch_idx, inputs in _get_batches(
                         activations,
@@ -157,7 +190,7 @@ class SequentialPipeline(CalibrationPipeline):
                                 activations.update(batch_idx, outputs)
                                 activations.delete(batch_idx, subgraph.consumed_names)
 
-                    LifecycleCallbacks.sequential_epoch_end(subgraph.submodules(model))
+                    LifecycleCallbacks.sequential_epoch_end(subgraph_modules)
 
                     if dataset_args.propagate_error:
                         # this pass does not trigger modifier hooks
@@ -176,6 +209,14 @@ class SequentialPipeline(CalibrationPipeline):
                                     activations.delete(
                                         batch_idx, subgraph.consumed_names
                                     )
+
+                    _invoke_post_sequential_propagation_callback(
+                        session.state,
+                        subgraph_index=subgraph_index,
+                        num_subgraphs=num_subgraphs,
+                        modules=subgraph_modules,
+                        propagated=dataset_args.propagate_error,
+                    )
 
             # redundant, finish any remaining compression
             LifecycleCallbacks.calibration_end()

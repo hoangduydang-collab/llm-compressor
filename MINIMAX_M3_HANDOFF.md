@@ -1,5 +1,78 @@
 # MiniMax-M3 Quantized Checkpoint Handoff
 
+## Active handoff: guarded full AWQ hypothesis matrix (2026-07-13)
+
+Pull the latest `duy-branch` commit. This supersedes the representative-layer rerun as
+the primary experiment; do not start CUDA-graph/performance work.
+
+The controller first runs the existing pre-quantization compatibility gate, then the
+real two-root trace-only smoke on one exclusive node. It starts no quantization if
+either smoke fails. If it passes, it launches three independent
+full-production arms concurrently on three separate top-level exclusive nodes:
+
+- `offsetfix`: corrected offset RMSNorm with every intended AWQ mapping;
+- `nosmooth`: the same recipe minus only post-attention-norm to MoE-input smoothing;
+- `quant_only`: identical W4AFP8 target/ignore contract without AWQ transforms.
+
+Dry-run and inspect all four top-level `srun --exclusive --nodes=1` commands:
+
+```bash
+DRY_RUN=1 bash pipeline/slurm/start_m3_guarded_full_tmux.sh
+```
+
+Then start the durable controller from a login/control shell outside Slurm:
+
+```bash
+bash pipeline/slurm/start_m3_guarded_full_tmux.sh
+```
+
+Do not launch through a Cursor-owned foreground command and do not nest this under an
+existing allocation. The wrapper verifies its detached tmux session before returning.
+
+Each full arm validates the FX trace produced inside its actual `oneshot` lifecycle
+before calibration. After every decoder layer's quantized propagation it atomically
+writes `layers/layer-NN.json`, updates `heartbeat.json`, and checks:
+
+- matched target nodes and partitions;
+- resolved/completed/skipped/unprocessed AWQ mappings and independent hook fires;
+- AWQ initial/best grid error, reduction, chosen ratio/mode;
+- smoothing-scale and effective offset-norm distributions plus inverse compensation;
+- representative weight scales, zero points, fake-quant reconstruction, endpoint
+  saturation, code diversity, cosine, relative RMSE, and sign flips;
+- deterministic layer-input, MoE-input, MoE-output, and layer-output reference versus
+  candidate sketches with finite rate, norm ratio, cosine, relative RMSE, maximum error,
+  and sign-flip ratio.
+
+An abort is an expected diagnostic outcome. The runner persists `abort.json`,
+`failure.json`, the failing layer record, and all earlier layer records before raising.
+Do not manually restart or relax a threshold. One arm failing must not cancel the other
+arms.
+
+Monitor without attaching ownership to Cursor:
+
+```bash
+tmux list-sessions
+tmux capture-pane -pt '<session-name>' -S -100
+squeue -u "$USER" -o '%.18i %.28j %.8T %.10M %.10l %.6D %R'
+tail -f /mnt/nfs/hoangduy/logs/m3-guarded-full/<run-id>/controller.log
+```
+
+Return one commit containing the compact result bundle (large checkpoints remain on
+NFS) and update this document with:
+
+- run/session IDs; exact commit and commands; environment/config deviations;
+- prequant compatibility JSON/log/return code and trace-smoke report, graph, nodes,
+  log, return code, Slurm job/step/node;
+- `matrix.json`; every arm's start/provenance/production-trace/heartbeat/result,
+  abort/failure if any, all layer JSON records, quant metrics, return code, and log;
+- successful checkpoint paths and static ABI-gate results (do not start quality eval
+  until primary-agent analysis chooses the winning arm);
+- scheduler accounting for missing return codes or abnormal exits;
+- hashes and NFS paths for retained complete logs.
+
+Stop after pushing this evidence for analysis. Do not serve the checkpoints, run the
+five-hour accuracy suite, delete older checkpoints, or begin the CUDA-graph issue.
+
 ## Goal and current status
 
 Verify full-calibration MiniMax-M3 W4A8 AWQ/GPTQ checkpoints with the

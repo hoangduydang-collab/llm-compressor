@@ -449,6 +449,67 @@ the **existing** `20260713T075500Z` `lifecycle.json` — its length already
 equals `num_sequential_epochs` and may answer the partition question with no
 rerun. Do not allocate GPUs for quality eval or begin re-quantization.
 
+## Root-cause reframing: the arm deviated from production tracing (2026-07-13)
+
+The zero-cost check settled it: `num_sequential_epochs = 1`. The whole model
+was traced as a single subgraph, so the decoder layers were inlined and no
+expert forward could fire. Crucially, this is **not the production calibration
+path** — it is an artifact of how the arm was targeting layers:
+
+- **Production** (`pipeline/configs/minimax_m3*.yaml`) uses
+  `sequential_targets: ["MiniMaxM3VLDecoderLayer"]` — a **class name**, so every
+  decoder layer is a sequential target/leaf and executes eagerly.
+- **The arm** overrode this to a single decoder **instance path**
+  (`run_arm`: `sequential_targets = ["model.language_model.layers.8"]`), which
+  on the real VL model produced no partition boundary (one subgraph) and inlined
+  the layers.
+
+So `completed=0` here is most likely a **harness artifact**, not direct proof of
+the production AWQ garbage bug. The diagnostic must mirror the real quantization
+run as closely as possible; single-layer isolation belongs in the quantization
+**ignore list**, not in the sequential-tracing target.
+
+### Fix (this commit): production-faithful tracing, ignore-list isolation
+
+`prepare_arm_config` / `run_arm` no longer override `sequential_targets`. The
+arm now keeps the config's class-name target (`["MiniMaxM3VLDecoderLayer"]`)
+so tracing/partitioning match production, and isolates layer 8 purely via the
+existing `layer_exclusion_pattern` ignore entry (AWQ mappings are already scoped
+to the layer). The legacy single-instance-path override is preserved behind
+`M3_AWQ_SINGLE_LAYER_TRACE=1` for controlled A/B comparison.
+
+### Executor: rerun the same single arm with production tracing (no GPU quality eval)
+
+```bash
+python -m pipeline.m3_awq_representative arm \
+  --layer 8 --variant offsetfix \
+  --config pipeline/configs/minimax_m3_full_calib.yaml \
+  --output-dir results/m3-awq-representative/diag4-classname-layer8-offsetfix
+```
+
+Interpretation:
+
+- **`completed > 0`** (expect `num_sequential_epochs` ≈ number of decoder
+  layers, and `structure_probe.fire_counts.mlp > 0`) → confirms the
+  instance-path override was the artifact **and** that the production
+  calibration/smoothing path is sound. The original garbage bug then lives
+  elsewhere (offset-norm / config mismatch, scale application, or W4AFP8), and
+  the investigation should redirect there.
+- **`completed == 0` again** with class-name tracing → the failure is real on
+  the production path; the structure probe then localizes it.
+
+Note this run does a full sequential pass over all decoder layers (only layer 8
+is grid-searched), so it is closer to production cost than the isolated arm.
+
+### Highest-value parallel check (no rerun, likely already in logs)
+
+Independently of the harness, confirm whether the **original production AWQ
+quantization run** (the one that produced the garbage model) itself completed
+grid searches / wrote real smoothing scales. If it did, the smoothing path was
+fine and the garbage cause is elsewhere; if it did not, that is the same
+failure mode and the direct target. This is the fact that ties the diagnostic
+back to the original bug.
+
 Durable evidence:
 
 ```text

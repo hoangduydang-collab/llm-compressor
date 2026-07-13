@@ -36,6 +36,23 @@ def _hook_trace_enabled() -> bool:
     return value not in {"0", "false", "no"}
 
 
+def _single_layer_trace_enabled() -> bool:
+    """Whether to override sequential targets to a single decoder instance.
+
+    Default off: the arm uses the *production* class-name sequential target
+    (e.g. ``["MiniMaxM3VLDecoderLayer"]`` from the config), so tracing and
+    partitioning match the real quantization run and layer isolation is done
+    purely via the quantization ignore list. Set ``M3_AWQ_SINGLE_LAYER_TRACE=1``
+    to restore the legacy single-instance-path override for A/B comparison.
+
+    The legacy override traced the whole model as a single subgraph
+    (``num_sequential_epochs=1``) so the decoder layers were inlined and no
+    expert forward fired -- a diagnostic artifact, not the production path.
+    """
+    value = os.environ.get("M3_AWQ_SINGLE_LAYER_TRACE", "0").lower()
+    return value in {"1", "true", "yes"}
+
+
 def _validate_layer(layer: int) -> None:
     if layer not in LAYERS:
         raise ValueError(f"layer {layer} is not a planned representative layer")
@@ -62,8 +79,14 @@ def prepare_arm_config(config: Any, layer: int) -> Any:
     if config.quantization.method != "awq" or config.quantization.scheme != "W4AFP8":
         raise ValueError("representative diagnostic requires production AWQ W4AFP8")
     prepared = copy.deepcopy(config)
+    # Isolate quantization to one decoder layer via the ignore list only. Leave
+    # `sequential_targets` as loaded from the production config (class name) so
+    # the diagnostic's tracing/partitioning matches the real quantization run.
+    # The single-layer sequential override (`sequential_target_pattern`) is only
+    # applied in `run_arm` when `M3_AWQ_SINGLE_LAYER_TRACE=1` (legacy A/B mode).
     prepared.quantization.ignore.append(layer_exclusion_pattern(layer))
-    prepared.calibration.sequential_targets = [sequential_target_pattern(layer)]
+    if _single_layer_trace_enabled():
+        prepared.calibration.sequential_targets = [sequential_target_pattern(layer)]
     return prepared
 
 
@@ -861,8 +884,12 @@ def run_arm(
     model, tokenizer = _load_model_and_tokenizer(config)
     if not patch_minimax_m3_for_text_calibration(model):
         raise RuntimeError("loaded model is not recognized as MiniMax-M3")
-    decoder_name, _ = _selected_decoder(model, layer)
-    config.calibration.sequential_targets = [decoder_name]
+    if _single_layer_trace_enabled():
+        # Legacy A/B mode: override to a single decoder instance path. This
+        # deviates from production tracing (see _single_layer_trace_enabled) and
+        # is retained only for controlled comparison against the class-name path.
+        decoder_name, _ = _selected_decoder(model, layer)
+        config.calibration.sequential_targets = [decoder_name]
     dataset = build_calibration_dataset(config.calibration, tokenizer)
     token_hash = hashlib.sha256()
     for index in range(PROBE_COUNT):

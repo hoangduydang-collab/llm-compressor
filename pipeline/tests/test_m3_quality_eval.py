@@ -42,9 +42,11 @@ def test_default_matrix_has_three_active_models_and_autoround_deferred():
     assert [shard.name for shard in spec.shards] == ["reasoning", "broad"]
     assert len(spec.expected_arms) == 6
     assert spec.models[0].nodes == 2
-    assert spec.models[0].tensor_parallel_size == 16
+    assert spec.models[0].tensor_parallel_size == 8
+    assert spec.models[0].pipeline_parallel_size == 2
     assert all(model.nodes == 1 for model in spec.models[1:])
     assert all(model.tensor_parallel_size == 8 for model in spec.models[1:])
+    assert all(model.pipeline_parallel_size == 1 for model in spec.models[1:])
     assert spec.smoke_node_count == 4
     assert spec.production_node_count == 8
     assert spec.probe.total_tokens == 49_152
@@ -145,7 +147,8 @@ def _passing_smoke_report(spec):
                 "empty_count": 0,
                 "periodic_loop_count": 0,
                 "artifacts_valid": True,
-                "distributed_world_size": model.tensor_parallel_size,
+                "distributed_world_size": model.tensor_parallel_size
+                * model.pipeline_parallel_size,
                 "probe": {"tokens": 2048, "elapsed_seconds": 30.0},
             }
             for model in spec.models

@@ -10,7 +10,8 @@ models:
     path: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
     kind: bf16
     nodes: 2
-    tensor_parallel_size: 16
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 2
     distributed_executor_backend: ray
   - label: inhouse_gptq
     path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123

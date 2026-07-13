@@ -43,6 +43,10 @@ def test_production_dry_run_requires_gate_and_has_six_arms(tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("test_m3_quality_eval_arm.sh") == 6
     assert "total_nodes=8" in result.stdout
+    # BF16 must run TP8xPP2 in production, not TP16xPP1.
+    assert "--pipeline-parallel-size 2" in result.stdout
+    # Multi-node arms require the two-node Ray topology gate in production too.
+    assert "test_m3_ray_topology.sh" in result.stdout
 
 
 def test_runner_scripts_are_valid_bash():

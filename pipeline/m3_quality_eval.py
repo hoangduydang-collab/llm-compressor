@@ -28,6 +28,7 @@ class ModelSpec:
     nodes: int
     tensor_parallel_size: int
     distributed_executor_backend: str
+    pipeline_parallel_size: int = 1
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,7 @@ def load_matrix(path: str | Path) -> MatrixSpec:
             int(item.get("nodes", 1)),
             int(item.get("tensor_parallel_size", 8)),
             str(item.get("distributed_executor_backend", "mp")),
+            int(item.get("pipeline_parallel_size", 1)),
         )
         for item in raw.get("models") or []
     )
@@ -402,7 +404,7 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
             "distributed_world_size": int(
                 evidence.get("distributed_world_size", 0)
             )
-            == model.tensor_parallel_size,
+            == model.tensor_parallel_size * model.pipeline_parallel_size,
             "probe_budget": projection["within_budget"],
         }
         results[model.label] = {
@@ -679,6 +681,7 @@ def build_launch_plan(
                 "nodes": model.nodes,
                 "gpus_per_node": 8,
                 "tensor_parallel_size": model.tensor_parallel_size,
+                "pipeline_parallel_size": model.pipeline_parallel_size,
                 "distributed_executor_backend": model.distributed_executor_backend,
                 "tasks": list(all_tasks),
                 "distributional_probe": True,
@@ -702,6 +705,7 @@ def build_launch_plan(
                 "nodes": model.nodes,
                 "gpus_per_node": 8,
                 "tensor_parallel_size": model.tensor_parallel_size,
+                "pipeline_parallel_size": model.pipeline_parallel_size,
                 "distributed_executor_backend": model.distributed_executor_backend,
                 "tasks": list(shard.tasks),
                 "distributional_probe": shard.distributional_probe,

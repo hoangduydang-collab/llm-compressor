@@ -394,6 +394,13 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
         _diag_fire_counts: dict[str, int] = PrivateAttr(default_factory=dict)
         _diag_handles: list[Any] = PrivateAttr(default_factory=list)
         _diag_timeline: list[dict[str, Any]] = PrivateAttr(default_factory=list)
+        # Structural probe: which module level along mlp -> experts -> expert ->
+        # gate_proj actually executes, and whether the executing objects are the
+        # same objects AWQ resolved+hooked (id equality). Distinguishes routing
+        # bypass, non-looping container, and stale/duplicate module objects.
+        _struct_fire_counts: dict[str, int] = PrivateAttr(default_factory=dict)
+        _struct_info: dict[str, Any] = PrivateAttr(default_factory=dict)
+        _struct_handles: list[Any] = PrivateAttr(default_factory=list)
 
         def _record(self, boundary: str, value: Any) -> None:
             values = self._captures[self._capture_phase][boundary]
@@ -442,11 +449,107 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
                 )
                 self._install_boundary_hooks(state.model)
                 self._install_diagnostic_hooks()
+                self._install_structure_probe(state.model)
             except Exception:
                 self._remove_diagnostic_hooks()
+                self._remove_structure_probe()
                 self.remove_hooks()
                 raise
             return result
+
+        def _install_structure_probe(self, model: Any) -> None:
+            """Probe the target layer's MoE dispatch chain at runtime.
+
+            All balance targets showing zero forward events is consistent with
+            several distinct root causes. This walks the *live* target decoder's
+            ``mlp -> experts -> experts[0] -> gate_proj`` chain, records each
+            object's runtime type, registers an independent native forward
+            counter at every level, and checks whether ``experts[0].gate_proj``
+            is the *same object* AWQ resolved into ``self._resolved_mappings``.
+
+            Reading the per-level counts pinpoints where execution stops:
+
+            * ``mlp`` never fires -> the sparse block is not entered for this
+              layer at all (dense path, dead branch, or the layer's forward is
+              not executed by the traced subgraph);
+            * ``mlp`` fires but ``experts`` (container) does not -> the block
+              runs but dispatches around the linearized experts object;
+            * ``experts`` fires but ``experts[0]`` does not -> the container
+              forward does not loop the per-expert child modules;
+            * ``experts[0]`` fires but ``gate_proj`` does not -> the expert
+              forward bypasses its own ``Linear`` submodules;
+            * ``gate_proj`` fires but the AWQ balance counter stays 0, or
+              ``resolved_object_is_live`` is False -> AWQ hooked a stale/duplicate
+              module object (e.g. one captured by FX graph construction) rather
+              than the object that executes.
+
+            Fail-safe: any error disables the probe without affecting the arm.
+            """
+            self._struct_fire_counts = {}
+            self._struct_info = {}
+            self._struct_handles = []
+            if not _hook_trace_enabled():
+                return
+            try:
+                _, decoder = _selected_decoder(model, self.audit_layer)
+                mlp = getattr(decoder, "mlp", None)
+                targets: dict[str, Any] = {"mlp": mlp}
+                experts = getattr(mlp, "experts", None) if mlp is not None else None
+                targets["mlp.shared_experts"] = getattr(mlp, "shared_experts", None)
+                targets["mlp.gate"] = getattr(mlp, "gate", None)
+                targets["mlp.experts"] = experts
+                expert0 = None
+                if experts is not None:
+                    try:
+                        expert0 = experts[0]
+                    except Exception:
+                        expert0 = None
+                targets["mlp.experts.0"] = expert0
+                gate_proj = getattr(expert0, "gate_proj", None)
+                targets["mlp.experts.0.gate_proj"] = gate_proj
+
+                # Record runtime types and expert count for the report.
+                self._struct_info["types"] = {
+                    key: type(module).__name__
+                    for key, module in targets.items()
+                    if module is not None
+                }
+                self._struct_info["num_experts"] = (
+                    len(experts) if experts is not None else None
+                )
+
+                # id equality: is the executing gate_proj the object AWQ hooked?
+                resolved_by_id = {
+                    id(layer)
+                    for mapping in self._resolved_mappings
+                    for layer in mapping.balance_layers
+                }
+                self._struct_info["resolved_object_is_live"] = (
+                    gate_proj is not None and id(gate_proj) in resolved_by_id
+                )
+
+                for key, module in targets.items():
+                    if module is None:
+                        continue
+                    self._struct_fire_counts.setdefault(key, 0)
+
+                    def _counter(_module, _args, _output, _key=key):
+                        self._struct_fire_counts[_key] += 1
+
+                    self._struct_handles.append(
+                        module.register_forward_hook(_counter)
+                    )
+            except Exception:
+                # Diagnostics must never affect the arm's outcome.
+                self._remove_structure_probe()
+
+        def _remove_structure_probe(self) -> None:
+            for handle in self._struct_handles:
+                try:
+                    handle.remove()
+                except Exception:
+                    pass
+            self._struct_handles = []
 
         def _install_diagnostic_hooks(self) -> None:
             """Native per-balance-layer forward counters, keyed by smooth_name.
@@ -492,6 +595,7 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
 
         def on_finalize(self, state, **kwargs) -> bool:
             self._remove_diagnostic_hooks()
+            self._remove_structure_probe()
             return super().on_finalize(state, **kwargs)
 
         def on_sequential_epoch_end(self, state, event, **kwargs):
@@ -537,6 +641,10 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
                     "balance_layers_never_fired": zero_fire,
                     "balance_forward_fire_counts": dict(self._diag_fire_counts),
                     "smooth_activation_stats_timeline": list(self._diag_timeline),
+                    "structure_probe": {
+                        "fire_counts": dict(self._struct_fire_counts),
+                        **self._struct_info,
+                    },
                 },
             }
             return super()._log_error_metrics()

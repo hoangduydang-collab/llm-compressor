@@ -244,3 +244,85 @@ linearized MiniMax expert linears are not traversed as executable module
 forwards, so the AWQ activation hooks never fire. Do not begin full
 re-quantization until the tracing/dispatch path is corrected and this
 instrumented arm reports nonzero balance forward events.
+
+## Planner analysis of the MoE forward source + structural probe (2026-07-13)
+
+I read the remote source the executor supplied in
+`M3_MINIMAX_MOE_FORWARD_ANALYSIS.md` and traced the full local dispatch path.
+It resolves the *original* mystery but deepens the *post-linearization* one:
+
+**What the remote source explains.** The unmodified `MiniMaxM3VLExperts.forward`
+runs `F.linear` against slices of stacked `gate_up_proj`/`down_proj` parameters
+and never calls per-expert `nn.Linear` modules. So on the *raw* checkpoint there
+are no per-expert modules to hook. That is expected and is exactly why
+`linearize_moe` exists.
+
+**Why that is not the whole story.** After `linearize_moe`, the executor's own
+meta-model check confirms `layers[8].mlp.experts` is `LinearExperts2D`, whose
+`forward` loops `for expert_index in range(num_experts): expert = self[i];
+expert(...)` — i.e. it *does* dispatch through per-expert `ExpertMLPWithGate`
+modules (and their `gate_proj`/`up_proj`/`down_proj` `Linear`s). The 129 resolved
+mappings confirm those per-expert `Linear`s exist. So the linearized container
+*should* fire the AWQ hooks.
+
+**I exhaustively ruled out the obvious suspects, locally:**
+
+- `linearize_moe` detection: `MiniMaxM3VLExperts` matches `FusedExpertsProtocol`,
+  so `get_non_linearized_moes` finds it and `set_submodule` swaps in
+  `LinearExperts2D` (confirmed by 129 resolved + the meta check).
+- Order of operations: `linearize_moe` runs in `oneshot` (line ~230) *before*
+  `session.initialize` / AWQ hook registration, and inside
+  `moe_calibration_context` (so `_CALIBRATE_ALL_EXPERTS=True` during both trace
+  and calibration). Hooks land on the linearized children.
+- Sequential target match: the arm sets `sequential_targets=[<instance path>]`;
+  I confirmed `match_named_modules` matches that plain path to exactly the layer,
+  so layer 8 is a **leaf** — not traced into, run as opaque Python.
+- Subgraph execution: `subgraph.forward(model, **inputs)` binds `self=model`, so
+  `call_module` nodes resolve against the **live** model objects AWQ hooked.
+- CPU repro parity: a real linearized Qwen3-MoE through this exact
+  path — class-name target *and* single-layer isolation — computes scales
+  (`completed>0`). The generic machinery is sound.
+
+Every static path predicts the linearized experts fire, yet all 129 balance
+targets show zero forward events. The divergence must therefore be
+**runtime-structural** and MiniMax-specific: either the sparse block is not
+entered for this layer, the container does not loop its children, an expert
+bypasses its own `Linear`s, or AWQ hooked a stale/duplicate object rather than
+the one that executes.
+
+### Structural probe added (this commit)
+
+`AuditedAWQModifier` now installs a native, fail-safe probe that walks the live
+target decoder's `mlp -> mlp.experts -> mlp.experts[0] -> mlp.experts[0].gate_proj`
+chain (plus `mlp.gate`, `mlp.shared_experts`). It records each object's runtime
+type, a per-level forward-fire counter, `num_experts`, and
+`resolved_object_is_live` — whether the executing `gate_proj` is the *same object*
+AWQ resolved into `self._resolved_mappings`. Written into `lifecycle.json` under
+`diagnostics.structure_probe`. Validated on a CPU surrogate: counts propagate at
+every level and `resolved_object_is_live` correctly tracks object identity.
+On/off with `M3_AWQ_HOOK_TRACE` (default on); never changes the arm verdict.
+
+### Executor: rerun the same single instrumented arm (no GPU quality eval)
+
+```bash
+python -m pipeline.m3_awq_representative arm \
+  --layer 8 --variant offsetfix \
+  --config pipeline/configs/minimax_m3_full_calib.yaml \
+  --output-dir results/m3-awq-representative/diag2-layer8-offsetfix
+```
+
+Same standard calibration arm as before (it still exits non-zero at the
+`completed=0` guard after writing `lifecycle.json`). Read
+`diagnostics.structure_probe.fire_counts` — the first level with count `0`
+pinpoints the fix:
+
+| First zero level | Root cause | Fix direction |
+|---|---|---|
+| `mlp` = 0 | sparse block not entered (dense path / dead branch / layer not executed) | check layer selection + traced subgraph contents |
+| `mlp.experts` = 0 (mlp>0) | block runs, dispatches around the linearized experts object | MiniMax `mlp.forward` calls a path other than `self.experts(...)` |
+| `mlp.experts.0` = 0 (experts>0) | container does not loop children | MiniMax-specific `LinearExperts2D` subclass forward |
+| `gate_proj` = 0 (experts.0>0) | expert bypasses its own `Linear`s | expert forward wiring |
+| `gate_proj` > 0 but balance count 0, or `resolved_object_is_live` false | AWQ hooked a stale/duplicate object | re-resolve mappings against live modules post-trace |
+
+Do not allocate GPUs for quality eval or begin re-quantization — this is a
+single standard calibration arm.

@@ -1,0 +1,21 @@
+{
+  "model_path": "results/m3-quality/20260712-142048-m3-gptq-repaired/checkpoints/inhouse-gptq-portable",
+  "backend": "vllm",
+  "tasks": [
+    "gpqa_diamond_zeroshot",
+    "ifeval",
+    "aime25",
+    "mmlu_pro",
+    "gsm8k"
+  ],
+  "completed_tasks": [
+    "aime25",
+    "gpqa_diamond_zeroshot",
+    "gsm8k",
+    "ifeval",
+    "mmlu_pro"
+  ],
+  "pending_tasks": [],
+  "log_samples": true,
+  "checkpoint_after_each_task": true
+}

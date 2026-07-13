@@ -129,3 +129,79 @@ The unrelated BF16 production-evaluation commits were fetched from
 `origin/duy-branch` but were not pulled into the worktree because an existing
 uncommitted quality-matrix change would have been overwritten. They are not
 part of this report.
+
+## Planner analysis and instrumentation (2026-07-13)
+
+### The bug is not yet addressed
+
+Commits `2c052ff5` and `41b22714` only made the audit *expose* the empty
+metrics and stopped the old `ZeroDivisionError`. The root cause —
+`_smooth_activation_stats` never populating, so `_apply_smoothing` is a no-op —
+is untouched.
+
+### `completed=0` is MiniMax-M3-specific, not a shared-machinery bug
+
+I reproduced the full real calibration path on **CPU** with a tiny real
+`Qwen3MoeForCausalLM` driven through `oneshot` → `linearize_moe` →
+`moe_calibration_context` → `AWQModifier`, instrumented with this harness's exact
+resolved/completed/skipped accounting (no GPU, no MiniMax weights; DataLoader
+input so no tokenizer needed):
+
+| Configuration (mirrors) | resolved | completed |
+|---|---:|---:|
+| class-name sequential target (production) | 10 | 10 |
+| single-layer isolation, first layer | 5 | 5 |
+| single-layer isolation, middle layer | 5 | 5 |
+| single-layer isolation, **last** layer | 5 | 5 |
+
+Every configuration computes scales. The one-epoch lag (a layer's stats land on
+the *next* `_apply_smoothing` call) always resolves. **So the generic
+AWQ + linearize + all-experts + single-layer FX-sequential machinery is sound;
+the failure is specific to MiniMax-M3** — a VL model (`minimax_m3_vl`,
+`MiniMaxM3SparseForConditionalGeneration`) with a custom sparse MoE, offset
+`MiniMaxM3VLRMSNorm`, and an FX trace fragile enough to need
+`patch_minimax_m3_for_text_calibration`.
+
+Leading hypothesis: under FX-traced sequential calibration the per-expert
+`Linear`s are **inlined into the subgraph** rather than executed as `call_module`
+nodes, so AWQ's activation-cache forward hook never fires and
+`_smooth_activation_stats` stays empty → zero smoothing applied → garbage.
+
+### Instrumentation added (this commit)
+
+`AuditedAWQModifier` now records a **native** per-balance-layer forward-fire
+counter (independent of AWQ's HooksMixin hooks), keyed by `smooth_name`, plus a
+per-epoch timeline of `len(_smooth_activation_stats)`. Results are written into
+each arm's existing `lifecycle.json` under a new `diagnostics` block. The
+instrumentation is fail-safe (never changes an arm's verdict) and on by default;
+disable with `M3_AWQ_HOOK_TRACE=0`.
+
+Validated on the CPU surrogate: the counter reads `0` when stats are empty and
+`>0` (with `never_fired=0`) exactly when smoothing completes — a faithful,
+independent signal.
+
+### Executor: run one instrumented arm (no GPU allocation for quality; standard calibration only)
+
+```bash
+python -m pipeline.m3_awq_representative arm \
+  --layer 8 --variant offsetfix \
+  --config pipeline/configs/minimax_m3_full_calib.yaml \
+  --output-dir results/m3-awq-representative/diag-layer8-offsetfix
+```
+
+The arm still exits non-zero at the `completed=0` guard, but writes
+`lifecycle.json` first. Read its `diagnostics` block:
+
+- **`total_balance_forward_events == 0` / `balance_layers_never_fired_count`
+  equals the resolved count** → the expert `Linear` forwards never executed
+  during calibration. Confirms the FX-inlining / routing-bypass hypothesis. Fix
+  direction: mark the MiniMax expert `Linear`s (or the linearized expert module)
+  as **leaf modules** for the sequential tracer, or ensure the linearized expert
+  forward dispatches through the per-expert `Linear.__call__`.
+- **`total_balance_forward_events > 0` but stats stay empty** (see
+  `smooth_activation_stats_timeline`) → the modules run but AWQ's activation-cache
+  closure does not accumulate. Implicates the closure / loss-mask / all-experts
+  path in `AWQModifier._setup_activation_cache_hooks`, not tracing.
+
+Do not allocate GPUs for quality eval or start full re-quantization for this
+diagnostic — it is a single standard calibration arm.

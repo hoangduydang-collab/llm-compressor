@@ -26,6 +26,16 @@ PROBE_COUNT = 2
 PROBE_MAX_TOKENS = 256
 
 
+def _hook_trace_enabled() -> bool:
+    """Whether to capture balance-layer forward-fire diagnostics (default on).
+
+    Set ``M3_AWQ_HOOK_TRACE=0`` to disable. The diagnostics are additive and never
+    change an arm's verdict; they exist to localize the ``completed=0`` failure.
+    """
+    value = os.environ.get("M3_AWQ_HOOK_TRACE", "1").lower()
+    return value not in {"0", "false", "no"}
+
+
 def _validate_layer(layer: int) -> None:
     if layer not in LAYERS:
         raise ValueError(f"layer {layer} is not a planned representative layer")
@@ -380,6 +390,10 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
                 for phase in ("reference", "candidate")
             }
         )
+        # Diagnostics for the completed=0 failure (native, HooksMixin-independent).
+        _diag_fire_counts: dict[str, int] = PrivateAttr(default_factory=dict)
+        _diag_handles: list[Any] = PrivateAttr(default_factory=list)
+        _diag_timeline: list[dict[str, Any]] = PrivateAttr(default_factory=list)
 
         def _record(self, boundary: str, value: Any) -> None:
             values = self._captures[self._capture_phase][boundary]
@@ -427,12 +441,69 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
                     variant=self.audit_variant,
                 )
                 self._install_boundary_hooks(state.model)
+                self._install_diagnostic_hooks()
             except Exception:
+                self._remove_diagnostic_hooks()
                 self.remove_hooks()
                 raise
             return result
 
+        def _install_diagnostic_hooks(self) -> None:
+            """Native per-balance-layer forward counters, keyed by smooth_name.
+
+            AWQ accumulates smoothing stats via a HooksMixin forward hook on each
+            mapping's activation target. This registers an *independent* native
+            forward hook on the same module so we can tell two failure modes apart:
+
+            * count == 0  -> the module's ``forward`` never ran during calibration
+              (sequential FX tracing inlined it out of the subgraph, or MoE routing
+              bypassed it), so AWQ's hook had nothing to fire on;
+            * count  > 0 but ``_smooth_activation_stats`` stays empty -> the module
+              ran but AWQ's activation-cache closure did not accumulate (implicates
+              the closure / loss-mask / all-experts path, not tracing).
+            """
+            self._diag_fire_counts = {}
+            self._diag_handles = []
+            if not _hook_trace_enabled():
+                return
+            try:
+                for mapping in self._resolved_mappings:
+                    target = (
+                        mapping.activation_hook_target or mapping.balance_layers[0]
+                    )
+                    name = mapping.smooth_name
+                    self._diag_fire_counts.setdefault(name, 0)
+
+                    def _counter(_module, _args, _output, _name=name):
+                        self._diag_fire_counts[_name] += 1
+
+                    self._diag_handles.append(target.register_forward_hook(_counter))
+            except Exception:
+                # Diagnostics must never affect the arm's outcome.
+                self._remove_diagnostic_hooks()
+
+        def _remove_diagnostic_hooks(self) -> None:
+            for handle in self._diag_handles:
+                try:
+                    handle.remove()
+                except Exception:
+                    pass
+            self._diag_handles = []
+
+        def on_finalize(self, state, **kwargs) -> bool:
+            self._remove_diagnostic_hooks()
+            return super().on_finalize(state, **kwargs)
+
         def on_sequential_epoch_end(self, state, event, **kwargs):
+            self._diag_timeline.append(
+                {
+                    "epoch": len(self._diag_timeline),
+                    "smooth_activation_stats_len": len(self._smooth_activation_stats),
+                    "total_balance_forward_events": sum(
+                        self._diag_fire_counts.values()
+                    ),
+                }
+            )
             result = super().on_sequential_epoch_end(state, event, **kwargs)
             self._capture_phase = "candidate"
             return result
@@ -444,6 +515,9 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
             accounted = {
                 metric["layer_name"] for metric in [*completed, *skipped]
             }
+            zero_fire = sorted(
+                name for name, count in self._diag_fire_counts.items() if count == 0
+            )
             self._lifecycle_audit = {
                 "resolved_mapping_count": len(resolved),
                 "resolved_mappings": resolved,
@@ -454,6 +528,16 @@ def build_arm_recipe(config: Any, *, layer: int, variant: str, expected: list[st
                 "unprocessed_mappings": [
                     name for name in resolved if name not in accounted
                 ],
+                "diagnostics": {
+                    "hook_trace_enabled": _hook_trace_enabled(),
+                    "total_balance_forward_events": sum(
+                        self._diag_fire_counts.values()
+                    ),
+                    "balance_layers_never_fired_count": len(zero_fire),
+                    "balance_layers_never_fired": zero_fire,
+                    "balance_forward_fire_counts": dict(self._diag_fire_counts),
+                    "smooth_activation_stats_timeline": list(self._diag_timeline),
+                },
             }
             return super()._log_error_metrics()
 

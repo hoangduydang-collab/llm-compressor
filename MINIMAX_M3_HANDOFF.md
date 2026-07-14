@@ -183,6 +183,40 @@ device-side-asserts on the *sequential* path, read
 projection and its `group_geometry_consistent` flag. The safe lanes need no
 rerun.
 
+### 2026-07-14 sequential diagnostic rerun result
+
+The planner's sequential-pipeline fix was exercised in two fresh diagnostic
+runs at Git revision `ba48e0f8`:
+
+| Run/lane | Slurm job | Node | Result |
+| --- | ---: | --- | --- |
+| `20260714T050000Z-m3-diag-heavy-sequential/diag-heavy-offsetfix` | 12890 | `h105` | `rc=1`, CUDA assert |
+| `20260714T050000Z-m3-diag-light-sequential/diag-light-offsetfix` | 12889 | `h101` | `rc=1`, CUDA assert |
+
+Both runs passed the pre-quant gate and trace smoke. The production trace
+reported 60 matched decoder targets, 61 partitions, and 61 subgraphs. The
+sequential fix is therefore confirmed: the light lane recorded per-layer
+stages and both lanes persisted `layer-00.json`, `layer-01.json`, and
+`layer-02.json`; both failure files report `completed_layers: [0, 1, 2]`.
+
+The common first failing operation was not `after_propagation` and not the
+heavy fake-quant probe. Both modes failed while AWQ was processing the next
+layer in the guarded `_compute_best_scale` wrapper, inside
+`FullGuardController.note_scale` at `pipeline/m3_guarded_full.py:609`:
+`flat.index_select(0, indices)` raised `torch.AcceleratorError: CUDA error:
+device-side assert triggered`. In the heavy lane, all six diagnostic stages
+(including fake-quant inspection) completed for layers 0, 1, and 2 before the
+failure. The light lane, which omits fake-quant inspection, failed at the same
+`note_scale` operation after its layer-2 stages.
+
+This localizes the next diagnostic fix to the executor's scale-sketch probe
+(`note_scale`), or a sticky CUDA error entering that probe—not to the
+sequential partitioning fix, native quantization, or the heavy fake-quant
+probe. Full evidence remains on NFS:
+
+- `/mnt/nfs/hoangduy/results/m3-safe-diagnostic-full/20260714T050000Z-m3-diag-heavy-sequential`
+- `/mnt/nfs/hoangduy/results/m3-safe-diagnostic-full/20260714T050000Z-m3-diag-light-sequential`
+
 The new controller first runs the pre-quantization compatibility gate and real
 two-root trace smoke. It then starts five jobs concurrently, with every job in
 its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:

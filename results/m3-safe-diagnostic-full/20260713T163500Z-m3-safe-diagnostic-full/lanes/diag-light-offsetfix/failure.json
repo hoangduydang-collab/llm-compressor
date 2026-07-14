@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "aborted",
+  "variant": "offsetfix",
+  "diagnostic_mode": "light",
+  "exception_type": "GuardedRunAbort",
+  "message": "oneshot returned without all decoder layer guards: []",
+  "traceback": "Traceback (most recent call last):\n  File \"/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_guarded_full.py\", line 992, in run_guarded_full\n    raise GuardedRunAbort(\nGuardedRunAbort: oneshot returned without all decoder layer guards: []\n",
+  "finished_at": "2026-07-13T17:29:13.406203+00:00",
+  "completed_layers": []
+}

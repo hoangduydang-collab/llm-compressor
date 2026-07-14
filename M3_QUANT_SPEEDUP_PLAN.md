@@ -1,10 +1,94 @@
 # MiniMax-M3 Quantization Speed-Up Plan (MoE-Quant–inspired)
 
-Status: **design (v2: load-time sharding) / Phase 1 measured.** The Phase-1 bench
-retired the single-process thread-pool scatter (0.88×, GIL-bound) and the design
-pivoted to MoE-Quant's one-process-per-GPU load-time expert sharding (§4). Speed
+Status: **CONCLUSION REACHED (2026-07-14) — use the built-in distributed
+calibration; stop bespoke work.** Multi-GPU calibration for **both AWQ and GPTQ**
+already exists in this fork and was simply never switched on (we launched
+single-process). See the handoff section immediately below; §§3–6 are the
+now-superseded archaeology of how we got here (kept for context). Speed
 engineering is still gated on a quality-verified recipe (§0). Planner document;
 the executor owns cluster/GPU runs.
+
+---
+
+## HANDOFF (2026-07-14) — read this first
+
+**A different planner agent is continuing. This section is the current truth; the
+older sections below (§§4–6 EP/scatter design) are superseded — do not implement
+them.**
+
+### The conclusion
+
+The 30-hour `safe-*` calibration was slow for ONE reason: it launched as a single
+process (`python -m pipeline.run`), so `is_distributed()` was `False` and every
+distributed path sat dormant. **This fork already has multi-GPU distributed
+calibration for both recipes:**
+
+- **AWQ** — data-parallel: `_compute_best_scale` all-reduces activation stats
+  across ranks when `is_distributed()`
+  (`src/llmcompressor/modifiers/transform/awq/base.py:645`, loss at `:806`,
+  `_allreduce_data_sum` at `:1047`).
+- **GPTQ** — module-parallel: `compress_modules` bin-packs modules across ranks,
+  reduces Hessians to owner, quantizes, broadcasts
+  (`src/llmcompressor/modifiers/gptq/base.py:284`).
+- **MoE coverage**: `MoECalibrationModule` exists
+  (`src/llmcompressor/modeling/moe/context.py`), ensuring all experts get data.
+- **Memory**: distributed CT offload keeps **one shared CPU copy** in `/dev/shm`
+  across ranks (`DistributedCPUCache`; memory scales with model size, NOT rank
+  count — verified from compressed-tensors offload docs). The entrypoint already
+  converts accelerate→CT offload (`entrypoints/utils.py:92`). So 8-rank DDP of the
+  ~920 GB model fits in ~2 TB RAM (one shared copy + per-rank GPU working set +
+  transient copy-on-write of the current layer). The "8×920 GB = 7.4 TB" fear that
+  drove the bespoke design was WRONG.
+
+Reputable prior art confirms this is solved, not novel: llm-compressor v0.10 ships
+DDP for AWQ (2.9–3.2×/4GPU) and GPTQ (3.8×/4GPU); GPTQModel v6.1 has both for MoE
+(80%+ time reduction). cyankiwi already made a working MiniMax-M3-AWQ-INT4 with the
+standard tooling.
+
+### Next steps (in order)
+
+1. **Verify the launch wiring** (small). The current calibration launches
+   single-process (`pipeline/slurm/run_quantize_minimax_m3_{local,detached}.sh`):
+   ```
+   python -m pipeline.run --config "$CONFIG" --stage quantize ...
+   ```
+   The change to try:
+   ```
+   torchrun --nproc_per_node=8 -m pipeline.run --config "$CONFIG" --stage quantize ...
+   ```
+   Then confirm: (a) `pipeline.run` reaches llm-compressor's `oneshot`, whose
+   `pre_process` already branches on `is_distributed()` and converts to CT offload
+   (`entrypoints/utils.py:57,92`); (b) the calibration data is **sharded** across
+   ranks (look for rank-partitioning in the pipeline's data loading — if it
+   replicates, forwards won't parallelize and you must add a `DistributedSampler`-
+   style split); (c) the model is loaded with an offload `device_map` so CT
+   distributed offload engages (one shared `/dev/shm` copy) rather than 8 full
+   per-rank loads. This is the one real integration unknown — config/launch, not
+   new algorithm code.
+2. **2–3-layer smoke on 8 GPUs**, one AWQ config and one GPTQ config, watching host
+   RAM. Success = RAM ≈ one shared copy (~920 GB), not a multiple, and per-layer
+   wall-clock drops toward ~1/N. Decisive and cheap.
+3. **Full multi-GPU calibration** of the recipe that passes the §0 quality gate.
+
+### What is shelved (do NOT continue)
+
+`pipeline/bench_expert_scatter.py`, `pipeline/expert_scatter.py`, `pipeline/ep_moe.py`
+(+ their tests) were bespoke work that re-solved a solved problem. They are correct
+and CPU-tested but are NOT the path forward. Keep for reference only. The
+`ep_moe.py` dispatch/combine core would only matter if we ever needed a custom EP
+forward, which the built-in offload-based DDP makes unnecessary.
+
+### Corrections banked this session (so the next agent doesn't repeat them)
+
+- The installed version string `0.1.dev3131+...` is a **setuptools-scm fallback**
+  (fork has no version tags), NOT evidence of being behind upstream. This fork is
+  v0.12-era (has `MoECalibrationModule`).
+- The AWQ modifier is at `modifiers/**transform**/awq/base.py`, not `modifiers/awq/`.
+- Single-process thread-pool scatter is dead (GIL-bound per-column GPTQ loop →
+  0.55–0.88× measured). Not the mechanism.
+- Distributed CT **CPU** offload = one shared copy across ranks (not per-rank).
+
+---
 
 > **2026-07-14 decision log.** The two in-house `safe-*` AWQ full-calibration
 > runs were cancelled: at ~half done after 15h they projected ~27–34h against a

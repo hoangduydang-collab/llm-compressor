@@ -33,7 +33,7 @@
 - Consumes: the approved authority model, workflow, packet contracts, and runtime boundaries in the design specification.
 - Produces: protocol version 1 plus the execution-packet and evidence-packet templates referenced by `CLAUDE.md` and future task handoffs.
 
-- [ ] **Step 1: Create the protocol header and authority model**
+- [x] **Step 1: Create the protocol header and authority model**
 
 Add these sections with normative language:
 
@@ -52,7 +52,7 @@ Scope: repository-wide
 
 The operating model must state that the planner has greater agent resources but no cluster access, while the executor has 15+ eight-H100 nodes and a constrained reasoning budget. It must assign research, hypothesis selection, experiment design, local implementation, diagnosis, result interpretation, and downstream authorization to the planner. It must assign exact command execution, monitoring, evidence preservation, artifact return, and bounded factual reporting to the executor.
 
-- [ ] **Step 2: Add the fixed workflow and ownership transitions**
+- [x] **Step 2: Add the fixed workflow and ownership transitions**
 
 Document the exact state sequence:
 
@@ -66,11 +66,11 @@ PLANNER_ANALYSIS
 
 Define entry/exit authority for each state, require a new packet revision and run ID when instructions change after execution starts, and prohibit downstream execution after `RETURNED_FOR_ANALYSIS` until the planner records a decision.
 
-- [ ] **Step 3: Add durable communication and packet-revision rules**
+- [x] **Step 3: Add durable communication and packet-revision rules**
 
 Require protocol version, workflow state, task/packet revision, owner, exact base commit, and one decision question in each active packet. Require one clearly marked active packet per task, explicit `SUPERSEDED`/`HISTORICAL` labels for old instructions, exact revision verification before execution, committed small evidence, and durable path/byte-size/SHA-256 references for large evidence.
 
-- [ ] **Step 4: Add the copy-ready planner execution-packet template**
+- [x] **Step 4: Add the copy-ready planner execution-packet template**
 
 The fenced template must contain fields for:
 
@@ -109,7 +109,7 @@ The fenced template must contain fields for:
 
 The template must instruct the planner to replace every angle-bracket field and remove unused optional sections before moving the task to `READY_FOR_EXECUTOR`. It must require exact commands rather than prose such as “run the evaluation.”
 
-- [ ] **Step 5: Add the copy-ready executor evidence-packet template**
+- [x] **Step 5: Add the copy-ready executor evidence-packet template**
 
 The fenced template must contain fields for:
 
@@ -144,7 +144,7 @@ The fenced template must contain fields for:
 
 Require large-artifact entries to include absolute path, byte size, and SHA-256. Require missing artifacts and deviations to be reported explicitly rather than omitted. State that strategic conclusions and next-step authorization belong to the planner.
 
-- [ ] **Step 6: Add runtime authority, retry, and emergency-evidence rules**
+- [x] **Step 6: Add runtime authority, retry, and emergency-evidence rules**
 
 Add separate lists for:
 
@@ -156,11 +156,11 @@ Add separate lists for:
 
 The prohibited list must cover code/config/prompt/gate edits, experiment substitution, topology changes, silent retries, result-root reuse, destructive artifact operations, canceling healthy independent jobs, and unauthorized downstream work.
 
-- [ ] **Step 7: Add completeness checklists and compact examples**
+- [x] **Step 7: Add completeness checklists and compact examples**
 
 Add a planner readiness checklist and executor return checklist whose unchecked required item blocks the corresponding state transition. Add one generic example showing a planner issuing a bounded two-arm smoke packet and one generic example showing an executor returning a stopped packet after preflight failure. Examples must illustrate the schema without MiniMax-specific paths or values.
 
-- [ ] **Step 8: Validate the canonical protocol**
+- [x] **Step 8: Validate the canonical protocol**
 
 Run:
 
@@ -172,7 +172,7 @@ git diff --check
 
 Expected: all required headings and states are present; placeholder search emits no matches; `git diff --check` exits zero.
 
-- [ ] **Step 9: Commit the canonical protocol**
+- [x] **Step 9: Commit the canonical protocol**
 
 ```powershell
 git add -- PLANNER_EXECUTOR_PROTOCOL.md
@@ -193,7 +193,7 @@ Expected: one commit creating the canonical root document.
 - Consumes: protocol version 1 and its canonical root path.
 - Produces: a concise, high-discovery entry point that every new planner and executor reads before task-specific handoffs.
 
-- [ ] **Step 1: Strengthen the role descriptions**
+- [x] **Step 1: Strengthen the role descriptions**
 
 Replace the existing compact role bullets with language that preserves their current responsibilities and adds the capability asymmetry:
 
@@ -212,7 +212,7 @@ Replace the existing compact role bullets with language that preserves their cur
   redesign experiments or make strategic decisions unless explicitly authorized.
 ```
 
-- [ ] **Step 2: Add the mandatory protocol pointer**
+- [x] **Step 2: Add the mandatory protocol pointer**
 
 Immediately after the role bullets, add:
 
@@ -226,13 +226,13 @@ Task-specific handoffs supply the experiment details; they do not override the
 general protocol unless they explicitly name and justify an exception.
 ```
 
-- [ ] **Step 3: Clarify handoff durability**
+- [x] **Step 3: Clarify handoff durability**
 
 Retain the existing Git-based cross-session rule and add that every new or
 materially revised handoff must use the canonical packet contract, while old
 sections must be labeled superseded or historical when replaced.
 
-- [ ] **Step 4: Validate discoverability and consistency**
+- [x] **Step 4: Validate discoverability and consistency**
 
 Run:
 
@@ -246,7 +246,7 @@ Expected: the capability asymmetry and mandatory link are visible in
 `CLAUDE.md`; no whitespace errors; the diff changes only the approved protocol
 documentation.
 
-- [ ] **Step 5: Commit the working-principles integration**
+- [x] **Step 5: Commit the working-principles integration**
 
 ```powershell
 git add -- CLAUDE.md
@@ -269,7 +269,7 @@ Expected: one focused commit updating the repository entry point.
 - Consumes: both implementation commits and the approved design.
 - Produces: a pushed, synchronized branch containing the complete protocol chain from design to operational entry point.
 
-- [ ] **Step 1: Run the full text contract check**
+- [x] **Step 1: Run the full text contract check**
 
 ```powershell
 $protocol = Get-Content -Raw PLANNER_EXECUTOR_PROTOCOL.md
@@ -291,7 +291,7 @@ if (-not $claude.Contains('PLANNER_EXECUTOR_PROTOCOL.md')) {
 
 Expected: exit code zero with no missing markers.
 
-- [ ] **Step 2: Run final repository documentation checks**
+- [x] **Step 2: Run final repository documentation checks**
 
 ```powershell
 Select-String -Path PLANNER_EXECUTOR_PROTOCOL.md,CLAUDE.md -Pattern ('TB' + 'D'),('TO' + 'DO')
@@ -302,7 +302,7 @@ git log -4 --oneline
 
 Expected: no placeholders or whitespace errors; only the implementation plan may remain uncommitted before the final documentation commit.
 
-- [ ] **Step 3: Commit the implementation plan if it is not already committed**
+- [x] **Step 3: Commit the implementation plan if it is not already committed**
 
 ```powershell
 git add -- docs/superpowers/plans/2026-07-14-planner-executor-protocol.md

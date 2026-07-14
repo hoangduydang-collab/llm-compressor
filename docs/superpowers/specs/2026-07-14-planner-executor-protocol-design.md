@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-14  
 **Scope:** Repository-wide  
-**Status:** Approved design; implementation pending
+**Status:** Implemented
 
 ## Problem
 

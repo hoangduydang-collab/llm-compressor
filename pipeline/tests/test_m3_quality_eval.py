@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from pipeline.m3_quality_eval import (
     GateThresholds,
@@ -25,6 +26,9 @@ from pipeline.m3_quality_eval import (
 
 
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
+TASK_ISOLATED_MATRIX = Path(
+    "pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml"
+)
 
 
 def test_default_matrix_has_three_active_models_and_autoround_deferred():
@@ -51,6 +55,81 @@ def test_default_matrix_has_three_active_models_and_autoround_deferred():
     assert spec.production_node_count == 8
     assert spec.probe.total_tokens == 49_152
     assert spec.probe.max_overhead_seconds == 1_800
+
+
+def test_task_isolated_matrix_has_twelve_arms_and_six_node_cap(tmp_path):
+    spec = load_matrix(TASK_ISOLATED_MATRIX)
+
+    assert [shard.name for shard in spec.shards] == [
+        "gpqa_diamond",
+        "ifeval",
+        "aime_2025",
+        "mmlu_pro",
+        "gsm8k",
+        "distributional_probe",
+    ]
+    assert [shard.tasks for shard in spec.shards] == [
+        ("gpqa_diamond",),
+        ("ifeval",),
+        ("aime_2025",),
+        ("mmlu_pro",),
+        ("gsm8k",),
+        (),
+    ]
+    assert [shard.distributional_probe for shard in spec.shards] == [
+        False,
+        False,
+        False,
+        False,
+        False,
+        True,
+    ]
+    assert spec.sampling["production_samples_per_task"] == 100
+    assert spec.scheduling.max_parallel_arms == 6
+    assert spec.scheduling.arm_time_limit == "08:00:00"
+
+    gate = tmp_path / "smoke_gate.json"
+    gate.write_text(json.dumps({"ready_for_production": True}))
+    plan = build_launch_plan(spec, profile="production", smoke_gate=gate)
+    assert len(plan["arms"]) == 12
+    assert plan["total_nodes"] == 12
+    assert plan["max_parallel_arms"] == 6
+    assert plan["max_concurrent_nodes"] == 6
+    assert plan["arm_time_limit"] == "08:00:00"
+
+
+def _write_matrix_variant(tmp_path, **updates):
+    raw = yaml.safe_load(
+        Path("pipeline/configs/minimax_m3_paired_gptq_awq_quick.yaml").read_text()
+    )
+    raw.update(updates)
+    path = tmp_path / "matrix.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+def test_matrix_rejects_shard_without_tasks_or_probe(tmp_path):
+    path = _write_matrix_variant(
+        tmp_path,
+        shards=[{"name": "empty", "tasks": [], "distributional_probe": False}],
+    )
+
+    with pytest.raises(ValueError, match="must contain tasks or a probe"):
+        load_matrix(path)
+
+
+@pytest.mark.parametrize(
+    ("scheduling", "message"),
+    [
+        ({"max_parallel_arms": 0, "arm_time_limit": "08:00:00"}, "positive"),
+        ({"max_parallel_arms": 6, "arm_time_limit": "8 hours"}, "HH:MM:SS"),
+    ],
+)
+def test_matrix_rejects_invalid_scheduling(tmp_path, scheduling, message):
+    path = _write_matrix_variant(tmp_path, scheduling=scheduling)
+
+    with pytest.raises(ValueError, match=message):
+        load_matrix(path)
 
 
 def test_probe_projection_enforces_overhead_budget():

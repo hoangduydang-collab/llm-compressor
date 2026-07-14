@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +65,12 @@ class GateThresholds:
 
 
 @dataclass(frozen=True)
+class SchedulingSpec:
+    max_parallel_arms: int | None = None
+    arm_time_limit: str | None = None
+
+
+@dataclass(frozen=True)
 class MatrixSpec:
     name: str
     backend: str
@@ -75,6 +82,7 @@ class MatrixSpec:
     shards: tuple[ShardSpec, ...]
     task_aliases: dict[str, tuple[str, ...]]
     sampling: dict[str, Any]
+    scheduling: SchedulingSpec
     probe: ProbeSpec
     gates: GateThresholds
 
@@ -166,11 +174,27 @@ def load_matrix(path: str | Path) -> MatrixSpec:
         raise ValueError("matrix models must have unique non-empty labels")
     if not shards or len({shard.name for shard in shards}) != len(shards):
         raise ValueError("matrix shards must have unique non-empty names")
+    for shard in shards:
+        if not shard.tasks and not shard.distributional_probe:
+            raise ValueError(
+                f"matrix shard {shard.name!r} must contain tasks or a probe"
+            )
     baseline = str(raw["baseline_label"])
     if baseline not in {model.label for model in models}:
         raise ValueError(f"baseline label {baseline!r} is not a configured model")
     probe_raw = raw.get("probe") or {}
     gates_raw = raw.get("gates") or {}
+    scheduling_raw = raw.get("scheduling") or {}
+    max_parallel_arms = scheduling_raw.get("max_parallel_arms")
+    if max_parallel_arms is not None:
+        max_parallel_arms = int(max_parallel_arms)
+        if max_parallel_arms <= 0:
+            raise ValueError("scheduling max_parallel_arms must be positive")
+    arm_time_limit = scheduling_raw.get("arm_time_limit")
+    if arm_time_limit is not None:
+        arm_time_limit = str(arm_time_limit)
+        if re.fullmatch(r"\d{2}:\d{2}:\d{2}", arm_time_limit) is None:
+            raise ValueError("scheduling arm_time_limit must use HH:MM:SS")
     return MatrixSpec(
         name=str(raw["name"]),
         backend=str(raw.get("backend", "vllm")),
@@ -185,6 +209,7 @@ def load_matrix(path: str | Path) -> MatrixSpec:
             for name, aliases in (raw.get("task_aliases") or {}).items()
         },
         sampling=dict(raw.get("sampling") or {}),
+        scheduling=SchedulingSpec(max_parallel_arms, arm_time_limit),
         probe=ProbeSpec(
             int(probe_raw["total_tokens"]),
             int(probe_raw["top_k"]),
@@ -738,11 +763,26 @@ def build_launch_plan(
         ]
     else:
         raise ValueError(f"unknown launch profile {profile!r}")
+    configured_parallel = (
+        spec.scheduling.max_parallel_arms
+        if profile == "production"
+        else None
+    )
+    max_parallel_arms = min(configured_parallel or len(arms), len(arms))
+    max_concurrent_nodes = sum(
+        sorted((int(arm["nodes"]) for arm in arms), reverse=True)[
+            :max_parallel_arms
+        ]
+    )
     return {
         "schema_version": 1,
         "profile": profile,
         "arms": arms,
-        "max_parallel_arms": len(arms),
+        "max_parallel_arms": max_parallel_arms,
+        "max_concurrent_nodes": max_concurrent_nodes,
+        "arm_time_limit": (
+            spec.scheduling.arm_time_limit if profile == "production" else None
+        ),
         "total_nodes": sum(arm["nodes"] for arm in arms),
     }
 

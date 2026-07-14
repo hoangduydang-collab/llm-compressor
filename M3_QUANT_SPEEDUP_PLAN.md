@@ -180,6 +180,23 @@ sharded.
    and gathers results. Keep it behind a flag (e.g. `M3_EXPERT_SCATTER=1`);
    default off. Correctness gate: bit-identical (or within numerical tolerance)
    quantized weights vs the serial path on a tiny model.
+
+   **Done (2026-07-14): device-agnostic orchestration core** in
+   `pipeline/expert_scatter.py` — `assign_devices` (largest-Hessian-first greedy
+   balance), `serial_quantize`/`scatter_quantize` (thread-pool dispatch, results
+   gathered by expert name, scheduling-order-independent), and
+   `default_gptq_quantize_fn` (lazy adapter to the real `quantize_weight`). CPU
+   bit-parity gate in `pipeline/tests/test_expert_scatter.py` (5 tests) proves
+   scatter == serial per expert across 1/4/8 workers and that there is no
+   cross-expert contamination. Rests on GPTQ's per-expert independence, so it
+   changes no quantization math.
+
+   **Remaining (GPU-gated, after the Phase-1 bench verdict): modifier wiring.**
+   Relocate each expert onto its assigned device inside
+   `GPTQModifier.compress_module_list` using accelerate onload/offload, call the
+   scatter core, write params back with `update_offload_parameter`. This is the
+   part that touches offload accounting (cf. the FSDP2 reshard bug class) and
+   must be validated on GPU with a real small-model serial-vs-scatter parity run.
 3. **Optional Triton GPTQ kernel** port (MoE-Quant `src/gptq_loop.py` +
    `linalg_utils`) for the per-expert inner loop if step 2's gather isn't enough.
 4. **AWQ variant** (only if AWQ is chosen): expert-scatter the per-expert

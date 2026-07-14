@@ -1082,8 +1082,20 @@ def run_guarded_full(
         }
         if config.calibration.sequential_targets:
             kwargs["sequential_targets"] = config.calibration.sequential_targets
-        if config.calibration.pipeline:
-            kwargs["pipeline"] = config.calibration.pipeline
+        # Force the sequential pipeline. oneshot's CalibrationPipeline._infer_pipeline
+        # decides "sequential" vs "datafree" by matching modifier CLASS NAMES against
+        # a hardcoded list ("AWQModifier", ...) plus isinstance(QuantizationModifier).
+        # This harness wraps the modifiers in renamed subclasses (GuardedAWQModifier /
+        # GuardedQuantizationModifier); AWQModifier is not a QuantizationModifier and
+        # the guarded names match nothing, and W4AFP8 QuantizationModifier does not
+        # require calibration data -- so inference silently returns "datafree". The
+        # datafree pipeline calibrates the whole model in one epoch
+        # (sequential_epoch_end(list(model.modules()))), never partitions per layer,
+        # and never invokes the propagation callback -> after_propagation never fires
+        # -> completed_layers == [] and the completeness gate aborts. Pinning the
+        # pipeline makes the guards instrument the sequential per-layer AWQ path they
+        # were built for, regardless of the guard subclass names.
+        kwargs["pipeline"] = config.calibration.pipeline or "sequential"
         with metrics.capture_quant_metrics(output_dir / "quant_metrics.jsonl"):
             oneshot(**kwargs)
 

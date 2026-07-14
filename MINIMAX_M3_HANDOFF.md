@@ -130,6 +130,59 @@ likely the `after_propagation`/layer-guard bookkeeping path, including the
 change was made in this executor step; this evidence is returned for planner
 analysis.
 
+### 2026-07-14 planner root cause: the diagnostic lanes ran the DATAFREE pipeline, not sequential
+
+The two-record `diagnostic_stages.json` is decisive. `_synchronize_stage` runs
+only inside `note_quant_epoch` (= `on_sequential_epoch_end`), and it fired
+**exactly once** with all 60 decoder layers in a single `modules` list. Only the
+whole-model pipelines call the epoch-end callback that way
+(`basic`/`datafree` do `sequential_epoch_end(list(model.modules()))`); the
+sequential pipeline fires it once **per subgraph** with one layer each. So the
+guarded oneshot did not run the sequential pipeline at all -- it ran the
+**datafree** pipeline, which never partitions per layer and never invokes the
+`post_sequential_propagation_callback`. Hence `after_propagation` never ran,
+`completed_layers == []`, and the completeness gate aborted. (No `abort.json`
+was written, only `failure.json` from the gate -- consistent with
+`after_propagation` never executing.)
+
+Why datafree was selected (verified locally on the installed
+`compressed_tensors`/`llmcompressor`):
+
+- `CalibrationPipeline._infer_pipeline` (`src/llmcompressor/pipelines/registry.py`)
+  returns `"sequential"` only if some modifier "requires calibration", decided by
+  matching the modifier's `__class__.__name__` against a hardcoded list
+  (`"AWQModifier"`, `"GPTQModifier"`, ...) plus `isinstance(_, QuantizationModifier)`.
+- The guard wraps the modifiers in renamed subclasses `GuardedAWQModifier` and
+  `GuardedQuantizationModifier` (`build_guarded_recipe`). `AWQModifier` is **not**
+  a `QuantizationModifier` (confirmed: `issubclass` is `False`), and the guarded
+  names are in no list, and `QuantizationModifier(W4AFP8).requires_calibration_data()`
+  is `False` (weight-RTN + dynamic FP8). So inference sees no calibration-requiring
+  modifier and returns `"datafree"`.
+- Reproduced directly: `_infer_pipeline([AWQModifier, Quant]) == "sequential"`
+  while `_infer_pipeline([GuardedAWQModifier, GuardedQuant]) == "datafree"`.
+
+This is a **diagnostic-harness bug only**. The safe lanes use the real
+`AWQModifier` via `pipeline.run`, so they correctly infer `sequential`
+(`safe-quant_only`, which is weight-only, correctly infers datafree and still
+produced a valid checkpoint). The guarded matrix's device-side asserts and
+empty layer guards were all measured on the wrong (datafree) path and do **not**
+characterise the sequential production AWQ path they were built to probe.
+
+**Fix applied (this commit):** `run_guarded_full` now pins
+`kwargs["pipeline"] = config.calibration.pipeline or "sequential"` so the guards
+instrument the sequential per-layer path regardless of the guard subclass names.
+A regression test (`test_guarded_recipe_would_infer_datafree_so_pipeline_must_be_pinned`)
+locks in that the guarded recipe would otherwise infer datafree.
+
+**Executor next step:** rerun the two diagnostic lanes at the new revision
+(under the existing `CUDA_LAUNCH_BLOCKING=1` from the prior commit). Expect the
+sequential pipeline this time: 60+ per-subgraph `post_native_quantization`
+stages (one layer each) and populated `completed_layers`. If the heavy lane now
+device-side-asserts on the *sequential* path, read
+`lanes/diag-heavy-offsetfix/fake_quant_probe.json` for the failing expert
+projection and its `group_geometry_consistent` flag. The safe lanes need no
+rerun.
+
 The new controller first runs the pre-quantization compatibility gate and real
 two-root trace smoke. It then starts five jobs concurrently, with every job in
 its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:

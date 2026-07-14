@@ -1,5 +1,6 @@
 import inspect
 import json
+import sys
 
 import torch
 
@@ -170,6 +171,28 @@ def test_aggregate_preserves_aborts_as_diagnostic_outcomes(tmp_path):
 def test_quantization_is_enabled_before_candidate_propagation_capture():
     source = inspect.getsource(FullGuardController.note_quant_epoch)
     assert source.index("enable_quantization") < source.index("begin_candidate")
+
+
+def test_guarded_recipe_would_infer_datafree_so_pipeline_must_be_pinned(tmp_path):
+    # The guard wraps the modifiers in renamed subclasses. oneshot's pipeline
+    # inference is class-name-based, so it does NOT see a calibration-requiring
+    # modifier and silently picks the datafree (whole-model, no-partition)
+    # pipeline -- which never invokes the per-layer propagation callback. The
+    # runner must therefore pin pipeline="sequential"; this test locks in the
+    # reason so the pin cannot be dropped.
+    from llmcompressor.pipelines.registry import CalibrationPipeline
+
+    source = load_config("pipeline/configs/minimax_m3_full_calib.yaml")
+    offset = prepare_variant_config(source, "offsetfix")
+    recipe, _ = build_guarded_recipe(offset, "offsetfix", tmp_path / "offset")
+
+    assert CalibrationPipeline._infer_pipeline(recipe) == "datafree"
+    assert type(recipe[0]).__name__ == "GuardedAWQModifier"
+
+    # The runner pins the pipeline explicitly rather than relying on inference.
+    runner_src = inspect.getsource(sys.modules[build_guarded_recipe.__module__])
+    pin = 'kwargs["pipeline"] = config.calibration.pipeline or "sequential"'
+    assert pin in runner_src
 
 
 def _healthy_boundary():

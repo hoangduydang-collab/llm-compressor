@@ -17,7 +17,7 @@ document remains the rationale and history.
 
 > **r4 execution notice:** The original r3 packet below is retained as execution
 > history and must not be launched again. The only current authorization and
-> executable command are in **Planner analysis and r4 GPTQ-only authorization**
+> executable command are in **Planner analysis and r4 GPTQ/AWQ authorization**
 > at the end of this file.
 
 ## Archived r3 packet (do not execute)
@@ -723,7 +723,7 @@ save, quality evaluation, or performance run was performed. This is factual
 infrastructure/model-load evidence only; it is not a quantization-speed or
 model-quality verdict.
 
-## Planner analysis and r4 GPTQ-only authorization
+## Planner analysis and r4 GPTQ/AWQ authorization
 
 The partial r3 GPTQ evidence proves that the r2 MiniMax constructor fix worked:
 all ranks passed that point and entered checkpoint loading. The new failure is
@@ -742,6 +742,11 @@ change model loading policy, offload conversion, calibration, GPTQ/AWQ recipes,
 or evidence semantics. The focused regression test verifies the exact timeout
 and retained barrier.
 
+AWQ uses this same distributed model-loading path before the method-specific
+recipe begins, so the r3 AWQ arm is exposed to the same timeout defect. The fix
+therefore applies to both methods, and r4 must rerun both to obtain comparable
+evidence under one corrected implementation.
+
 This section supersedes the earlier r3 retry/launch instructions only. Do not
 alter or cancel the already-running r3 AWQ arm. Wait until AWQ and its owning
 controller have reached a terminal state and preserve/return their evidence
@@ -749,12 +754,14 @@ before starting r4.
 
 ### r4 scope and gates
 
-- Authorized arm: GPTQ only, exactly once, with a fresh r4 run ID.
+- Authorized arms: GPTQ then AWQ, each exactly once, sequentially through the
+  existing launcher with one fresh r4 run ID. They must not run concurrently.
 - Required ancestor: `71372092`.
 - Unchanged inputs: eight H100s on one exclusive node, eight torchrun ranks,
   eight global calibration samples, sequence length 512, decoder layers 3/31/59,
   `auto_offload`, evidence-only mode, and the existing smoke config.
-- Time limit: 24 hours. Do not shorten the three-hour process-group timeout.
+- Time limit: 24 hours per arm; allow the controller up to 48 hours plus queue
+  time. Do not shorten the three-hour process-group timeout.
 - Before launch: require the r3 AWQ job and controller to be terminal; pull
   `duy-branch`; run the setup/worktree/model gates above; run all five focused
   test files; run `bash -n` on the launcher.
@@ -793,7 +800,7 @@ python -m pytest -q \
   pipeline/tests/test_m3_distributed_quant_smoke.py
 bash -n pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh
 
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r4-gptq"
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r4"
 RESULT_ROOT="/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/$RUN_ID"
 LOG_ROOT="/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/$RUN_ID"
 OFFLOAD_ROOT="/mnt/nfs/hoangduy/offload/m3-distributed-quant-smoke/$RUN_ID"
@@ -805,16 +812,17 @@ mkdir -p "$LOG_ROOT"
 git rev-parse HEAD >"$LOG_ROOT/expected_git_commit.txt"
 
 tmux new-session -d -s "$SESSION" \
-  "cd '$PWD'; rc=0; srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8 --time=24:00:00 --kill-on-bad-exit=1 env RUN_ID='$RUN_ID' RESULT_ROOT='$RESULT_ROOT' LOG_ROOT='$LOG_ROOT' OFFLOAD_ROOT='$OFFLOAD_ROOT' bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh --worker gptq >'$LOG_ROOT/controller.log' 2>&1 || rc=\$?; printf '%s\n' \"\$rc\" >'$LOG_ROOT/controller.rc'"
+  "cd '$PWD'; rc=0; RUN_ID='$RUN_ID' RESULT_ROOT='$RESULT_ROOT' LOG_ROOT='$LOG_ROOT' OFFLOAD_ROOT='$OFFLOAD_ROOT' bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh >'$LOG_ROOT/controller.log' 2>&1 || rc=\$?; printf '%s\n' \"\$rc\" >'$LOG_ROOT/controller.rc'"
 
 printf 'RUN_ID=%s\nRESULT_ROOT=%s\nLOG_ROOT=%s\nOFFLOAD_ROOT=%s\nSESSION=%s\n' \
   "$RUN_ID" "$RESULT_ROOT" "$LOG_ROOT" "$OFFLOAD_ROOT" "$SESSION" \
   | tee "/tmp/${RUN_ID}-locations.txt"
 ```
 
-After `controller.rc` appears, package the GPTQ logs, scheduler records, rank
-manifests, provenance, native metrics, passive resource log, and completion
-artifact using the existing aggregation/return contract. Record the first
-failing operation and last successful stage if r4 is nonzero. Commit and push
-the evidence, set the packet to `RETURNED_FOR_ANALYSIS`, and stop; no additional
-retry or AWQ rerun is authorized.
+After `controller.rc` appears, package both methods' logs, scheduler records,
+rank manifests, provenance, native metrics, passive resource logs, and
+completion artifacts using the existing aggregation/return contract. The
+launcher continues to AWQ if GPTQ fails so both corrected-path outcomes are
+returned. Record each method's first failing operation and last successful
+stage if r4 is nonzero. Commit and push the evidence, set the packet to
+`RETURNED_FOR_ANALYSIS`, and stop; no additional retry is authorized.

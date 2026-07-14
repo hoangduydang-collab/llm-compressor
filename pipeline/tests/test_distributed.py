@@ -1,6 +1,7 @@
 import os
 import sys
 import types
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,51 @@ def test_distributed_environment_requires_torchrun_rank_variables(monkeypatch):
 
     with pytest.raises(RuntimeError, match="RANK.*LOCAL_RANK"):
         DistributedContext.from_environment()
+
+
+def test_distributed_init_allows_slow_source_model_load(monkeypatch):
+    calls = []
+    barriers = []
+    initialized = False
+
+    fake_dist = types.ModuleType("torch.distributed")
+
+    def init_process_group(**kwargs):
+        nonlocal initialized
+        initialized = True
+        calls.append(kwargs)
+
+    fake_dist.is_initialized = lambda: initialized
+    fake_dist.init_process_group = init_process_group
+    fake_dist.barrier = lambda: barriers.append(True)
+    fake_dist.get_rank = lambda: 0
+    fake_dist.get_world_size = lambda: 8
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.distributed = fake_dist
+    fake_torch.device = lambda value: value
+    fake_torch.cuda = types.SimpleNamespace(set_device=lambda device: None)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch.distributed", fake_dist)
+
+    monkeypatch.setenv("WORLD_SIZE", "8")
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.setenv("LOCAL_RANK", "0")
+
+    ctx = DistributedContext.from_environment()
+
+    assert ctx.enabled is True
+    assert calls == [
+        {
+            "backend": "nccl",
+            "init_method": "env://",
+            "rank": 0,
+            "world_size": 8,
+            "device_id": "cuda:0",
+            "timeout": timedelta(hours=3),
+        }
+    ]
+    assert barriers == [True]
 
 
 def test_invalid_world_size_is_rejected(monkeypatch):

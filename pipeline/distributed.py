@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
+
+_DISTRIBUTED_TIMEOUT = timedelta(hours=3)
 
 
 @dataclass
@@ -48,15 +51,27 @@ class DistributedContext:
 
         # Keep imports lazy so ordinary config/launcher commands do not require
         # the GPU quantization environment.
+        import torch
         import torch.distributed as dist
-        from compressed_tensors.offload import init_dist
 
         owns_process_group = not dist.is_initialized()
         if owns_process_group:
-            init_dist()
+            rank = int(os.environ["RANK"])
+            local_rank = int(os.environ["LOCAL_RANK"])
+            device = torch.device(f"cuda:{local_rank}")
+            torch.cuda.set_device(device)
+            dist.init_process_group(
+                backend="nccl",
+                init_method="env://",
+                rank=rank,
+                world_size=world_size,
+                device_id=device,
+                timeout=_DISTRIBUTED_TIMEOUT,
+            )
+            dist.barrier()
 
         if not dist.is_initialized():
-            raise RuntimeError("compressed-tensors init_dist did not initialize torch")
+            raise RuntimeError("distributed process group initialization failed")
 
         return cls(
             enabled=True,

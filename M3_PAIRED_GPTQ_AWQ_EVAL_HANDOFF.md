@@ -52,10 +52,22 @@ way.
   - baseline `cyankiwi_awq`; smoke = 2 arms, `total_nodes=2`, `max_arm_nodes=1`;
   - production expected arms = `(cyankiwi_awq, reasoning/broad)`,
     `(inhouse_gptq, reasoning/broad)` = 4 arms, `total_nodes=4`.
-- Checkpoints (must exist / be complete before preflight):
-  - GPTQ: `/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123`
+- Checkpoints:
+  - GPTQ **raw source** (fails serving-ABI — do NOT serve directly):
+    `/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123`
+  - GPTQ **ABI overlay** (serve this; the matrix points here; built in Step 0):
+    `/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay`
   - cyankiwi: `/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4`
   - tokenizer source (preflight only): `/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3`
+
+> **Why an overlay:** the raw `gptq-checkpoint-vllm-w123` fails static serving-ABI
+> validation — its `config.json` `quantization_config.ignore` doesn't cover the
+> vLLM runtime router (`block_sparse_moe.gate`) or shared-expert projections, so
+> preflight (correctly) rejects it. The overlay is **metadata-only**: it symlinks
+> every tensor shard unchanged and only rewrites `config.json` to add
+> `re:.*block_sparse_moe[.]shared_experts[.].*` and `re:.*block_sparse_moe[.]gate$`.
+> This is exactly the checkpoint the passing smoke served. A prior planner config
+> mistakenly pointed at the raw source — hence the earlier preflight failure.
 
 ## Run procedure
 
@@ -77,9 +89,34 @@ RUN_ROOT="results/m3-quality/$RUN_ID"
 MATRIX=pipeline/configs/minimax_m3_paired_gptq_awq_quick.yaml   # full: minimax_m3_paired_gptq_awq.yaml
 mkdir -p "$RUN_ROOT"
 
+# --- Step 0: build the ABI overlay the matrix points at (CPU, ~1 min, metadata-only) ---
+SOURCE_GPTQ=/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123
+OVERLAY_GPTQ=/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay
+# Sanity: the raw source MUST fail serving-ABI (this is expected).
+if python -m pipeline.m3_serve_abi --checkpoint "$SOURCE_GPTQ" --out "$RUN_ROOT/static_direct_gptq.json"; then
+  echo "ERROR: raw GPTQ source unexpectedly PASSED ABI; stop and report" >&2; exit 1
+fi
+# Build overlay only if absent (prepare-overlay refuses to overwrite; it symlinks
+# tensors and only rewrites config.json to add the two vLLM ignore aliases).
+if [[ ! -e "$OVERLAY_GPTQ" ]]; then
+  python -m pipeline.m3_routed_diagnostics prepare-overlay \
+    --source "$SOURCE_GPTQ" --destination "$OVERLAY_GPTQ" \
+    --add-vllm-shared-expert-ignore --add-vllm-router-ignore
+fi
+# Verify provenance: identical safetensors index hash, distinct config hash,
+# both aliases added, tensor_payload_unchanged == true.
+python -m json.tool "$OVERLAY_GPTQ/overlay_provenance.json"
+# Confirm the overlay now PASSES serving-ABI before spending any preflight time.
+python -m pipeline.m3_serve_abi --checkpoint "$OVERLAY_GPTQ" --out "$RUN_ROOT/static_overlay_gptq.json"
+
 python -m pipeline.m3_quality_preflight --matrix "$MATRIX" --run-root "$RUN_ROOT" \
   2>&1 | tee "$RUN_ROOT/preflight.log"
 ```
+
+Preflight now inspects the **overlay** (matrix `inhouse_gptq.path`) and both
+models' serving ABIs should report valid. If the overlay already exists from a
+prior run, Step 0 reuses it (the tensor symlinks still resolve to the same
+source payloads).
 
 Preflight must produce `run_manifest.json`, `preflight/resolved_eval_config.yaml`,
 `preflight/resolved_tasks.json`, both sample manifests, both probe corpora, and
@@ -165,6 +202,7 @@ cyankiwi = reference A) and `gates.json`:
 
 ## Do not
 
+- Do not serve the raw `gptq-checkpoint-vllm-w123` source — always the overlay.
 - Do not start serving-perf/CUDA-graph work, AutoRound, or the speed-up
   implementation in this run.
 - Do not delete any checkpoint.

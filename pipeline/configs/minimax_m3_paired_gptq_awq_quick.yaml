@@ -20,7 +20,14 @@ models:
     tensor_parallel_size: 8
     distributed_executor_backend: mp
   - label: inhouse_gptq
-    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123
+    # ABI-repaired serving OVERLAY, not the raw export. The raw
+    # gptq-checkpoint-vllm-w123 fails static serving-ABI validation because its
+    # config.json ignore list does not cover the vLLM runtime router
+    # (block_sparse_moe.gate) or shared-expert namespaces -> preflight rejects
+    # it. The overlay is metadata-only (symlinks tensors, adds the two vLLM
+    # ignore aliases) and is what the passing smoke actually served. The handoff
+    # builds it via `m3_routed_diagnostics prepare-overlay` before preflight.
+    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay
     kind: gptq-w4a8
     nodes: 1
     tensor_parallel_size: 8

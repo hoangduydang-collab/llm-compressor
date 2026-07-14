@@ -22,7 +22,11 @@ models:
     tensor_parallel_size: 8
     distributed_executor_backend: mp
   - label: inhouse_gptq
-    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123
+    # ABI-repaired serving OVERLAY (not the raw gptq-checkpoint-vllm-w123, which
+    # fails static serving-ABI: its ignore list omits the vLLM router
+    # block_sparse_moe.gate and shared-expert namespaces). Metadata-only overlay
+    # built by the handoff via `m3_routed_diagnostics prepare-overlay`.
+    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay
     kind: gptq-w4a8
     nodes: 1
     tensor_parallel_size: 8

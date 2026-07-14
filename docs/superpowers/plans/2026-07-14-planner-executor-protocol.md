@@ -319,3 +319,87 @@ git status --short --branch
 ```
 
 Expected: push succeeds and status reports `duy-branch...origin/duy-branch` with no ahead/behind count and no working-tree changes.
+
+---
+
+### Task 4: Apply the proportional-execution amendment
+
+**Files:**
+- Modify: `PLANNER_EXECUTOR_PROTOCOL.md`
+- Modify: `.cursor/rules/planner-executor-protocol.mdc`
+- Modify: `M3_PAIRED_GPTQ_AWQ_TASK_ISOLATED_HANDOFF.md`
+- Reference: `docs/superpowers/specs/2026-07-14-planner-executor-protocol-design.md`
+
+**Interfaces:**
+- Consumes: the approved 2026-07-14 proportional-execution amendment.
+- Produces: repo-wide three-level runtime handling and an active r2 packet that
+  deterministically permits old untracked files only under `results/` and
+  `artifacts/`.
+
+- [ ] **Step 1: Amend the canonical protocol and Cursor rule**
+
+Add these exact concepts to the existing runtime-authority sections:
+
+```markdown
+1. Record and proceed for explicitly pre-authorized benign conditions.
+2. Permitted adaptation only for an exact adaptation named by the packet.
+3. Stop and return when code, inputs, scientific validity, topology, evidence,
+   or the experiment contract may change.
+```
+
+Require packets to name protected paths and permitted untracked roots. Require
+exact blocking paths in stopped returns and proportional evidence based on
+whether GPU work began. Replace “clean worktree” completion language with no
+unexplained tracked changes plus enumeration of permitted untracked artifacts.
+
+- [ ] **Step 2: Revise the active packet to r2 in place**
+
+Change the packet revision to `2026-07-14-r2`. Replace the pristine-worktree
+stop with copy-ready commands that:
+
+```bash
+test -z "$(git diff --name-only)"
+test -z "$(git diff --cached --name-only)"
+WORKSPACE_RECORD="$(mktemp)"
+WORKSPACE_BLOCKERS="$(mktemp)"
+git ls-files --others --exclude-standard | tee "$WORKSPACE_RECORD"
+awk '!/^(results|artifacts)\//' "$WORKSPACE_RECORD" | tee "$WORKSPACE_BLOCKERS"
+test ! -s "$WORKSPACE_BLOCKERS"
+```
+
+After creating the fresh run root, copy both records into it. Explicitly permit
+record-and-proceed only for pre-existing files under `results/` and `artifacts/`;
+retain stops for tracked changes, other untracked paths, collisions, and all
+existing hash/topology/environment failures. Require exact paths in any new
+stopped return.
+
+- [ ] **Step 3: Verify the documentation contract**
+
+Run:
+
+```powershell
+$protocol = Get-Content -Raw PLANNER_EXECUTOR_PROTOCOL.md
+$cursor = Get-Content -Raw .cursor/rules/planner-executor-protocol.mdc
+$packet = Get-Content -Raw M3_PAIRED_GPTQ_AWQ_TASK_ISOLATED_HANDOFF.md
+foreach ($marker in @('Record and proceed','Permitted adaptation','protected paths','permitted untracked')) {
+  if (-not $protocol.Contains($marker)) { throw "Protocol missing $marker" }
+}
+if (-not $cursor.Contains('Record and proceed')) { throw 'Cursor rule missing proportional policy' }
+if (-not $packet.Contains('2026-07-14-r2')) { throw 'Packet is not r2' }
+if (-not $packet.Contains("awk '!/^(results|artifacts)\\//'")) { throw 'Packet lacks deterministic classifier' }
+git diff --check
+```
+
+Expected: exit code zero and no whitespace errors.
+
+- [ ] **Step 4: Commit and push the same branch**
+
+```powershell
+git add PLANNER_EXECUTOR_PROTOCOL.md .cursor/rules/planner-executor-protocol.mdc M3_PAIRED_GPTQ_AWQ_TASK_ISOLATED_HANDOFF.md docs/superpowers/plans/2026-07-14-planner-executor-protocol.md
+git commit -m "docs: make executor conditions proportional"
+git push origin duy-branch
+git status --short --branch
+```
+
+Expected: `duy-branch` is synchronized with `origin/duy-branch`; no new files
+are introduced by this amendment.

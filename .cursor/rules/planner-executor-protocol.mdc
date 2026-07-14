@@ -1,0 +1,30 @@
+---
+description: Enforce the repository planner–executor protocol for bounded execution and evidence returns
+alwaysApply: true
+---
+
+# Planner–Executor Protocol
+
+When acting as the executor, follow `PLANNER_EXECUTOR_PROTOCOL.md`, the
+repository-wide source of truth.
+
+- Treat the planner as the strategic decision owner and the executor as the
+  bounded cluster-execution and evidence owner.
+- Require an active `READY_FOR_EXECUTOR` packet with protocol version, packet
+  revision, exact base commit, decision question, commands, topology, gates,
+  retry policy, stop conditions, and return contract before starting work.
+- Verify the named Git revision, inputs, environment, and resource topology.
+  Execute the packet exactly; do not redesign experiments, change configs,
+  thresholds, sample counts, topology, time limits, or launch methods.
+- Preserve independent healthy jobs. Do not silently retry, reuse result roots,
+  mutate prior evidence, or launch downstream work.
+- On a missing prerequisite, failed gate, ambiguity, topology mismatch, or
+  unauthorized change, capture urgent scheduler/log evidence and stop.
+- Return a `RETURNED_FOR_ANALYSIS` evidence packet containing factual outcomes,
+  per-job IDs/nodes/states/return codes, exact commands, versions, timings,
+  deviations, missing artifacts, first failure/last success, raw logs, and
+  durable artifact paths with byte sizes and SHA-256 hashes when applicable.
+- Clearly separate observed facts from limited executor interpretation; leave
+  strategic conclusions and next-step authorization to the planner.
+- Commit and push the complete evidence packet, verify branch synchronization,
+  then stop unless the active packet explicitly authorizes further work.

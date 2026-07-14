@@ -178,6 +178,20 @@ sharded.
    underutilization. **Do not write Phase-2 production scatter until this shows
    real (≥~0.5×ceiling) parallelism.** Needs no model download, no chosen recipe,
    and no eval verdict — so it proceeds in parallel with the paired eval.
+
+   **Phase-1 result (2026-07-14): thread-pool scatter is a no-go.** The
+   GPTQ-shaped MiniMax-M3 proxy was run on `gpu-h125` with 8× H100 GPUs,
+   128 experts, bf16 weights, and blocksize 128. The serial one-GPU baseline
+   took **116.98 s**; the one-process thread-pool scatter took **132.97 s**,
+   for **0.88× speedup** against an 8× ceiling. Python setup accounted for
+   **45%** of the measured serial work. The benchmark therefore fails the
+   `>=~0.5×` ceiling gate: do not wire the thread-pool implementation into
+   production. The next viable experiment is the plan-6 fallback using
+   per-device CUDA streams or a process-based design.
+
+   Raw artifacts:
+   `results/m3-expert-scatter-bench/expert_scatter_bench.json` and
+   `results/m3-expert-scatter-bench-20260714T0829Z.out`.
 2. **Expert-scatter GPTQ, single node.** Add a MoE-aware fast path to the GPTQ
    modifier / sequential pipeline that, per decoder layer, dispatches the
    linearized experts' `quantize_weight` calls across `cuda:0..7` concurrently

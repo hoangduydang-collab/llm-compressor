@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "status": "ok",
+  "node": "h125-gpu-polaris.pod4.lab.bitdeer.ai",
+  "devices": 8,
+  "device_names": [
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3"
+  ],
+  "experts": 128,
+  "dtype": "torch.bfloat16",
+  "blocksize": 128,
+  "dims": {
+    "hidden": 6144,
+    "inter": 3072
+  },
+  "torch_version": "2.11.0+cu130",
+  "serial": {
+    "total_s": 116.97657811455429,
+    "python_setup_s": 52.89669186249375,
+    "cuda_s": 64.07688752189279,
+    "python_fraction": 0.45221059439986944
+  },
+  "scatter": {
+    "total_s": 132.9666219316423
+  },
+  "speedup": 0.8797439268231659,
+  "ceiling": 8,
+  "real_parallelism": false,
+  "verdict": "sub-half-ceiling -> Python/launch overhead is eating the win; plan 6 fallback (per-device CUDA streams / ProcessPool) needed"
+}

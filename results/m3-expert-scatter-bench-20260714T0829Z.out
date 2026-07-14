@@ -1,0 +1,56 @@
+2026-07-14T08:28:54+00:00
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench.json
+devices=8  experts=128  dtype=torch.bfloat16  blocksize=128
+per-expert: gate_up[6144,6144] + down[6144,3072]
+
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench.json
+[serial  cuda:0]  116.98s total  (python-setup  52.90s / cuda  64.08s = 45% python)
+  -> watch `nvidia-smi dmon -s u`: low SM% here confirms the premise
+
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench.json
+[scatter 8 GPU]  132.97s total
+
+speedup: 0.88x  (ceiling 8x)
+VERDICT: sub-half-ceiling -> Python/launch overhead is eating the win; plan 6 fallback (per-device CUDA streams / ProcessPool) needed
+
+=== RESULTS JSON ===
+{
+  "schema_version": 1,
+  "status": "ok",
+  "node": "h125-gpu-polaris.pod4.lab.bitdeer.ai",
+  "devices": 8,
+  "device_names": [
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3",
+    "NVIDIA H100 80GB HBM3"
+  ],
+  "experts": 128,
+  "dtype": "torch.bfloat16",
+  "blocksize": 128,
+  "dims": {
+    "hidden": 6144,
+    "inter": 3072
+  },
+  "torch_version": "2.11.0+cu130",
+  "serial": {
+    "total_s": 116.97657811455429,
+    "python_setup_s": 52.89669186249375,
+    "cuda_s": 64.07688752189279,
+    "python_fraction": 0.45221059439986944
+  },
+  "scatter": {
+    "total_s": 132.9666219316423
+  },
+  "speedup": 0.8797439268231659,
+  "ceiling": 8,
+  "real_parallelism": false,
+  "verdict": "sub-half-ceiling -> Python/launch overhead is eating the win; plan 6 fallback (per-device CUDA streams / ProcessPool) needed"
+}
+
+BENCH_RC=0
+2026-07-14T08:33:12+00:00

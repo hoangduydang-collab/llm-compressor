@@ -2,8 +2,8 @@
 
 llm-compressor logs internal metrics through loguru. They arrive two ways:
 
-  - GPTQ: per-module reconstruction ``error`` and ``time`` at the ``METRIC``
-    level (e.g. messages ``"error 1724.52"`` / ``"time 0.49s"``).
+  - GPTQ: native ``Quantizing <module>`` work records plus per-module
+    reconstruction ``error`` and ``time`` at the ``METRIC`` level.
   - AWQ: a structured per-mapping summary at ``DEBUG`` level, in a single line
     ``"AWQ per-mapping error metrics: {... 'metrics': [{'best_error':..,
     'reduction':..}, ...]}"`` (AWQ's live ``best_error`` is only a tqdm postfix,
@@ -24,21 +24,24 @@ from pathlib import Path
 # GPTQ logs messages like "error 1724.52" and "time 0.49s".
 _ERROR_RE = re.compile(r"\berror\s+([0-9.eE+\-]+)")
 _TIME_RE = re.compile(r"\btime\s+([0-9.]+)\s*s\b")
+_GPTQ_QUANTIZING_RE = re.compile(r"^Quantizing\s+(\S+)\s+using\s+\d+\s+samples$")
+_DECODER_LAYER_RE = re.compile(r"(?:^|[.])language_model[.]layers[.](\d+)(?:[.]|$)")
 
 # AWQ logs a single structured DEBUG line with this prefix.
 _AWQ_PREFIX = "AWQ per-mapping error metrics:"
 
 
 def _is_captured_message(record) -> bool:
-    """Keep GPTQ METRIC records and the AWQ structured-metrics DEBUG line."""
+    """Keep native GPTQ work/metric records and AWQ structured metrics."""
     if record["level"].name == "METRIC":
         return True
-    return str(record["message"]).startswith(_AWQ_PREFIX)
+    message = str(record["message"])
+    return message.startswith(_AWQ_PREFIX) or bool(_GPTQ_QUANTIZING_RE.match(message))
 
 
 @contextmanager
 def capture_quant_metrics(path):
-    """Tee GPTQ METRIC + AWQ metric records to ``path`` (JSON lines).
+    """Tee native GPTQ/AWQ work and metric records to ``path`` (JSON lines).
 
     Adds an extra sink (does not disturb existing console logging) and removes
     it on exit. The sink level is DEBUG so the AWQ line passes the level gate,
@@ -77,6 +80,56 @@ def _iter_messages(path: Path):
             yield obj.get("record", {}).get("message", "")
 
 
+def _decoder_layer(name: str) -> int | None:
+    match = _DECODER_LAYER_RE.search(name)
+    return int(match.group(1)) if match else None
+
+
+def summarize_quantized_layers(paths, *, method: str) -> dict:
+    """Summarize native GPTQ/AWQ work records by decoder layer.
+
+    GPTQ contributes its existing ``Quantizing <module>`` INFO records; AWQ
+    contributes its existing structured per-mapping summary. This is passive
+    log parsing and does not install runtime hooks or alter quantization.
+    """
+    if method not in {"gptq", "awq"}:
+        raise ValueError(f"unsupported quantization method: {method!r}")
+
+    names: list[str] = []
+    for raw_path in paths:
+        path = Path(raw_path)
+        if not path.exists():
+            continue
+        for message in _iter_messages(path):
+            if method == "gptq":
+                match = _GPTQ_QUANTIZING_RE.match(message)
+                if match:
+                    names.append(match.group(1))
+            else:
+                parsed = _parse_awq_metrics(message)
+                if parsed is not None:
+                    names.extend(
+                        str(item["layer_name"])
+                        for item in parsed
+                        if isinstance(item, dict) and item.get("layer_name")
+                    )
+
+    layers: set[int] = set()
+    unresolved: set[str] = set()
+    for name in names:
+        layer = _decoder_layer(name)
+        if layer is None:
+            unresolved.add(name)
+        else:
+            layers.add(layer)
+    return {
+        "method": method,
+        "record_count": len(names),
+        "layers": sorted(layers),
+        "unresolved_names": sorted(unresolved),
+    }
+
+
 def _dist(values: list[float]) -> dict:
     return {
         "mean": statistics.fmean(values),
@@ -90,7 +143,7 @@ def _parse_awq_metrics(msg: str):
     """Parse the AWQ structured-metrics line into a list of per-layer dicts."""
     if not msg.startswith(_AWQ_PREFIX):
         return None
-    payload = msg[len(_AWQ_PREFIX):].strip()
+    payload = msg[len(_AWQ_PREFIX) :].strip()
     try:
         data = ast.literal_eval(payload)
     except (ValueError, SyntaxError):

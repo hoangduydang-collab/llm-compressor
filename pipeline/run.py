@@ -67,16 +67,22 @@ def _apply_overrides(cfg: PipelineConfig, overrides: list[str]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Quantization pipeline runner")
-    parser.add_argument("--config", required=True, help="path to a pipeline YAML config")
+    parser.add_argument(
+        "--config", required=True, help="path to a pipeline YAML config"
+    )
     parser.add_argument(
         "--stage", default="all", choices=STAGES, help="which stage(s) to run"
     )
     parser.add_argument(
-        "--set", dest="overrides", action="append", default=[],
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
         help="override a config field, e.g. --set quantization.scheme=W4A8",
     )
     parser.add_argument(
-        "--make-baseline", metavar="OUT.json",
+        "--make-baseline",
+        metavar="OUT.json",
         help="evaluate the (unquantized) model.id and write a baseline JSON, then exit",
     )
     parser.add_argument(
@@ -89,7 +95,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--agent-base",
-        help="OpenAI-compatible base URL for the agent under test (overrides agentic.agent_base)",
+        help=(
+            "OpenAI-compatible base URL for the agent under test "
+            "(overrides agentic.agent_base)"
+        ),
     )
     parser.add_argument(
         "--agent-model",
@@ -161,7 +170,10 @@ def _run(args: argparse.Namespace, dist_ctx: DistributedContext) -> int:
             dist_ctx,
             save_checkpoint=not args.evidence_only,
         )
-        print(f"[pipeline] checkpoint saved -> {ckpt}")
+        if args.evidence_only:
+            print(f"[pipeline] evidence-only quantization complete -> {run_dir}")
+        else:
+            print(f"[pipeline] checkpoint saved -> {ckpt}")
 
     if args.stage in ("serve", "all") and cfg.serve.enabled:
         import json

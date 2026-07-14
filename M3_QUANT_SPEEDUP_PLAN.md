@@ -18,6 +18,10 @@ them.**
 
 ### Approved Phase 1 design (2026-07-15)
 
+Active execution packet: `M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md`, revision
+`2026-07-15-r1`. It supersedes the informal launch instructions in this plan;
+the analysis and rationale here remain current.
+
 Phase 1 is an integration and evidence task, not a new quantization algorithm.
 It must extend the existing `pipeline.run` path in the same way as the repository's
 DDP examples and e2e runner:

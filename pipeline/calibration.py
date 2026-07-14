@@ -23,9 +23,7 @@ class CalibrationPartition:
     end: int
 
 
-def partition_bounds(
-    num_samples: int, rank: int, world_size: int
-) -> tuple[int, int]:
+def partition_bounds(num_samples: int, rank: int, world_size: int) -> tuple[int, int]:
     """Return non-overlapping floor-partition bounds for one rank."""
     if num_samples < 0:
         raise ValueError("num_samples must be non-negative")
@@ -79,9 +77,7 @@ def calibration_partition_manifest(dataset, partition: CalibrationPartition) -> 
     }
 
 
-def build_calibration_dataset_with_partition(
-    cal: CalibrationConfig, tokenizer
-):
+def build_calibration_dataset_with_partition(cal: CalibrationConfig, tokenizer):
     """Load/tokenize calibration data and return its rank-local partition."""
     from datasets import load_dataset
 

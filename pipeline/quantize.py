@@ -7,6 +7,7 @@ Produces a vLLM-servable ``pack-quantized`` compressed-tensors checkpoint in
 import json
 from pathlib import Path
 
+from pipeline import metrics, versioning
 from pipeline.calibration import (
     CalibrationPartition,
     build_calibration_dataset_with_partition,
@@ -17,8 +18,6 @@ from pipeline.distributed import DistributedContext
 from pipeline.provenance import log_model_provenance
 from pipeline.recipe import build_recipe, describe_recipe
 from pipeline.vl_artifacts import ensure_vl_processor_artifacts
-from pipeline import metrics, versioning
-
 
 # Schemes whose weights are INT-packed and need explicit pack-quantized on save
 # for vLLM to pick the right loader/kernel.
@@ -46,6 +45,7 @@ def _log_backbone_dtype(model) -> None:
 def _load_model_and_tokenizer(cfg: PipelineConfig):
     import transformers
     from transformers import AutoTokenizer
+
     from llmcompressor.utils import load_context
     from pipeline.minimax_m3_config import apply_minimax_m3_config
 
@@ -118,9 +118,7 @@ def _sample_generation(model, tokenizer, prompt: str) -> str:
     return tokenizer.decode(output[0])
 
 
-def _evidence_paths(
-    run_dir: Path, dist_ctx: DistributedContext
-) -> dict[str, Path]:
+def _evidence_paths(run_dir: Path, dist_ctx: DistributedContext) -> dict[str, Path]:
     return {
         "metrics": dist_ctx.rank_path(run_dir / "quant_metrics.jsonl"),
         "provenance": dist_ctx.rank_path(run_dir / "model_provenance.json"),
@@ -179,13 +177,14 @@ def run_quantize(
         out_path=evidence_paths["provenance"],
     )
     if patch_minimax_m3_for_text_calibration(model):
-        print("[pipeline] patched MiniMax-M3 get_placeholder_mask for text-only calibration")
+        print(
+            "[pipeline] patched MiniMax-M3 get_placeholder_mask "
+            "for text-only calibration"
+        )
         register_minimax_m3_awq_mappings()
         print("[pipeline] registered MiniMax-M3 AWQ mappings")
 
-    ds, partition = build_calibration_dataset_with_partition(
-        cfg.calibration, tokenizer
-    )
+    ds, partition = build_calibration_dataset_with_partition(cfg.calibration, tokenizer)
     _persist_calibration_partition(run_dir, ds, partition, dist_ctx)
     recipe = build_recipe(cfg.quantization)
 
@@ -198,10 +197,15 @@ def run_quantize(
         dataset=ds,
         recipe=recipe,
         max_seq_length=cfg.calibration.max_seq_length,
-        num_calibration_samples=len(ds),
-        shuffle_calibration_samples=False,
+        num_calibration_samples=(
+            len(ds) if dist_ctx.enabled else cfg.calibration.num_samples
+        ),
         moe_calibrate_all_experts=cfg.calibration.moe_calibrate_all_experts,
     )
+    if dist_ctx.enabled:
+        # Dataset shuffling and global-to-rank partitioning already happened in
+        # pipeline.calibration. Keep llm-compressor from shuffling each shard.
+        oneshot_kwargs["shuffle_calibration_samples"] = False
     if cfg.calibration.sequential_targets:
         oneshot_kwargs["sequential_targets"] = cfg.calibration.sequential_targets
     if cfg.calibration.pipeline:
@@ -237,13 +241,10 @@ def run_quantize(
                 if added:
                     print(f"[pipeline] saved VL processor artifacts: {added}")
 
-                cfg_patches = ensure_minimax_m3_vllm_serve_config(
-                    ckpt, cfg.model.id
-                )
+                cfg_patches = ensure_minimax_m3_vllm_serve_config(ckpt, cfg.model.id)
                 if cfg_patches:
                     print(
-                        "[pipeline] patched saved config for vLLM serve: "
-                        f"{cfg_patches}"
+                        f"[pipeline] patched saved config for vLLM serve: {cfg_patches}"
                     )
 
             # Preserve intended ignore patterns for downstream loaders.

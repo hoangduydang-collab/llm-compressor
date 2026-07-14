@@ -12,6 +12,10 @@ model:
   auto_class: AutoModelForImageTextToText
   dtype: bfloat16
   device_map: auto_offload
+  # Native DDP requires CPU-only placement. Leaving this unset lets Accelerate
+  # spread every rank across all visible GPUs instead of CT's shared offload.
+  max_memory:
+    cpu: 1000000000000
   offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-smoke
 
 quantization:

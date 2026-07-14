@@ -53,6 +53,13 @@ def test_invalid_world_size_is_rejected(monkeypatch):
         DistributedContext.from_environment()
 
 
+def test_nonpositive_world_size_is_rejected(monkeypatch):
+    monkeypatch.setenv("WORLD_SIZE", "0")
+
+    with pytest.raises(RuntimeError, match="WORLD_SIZE must be positive"):
+        DistributedContext.from_environment()
+
+
 def test_rank_path_preserves_multi_suffixes():
     ctx = DistributedContext(enabled=True, rank=1, world_size=2, local_rank=1)
 

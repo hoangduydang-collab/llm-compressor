@@ -8,12 +8,30 @@ Run: pytest pipeline/tests/test_metrics.py
 """
 
 import json
+from types import SimpleNamespace
 
-from pipeline.metrics import _parse_awq_metrics, summarize_quant_metrics
+from pipeline.metrics import (
+    _is_captured_message,
+    _parse_awq_metrics,
+    summarize_quant_metrics,
+    summarize_quantized_layers,
+)
 
 # --- Sample messages, mirroring the exact strings llm-compressor emits ------
 
 GPTQ_MESSAGES = [
+    (
+        "INFO",
+        "Quantizing language_model.layers.3.mlp.experts.0.down_proj using 8 samples",
+    ),
+    (
+        "INFO",
+        "Quantizing language_model.layers.31.mlp.experts.0.down_proj using 8 samples",
+    ),
+    (
+        "INFO",
+        "Quantizing language_model.layers.59.mlp.experts.0.down_proj using 8 samples",
+    ),
     ("METRIC", "error 1724.52"),
     ("METRIC", "time 0.49s"),
     ("METRIC", "error 129.39"),
@@ -109,3 +127,66 @@ def test_malformed_awq_payload_is_skipped(tmp_path):
 
 def test_non_awq_message_not_parsed():
     assert _parse_awq_metrics("error 1724.52") is None
+
+
+def test_capture_filter_keeps_native_gptq_work_record():
+    record = {
+        "level": SimpleNamespace(name="INFO"),
+        "message": "Quantizing language_model.layers.3.mlp.down_proj using 8 samples",
+    }
+
+    assert _is_captured_message(record) is True
+
+
+def test_summarize_gptq_quantized_layers_from_native_records(tmp_path):
+    p = tmp_path / "gptq.jsonl"
+    _write_jsonl(p, GPTQ_MESSAGES)
+
+    summary = summarize_quantized_layers([p], method="gptq")
+
+    assert summary == {
+        "method": "gptq",
+        "record_count": 3,
+        "layers": [3, 31, 59],
+        "unresolved_names": [],
+    }
+
+
+def test_summarize_awq_quantized_layers_from_native_records(tmp_path):
+    p = tmp_path / "awq.jsonl"
+    data = dict(AWQ_DATA)
+    data["metrics"] = [
+        {"layer_name": f"language_model.layers.{layer}.mlp", "best_error": 0.1}
+        for layer in (3, 31, 59)
+    ]
+    _write_jsonl(p, [("DEBUG", "AWQ per-mapping error metrics: " + repr(data))])
+
+    summary = summarize_quantized_layers([p], method="awq")
+
+    assert summary["record_count"] == 3
+    assert summary["layers"] == [3, 31, 59]
+    assert summary["unresolved_names"] == []
+
+
+def test_summarize_quantized_layers_exposes_empty_and_unexpected_records(tmp_path):
+    empty = tmp_path / "empty.jsonl"
+    _write_jsonl(empty, [("METRIC", "error 1.0")])
+    unexpected = tmp_path / "unexpected.jsonl"
+    _write_jsonl(
+        unexpected,
+        [("INFO", "Quantizing language_model.layers.8.mlp.down_proj using 8 samples")],
+    )
+
+    assert summarize_quantized_layers([empty], method="gptq")["record_count"] == 0
+    assert summarize_quantized_layers([unexpected], method="gptq")["layers"] == [8]
+
+
+def test_non_language_model_layer_stack_does_not_count_as_decoder_work(tmp_path):
+    p = tmp_path / "vision.jsonl"
+    name = "vision_tower.layers.3.mlp.down_proj"
+    _write_jsonl(p, [("INFO", f"Quantizing {name} using 8 samples")])
+
+    summary = summarize_quantized_layers([p], method="gptq")
+
+    assert summary["layers"] == []
+    assert summary["unresolved_names"] == [name]

@@ -34,7 +34,9 @@ class DistributedContext:
                 f"WORLD_SIZE must be an integer, got {raw_world_size!r}"
             ) from exc
 
-        if world_size <= 1:
+        if world_size <= 0:
+            raise RuntimeError(f"WORLD_SIZE must be positive, got {world_size}")
+        if world_size == 1:
             return cls()
 
         missing = [name for name in ("RANK", "LOCAL_RANK") if name not in os.environ]
@@ -84,7 +86,9 @@ class DistributedContext:
 
         import torch.distributed as dist
 
-        payload: list[Any] = [str(path) if self.is_source and path is not None else None]
+        payload: list[Any] = [
+            str(path) if self.is_source and path is not None else None
+        ]
         if self.is_source and payload[0] is None:
             raise ValueError("source rank must provide a path to broadcast")
         dist.broadcast_object_list(payload, src=0)

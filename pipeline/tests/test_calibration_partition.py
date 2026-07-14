@@ -34,9 +34,7 @@ def test_partition_bounds_cover_fewer_samples_than_ranks():
         (8, 0, 0, "world_size"),
     ],
 )
-def test_partition_bounds_reject_invalid_inputs(
-    num_samples, rank, world_size, message
-):
+def test_partition_bounds_reject_invalid_inputs(num_samples, rank, world_size, message):
     with pytest.raises(ValueError, match=message):
         partition_bounds(num_samples, rank, world_size)
 

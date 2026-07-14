@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pipeline.config import load_config
 
-
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "pipeline/configs/minimax_m3_distributed_smoke.yaml"
 LAUNCHER = ROOT / "pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh"
@@ -20,8 +19,7 @@ BASH = next(
     Path("bash"),
 )
 LAYER_EXCLUSION = (
-    "re:.*language_model[.]layers[.]"
-    "(?!(?:3|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*"
+    "re:.*language_model[.]layers[.](?!(?:3|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*"
 )
 
 
@@ -30,6 +28,7 @@ def test_smoke_config_reuses_production_recipe_with_three_layers_only():
 
     assert cfg.model.id == "MiniMaxAI/MiniMax-M3"
     assert cfg.model.device_map == "auto_offload"
+    assert cfg.model.max_memory == {"cpu": 1_000_000_000_000}
     assert cfg.quantization.method == "gptq"
     assert cfg.quantization.scheme == "W4AFP8"
     assert LAYER_EXCLUSION in cfg.quantization.ignore
@@ -74,6 +73,8 @@ def test_launcher_owns_top_level_srun_and_rejects_nested_slurm():
     assert "torch.cuda.device_count()" in text
     assert "df -B1 /dev/shm" in text
     assert "/usr/bin/time -v" in text
+    assert "driver_version" in text
+    assert "torch_cuda_build" in text
     assert "sbatch" not in text
     assert "pipeline.m3_awq_representative" not in text
     assert "M3_AWQ_HOOK_TRACE" not in text

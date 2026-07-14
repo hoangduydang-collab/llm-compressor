@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from pipeline.calibration import CalibrationPartition
 from pipeline.distributed import DistributedContext
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -105,7 +104,9 @@ class _NeverSaveTokenizer:
         raise AssertionError("evidence-only smoke saved tokenizer artifacts")
 
 
-def test_evidence_only_quantize_never_creates_checkpoint(monkeypatch, tmp_path):
+def test_single_process_evidence_only_preserves_legacy_sampler_kwargs(
+    monkeypatch, tmp_path
+):
     import pipeline.quantize as quantize
 
     calls = []
@@ -149,7 +150,61 @@ def test_evidence_only_quantize_never_creates_checkpoint(monkeypatch, tmp_path):
     assert json.loads((tmp_path / "smoke_complete.json").read_text())["status"] == (
         "complete"
     )
-    assert calls[0]["num_calibration_samples"] == 2
+    assert calls[0]["num_calibration_samples"] == 8
+    assert "shuffle_calibration_samples" not in calls[0]
+
+
+def test_distributed_evidence_only_uses_rank_local_sampler_kwargs(
+    monkeypatch, tmp_path
+):
+    import pipeline.quantize as quantize
+
+    calls = []
+    fake_llmcompressor = types.ModuleType("llmcompressor")
+    fake_llmcompressor.oneshot = lambda **kwargs: calls.append(kwargs)
+    monkeypatch.setitem(sys.modules, "llmcompressor", fake_llmcompressor)
+    fake_m3 = types.ModuleType("pipeline.minimax_m3_config")
+    fake_m3.patch_minimax_m3_for_text_calibration = lambda model: False
+    fake_m3.register_minimax_m3_awq_mappings = lambda: None
+    fake_m3.ensure_minimax_m3_vllm_serve_config = lambda *args, **kwargs: []
+    monkeypatch.setitem(sys.modules, "pipeline.minimax_m3_config", fake_m3)
+    monkeypatch.setattr(
+        quantize,
+        "_load_model_and_tokenizer",
+        lambda cfg: (_NeverSaveModel(), _NeverSaveTokenizer()),
+    )
+    monkeypatch.setattr(quantize, "log_model_provenance", lambda *a, **k: None)
+    partition = CalibrationPartition(8, 3, 8, 3, 4)
+    dataset = [{"input_ids": [31, 32]}]
+    monkeypatch.setattr(
+        quantize,
+        "build_calibration_dataset_with_partition",
+        lambda cal, tokenizer: (dataset, partition),
+    )
+    monkeypatch.setattr(quantize, "build_recipe", lambda cfg: ["native-recipe"])
+    monkeypatch.setattr(
+        quantize.metrics, "capture_quant_metrics", lambda path: nullcontext()
+    )
+    monkeypatch.setattr(
+        quantize.metrics, "summarize_quant_metrics", lambda path: {"count": 1}
+    )
+    ctx = DistributedContext(enabled=True, rank=3, world_size=8, local_rank=3)
+    monkeypatch.setattr(ctx, "barrier", lambda: None)
+    monkeypatch.setattr(
+        ctx,
+        "snapshot",
+        lambda: {
+            "enabled": True,
+            "rank": 3,
+            "world_size": 8,
+            "local_rank": 3,
+            "cuda_current_device": 3,
+        },
+    )
+
+    quantize.run_quantize(_quantize_config(), tmp_path, ctx, save_checkpoint=False)
+
+    assert calls[0]["num_calibration_samples"] == 1
     assert calls[0]["shuffle_calibration_samples"] is False
 
 

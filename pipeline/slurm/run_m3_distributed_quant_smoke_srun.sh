@@ -72,6 +72,14 @@ PY
     git rev-parse HEAD
     python --version
     python -m pip show llmcompressor compressed-tensors torch transformers
+    python - <<'PY'
+import torch
+
+print(f"torch_cuda_build={torch.version.cuda}")
+print(f"torch_cuda_device_count={torch.cuda.device_count()}")
+PY
+    nvidia-smi --query-gpu=index,name,driver_version \
+      --format=csv,noheader,nounits
   } >"$method_logs/environment.txt" 2>&1
 
   local command=(

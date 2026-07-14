@@ -245,6 +245,19 @@ than GPTQ.
    can actually work and mirrors MoE-Quant. Re-run:
    `python -m pipeline.bench_expert_scatter --experts 128 --mode all`. Decision
    rule unchanged: proceed only if the best real-parallel mode ≥ ~0.5×ceiling.
+   **Bench v2 result (2026-07-14): process measurement blocked by runner bug.**
+   The compute-only schema-v2 rerun on `gpu-h125` successfully recorded the
+   serial baseline (**63.88 s**) and thread mode (**115.88 s**, **0.55×**),
+   but then exited before process mode with
+   `NameError: name 'ProcessPoolExecutor' is not defined`. This is a
+   benchmark-runner import defect, not evidence about process-per-GPU
+   performance. The JSON remains `status: "error"` and must not be used as a
+   Phase-2 go/no-go verdict. Add the missing import and rerun `--mode all`
+   before implementing the distributed loader/EP path.
+
+   Raw v2 artifacts:
+   `results/m3-expert-scatter-bench/expert_scatter_bench_v2.json` and
+   `results/m3-expert-scatter-bench-20260714T0905Z-v2.out`.
 2. **MoE-Quant-style sharded loader + EP forward + per-rank GPTQ (the real design;
    see §4).** `torchrun`-launched, one process per GPU. Adopt MoE-Quant's loader
    almost verbatim (empty meta skeleton, rank-0 sliding shard streaming, per-block

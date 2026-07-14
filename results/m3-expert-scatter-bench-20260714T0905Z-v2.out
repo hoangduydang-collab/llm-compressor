@@ -1,0 +1,27 @@
+2026-07-14T09:08:19+00:00
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench_v2.json
+devices=8  experts=128  dtype=torch.bfloat16  mode=all
+per-expert: gate_up[6144,6144] + down[6144,3072]  (compute-only timing)
+
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench_v2.json
+[serial   1 GPU]   63.88s  (compute only)
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench_v2.json
+[threads 8 GPU]  115.88s  speedup 0.55x
+WROTE /mnt/nfs/hoangduy/projects/llm-compressor/results/m3-expert-scatter-bench/expert_scatter_bench_v2.json
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/bench_expert_scatter.py", line 309, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/bench_expert_scatter.py", line 300, in main
+    results = run_benchmark(args.experts, args.blocksize, dtype, args.out, args.mode)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/bench_expert_scatter.py", line 222, in run_benchmark
+    with ProcessPoolExecutor(
+         ^^^^^^^^^^^^^^^^^^^
+NameError: name 'ProcessPoolExecutor' is not defined. Did you mean: 'ThreadPoolExecutor'?
+srun: error: gpu-h125: task 0: Exited with exit code 1
+
+BENCH_V2_RC=1
+2026-07-14T09:13:13+00:00

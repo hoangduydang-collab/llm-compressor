@@ -568,6 +568,11 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
         if (arm / "return_code.txt").read_text().strip() != "0":
             failures.append({"arm": f"{model}/{shard}", "return_code": "nonzero"})
             continue
+        if _read_json(arm / "arm_complete.json").get("complete") is not True:
+            failures.append(
+                {"arm": f"{model}/{shard}", "arm_complete": False}
+            )
+            continue
         arm_manifest = _read_json(arm / "arm_manifest.json")
         _validate_arm_manifest(manifest, arm_manifest)
         if arm_manifest.get("model_label") != model or arm_manifest.get("shard") != shard:

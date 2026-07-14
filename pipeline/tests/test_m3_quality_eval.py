@@ -279,8 +279,9 @@ def _write_arm(
     model: str,
     shard: str,
     sample_sha: str,
-    task: str,
-    sample_uid: str,
+    task: str | None,
+    sample_uid: str | None,
+    complete: bool = True,
 ) -> None:
     arm = root / "models" / model / "shards" / shard
     (arm / "samples").mkdir(parents=True)
@@ -300,29 +301,48 @@ def _write_arm(
         ),
         encoding="utf-8",
     )
-    (arm / "aggregate.json").write_text(
-        json.dumps({task: {"acc,none": 1.0}}), encoding="utf-8"
-    )
-    (arm / "samples" / f"{task}.jsonl").write_text(
-        json.dumps(
-            {
-                "sample_uid": sample_uid,
-                "task": task,
-                "subtask": task,
-                "correct": 1,
-                "metric_value": 1.0,
-            }
+    aggregate = {task: {"acc,none": 1.0}} if task is not None else {}
+    (arm / "aggregate.json").write_text(json.dumps(aggregate), encoding="utf-8")
+    if task is not None:
+        (arm / "samples" / f"{task}.jsonl").write_text(
+            json.dumps(
+                {
+                    "sample_uid": sample_uid,
+                    "task": task,
+                    "subtask": task,
+                    "correct": 1,
+                    "metric_value": 1.0,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
+    else:
+        (arm / "distributional_probe.jsonl").write_text(
+            json.dumps(
+                {
+                    "corpus_sha256": "corpus",
+                    "prompt_id": "prompt",
+                    "length_bucket": "short",
+                    "prompt_token_count": 2,
+                    "position": 1,
+                    "observed_token_id": 7,
+                    "observed_logprob": -1.0,
+                    "top_logprobs": [
+                        {"token_id": 7, "logprob": -1.0, "rank": 1}
+                    ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     (arm / "return_code.txt").write_text("0\n", encoding="utf-8")
     (arm / "arm_complete.json").write_text(
-        json.dumps({"complete": True}), encoding="utf-8"
+        json.dumps({"complete": complete}), encoding="utf-8"
     )
 
 
-def _write_run_manifest(root: Path, *, sample_sha="samples") -> None:
+def _write_run_manifest(root: Path, *, sample_sha="samples", expected_arms=None) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "run_manifest.json").write_text(
         json.dumps(
@@ -334,7 +354,8 @@ def _write_run_manifest(root: Path, *, sample_sha="samples") -> None:
                 "eval_config_sha256": "eval",
                 "tokenizer_sha256": "tokenizer",
                 "chat_template_sha256": "chat",
-                "expected_arms": [
+                "expected_arms": expected_arms
+                or [
                     {"model_label": "bf16", "shard": "reasoning"},
                     {"model_label": "quant", "shard": "reasoning"},
                 ],
@@ -388,6 +409,72 @@ def test_merge_builds_pairwise_self_consistent_comparison(tmp_path):
     assert comparison["tasks"]["gpqa_diamond"]["delta"] == 0.0
     assert (tmp_path / "matrix.json").is_file()
     assert (tmp_path / "merged" / "quant" / "samples" / "gpqa_diamond.jsonl").is_file()
+
+
+def test_merge_rejects_false_completion_marker(tmp_path):
+    _write_run_manifest(tmp_path)
+    _write_arm(
+        tmp_path,
+        model="bf16",
+        shard="reasoning",
+        sample_sha="samples",
+        task="gpqa_diamond",
+        sample_uid="a",
+    )
+    _write_arm(
+        tmp_path,
+        model="quant",
+        shard="reasoning",
+        sample_sha="samples",
+        task="gpqa_diamond",
+        sample_uid="a",
+        complete=False,
+    )
+
+    result = validate_and_merge(tmp_path)
+
+    assert result["infrastructure_ok"] is False
+    assert result["failures"] == [
+        {"arm": "quant/reasoning", "arm_complete": False}
+    ]
+
+
+def test_merge_accepts_one_probe_only_arm_per_model(tmp_path):
+    expected = [
+        {"model_label": model, "shard": shard}
+        for model in ("bf16", "quant")
+        for shard in ("gpqa_diamond", "distributional_probe")
+    ]
+    _write_run_manifest(tmp_path, expected_arms=expected)
+    for model in ("bf16", "quant"):
+        _write_arm(
+            tmp_path,
+            model=model,
+            shard="gpqa_diamond",
+            sample_sha="samples",
+            task="gpqa_diamond",
+            sample_uid="a",
+        )
+        _write_arm(
+            tmp_path,
+            model=model,
+            shard="distributional_probe",
+            sample_sha="samples",
+            task=None,
+            sample_uid=None,
+        )
+
+    result = validate_and_merge(tmp_path)
+
+    assert result["infrastructure_ok"] is True
+    assert "gpqa_diamond" in result["comparisons"]["quant"]["tasks"]
+    assert result["comparisons"]["quant"]["distributional"][
+        "perplexity_ratio"
+    ] == 1.0
+    for model in ("bf16", "quant"):
+        assert (
+            tmp_path / "merged" / model / "distributional_probe.jsonl"
+        ).is_file()
 
 
 def test_quality_failure_is_distinct_from_infrastructure_failure():

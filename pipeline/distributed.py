@@ -117,4 +117,14 @@ class DistributedContext:
                 "node": os.environ.get("COMPUTERNAME") or os.environ.get("HOSTNAME"),
             }
         )
+        if self.enabled:
+            import torch
+
+            current_device = torch.cuda.current_device()
+            data.update(
+                {
+                    "cuda_current_device": current_device,
+                    "cuda_device_name": torch.cuda.get_device_name(current_device),
+                }
+            )
         return data

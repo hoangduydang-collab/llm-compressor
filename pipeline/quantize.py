@@ -135,9 +135,11 @@ def _persist_calibration_partition(
     dist_ctx: DistributedContext,
 ) -> Path:
     path = _evidence_paths(run_dir, dist_ctx)["partition"]
+    manifest = calibration_partition_manifest(dataset, partition)
+    manifest["distributed"] = dist_ctx.snapshot()
     path.write_text(
         json.dumps(
-            calibration_partition_manifest(dataset, partition),
+            manifest,
             indent=2,
             sort_keys=True,
         )

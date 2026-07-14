@@ -70,6 +70,9 @@ def test_launcher_owns_top_level_srun_and_rejects_nested_slurm():
     assert "--worker" in text
     assert "nvidia-smi" in text
     assert "/proc/meminfo" in text
+    assert "MemAvailable" in text
+    assert "torch.cuda.device_count()" in text
+    assert "df -B1 /dev/shm" in text
     assert "/usr/bin/time -v" in text
     assert "sbatch" not in text
     assert "pipeline.m3_awq_representative" not in text

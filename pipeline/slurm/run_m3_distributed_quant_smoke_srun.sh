@@ -37,6 +37,33 @@ worker_main() {
   mkdir -p "$method_root" "$method_logs" "$offload_dir"
 
   {
+    grep -E 'MemTotal|MemAvailable|Shmem|SwapTotal|SwapFree' /proc/meminfo
+    df -B1 /dev/shm
+    nvidia-smi --query-gpu=index,uuid,memory.used,memory.total \
+      --format=csv,noheader,nounits
+    python - <<'PY'
+import torch
+
+count = torch.cuda.device_count()
+print(f"torch_cuda_device_count={count}")
+if count != 8:
+    raise SystemExit(f"expected exactly 8 visible GPUs, found {count}")
+PY
+  } >"$method_logs/node_preflight.txt" 2>&1
+
+  local mem_available_kb shm_available
+  mem_available_kb="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+  shm_available="$(df -B1 --output=avail /dev/shm | tail -1 | tr -d ' ')"
+  if (( mem_available_kb * 1024 < 1200000000000 )); then
+    echo "ERROR: MemAvailable below 1.2 TB: ${mem_available_kb} KiB" >&2
+    return 3
+  fi
+  if (( shm_available < 900000000000 )); then
+    echo "ERROR: /dev/shm available space below 900 GB: ${shm_available} bytes" >&2
+    return 3
+  fi
+
+  {
     echo "run_id=$RUN_ID"
     echo "method=$method"
     echo "host=$(hostname)"

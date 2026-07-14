@@ -1,4 +1,6 @@
 import os
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -57,6 +59,21 @@ def test_rank_path_preserves_multi_suffixes():
     assert ctx.rank_path(Path("run/metrics.tar.jsonl")) == Path(
         "run/metrics.tar.rank-1.jsonl"
     )
+
+
+def test_distributed_snapshot_records_actual_cuda_binding(monkeypatch):
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(
+        current_device=lambda: 3,
+        get_device_name=lambda index: f"H100-{index}",
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    ctx = DistributedContext(enabled=True, rank=3, world_size=8, local_rank=3)
+
+    snapshot = ctx.snapshot()
+
+    assert snapshot["cuda_current_device"] == 3
+    assert snapshot["cuda_device_name"] == "H100-3"
 
 
 def test_environment_snapshot_is_json_serializable(monkeypatch):

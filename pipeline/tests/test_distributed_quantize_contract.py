@@ -24,9 +24,15 @@ def test_quantize_module_import_does_not_require_torch():
     assert result.returncode == 0, result.stderr
 
 
-def test_partition_manifest_uses_rank_path(tmp_path):
+def test_partition_manifest_uses_rank_path(monkeypatch, tmp_path):
     from pipeline.quantize import _persist_calibration_partition
 
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(
+        current_device=lambda: 3,
+        get_device_name=lambda index: "NVIDIA H100 80GB HBM3",
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
     ctx = DistributedContext(enabled=True, rank=3, world_size=8, local_rank=3)
     partition = CalibrationPartition(8, 3, 8, 3, 4)
     dataset = [{"input_ids": [31, 32]}]
@@ -37,6 +43,7 @@ def test_partition_manifest_uses_rank_path(tmp_path):
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["rank"] == 3
     assert data["local_num_samples"] == 1
+    assert data["distributed"]["cuda_current_device"] == 3
 
 
 def test_single_process_manifest_preserves_legacy_name(tmp_path):

@@ -12,6 +12,44 @@ from pipeline.distributed import DistributedContext
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_minimax_meta_rank_moves_tie_word_embeddings_to_config():
+    from pipeline.quantize import _minimax_meta_rank_config_compat
+
+    text_config = SimpleNamespace(tie_word_embeddings=True)
+    config = SimpleNamespace(
+        model_type="minimax_m3_vl",
+        tie_word_embeddings=True,
+        text_config=text_config,
+    )
+
+    class _PreTrainedModel:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            if "tie_word_embeddings" in kwargs:
+                raise TypeError(
+                    "MiniMaxM3SparseForConditionalGeneration.__init__() got an "
+                    "unexpected keyword argument 'tie_word_embeddings'"
+                )
+            return kwargs["config"]
+
+    with _minimax_meta_rank_config_compat(_PreTrainedModel):
+        compat_from_pretrained = _PreTrainedModel.from_pretrained.__func__
+
+        # Mirrors compressed-tensors' non-source/meta-rank wrapper: it injects
+        # the keyword after pipeline kwargs are assembled, then calls the
+        # underlying Transformers loader.
+        @classmethod
+        def compressed_tensors_from_pretrained(cls, *args, **kwargs):
+            kwargs.setdefault("tie_word_embeddings", False)
+            return compat_from_pretrained(cls, *args, **kwargs)
+
+        _PreTrainedModel.from_pretrained = compressed_tensors_from_pretrained
+        loaded_config = _PreTrainedModel.from_pretrained(config=config)
+
+    assert loaded_config.tie_word_embeddings is False
+    assert loaded_config.text_config.tie_word_embeddings is False
+
+
 def test_quantize_module_import_does_not_require_torch():
     result = subprocess.run(
         [sys.executable, "-c", "import pipeline.quantize"],

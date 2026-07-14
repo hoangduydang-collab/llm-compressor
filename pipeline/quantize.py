@@ -5,6 +5,8 @@ Produces a vLLM-servable ``pack-quantized`` compressed-tensors checkpoint in
 """
 
 import json
+from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 
 from pipeline import metrics, versioning
@@ -22,6 +24,43 @@ from pipeline.vl_artifacts import ensure_vl_processor_artifacts
 # Schemes whose weights are INT-packed and need explicit pack-quantized on save
 # for vLLM to pick the right loader/kernel.
 _PACK_QUANTIZED_SCHEMES = {"W4AFP8", "W4A8", "W4A16", "W4A16_ASYM"}
+
+
+@contextmanager
+def _minimax_meta_rank_config_compat(pretrained_model_cls):
+    """Keep compressed-tensors' meta-rank tie setting out of M3 model kwargs.
+
+    compressed-tensors injects ``tie_word_embeddings=False`` on non-source
+    ranks so Transformers does not compare meta tensors while tying weights.
+    Transformers 5.12 forwards that keyword into MiniMax's sparse model
+    constructor, which does not accept it. Install this wrapper *under* the
+    compressed-tensors loader so the setting is retained on the composite
+    config but removed before model construction.
+    """
+    original_descriptor = vars(pretrained_model_cls)["from_pretrained"]
+    original = pretrained_model_cls.from_pretrained.__func__
+
+    @classmethod
+    @wraps(original)
+    def from_pretrained(cls, *args, **kwargs):
+        config = kwargs.get("config")
+        if (
+            "tie_word_embeddings" in kwargs
+            and getattr(config, "model_type", None) == "minimax_m3_vl"
+        ):
+            kwargs = dict(kwargs)
+            tie_word_embeddings = kwargs.pop("tie_word_embeddings")
+            config.tie_word_embeddings = tie_word_embeddings
+            text_config = getattr(config, "text_config", None)
+            if text_config is not None:
+                text_config.tie_word_embeddings = tie_word_embeddings
+        return original(cls, *args, **kwargs)
+
+    pretrained_model_cls.from_pretrained = from_pretrained
+    try:
+        yield
+    finally:
+        pretrained_model_cls.from_pretrained = original_descriptor
 
 
 def _log_backbone_dtype(model) -> None:
@@ -44,7 +83,7 @@ def _log_backbone_dtype(model) -> None:
 
 def _load_model_and_tokenizer(cfg: PipelineConfig):
     import transformers
-    from transformers import AutoTokenizer
+    from transformers import AutoTokenizer, PreTrainedModel
 
     from llmcompressor.utils import load_context
     from pipeline.minimax_m3_config import apply_minimax_m3_config
@@ -70,7 +109,9 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
 
     # load_context() patches from_pretrained so fused MoE experts load in a
     # linearized, quantizable layout (and handles offloaded loading).
-    with load_context(model_cls):
+    # This compatibility wrapper must be entered before load_context so it sits
+    # below compressed-tensors' non-source/meta-rank from_pretrained wrapper.
+    with _minimax_meta_rank_config_compat(PreTrainedModel), load_context(model_cls):
         model = model_cls.from_pretrained(m.id, **from_pretrained_kwargs)
     _log_backbone_dtype(model)
     tokenizer = AutoTokenizer.from_pretrained(

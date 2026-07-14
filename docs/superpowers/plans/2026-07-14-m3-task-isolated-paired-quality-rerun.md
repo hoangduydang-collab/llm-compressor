@@ -1,6 +1,6 @@
 # MiniMax-M3 Task-Isolated Paired Quality Rerun Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a copy-ready, six-node-capped Slurm array run that evaluates 100 paired samples for each MiniMax-M3 quality task in isolated AWQ and GPTQ arms.
 
@@ -33,7 +33,7 @@
 - Consumes: existing `MatrixSpec`, `ShardSpec`, `load_matrix()`, and `build_launch_plan()`.
 - Produces: `SchedulingSpec(max_parallel_arms: int | None, arm_time_limit: str | None)`, `MatrixSpec.scheduling`, and launch-plan fields `max_parallel_arms`, `max_concurrent_nodes`, and `arm_time_limit`.
 
-- [ ] **Step 1: Write failing matrix and validation tests**
+- [x] **Step 1: Write failing matrix and validation tests**
 
 Add tests that load the new matrix and assert:
 
@@ -73,7 +73,7 @@ Also write temporary YAML tests proving a shard with neither tasks nor probe,
 zero concurrency, and a malformed time limit are rejected with specific
 `ValueError` messages.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -84,7 +84,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval.py -k "task_isolated or emp
 Expected: failures because the new matrix, `SchedulingSpec`, validation, and
 launch-plan metadata do not exist.
 
-- [ ] **Step 3: Implement the minimal scheduling schema and matrix**
+- [x] **Step 3: Implement the minimal scheduling schema and matrix**
 
 Add:
 
@@ -120,7 +120,7 @@ scheduling:
   arm_time_limit: "08:00:00"
 ```
 
-- [ ] **Step 4: Run focused and compatibility tests**
+- [x] **Step 4: Run focused and compatibility tests**
 
 Run:
 
@@ -130,7 +130,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval.py -q
 
 Expected: all tests pass, including the historical matrix expectations.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```powershell
 git add pipeline/m3_quality_eval.py pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml pipeline/tests/test_m3_quality_eval.py
@@ -149,7 +149,7 @@ git commit -m "feat: add task-isolated M3 quality matrix"
 - Consumes: `validate_and_merge(root)` and per-arm `arm_complete.json`.
 - Produces: infrastructure failure entries for false completion markers and successful merging of an empty aggregate carrying the model's sole probe.
 
-- [ ] **Step 1: Write failing completion and probe-only merge tests**
+- [x] **Step 1: Write failing completion and probe-only merge tests**
 
 Extend `_write_arm()` to accept `task: str | None` and `complete: bool = True`.
 When `task is None`, write `{}` to `aggregate.json`, create no sample file, and
@@ -170,7 +170,7 @@ Add another manifest with two shards per model (`gpqa_diamond` and
 and assert merge succeeds, the task comparison exists, and both merged model
 directories contain `distributional_probe.jsonl`.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -180,7 +180,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval.py -k "completion_marker or
 
 Expected: false completion is incorrectly accepted before the implementation.
 
-- [ ] **Step 3: Validate completion truthfully**
+- [x] **Step 3: Validate completion truthfully**
 
 After reading `return_code.txt`, load `arm_complete.json` and append:
 
@@ -193,7 +193,7 @@ if _read_json(arm / "arm_complete.json").get("complete") is not True:
 Do not change `_merge_model_arms()` empty-dictionary behavior; the test records
 that its existing disjoint merge semantics are the intended contract.
 
-- [ ] **Step 4: Run the focused file**
+- [x] **Step 4: Run the focused file**
 
 Run:
 
@@ -203,7 +203,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```powershell
 git add pipeline/m3_quality_eval.py pipeline/tests/test_m3_quality_eval.py
@@ -222,7 +222,7 @@ git commit -m "fix: validate M3 quality arm completion"
 - Consumes: `--tasks ""`, `--run-probe 1`, and the existing arm output contract.
 - Produces: no EvalSuite invocation, `{}` in `aggregate.json`, one probe invocation, `return_code.txt=0`, and `arm_complete.json.complete=true`.
 
-- [ ] **Step 1: Write a failing behavioral shell-runner test**
+- [x] **Step 1: Write a failing behavioral shell-runner test**
 
 Create a temporary executable named `python` earlier on `PATH`. Its Bash body
 records an error if called with `-m pipeline.evalsuite.cli`, creates probe output
@@ -241,7 +241,7 @@ assert (arm / "return_code.txt").read_text().strip() == "0"
 assert json.loads((arm / "arm_complete.json").read_text())["complete"] is True
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -252,7 +252,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval_runner.py -k probe_only -q
 
 Expected: failure because the current runner invokes EvalSuite with empty tasks.
 
-- [ ] **Step 3: Skip EvalSuite only for the explicit empty task list**
+- [x] **Step 3: Skip EvalSuite only for the explicit empty task list**
 
 Replace the unconditional eval block with:
 
@@ -270,7 +270,7 @@ fi
 Leave probe ordering, failure propagation, manifests, and completion writers
 unchanged.
 
-- [ ] **Step 4: Run all shell-runner contract tests**
+- [x] **Step 4: Run all shell-runner contract tests**
 
 Run:
 
@@ -281,7 +281,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval_runner.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```powershell
 git add pipeline/slurm/test_m3_quality_eval_arm.sh pipeline/tests/test_m3_quality_eval_runner.py
@@ -302,7 +302,7 @@ git commit -m "feat: support probe-only M3 quality arms"
 - Consumes: production launch-plan JSON, `SLURM_ARRAY_TASK_ID`, resolved task aliases, and the existing arm runner CLI.
 - Produces: deterministic index mapping, a dry-run `sbatch` command with `0-11%6`, one-node/8-GPU exclusivity, `08:00:00`, and an actual submission ID in `array_job_id.txt`.
 
-- [ ] **Step 1: Write failing dry-run and index-selection tests**
+- [x] **Step 1: Write failing dry-run and index-selection tests**
 
 The submission test creates a passing smoke gate and invokes:
 
@@ -325,7 +325,7 @@ The array-arm test writes a two-entry launch plan and resolved alias file, sets
 probe flag, and probe-token arguments were forwarded. Add out-of-range and
 non-single-node rejection tests.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -336,14 +336,14 @@ python -m pytest pipeline/tests/test_m3_quality_eval_array_runner.py -q
 
 Expected: failure because both launcher scripts are absent.
 
-- [ ] **Step 3: Implement the array arm runner**
+- [x] **Step 3: Implement the array arm runner**
 
 `run_m3_quality_eval_array_arm.sh` parses `--plan`, `--run-root`, and `--matrix`,
 requires numeric `SLURM_ARRAY_TASK_ID`, reads exactly that JSON entry, resolves
 task aliases from `$RUN_ROOT/preflight/resolved_tasks.json`, rejects any arm not
 using one node and eight GPUs, and `exec`s `${M3_QUALITY_ARM_RUNNER:-pipeline/slurm/test_m3_quality_eval_arm.sh}` with the complete production arm arguments.
 
-- [ ] **Step 4: Implement the submission wrapper**
+- [x] **Step 4: Implement the submission wrapper**
 
 `submit_m3_quality_eval_array.sh` parses `--matrix`, `--run-root`,
 `--smoke-gate`, and `--dry-run`; requires the preflight-populated run root but
@@ -364,7 +364,7 @@ sbatch --parsable --array="0-$((arm_count - 1))%${max_parallel}" \
 Dry-run prints the shell-escaped command and exits. Actual submission writes the
 exact command and parsable job ID under the run root.
 
-- [ ] **Step 5: Run launcher and syntax tests**
+- [x] **Step 5: Run launcher and syntax tests**
 
 Run:
 
@@ -375,7 +375,7 @@ python -m pytest pipeline/tests/test_m3_quality_eval_array_runner.py pipeline/te
 
 Expected: all tests pass, including `bash -n` for both new scripts.
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 ```powershell
 git add pipeline/slurm/submit_m3_quality_eval_array.sh pipeline/slurm/run_m3_quality_eval_array_arm.sh pipeline/tests/test_m3_quality_eval_array_runner.py pipeline/tests/test_m3_quality_eval_runner.py
@@ -394,7 +394,7 @@ git commit -m "feat: launch M3 quality arms as capped array"
 - Consumes: the implementation commit, prior passing smoke gate, new matrix, launcher, aggregator, and `PLANNER_EXECUTOR_PROTOCOL.md`.
 - Produces: one `READY_FOR_EXECUTOR` packet with copy-ready cluster commands and an immutable planner correction to the historical GPTQ broad-arm account.
 
-- [ ] **Step 1: Record the implementation commit and author the packet**
+- [x] **Step 1: Record the implementation commit and author the packet**
 
 After Tasks 1-4 are committed, record that full SHA as `Base Git commit`. The
 packet must include protocol version/state/revision, one decision question,
@@ -407,7 +407,7 @@ The planner addendum must state that raw logs show GPTQ broad loaded in about
 296 seconds and reached 96/100 MMLU-Pro prompts; this corrects the prose account
 without editing the historical executor packet.
 
-- [ ] **Step 2: Run full local verification**
+- [x] **Step 2: Run full local verification**
 
 Run:
 
@@ -421,14 +421,14 @@ rg -n "TODO|TBD|<[^>]+>" M3_PAIRED_GPTQ_AWQ_TASK_ISOLATED_HANDOFF.md pipeline/co
 Expected: all tests pass, `git diff --check` is silent, and the placeholder scan
 has no matches.
 
-- [ ] **Step 3: Review requirements against the approved design**
+- [x] **Step 3: Review requirements against the approved design**
 
 Confirm from generated dry-run output and files that there are exactly twelve
 arms, five 100-sample tasks per model, one 8,192-token probe per model, `%6`
 concurrency, one node/eight GPUs per arm, independent eight-hour limits, no
 retry, partial-failure evidence, and no downstream authorization.
 
-- [ ] **Step 4: Mark this plan complete and commit the packet**
+- [x] **Step 4: Mark this plan complete and commit the packet**
 
 Change every checkbox in this plan to `[x]`, then run:
 
@@ -437,7 +437,7 @@ git add M3_PAIRED_GPTQ_AWQ_TASK_ISOLATED_HANDOFF.md docs/superpowers/plans/2026-
 git commit -m "docs: hand off task-isolated M3 quality rerun"
 ```
 
-- [ ] **Step 5: Verify final repository state**
+- [x] **Step 5: Verify final repository state**
 
 Run:
 

@@ -6,6 +6,50 @@ Pull the latest `duy-branch` commit. This supersedes the failed guarded-only
 matrix. The immediate goal remains MiniMax-M3 checkpoint quality; do not start
 CUDA-graph or performance work.
 
+### 2026-07-14 execution update: full matrix partial results
+
+Run ID:
+`20260713T163500Z-m3-safe-diagnostic-full`
+
+Controller/session:
+`m3-safe-diag-20260713T163500Z-m3-safe-diagnostic-full`
+
+The pre-quantization gate passed (`rc=0`) with 21,888 quantized modules, 7,353
+AWQ mappings, and no reported failures or warnings. The real two-root trace
+smoke also passed before lane launch. The five lanes were launched as distinct
+exclusive one-node Slurm allocations from Git revision `3e4dd4c9`:
+
+| Lane | Slurm job | Node | Result at snapshot |
+| --- | ---: | --- | --- |
+| `safe-quant_only` | 12871 | `h123` | completed, checkpoint and static verification passed (`rc=0`) |
+| `diag-light-offsetfix` | 12872 | `h117` | aborted before layer guards; `rc=1` |
+| `safe-offsetfix` | 12873 | `h118` | still running AWQ smoothing, 29/129 mappings observed |
+| `diag-heavy-offsetfix` | 12874 | `h101` | failed at `after_fake_quantization`; `rc=1` |
+| `safe-nosmooth` | 12875 | `h102` | still running AWQ smoothing, 83/128 mappings observed |
+
+The `safe-quant_only` checkpoint is at:
+`results/m3-safe-diagnostic-full/20260713T163500Z-m3-safe-diagnostic-full/lanes/safe-quant_only/runs/MiniMax-M3-quant_only-W4AFP8/20260713-165413/checkpoint`
+
+Its static checker returned `RESULT: PASS`; this lane is the first usable
+checkpoint candidate pending quality evaluation after the safe AWQ lanes finish.
+
+The heavy diagnostic lane completed all stages through
+`before_fake_quantization` and failed at the diagnostic synchronization after
+fake quantization with `torch.AcceleratorError: CUDA error: device-side assert
+triggered`. The light diagnostic lane completed native and enable
+quantization, then aborted because no decoder-layer guards were recorded. These
+are diagnostic/instrumentation outcomes and do not invalidate the independent
+probe-free safe lanes.
+
+Durable evidence:
+`/mnt/nfs/hoangduy/logs/m3-safe-diagnostic-full/20260713T163500Z-m3-safe-diagnostic-full`
+and
+`/mnt/nfs/hoangduy/results/m3-safe-diagnostic-full/20260713T163500Z-m3-safe-diagnostic-full`
+
+The controller and both safe AWQ lanes remained active at this snapshot.
+Do not start canonical chat or the full quality suite until the safe lanes
+finish and their static-check results are recorded.
+
 The new controller first runs the pre-quantization compatibility gate and real
 two-root trace smoke. It then starts five jobs concurrently, with every job in
 its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:

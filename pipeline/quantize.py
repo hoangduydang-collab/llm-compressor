@@ -197,6 +197,7 @@ def run_quantize(
         recipe=recipe,
         max_seq_length=cfg.calibration.max_seq_length,
         num_calibration_samples=len(ds),
+        shuffle_calibration_samples=False,
         moe_calibrate_all_experts=cfg.calibration.moe_calibrate_all_experts,
     )
     if cfg.calibration.sequential_targets:

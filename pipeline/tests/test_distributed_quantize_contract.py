@@ -143,6 +143,7 @@ def test_evidence_only_quantize_never_creates_checkpoint(monkeypatch, tmp_path):
         "complete"
     )
     assert calls[0]["num_calibration_samples"] == 2
+    assert calls[0]["shuffle_calibration_samples"] is False
 
 
 def test_run_cli_accepts_evidence_only(monkeypatch):

@@ -211,25 +211,21 @@ Expected: all rank-path, write-ownership, barrier, and no-checkpoint tests pass.
 ### Task 4: Representative-Layer Targets and `srun` Smoke
 
 **Files:**
-- Modify: `pipeline/config.py`
-- Modify: `pipeline/recipe.py`
 - Create: `pipeline/configs/minimax_m3_distributed_smoke.yaml`
 - Create: `pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh`
 - Test: `pipeline/tests/test_m3_distributed_quant_smoke.py`
 - Modify: `M3_QUANT_SPEEDUP_PLAN.md`
 
 **Interfaces:**
-- Produces: `QuantizationConfig.targets`, native recipe target forwarding, and one executor command that runs GPTQ then AWQ on the same 8-GPU node.
-- Consumes: exact MiniMax decoder module regexes for layers 3, 31, and 59.
+- Produces: one executor command that runs GPTQ then AWQ sequentially using one 8-GPU node at a time.
+- Consumes: the existing MiniMax representative-layer ignore mechanism and exact decoder-layer exclusion regex for layers other than 3, 31, and 59.
 
 - [ ] **Step 1: Write failing recipe/config/launcher tests**
 
 Tests assert:
 
 ```python
-assert config.quantization.targets == [
-    "re:.*layers\\.(3|31|59)\\..*",
-]
+assert "re:.*language_model[.]layers[.](?!(?:3|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*" in config.quantization.ignore
 assert "srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8" in dry_run
 assert "torchrun --nproc_per_node=8 -m pipeline.run" in dry_run
 assert "--evidence-only" in dry_run
@@ -245,11 +241,13 @@ Run: `python -m pytest -q pipeline/tests/test_m3_distributed_quant_smoke.py`
 
 Expected: tests fail because targets/config/launcher do not exist.
 
-- [ ] **Step 3: Forward configurable targets into native recipes**
+- [ ] **Step 3: Isolate representative layers through the existing ignore contract**
 
-Add `targets: str | list[str] = "Linear"` to `QuantizationConfig`. Replace hardcoded
-GPTQ/QuantizationModifier/AutoRound targets in `pipeline.recipe` with the configured
-value and include it in `describe_recipe`. Do not alter modifier implementations.
+Reuse the mechanism in `pipeline.m3_awq_representative.prepare_arm_config`: keep the
+native modifier targets unchanged and append one negative-lookahead ignore regex that
+matches every `language_model.layers.<n>` except layers 3, 31, and 59. This avoids a
+new recipe/config API and uses the path already validated for MiniMax AWQ mapping
+selection.
 
 - [ ] **Step 4: Add bounded smoke configuration and launcher**
 

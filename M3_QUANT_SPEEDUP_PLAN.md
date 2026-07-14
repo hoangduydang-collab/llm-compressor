@@ -45,6 +45,13 @@ allocation with `--gres=gpu:8`, containing one `torchrun --nproc_per_node=8`
 command. A partial-layer smoke must never be published as a usable checkpoint.
 The full distributed calibration remains gated on the paired quality evaluation.
 
+This smoke does **not** call `pipeline.m3_awq_representative`, install its runtime
+structure/fidelity probes, or use its audited modifier subclasses. Those earlier
+arms failed in the probe/representative harness with zero completed mappings and
+are not a safe launch path. Layer restriction here is only a normal production
+ignore pattern; execution remains `pipeline.run -> native oneshot -> native
+GPTQ/AWQ`, with passive timing, memory, provenance, and metric capture.
+
 Two corrections to the older handoff below are important:
 
 - `torchrun` alone does **not** initialize this pipeline. The current production

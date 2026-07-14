@@ -7,14 +7,13 @@ Produces a vLLM-servable ``pack-quantized`` compressed-tensors checkpoint in
 import json
 from pathlib import Path
 
-from pipeline.calibration import build_calibration_dataset
-from pipeline.config import PipelineConfig
-from pipeline.minimax_m3_config import (
-    apply_minimax_m3_config,
-    ensure_minimax_m3_vllm_serve_config,
-    patch_minimax_m3_for_text_calibration,
-    register_minimax_m3_awq_mappings,
+from pipeline.calibration import (
+    CalibrationPartition,
+    build_calibration_dataset_with_partition,
+    calibration_partition_manifest,
 )
+from pipeline.config import PipelineConfig
+from pipeline.distributed import DistributedContext
 from pipeline.provenance import log_model_provenance
 from pipeline.recipe import build_recipe, describe_recipe
 from pipeline.vl_artifacts import ensure_vl_processor_artifacts
@@ -48,6 +47,7 @@ def _load_model_and_tokenizer(cfg: PipelineConfig):
     import transformers
     from transformers import AutoTokenizer
     from llmcompressor.utils import load_context
+    from pipeline.minimax_m3_config import apply_minimax_m3_config
 
     m = cfg.model
     model_cls = getattr(transformers, m.auto_class)
@@ -118,9 +118,52 @@ def _sample_generation(model, tokenizer, prompt: str) -> str:
     return tokenizer.decode(output[0])
 
 
-def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
+def _evidence_paths(
+    run_dir: Path, dist_ctx: DistributedContext
+) -> dict[str, Path]:
+    return {
+        "metrics": dist_ctx.rank_path(run_dir / "quant_metrics.jsonl"),
+        "provenance": dist_ctx.rank_path(run_dir / "model_provenance.json"),
+        "partition": dist_ctx.rank_path(run_dir / "calibration_partition.json"),
+    }
+
+
+def _persist_calibration_partition(
+    run_dir: Path,
+    dataset,
+    partition: CalibrationPartition,
+    dist_ctx: DistributedContext,
+) -> Path:
+    path = _evidence_paths(run_dir, dist_ctx)["partition"]
+    path.write_text(
+        json.dumps(
+            calibration_partition_manifest(dataset, partition),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def run_quantize(
+    cfg: PipelineConfig,
+    run_dir: Path,
+    dist_ctx: DistributedContext | None = None,
+    *,
+    save_checkpoint: bool = True,
+) -> Path:
     """Execute the quantize stage. Returns the checkpoint directory."""
     from llmcompressor import oneshot
+    from pipeline.minimax_m3_config import (
+        ensure_minimax_m3_vllm_serve_config,
+        patch_minimax_m3_for_text_calibration,
+        register_minimax_m3_awq_mappings,
+    )
+
+    dist_ctx = dist_ctx or DistributedContext()
+    evidence_paths = _evidence_paths(run_dir, dist_ctx)
 
     model, tokenizer = _load_model_and_tokenizer(cfg)
     # Capture load/environment provenance BEFORE calibration: where the loaded
@@ -131,14 +174,17 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
     log_model_provenance(
         model,
         cfg.calibration.sequential_targets,
-        out_path=run_dir / "model_provenance.json",
+        out_path=evidence_paths["provenance"],
     )
     if patch_minimax_m3_for_text_calibration(model):
         print("[pipeline] patched MiniMax-M3 get_placeholder_mask for text-only calibration")
         register_minimax_m3_awq_mappings()
         print("[pipeline] registered MiniMax-M3 AWQ mappings")
 
-    ds = build_calibration_dataset(cfg.calibration, tokenizer)
+    ds, partition = build_calibration_dataset_with_partition(
+        cfg.calibration, tokenizer
+    )
+    _persist_calibration_partition(run_dir, ds, partition, dist_ctx)
     recipe = build_recipe(cfg.quantization)
 
     oneshot_kwargs: dict = dict(
@@ -150,7 +196,7 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
         dataset=ds,
         recipe=recipe,
         max_seq_length=cfg.calibration.max_seq_length,
-        num_calibration_samples=cfg.calibration.num_samples,
+        num_calibration_samples=len(ds),
         moe_calibrate_all_experts=cfg.calibration.moe_calibrate_all_experts,
     )
     if cfg.calibration.sequential_targets:
@@ -160,45 +206,72 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
 
     # Capture llm-compressor's internal METRIC-level logs (GPTQ error/time, etc.)
     # to a per-run JSONL alongside the checkpoint.
-    metrics_path = run_dir / "quant_metrics.jsonl"
+    metrics_path = evidence_paths["metrics"]
     with metrics.capture_quant_metrics(metrics_path):
         oneshot(**oneshot_kwargs)
 
-    # Save FIRST: for very large models the sanity generation below runs offloaded
-    # (CPU/disk, ~minutes per token), so it must never gate or risk the quantized
-    # weights. A slow or interrupted generation then cannot lose the checkpoint.
     ckpt = versioning.checkpoint_dir(run_dir)
-    save_kwargs: dict = {"save_compressed": True}
-    if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
-        save_kwargs["quantization_format"] = "pack-quantized"
-    model.save_pretrained(str(ckpt), **save_kwargs)
-    tokenizer.save_pretrained(str(ckpt))
+    if save_checkpoint:
+        # compressed-tensors distributed saving is collective: every rank calls
+        # model.save_pretrained, then only rank zero writes shared side artifacts.
+        save_kwargs: dict = {"save_compressed": True}
+        if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
+            save_kwargs["quantization_format"] = "pack-quantized"
+        model.save_pretrained(str(ckpt), **save_kwargs)
+        dist_ctx.barrier()
 
-    # vLLM VL load needs image-processor configs; tokenizer.save_pretrained alone
-    # does not write preprocessor_config.json.
-    if cfg.model.auto_class == "AutoModelForImageTextToText":
-        added = ensure_vl_processor_artifacts(
-            ckpt, cfg.model.id, trust_remote_code=cfg.model.trust_remote_code
-        )
-        if added:
-            print(f"[pipeline] saved VL processor artifacts: {added}")
+        if dist_ctx.is_source:
+            tokenizer.save_pretrained(str(ckpt))
 
-    if cfg.model.auto_class == "AutoModelForImageTextToText":
-        cfg_patches = ensure_minimax_m3_vllm_serve_config(ckpt, cfg.model.id)
-        if cfg_patches:
-            print(f"[pipeline] patched saved config for vLLM serve: {cfg_patches}")
+            # vLLM VL load needs image-processor configs; tokenizer.save_pretrained
+            # alone does not write preprocessor_config.json.
+            if cfg.model.auto_class == "AutoModelForImageTextToText":
+                added = ensure_vl_processor_artifacts(
+                    ckpt,
+                    cfg.model.id,
+                    trust_remote_code=cfg.model.trust_remote_code,
+                )
+                if added:
+                    print(f"[pipeline] saved VL processor artifacts: {added}")
 
-    # Re-add intended ignore patterns that llm-compressor pruned from the saved
-    # config (e.g. the MoE router gate), so loaders treat them as unquantized.
-    _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
+                cfg_patches = ensure_minimax_m3_vllm_serve_config(
+                    ckpt, cfg.model.id
+                )
+                if cfg_patches:
+                    print(
+                        "[pipeline] patched saved config for vLLM serve: "
+                        f"{cfg_patches}"
+                    )
 
-    versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
-    print(f"[pipeline] saved checkpoint to {ckpt}")
+            # Preserve intended ignore patterns for downstream loaders.
+            _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
+            versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
+            print(f"[pipeline] saved checkpoint to {ckpt}")
+        dist_ctx.barrier()
+    else:
+        # A partial-layer smoke is evidence only. The completion marker appears
+        # only after every rank finishes calibration and reaches this barrier.
+        dist_ctx.barrier()
+        if dist_ctx.is_source:
+            (run_dir / "smoke_complete.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "status": "complete",
+                        "checkpoint_saved": False,
+                        "distributed": dist_ctx.snapshot(),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        dist_ctx.barrier()
 
-    # Sanity check (after save; safe to interrupt): a quantized model should still
-    # produce coherent text. Skipped for large offloaded models where generation is
-    # impractically slow (see `quantization.sample_generation`).
-    if cfg.quantization.sample_generation:
+    # Distributed generation is not part of calibration and can require a
+    # different dispatch topology. Keep the existing local check only.
+    if cfg.quantization.sample_generation and save_checkpoint and not dist_ctx.enabled:
         print("\n========== SAMPLE GENERATION ==========")
         try:
             print(_sample_generation(model, tokenizer, cfg.serve.prompt))
@@ -208,7 +281,8 @@ def run_quantize(cfg: PipelineConfig, run_dir: Path) -> Path:
 
     # Summarize the captured internal metrics into metadata.json.
     summary = metrics.summarize_quant_metrics(metrics_path)
-    versioning.update_metadata(run_dir, {"quant_metrics": summary})
+    if dist_ctx.is_source:
+        versioning.update_metadata(run_dir, {"quant_metrics": summary})
     print(f"[pipeline] quant metrics: {summary}")
 
     return ckpt

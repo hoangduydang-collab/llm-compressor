@@ -95,6 +95,14 @@ def main(argv: list[str] | None = None) -> int:
         "--agent-model",
         help="model name served at --agent-base (overrides agentic.agent_model)",
     )
+    parser.add_argument(
+        "--evidence-only",
+        action="store_true",
+        help=(
+            "run quantization/calibration but do not save a checkpoint; required "
+            "for partial-layer speed smokes"
+        ),
+    )
     args = parser.parse_args(argv)
 
     dist_ctx = DistributedContext.from_environment()
@@ -106,6 +114,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(args: argparse.Namespace, dist_ctx: DistributedContext) -> int:
     """Run parsed pipeline arguments inside an initialized process context."""
+
+    if args.evidence_only and args.stage != "quantize":
+        raise ValueError("--evidence-only requires --stage quantize")
+    if dist_ctx.enabled and args.stage != "quantize":
+        raise ValueError("distributed pipeline runs currently require --stage quantize")
 
     cfg = load_config(args.config)
     if args.overrides:
@@ -142,7 +155,12 @@ def _run(args: argparse.Namespace, dist_ctx: DistributedContext) -> int:
     if args.stage in ("quantize", "all"):
         from pipeline.quantize import run_quantize
 
-        ckpt = run_quantize(cfg, run_dir)
+        ckpt = run_quantize(
+            cfg,
+            run_dir,
+            dist_ctx,
+            save_checkpoint=not args.evidence_only,
+        )
         print(f"[pipeline] checkpoint saved -> {ckpt}")
 
     if args.stage in ("serve", "all") and cfg.serve.enabled:

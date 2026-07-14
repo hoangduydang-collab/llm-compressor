@@ -312,3 +312,72 @@ Because the change is documentation-only, validation consists of:
 - Strategic decisions, hypothesis changes, and downstream authorization remain
   with the planner.
 - The protocol is repo-wide and does not depend on MiniMax-M3 terminology.
+
+## 2026-07-14 proportional-execution amendment
+
+### Problem observed
+
+The first task-isolated MiniMax-M3 execution packet required a completely clean
+worktree. The executor correctly stopped before GPU allocation because the
+shared cluster checkout contained pre-existing untracked checkpoint and result
+artifacts. Those files did not necessarily change code, inputs, or the fresh run
+root, so the binary clean/dirty rule created an avoidable planner round trip.
+
+The same packet required a clean final worktree while also allowing large
+artifacts to remain on durable storage outside Git. In a shared cluster checkout,
+those requirements can conflict. The stopped return also summarized “numerous”
+untracked files without preserving their exact paths, making the blocking state
+harder for the planner to assess.
+
+### Approaches considered
+
+1. Keep requiring a pristine checkout. This is simple but rejects benign shared
+   artifact state and makes normal cluster operation unnecessarily fragile.
+2. Allow all dirty state and merely record it. This is fast but cannot prove
+   that the committed code, configs, or inputs were actually executed.
+3. Classify workspace and runtime conditions by decision impact. This preserves
+   reproducibility for tracked code and protected paths while allowing explicitly
+   named, non-overlapping artifact state. This is the chosen approach.
+
+### Chosen behavior
+
+Execution packets define protected paths and permitted untracked roots. The
+default workspace policy is:
+
+- any staged or unstaged tracked modification is a stop condition;
+- untracked files under packet-approved durable roots such as `results/` and
+  `artifacts/` are recorded and permitted;
+- untracked files outside approved roots, files that can shadow code/configs,
+  or any collision with the fresh run root are stop conditions;
+- the executor uses planner-supplied deterministic commands to classify the
+  state rather than making an open-ended judgment.
+
+Runtime conditions use three response levels:
+
+1. **Record and proceed** for explicitly pre-authorized benign conditions.
+2. **Permitted adaptation** only for an exact adaptation named by the packet.
+3. **Stop and return** for conditions that can change code, inputs, scientific
+   validity, resource topology, evidence integrity, or the experiment contract.
+
+Return evidence is proportional to execution progress. A stop before GPU
+allocation needs a concise packet with the exact blocking paths, commands, and
+return codes. A launched experiment still requires the complete job, scheduler,
+artifact, and measurement record. Any condition important enough to stop must
+be preserved exactly rather than described only as “dirty,” “missing,” or
+“numerous.”
+
+Final synchronization means no unexplained staged or unstaged tracked changes,
+all required small evidence committed and pushed, and all remaining permitted
+untracked artifacts enumerated. It does not require deleting or committing large
+artifacts merely to produce an empty `git status`.
+
+### Amendment acceptance criteria
+
+- Benign pre-existing artifacts in approved roots do not cause another planner
+  round trip.
+- Executed tracked code and configs still match the named Git revision.
+- A fresh run root cannot overwrite or merge with prior evidence.
+- The executor can classify the workspace with copy-ready commands and minimal
+  reasoning.
+- Stop packets contain the exact evidence that triggered the stop.
+- The active MiniMax-M3 packet applies this policy and becomes revision r2.

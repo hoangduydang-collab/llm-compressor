@@ -25,8 +25,17 @@ from pathlib import Path
 
 from pipeline import versioning
 from pipeline.config import PipelineConfig, load_config
+from pipeline.distributed import DistributedContext
 
 STAGES = ("quantize", "serve", "eval", "all")
+
+
+def _create_distributed_run_dir(
+    cfg: PipelineConfig, dist_ctx: DistributedContext
+) -> Path:
+    """Create a run directory on rank zero and share it with every rank."""
+    local_path = versioning.create_run_dir(cfg) if dist_ctx.is_source else None
+    return dist_ctx.broadcast_path(local_path)
 
 
 def _apply_overrides(cfg: PipelineConfig, overrides: list[str]) -> None:
@@ -88,6 +97,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    dist_ctx = DistributedContext.from_environment()
+    try:
+        return _run(args, dist_ctx)
+    finally:
+        dist_ctx.close()
+
+
+def _run(args: argparse.Namespace, dist_ctx: DistributedContext) -> int:
+    """Run parsed pipeline arguments inside an initialized process context."""
+
     cfg = load_config(args.config)
     if args.overrides:
         _apply_overrides(cfg, args.overrides)
@@ -106,12 +125,17 @@ def main(argv: list[str] | None = None) -> int:
         ckpt = Path(args.checkpoint)
         run_dir = ckpt.parent if ckpt.name == "checkpoint" else ckpt
     else:
-        run_dir = versioning.create_run_dir(cfg)
-        versioning.write_config(run_dir, cfg)
+        run_dir = _create_distributed_run_dir(cfg, dist_ctx)
+        if dist_ctx.is_source:
+            versioning.write_config(run_dir, cfg)
         ckpt = versioning.checkpoint_dir(run_dir)
 
     print(f"[pipeline] run dir: {run_dir}")
-    versioning.write_metadata(run_dir, cfg)
+    if dist_ctx.is_source:
+        versioning.write_metadata(
+            run_dir, cfg, extra={"distributed": dist_ctx.snapshot()}
+        )
+    dist_ctx.barrier()
 
     overall_ok = True
 

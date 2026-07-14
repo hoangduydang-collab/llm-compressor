@@ -1,0 +1,11 @@
+{
+  "reusable": true,
+  "checks": {
+    "sample_manifest_sha256": true,
+    "eval_config_sha256": true,
+    "tokenizer_sha256": true,
+    "chat_template_sha256": true,
+    "model_and_serving_contract": true,
+    "prior_gate_ready": true
+  }
+}

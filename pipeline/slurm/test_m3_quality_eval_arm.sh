@@ -77,8 +77,12 @@ if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then
   probe_ran=1
 fi
 if ((rc == 0)); then
-  "${eval_cmd[@]}"
-  rc=$?
+  if [[ -n "$TASKS" ]]; then
+    "${eval_cmd[@]}"
+    rc=$?
+  else
+    printf '{}\n' >"$ARM/aggregate.json"
+  fi
 fi
 if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then
   run_probe

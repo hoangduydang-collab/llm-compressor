@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,10 +18,34 @@ def _run(*args):
     )
 
 
-def test_smoke_dry_run_has_ray_preflight_and_three_parallel_arms(tmp_path):
+def _bash_path(path: Path) -> str:
+    value = path.resolve().as_posix()
+    if len(value) >= 3 and value[1:3] == ":/":
+        return f"/{value[0].lower()}{value[2:]}"
+    return value
+
+
+def _workspace_tmp(tmp_path: Path, request) -> Path:
+    work_dir = Path(".pytest-m3-quality") / tmp_path.name
+    shutil.rmtree(work_dir, ignore_errors=True)
+    work_dir.mkdir(parents=True)
+
+    def cleanup():
+        shutil.rmtree(work_dir, ignore_errors=True)
+        try:
+            work_dir.parent.rmdir()
+        except OSError:
+            pass
+
+    request.addfinalizer(cleanup)
+    return work_dir
+
+
+def test_smoke_dry_run_has_ray_preflight_and_three_parallel_arms(tmp_path, request):
+    run_root = _workspace_tmp(tmp_path, request)
     result = _run(
         "--profile", "smoke", "--matrix", str(MATRIX),
-        "--run-root", str(tmp_path), "--dry-run",
+        "--run-root", _bash_path(run_root), "--dry-run",
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("test_m3_ray_topology.sh") == 1
@@ -28,17 +54,19 @@ def test_smoke_dry_run_has_ray_preflight_and_three_parallel_arms(tmp_path):
     assert "total_nodes=4" in result.stdout
 
 
-def test_production_dry_run_requires_gate_and_has_six_arms(tmp_path):
+def test_production_dry_run_requires_gate_and_has_six_arms(tmp_path, request):
+    run_root = _workspace_tmp(tmp_path, request)
     failed = _run(
         "--profile", "production", "--matrix", str(MATRIX),
-        "--run-root", str(tmp_path), "--dry-run",
+        "--run-root", _bash_path(run_root), "--dry-run",
     )
     assert failed.returncode != 0
-    gate = tmp_path / "smoke_gate.json"
+    gate = run_root / "smoke_gate.json"
     gate.write_text(json.dumps({"ready_for_production": True}))
     result = _run(
         "--profile", "production", "--matrix", str(MATRIX),
-        "--run-root", str(tmp_path), "--smoke-gate", str(gate), "--dry-run",
+        "--run-root", _bash_path(run_root),
+        "--smoke-gate", _bash_path(gate), "--dry-run",
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("test_m3_quality_eval_arm.sh") == 6
@@ -75,7 +103,10 @@ def test_smoke_probe_runs_before_eval_and_failure_skips_eval():
 
     assert arm.index(probe) < arm.index(evaluate)
     assert 'if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then' in arm
-    assert 'if ((rc == 0)); then\n  "${eval_cmd[@]}"' in arm
+    assert (
+        'if ((rc == 0)); then\n  if [[ -n "$TASKS" ]]; then\n'
+        '    "${eval_cmd[@]}"'
+    ) in arm
     assert 'if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then' in arm
 
 
@@ -108,3 +139,103 @@ def test_smoke_evidence_counts_tp_times_pp_workers():
     arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
     assert '"$TP" "$PP" "$rc"' in arm
     assert "'distributed_world_size':tp * pp" in arm
+
+
+def test_probe_only_arm_skips_evalsuite_and_writes_empty_aggregate(
+    tmp_path, request
+):
+    work_dir = _workspace_tmp(tmp_path, request)
+    run_root = work_dir / "run"
+    preflight = run_root / "preflight"
+    preflight.mkdir(parents=True)
+    (run_root / "run_manifest.json").write_text("{}", encoding="utf-8")
+    (preflight / "production_sample_manifest.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (preflight / "resolved_eval_config.yaml").write_text("{}", encoding="utf-8")
+    (preflight / "production_probe_corpus.json").write_text(
+        "{}", encoding="utf-8"
+    )
+
+    fake_bin = work_dir / "bin"
+    fake_bin.mkdir()
+    fake_python = fake_bin / "python"
+    fake_python.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "-" ]]; then
+  case "$2" in
+    *arm_manifest.json) printf '{"model_label":"gptq","shard":"distributional_probe"}\n' >"$2" ;;
+    *arm_complete.json)
+      [[ "$3" == "0" ]] && complete=true || complete=false
+      printf '{"complete":%s}\n' "$complete" >"$2"
+      ;;
+    *) echo "unexpected inline writer: $2" >&2; exit 97 ;;
+  esac
+  exit 0
+fi
+if [[ "$1 $2" == "-m pipeline.evalsuite.cli" ]]; then
+  touch "$FAKE_STATE/evalsuite-called"
+  exit 91
+fi
+if [[ "$1 $2" == "-m pipeline.m3_distributional_probe" ]]; then
+  out=""
+  while (($#)); do
+    [[ "$1" == "--out" ]] && { out=$2; break; }
+    shift
+  done
+  [[ -n "$out" ]] || exit 96
+  printf '{"prompt_id":"p","position":1}\n' >"$out"
+  exit 0
+fi
+echo "unexpected python call: $*" >&2
+exit 95
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = str(fake_bin) + os.pathsep + env["PATH"]
+    env["FAKE_STATE"] = _bash_path(work_dir)
+    result = subprocess.run(
+        [
+            "bash",
+            "pipeline/slurm/test_m3_quality_eval_arm.sh",
+            "--profile",
+            "production",
+            "--run-root",
+            _bash_path(run_root),
+            "--matrix",
+            "matrix.yaml",
+            "--model-label",
+            "gptq",
+            "--model",
+            "/models/gptq",
+            "--shard",
+            "distributional_probe",
+            "--tasks",
+            "",
+            "--tensor-parallel-size",
+            "8",
+            "--pipeline-parallel-size",
+            "1",
+            "--distributed-executor-backend",
+            "mp",
+            "--run-probe",
+            "1",
+            "--probe-tokens",
+            "8192",
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    arm = run_root / "models" / "gptq" / "shards" / "distributional_probe"
+    assert result.returncode == 0, result.stderr
+    assert not (work_dir / "evalsuite-called").exists()
+    assert json.loads((arm / "aggregate.json").read_text()) == {}
+    assert (arm / "distributional_probe.jsonl").is_file()
+    assert (arm / "return_code.txt").read_text().strip() == "0"
+    assert json.loads((arm / "arm_complete.json").read_text())["complete"] is True

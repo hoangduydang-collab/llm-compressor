@@ -16,6 +16,45 @@ the executor owns cluster/GPU runs.
 older sections below (§§4–6 EP/scatter design) are superseded — do not implement
 them.**
 
+### Approved Phase 1 design (2026-07-15)
+
+Phase 1 is an integration and evidence task, not a new quantization algorithm.
+It must extend the existing `pipeline.run` path in the same way as the repository's
+DDP examples and e2e runner:
+
+1. initialize compressed-tensors distributed state **before** run-directory
+   creation or model loading when `WORLD_SIZE > 1`;
+2. load through the existing `load_context()` with `device_map=auto_offload` so
+   compressed-tensors owns shared distributed offload and MoE linearization;
+3. partition the configured global calibration set into disjoint rank-local
+   datasets before `oneshot` rather than relying on replicated forwards;
+4. make metadata, metrics, tokenizer/processor writes, and completion reporting
+   rank-safe while preserving collective model saving; and
+5. validate native GPTQ and AWQ on the same three representative MiniMax-M3 MoE
+   layers using one 8xH100 node at a time.
+
+The smoke is successful only when all ranks initialize on distinct GPUs, rank
+sample partitions are disjoint and cover the configured global set, the expected
+expert modules are processed, host RAM is consistent with a shared model copy,
+and both methods finish with complete per-rank evidence. Quantization-only speed
+must improve over comparable single-process evidence; `>2x` is a target, not an
+overly strict first-run gate. Model load/save time is reported separately.
+
+The cluster supports `srun`, not `sbatch`. The production shape is one top-level
+allocation with `--gres=gpu:8`, containing one `torchrun --nproc_per_node=8`
+command. A partial-layer smoke must never be published as a usable checkpoint.
+The full distributed calibration remains gated on the paired quality evaluation.
+
+Two corrections to the older handoff below are important:
+
+- `torchrun` alone does **not** initialize this pipeline. The current production
+  path never calls `compressed_tensors.offload.init_dist()`; without adding that
+  lifecycle, eight independent single-process jobs can be launched.
+- The fork's automatic identical-dataset sampler selects a rank-local dataset
+  internally but returns its indices to a `DataLoader` backed by the original
+  dataset. This can overlap early indices across ranks. Follow the upstream DDP
+  examples and partition the dataset itself before tokenization/`oneshot`.
+
 ### The conclusion
 
 The 30-hour `safe-*` calibration was slow for ONE reason: it launched as a single

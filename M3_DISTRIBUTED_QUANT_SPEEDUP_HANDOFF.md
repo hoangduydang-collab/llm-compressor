@@ -2,10 +2,10 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: `2026-07-15-r3`
+- Packet revision: `2026-07-15-r4`
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Required fix commit: `4801028f`
+- Required fix commit: `71372092`
 - Decision question: Can native eight-rank llm-compressor GPTQ and AWQ process
   representative MiniMax-M3 layers with correct data sharding, shared model
   memory, complete evidence, and enough quantization-time improvement to justify
@@ -14,6 +14,13 @@
 This is the single active packet for MiniMax-M3 quantization speed-up Phase 1.
 It supersedes the informal launch commands in `M3_QUANT_SPEEDUP_PLAN.md`; that
 document remains the rationale and history.
+
+> **r4 execution notice:** The original r3 packet below is retained as execution
+> history and must not be launched again. The only current authorization and
+> executable command are in **Planner analysis and r4 GPTQ-only authorization**
+> at the end of this file.
+
+## Archived r3 packet (do not execute)
 
 ## Objective and hypothesis
 
@@ -715,3 +722,99 @@ No packet deviation, code/config edit, retry, full calibration, checkpoint
 save, quality evaluation, or performance run was performed. This is factual
 infrastructure/model-load evidence only; it is not a quantization-speed or
 model-quality verdict.
+
+## Planner analysis and r4 GPTQ-only authorization
+
+The partial r3 GPTQ evidence proves that the r2 MiniMax constructor fix worked:
+all ranks passed that point and entered checkpoint loading. The new failure is
+not a GPTQ algorithm failure. Ranks 1–7 completed their meta-model load first
+and waited in compressed-tensors' first shared-weight broadcast while source
+rank 0 was still loading the 1,582-shard checkpoint. The default NCCL process
+group timeout was 600 seconds, and the waiting broadcast (`SeqNum=5`, two-item
+metadata payload) was aborted at exactly that limit. There is no preceding
+Python exception, OOM, swap exhaustion, or quantization work record.
+
+Commit `71372092` keeps the same NCCL backend, rank/device binding, environment
+rendezvous, and post-initialization barrier used by compressed-tensors, but
+creates the process group with a three-hour collective timeout. This is a
+bounded allowance for MiniMax-M3's asymmetric source/meta loading; it does not
+change model loading policy, offload conversion, calibration, GPTQ/AWQ recipes,
+or evidence semantics. The focused regression test verifies the exact timeout
+and retained barrier.
+
+This section supersedes the earlier r3 retry/launch instructions only. Do not
+alter or cancel the already-running r3 AWQ arm. Wait until AWQ and its owning
+controller have reached a terminal state and preserve/return their evidence
+before starting r4.
+
+### r4 scope and gates
+
+- Authorized arm: GPTQ only, exactly once, with a fresh r4 run ID.
+- Required ancestor: `71372092`.
+- Unchanged inputs: eight H100s on one exclusive node, eight torchrun ranks,
+  eight global calibration samples, sequence length 512, decoder layers 3/31/59,
+  `auto_offload`, evidence-only mode, and the existing smoke config.
+- Time limit: 24 hours. Do not shorten the three-hour process-group timeout.
+- Before launch: require the r3 AWQ job and controller to be terminal; pull
+  `duy-branch`; run the setup/worktree/model gates above; run all five focused
+  test files; run `bash -n` on the launcher.
+- Stop and return: any failed gate, dirty tracked worktree, root collision, or
+  inability to prove r3 AWQ is terminal. Do not patch dynamically.
+
+### Exact r4 launch
+
+Run from outside any Slurm allocation:
+
+```bash
+set -euo pipefail
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+git fetch origin
+git checkout duy-branch
+git pull --ff-only origin duy-branch
+git merge-base --is-ancestor 71372092 HEAD
+
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
+test -z "${SLURM_JOB_ID:-}"
+test -z "$(git diff --name-only)"
+test -z "$(git diff --cached --name-only)"
+
+R3_LOG_ROOT="/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T170500Z-m3-ddp-quant-smoke-r3"
+test -f "$R3_LOG_ROOT/controller.rc"
+test -f "$R3_LOG_ROOT/awq/rc"
+test -z "$(squeue -h -j 12924 2>/dev/null)"
+
+python -m pytest -q \
+  pipeline/tests/test_distributed.py \
+  pipeline/tests/test_calibration_partition.py \
+  pipeline/tests/test_distributed_quantize_contract.py \
+  pipeline/tests/test_metrics.py \
+  pipeline/tests/test_m3_distributed_quant_smoke.py
+bash -n pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh
+
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r4-gptq"
+RESULT_ROOT="/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/$RUN_ID"
+LOG_ROOT="/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/$RUN_ID"
+OFFLOAD_ROOT="/mnt/nfs/hoangduy/offload/m3-distributed-quant-smoke/$RUN_ID"
+SESSION="m3-ddp-quant-${RUN_ID}"
+test ! -e "$RESULT_ROOT"
+test ! -e "$LOG_ROOT"
+test ! -e "$OFFLOAD_ROOT"
+mkdir -p "$LOG_ROOT"
+git rev-parse HEAD >"$LOG_ROOT/expected_git_commit.txt"
+
+tmux new-session -d -s "$SESSION" \
+  "cd '$PWD'; rc=0; srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8 --time=24:00:00 --kill-on-bad-exit=1 env RUN_ID='$RUN_ID' RESULT_ROOT='$RESULT_ROOT' LOG_ROOT='$LOG_ROOT' OFFLOAD_ROOT='$OFFLOAD_ROOT' bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh --worker gptq >'$LOG_ROOT/controller.log' 2>&1 || rc=\$?; printf '%s\n' \"\$rc\" >'$LOG_ROOT/controller.rc'"
+
+printf 'RUN_ID=%s\nRESULT_ROOT=%s\nLOG_ROOT=%s\nOFFLOAD_ROOT=%s\nSESSION=%s\n' \
+  "$RUN_ID" "$RESULT_ROOT" "$LOG_ROOT" "$OFFLOAD_ROOT" "$SESSION" \
+  | tee "/tmp/${RUN_ID}-locations.txt"
+```
+
+After `controller.rc` appears, package the GPTQ logs, scheduler records, rank
+manifests, provenance, native metrics, passive resource log, and completion
+artifact using the existing aggregation/return contract. Record the first
+failing operation and last successful stage if r4 is nonzero. Commit and push
+the evidence, set the packet to `RETURNED_FOR_ANALYSIS`, and stop; no additional
+retry or AWQ rerun is authorized.

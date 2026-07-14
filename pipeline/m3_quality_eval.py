@@ -293,8 +293,18 @@ def build_profile_sample_manifests(
     seed: int,
     output_dir: Path,
     harness_revision: str,
+    production_samples_per_task: int | None = None,
 ) -> dict[str, Path]:
-    """Write exact tiny-smoke and MMLU-stratified production manifests."""
+    """Write exact tiny-smoke and stratified production manifests.
+
+    By default the production manifest only subsamples MMLU-Pro (``mmlu_total``);
+    all other tasks run their full set. When ``production_samples_per_task`` is
+    set (quick-eval mode), EVERY task is stratified-subsampled to that cap via
+    the same seeded manifest mechanism -- so the paired comparison stays exact
+    (both models see identical indices) while bounding wall-clock. Capping via
+    the manifest (rather than lm-eval ``limit``) is required because exact
+    samples and ``limit`` are mutually exclusive per task in the runner.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     smoke_tasks: dict[str, dict[str, list[int]]] = {}
     for canonical, installed in resolved_tasks.items():
@@ -309,12 +319,23 @@ def build_profile_sample_manifests(
                 for leaf, size in sizes.items()
                 if size > 0
             }
-    production_name = resolved_tasks[mmlu_task]
-    production_tasks = {
-        production_name: build_stratified_indices(
-            leaf_sizes[mmlu_task], mmlu_total, seed
-        )
-    }
+    if production_samples_per_task is not None:
+        production_tasks = {}
+        for canonical, installed in resolved_tasks.items():
+            sizes = leaf_sizes[canonical]
+            cap = production_samples_per_task
+            if canonical == mmlu_task:
+                cap = min(cap, mmlu_total)
+            production_tasks[installed] = build_stratified_indices(
+                sizes, min(cap, sum(sizes.values())), seed
+            )
+    else:
+        production_name = resolved_tasks[mmlu_task]
+        production_tasks = {
+            production_name: build_stratified_indices(
+                leaf_sizes[mmlu_task], mmlu_total, seed
+            )
+        }
     outputs = {}
     for profile, tasks in (("smoke", smoke_tasks), ("production", production_tasks)):
         installed_leaf_sizes = {

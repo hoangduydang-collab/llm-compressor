@@ -1,0 +1,60 @@
+schema_version: 1
+name: minimax-m3-paired-gptq-vs-cyankiwi
+# Paired quality comparison of the repaired in-house GPTQ checkpoint against the
+# working cyankiwi AWQ reference. cyankiwi_awq is the baseline, so the harness
+# emits a single paired McNemar comparison (comparisons.inhouse_gptq) answering
+# "does our GPTQ match the reference AWQ?" -- score_recovery_ratio = gptq/cyankiwi,
+# regressions_a_correct_b_wrong = cyankiwi-correct-but-gptq-wrong.
+#
+# Two 1-node mp arms only: no BF16/Ray arm, so the launcher's 2-node Ray
+# topology preflight never fires (MAX_ARM_NODES == 1). model_source stays the
+# base MiniMax-M3 purely as the tokenizer/chat-template source for preflight.
+backend: vllm
+baseline_label: cyankiwi_awq
+model_source: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+eval_config: pipeline/configs/eval_minimax_m3_quality.yaml
+
+models:
+  - label: cyankiwi_awq
+    path: /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+    kind: awq-w4a16
+    nodes: 1
+    tensor_parallel_size: 8
+    distributed_executor_backend: mp
+  - label: inhouse_gptq
+    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123
+    kind: gptq-w4a8
+    nodes: 1
+    tensor_parallel_size: 8
+    distributed_executor_backend: mp
+
+shards:
+  - name: reasoning
+    tasks: [gpqa_diamond, ifeval, aime_2025]
+    distributional_probe: false
+  - name: broad
+    tasks: [mmlu_pro, gsm8k]
+    distributional_probe: true
+
+task_aliases:
+  gpqa_diamond: [gpqa_diamond_zeroshot, gpqa_diamond, leaderboard_gpqa]
+  ifeval: [ifeval, leaderboard_ifeval]
+  aime_2025: [aime25, aime_2025]
+  mmlu_pro: [mmlu_pro, leaderboard_mmlu_pro]
+  gsm8k: [gsm8k]
+
+sampling:
+  seed: 42
+  mmlu_pro_samples: 2000
+
+probe:
+  total_tokens: 49152
+  top_k: 20
+  max_overhead_seconds: 1800
+
+gates:
+  max_task_drop: 0.02
+  min_macro_recovery: 0.98
+  max_conditional_regression: 0.05
+  max_perplexity_increase: 0.10
+  max_degeneration_failures: 0

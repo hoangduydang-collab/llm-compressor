@@ -127,10 +127,14 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         revision = importlib.metadata.version("lm_eval")
     except importlib.metadata.PackageNotFoundError:
         revision = importlib.metadata.version("lm-eval")
+    _quick_cap = spec.sampling.get("production_samples_per_task")
     manifests = build_profile_sample_manifests(
         resolved_tasks=resolved, leaf_sizes=leaf_sizes, mmlu_task="mmlu_pro",
         mmlu_total=int(spec.sampling["mmlu_pro_samples"]),
         seed=int(spec.sampling["seed"]), output_dir=out, harness_revision=revision,
+        production_samples_per_task=(
+            int(_quick_cap) if _quick_cap is not None else None
+        ),
     )
 
     for task in raw["eval"]["tasks"]:

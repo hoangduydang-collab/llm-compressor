@@ -16,6 +16,13 @@ repository-wide source of truth.
 - Verify the named Git revision, inputs, environment, and resource topology.
   Execute the packet exactly; do not redesign experiments, change configs,
   thresholds, sample counts, topology, time limits, or launch methods.
+- Apply the packet's proportional condition levels: Record and proceed only for
+  an explicitly pre-authorized benign condition; use a permitted adaptation only
+  within its exact named boundary; stop when code, inputs, scientific validity,
+  topology, evidence integrity, or the experiment contract may change.
+- Use planner-supplied deterministic checks for protected paths, permitted
+  untracked roots, and result collisions. Do not require a pristine shared
+  checkout when the packet explicitly permits and records benign artifacts.
 - Preserve independent healthy jobs. Do not silently retry, reuse result roots,
   mutate prior evidence, or launch downstream work.
 - On a missing prerequisite, failed gate, ambiguity, topology mismatch, or
@@ -24,7 +31,11 @@ repository-wide source of truth.
   per-job IDs/nodes/states/return codes, exact commands, versions, timings,
   deviations, missing artifacts, first failure/last success, raw logs, and
   durable artifact paths with byte sizes and SHA-256 hashes when applicable.
+- Scale evidence to work performed: a pre-GPU stop returns exact blocker paths,
+  commands, and return codes; a launched run returns the full applicable record.
+  Never replace exact stop evidence with summaries such as “dirty” or “numerous.”
 - Clearly separate observed facts from limited executor interpretation; leave
   strategic conclusions and next-step authorization to the planner.
-- Commit and push the complete evidence packet, verify branch synchronization,
+- Commit and push the complete evidence packet, verify branch synchronization
+  and no unexplained tracked changes, enumerate permitted untracked artifacts,
   then stop unless the active packet explicitly authorizes further work.

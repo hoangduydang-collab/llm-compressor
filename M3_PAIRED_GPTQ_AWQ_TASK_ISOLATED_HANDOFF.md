@@ -2,12 +2,15 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: 2026-07-14-r1
+- Packet revision: 2026-07-14-r2
 - Planner owner: Codex planner
 - Intended executor: cluster executor
 - Base Git commit: `1e2da818a08df09bf1ff0268702bda34bf89ee6e`
 - Decision question: Does repaired in-house GPTQ preserve enough quality versus
   cyankiwi AWQ to justify later performance evaluation?
+
+This packet supersedes r1. The r1 stopped report is historical evidence; r2
+authorizes a fresh run after the proportional workspace check below passes.
 
 ## Objective and boundary
 
@@ -34,15 +37,38 @@ git checkout duy-branch
 git pull --ff-only origin duy-branch
 git merge-base --is-ancestor 1e2da818a08df09bf1ff0268702bda34bf89ee6e HEAD
 git rev-parse HEAD
-git status --short
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
 python --version
 python -m pip show torch transformers vllm lm-eval
 ```
 
-Stop if the ancestor check fails, the worktree is not clean, or the named
-environment/packages are unavailable.
+Stop if the ancestor check fails or the named environment/packages are
+unavailable.
+
+## Workspace policy and proportional condition handling
+
+Protected state is every tracked file plus the fresh run root selected below.
+Pre-existing Git-visible untracked files are permitted only under `results/`
+and `artifacts/`. This is a **Record and proceed** condition, not an adaptation.
+
+```bash
+test -z "$(git diff --name-only)"
+test -z "$(git diff --cached --name-only)"
+WORKSPACE_STATUS="$(mktemp)"
+WORKSPACE_RECORD="$(mktemp)"
+WORKSPACE_BLOCKERS="$(mktemp)"
+git status --short | tee "$WORKSPACE_STATUS"
+git ls-files --others --exclude-standard | tee "$WORKSPACE_RECORD"
+awk '!/^(results|artifacts)\//' "$WORKSPACE_RECORD" | tee "$WORKSPACE_BLOCKERS"
+test ! -s "$WORKSPACE_BLOCKERS"
+```
+
+Record and proceed when the tracked checks pass and every listed untracked path
+is under `results/` or `artifacts/`. Stop before preflight for any tracked change
+or any other untracked path. A stopped return must include the complete contents
+of all three workspace records and the exact failing command/return code; do not
+summarize the blocker merely as “dirty” or “numerous.”
 
 ## Inputs and fresh run root
 
@@ -55,8 +81,14 @@ RUN_ROOT="results/m3-quality/$RUN_ID"
 test -f "$SMOKE_GATE"
 test ! -e "$RUN_ROOT"
 mkdir -p "$RUN_ROOT"
+cp "$WORKSPACE_STATUS" "$RUN_ROOT/preexisting_workspace_status.txt"
+cp "$WORKSPACE_RECORD" "$RUN_ROOT/preexisting_untracked.txt"
+cp "$WORKSPACE_BLOCKERS" "$RUN_ROOT/preexisting_workspace_blockers.txt"
 printf 'run_id=%s\nrun_root=%s\n' "$RUN_ID" "$RUN_ROOT" | tee "$RUN_ROOT/controller.log"
 ```
+
+Stop if `RUN_ROOT` already exists. Do not reuse, merge, delete, or overwrite any
+pre-existing artifact.
 
 ## Preflight and smoke-gate reuse check
 
@@ -165,8 +197,9 @@ A nonzero aggregate result is evidence to return, not permission to retry.
 
 Commit the following small evidence, preserving raw files:
 
-- `run_manifest.json`, all `preflight/` manifests/configs, `preflight.log`, and
-  `smoke_reuse_check.json`;
+- `preexisting_workspace_status.txt`, `preexisting_untracked.txt`,
+  `preexisting_workspace_blockers.txt`, `run_manifest.json`, all `preflight/`
+  manifests/configs, `preflight.log`, and `smoke_reuse_check.json`;
 - `production_launch_plan.json`, `array_dry_run.log`, `submission_command.txt`,
   `submission.log`, and `array_job_id.txt`;
 - every scheduler stdout/stderr log and each arm's `arm_manifest.json`,
@@ -175,12 +208,17 @@ Commit the following small evidence, preserving raw files:
   `scontrol-final.txt`, `matrix.json`, `gates.json`, `report.md`,
   `aggregate.log`, and `aggregate.return_code.txt`.
 
-The factual return report must list every array index with arm, scheduler state,
-node, elapsed time, exit code, gate result, and artifact path; exact commands;
-environment versions; deviations; missing artifacts; first failure and last
-successful stage. For any large file not committed, record absolute path, byte
-size, and SHA-256.
+If execution stops before GPU allocation, return a concise report with the exact
+blocking paths or values, commands, return codes, actual revision, environment,
+and scheduler state; do not create empty per-arm records. If any array element
+launches, the factual return report must list every array index with arm,
+scheduler state, node, elapsed time, exit code, gate result, and artifact path;
+exact commands; environment versions; deviations; missing artifacts; first
+failure and last successful stage. For any large file not committed, record
+absolute path, byte size, and SHA-256.
 
 Commit and push the evidence on `duy-branch`, set the packet state to
-`RETURNED_FOR_ANALYSIS`, verify a clean synchronized worktree, and stop. Only the
-planner decides the quality verdict and next action.
+`RETURNED_FOR_ANALYSIS`, verify branch synchronization and no unexplained staged
+or unstaged tracked changes, enumerate any remaining permitted untracked
+artifacts, and stop. Do not delete or commit large artifacts merely to make
+`git status` empty. Only the planner decides the quality verdict and next action.

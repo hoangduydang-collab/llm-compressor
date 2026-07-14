@@ -149,6 +149,9 @@ Owner: planner.
 - A report never substitutes for raw evidence; it identifies the underlying
   logs, manifests, measurements, and return codes.
 - Every deviation is reported, including deviations believed to be harmless.
+- Evidence requirements are proportional to execution progress. A pre-GPU stop
+  returns exact blocker evidence; a launched run returns the full scheduler,
+  artifact, and measurement record.
 - Task-specific handoffs provide experiment details. They may add stricter rules,
   but may override this protocol only by explicitly naming and justifying the
   exception.
@@ -193,6 +196,13 @@ evaluation” or “use the usual environment” are not sufficient.
 | Input | Exact path or identifier | Required validation |
 | --- | --- | --- |
 | <dataset/checkpoint/config> | <value> | <command and expected result> |
+
+## Workspace policy
+
+- Protected paths: <tracked code, configs, inputs, and output roots>
+- Permitted untracked roots: <exact roots or `None`>
+- Record and proceed: <exact benign conditions and classifier commands>
+- Stop: <tracked changes, shadowing paths, collisions, or other exact blockers>
 
 ## Resource contract
 
@@ -261,6 +271,10 @@ Expected: <job count, topology, and key command markers>.
 ## Allowed adaptations
 
 - <An exact adaptation and its boundary, or `None`>
+
+## Pre-authorized record-and-proceed conditions
+
+- <An exact benign condition and required evidence, or `None`>
 
 ## Pre-authorized retries
 
@@ -363,6 +377,10 @@ decision.>
 
 - <Every deviation and why it occurred, or `None`>
 
+## Record-and-proceed conditions exercised
+
+- <Every pre-authorized benign condition observed with exact evidence, or `None`>
+
 ## Small committed artifacts
 
 - `<repository path>` — <content>
@@ -387,7 +405,8 @@ decision.>
 
 - Evidence commit pushed: <full SHA>
 - Branch synchronization: <status output>
-- Working tree: <clean or exact remaining paths>
+- Tracked changes: <none or exact explained paths>
+- Permitted untracked artifacts: <none or exact enumerated paths>
 
 ## Questions for planner
 
@@ -395,6 +414,27 @@ decision.>
 ````
 
 ## Runtime authority
+
+### Proportional condition levels
+
+Every active packet classifies foreseeable runtime conditions into three levels:
+
+1. **Record and proceed** — an explicitly pre-authorized benign condition that
+   does not change tracked code, inputs, scientific validity, topology, evidence
+   integrity, or the experiment contract. The executor captures the named
+   evidence and continues.
+2. **Permitted adaptation** — an exact adaptation and boundary named by the
+   packet. The executor records its use and continues only within that boundary.
+3. **Stop and return** — a condition that can change code, inputs, scientific
+   validity, resource topology, evidence integrity, or the experiment contract,
+   or any unclassified condition material to the decision.
+
+The executor does not perform open-ended classification. The planner supplies
+copy-ready checks, protected paths, permitted untracked roots, and collision
+rules. A shared checkout need not be pristine merely for appearance: staged or
+unstaged tracked modifications are blocking by default, while untracked files
+may proceed only under roots explicitly allowed by the packet and only when they
+cannot collide with its fresh result root.
 
 ### Allowed without escalation
 
@@ -406,6 +446,8 @@ The executor may:
 - preserve healthy independent jobs when another job fails;
 - capture ephemeral scheduler/accounting evidence after an abnormal exit;
 - aggregate partial results when the packet says aggregation is safe;
+- record and proceed through a benign condition explicitly authorized by the
+  packet;
 - package, commit, and push the required evidence.
 
 ### Must stop and return
@@ -414,7 +456,8 @@ The executor captures urgent ephemeral evidence first, then stops when:
 
 - the expected revision, input, environment, credential, or service is missing;
 - a preflight or stated stop condition fails;
-- instructions, paths, ownership, or success criteria are ambiguous;
+- instructions, paths, ownership, or success criteria contain a material
+  ambiguity not resolved by the packet's deterministic checks;
 - actual resource topology differs from the required topology;
 - continuing would require an unapproved retry or experiment change;
 - evidence suggests continuing could corrupt artifacts or invalidate the run;
@@ -464,6 +507,13 @@ needed to reconstruct the failure, such as:
 After that bounded capture, the executor stops. Evidence preservation does not
 authorize a retry or fix.
 
+Evidence depth follows work performed. Before GPU allocation, return the exact
+blocking paths or values, commands, return codes, revision, and scheduler state;
+do not manufacture empty per-arm records. After any job launches, return the
+complete applicable job, scheduler, artifact, timing, and measurement evidence.
+Descriptions such as “dirty,” “missing,” or “numerous” never replace the exact
+records that caused a stop.
+
 ## Planner readiness checklist
 
 A task cannot enter `READY_FOR_EXECUTOR` until every required item is checked:
@@ -471,11 +521,14 @@ A task cannot enter `READY_FOR_EXECUTOR` until every required item is checked:
 - [ ] One decision question and bounded hypothesis are stated.
 - [ ] Exact base commit, branch, repository path, and environment are named.
 - [ ] Required inputs and preflight validations are explicit.
+- [ ] Protected paths, permitted untracked roots, deterministic workspace checks,
+      and collision rules are explicit.
 - [ ] Setup, dry-run, launch, monitoring, aggregation, and packaging commands are
       directly runnable.
 - [ ] Node/GPU topology, concurrency, time limit, and expected runtime are named.
 - [ ] Success gates, expected artifacts, and job independence rules are explicit.
 - [ ] Allowed adaptations and retry policy are explicit, even when both are none.
+- [ ] Record-and-proceed conditions are explicit, even when none.
 - [ ] Stop conditions and prohibited downstream work are explicit.
 - [ ] The return contract names raw logs, small artifacts, and large-artifact
       path/size/hash requirements.
@@ -497,8 +550,12 @@ checked or its absence is explained:
 - [ ] Raw logs and small structured artifacts are committed.
 - [ ] Large artifacts have absolute paths, byte sizes, and SHA-256 values.
 - [ ] Missing artifacts, last successful stage, and first failure are explicit.
+- [ ] Every stop condition includes the exact paths, values, commands, and return
+      codes that triggered it.
 - [ ] Facts and limited executor interpretation are separated.
 - [ ] Evidence is pushed and final branch/worktree status is recorded.
+- [ ] No unexplained staged or unstaged tracked changes remain; permitted
+      untracked artifacts are enumerated rather than deleted for cleanliness.
 - [ ] The executor has stopped without unauthorized downstream work.
 
 ## Compact examples

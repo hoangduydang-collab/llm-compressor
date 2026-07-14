@@ -336,7 +336,7 @@ Expected: push succeeds and status reports `duy-branch...origin/duy-branch` with
   deterministically permits old untracked files only under `results/` and
   `artifacts/`.
 
-- [ ] **Step 1: Amend the canonical protocol and Cursor rule**
+- [x] **Step 1: Amend the canonical protocol and Cursor rule**
 
 Add these exact concepts to the existing runtime-authority sections:
 
@@ -352,7 +352,7 @@ exact blocking paths in stopped returns and proportional evidence based on
 whether GPU work began. Replace “clean worktree” completion language with no
 unexplained tracked changes plus enumeration of permitted untracked artifacts.
 
-- [ ] **Step 2: Revise the active packet to r2 in place**
+- [x] **Step 2: Revise the active packet to r2 in place**
 
 Change the packet revision to `2026-07-14-r2`. Replace the pristine-worktree
 stop with copy-ready commands that:
@@ -373,7 +373,7 @@ retain stops for tracked changes, other untracked paths, collisions, and all
 existing hash/topology/environment failures. Require exact paths in any new
 stopped return.
 
-- [ ] **Step 3: Verify the documentation contract**
+- [x] **Step 3: Verify the documentation contract**
 
 Run:
 
@@ -392,7 +392,7 @@ git diff --check
 
 Expected: exit code zero and no whitespace errors.
 
-- [ ] **Step 4: Commit and push the same branch**
+- [x] **Step 4: Commit and push the same branch**
 
 ```powershell
 git add PLANNER_EXECUTOR_PROTOCOL.md .cursor/rules/planner-executor-protocol.mdc M3_PAIRED_GPTQ_AWQ_TASK_ISOLATED_HANDOFF.md docs/superpowers/plans/2026-07-14-planner-executor-protocol.md

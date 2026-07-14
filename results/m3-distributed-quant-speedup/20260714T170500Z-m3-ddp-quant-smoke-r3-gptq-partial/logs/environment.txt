@@ -1,0 +1,60 @@
+run_id=20260714T170500Z-m3-ddp-quant-smoke-r3
+method=gptq
+host=h108-gpu-polaris.pod4.lab.bitdeer.ai
+slurm_job_id=12923
+slurm_step_id=0
+f481561945dc7fd881333f3cb8e1c6c2e32878e6
+Python 3.12.13
+Name: llmcompressor
+Version: 0.1.dev3101+g46e6ba4
+Summary: A library for compressing large language models utilizing the latest techniques and research in the field for both training aware and post training techniques. The library is designed to be flexible and easy to use on top of PyTorch and HuggingFace Transformers, allowing for quick experimentation.
+Home-page: https://github.com/vllm-project/llm-compressor
+Author: The vLLM Project
+Author-email: vllm-questions@lists.berkeley.edu
+License: Apache 2.0
+Location: /mnt/nfs/hoangduy/projects/llm-compressor/src
+Requires: accelerate, auto-round, compressed-tensors, datasets, loguru, numpy, nvidia-ml-py, pillow, pyyaml, requests, torch, tqdm, transformers
+Required-by: 
+---
+Name: compressed-tensors
+Version: 0.17.2a20260707
+Summary: Library for utilization of compressed safetensors of neural network models
+Home-page: https://github.com/vllm-project/compressed-tensors
+Author: The vLLM Project
+Author-email: vllm-questions@lists.berkeley.edu
+License: Apache 2.0
+Location: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages
+Requires: loguru, psutil, pydantic, torch, transformers
+Required-by: llmcompressor, vllm
+---
+Name: torch
+Version: 2.11.0
+Summary: Tensors and Dynamic neural networks in Python with strong GPU acceleration
+Home-page: https://pytorch.org
+Author: 
+Author-email: PyTorch Team <packages@pytorch.org>
+License: BSD-3-Clause
+Location: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages
+Requires: cuda-bindings, cuda-toolkit, filelock, fsspec, jinja2, networkx, nvidia-cudnn-cu13, nvidia-cusparselt-cu13, nvidia-nccl-cu13, nvidia-nvshmem-cu13, setuptools, sympy, triton, typing-extensions
+Required-by: accelerate, auto-round, compressed-tensors, flashinfer-python, humming-kernels, llmcompressor, quack-kernels, tilelang, tokenspeed-mla, torch_c_dlpack_ext, torchvision, vllm, xgrammar
+---
+Name: transformers
+Version: 5.12.1
+Summary: Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training.
+Home-page: https://github.com/huggingface/transformers
+Author: The Hugging Face team (past and future) with the help of all our contributors (https://github.com/huggingface/transformers/graphs/contributors)
+Author-email: transformers@huggingface.co
+License: Apache 2.0 License
+Location: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages
+Requires: huggingface-hub, numpy, packaging, pyyaml, regex, safetensors, tokenizers, tqdm, typer
+Required-by: auto-round, compressed-tensors, llmcompressor, vllm, xgrammar
+torch_cuda_build=13.0
+torch_cuda_device_count=8
+0, NVIDIA H100 80GB HBM3, 580.126.09
+1, NVIDIA H100 80GB HBM3, 580.126.09
+2, NVIDIA H100 80GB HBM3, 580.126.09
+3, NVIDIA H100 80GB HBM3, 580.126.09
+4, NVIDIA H100 80GB HBM3, 580.126.09
+5, NVIDIA H100 80GB HBM3, 580.126.09
+6, NVIDIA H100 80GB HBM3, 580.126.09
+7, NVIDIA H100 80GB HBM3, 580.126.09

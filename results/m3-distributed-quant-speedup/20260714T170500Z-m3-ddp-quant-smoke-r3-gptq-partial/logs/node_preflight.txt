@@ -1,0 +1,18 @@
+MemTotal:       2113433132 kB
+MemAvailable:   2079300464 kB
+SwapTotal:       8388604 kB
+SwapFree:        2151232 kB
+Shmem:            668536 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+Filesystem         1B-blocks       Used     Available Use% Mounted on
+tmpfs          1082077761536 6257586176 1075820175360   1% /dev/shm
+0, GPU-6770fac3-efa2-e4c9-622b-daff202fd48c, 0, 81559
+1, GPU-abc6018b-29fd-8ab7-9272-4e4d6d46b62a, 0, 81559
+2, GPU-a4115641-539a-050e-8bd6-a7c8021d8581, 0, 81559
+3, GPU-aa170f67-9aa5-4210-ad8d-ac23f0a34f88, 0, 81559
+4, GPU-e501572d-1aec-39ab-6403-bb99b96d06ff, 0, 81559
+5, GPU-c41f6f8a-79d4-4bd4-4e5a-2d4ee61759d0, 0, 81559
+6, GPU-602f3d9d-e6f7-d174-51a9-c6dc9ddc7af7, 0, 81559
+7, GPU-f9c5ae77-c90e-eba9-cea6-dd8e891c0934, 0, 81559
+torch_cuda_device_count=8

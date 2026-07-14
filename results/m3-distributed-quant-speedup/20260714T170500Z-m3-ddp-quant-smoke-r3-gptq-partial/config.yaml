@@ -1,0 +1,146 @@
+name: minimax_m3_distributed_smoke
+model:
+  id: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  device_map: auto_offload
+  offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-quant-smoke/20260714T170500Z-m3-ddp-quant-smoke-r3/gptq
+  max_memory:
+    cpu: 1000000000000
+  dtype: bfloat16
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  ignore:
+  - lm_head
+  - re:.*vision_tower.*
+  - re:.*multi_modal_projector.*
+  - re:.*patch_merge_mlp.*
+  - re:.*mlp[.]gate$
+  - re:.*block_sparse_moe[.]gate$
+  - re:.*mlp[.]shared_experts[.].*
+  - re:.*block_sparse_moe[.]shared_experts[.].*
+  - re:.*self_attn[.].*
+  - re:.*layers[.][0-2][.].*
+  - re:.*language_model[.]layers[.](?!(?:3|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*
+  smoothquant_strength: 0.8
+  awq_duo_scaling: true
+  gptq_dampening_frac: null
+  sample_generation: false
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 8
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets:
+  - MiniMaxM3VLDecoderLayer
+  pipeline: sequential
+serve:
+  enabled: false
+  tensor_parallel_size: 1
+  enable_expert_parallel: false
+  block_size: null
+  kv_cache_dtype: null
+  max_model_len: 4096
+  gpu_memory_utilization: 0.9
+  enforce_eager: false
+  disable_custom_all_reduce: false
+  vllm_kwargs: {}
+  extra_args: []
+  sglang_kwargs: {}
+  sglang_compat_fallbacks: false
+  prompt: The capital of France is
+eval:
+  enabled: false
+  baseline: null
+  recovery_threshold: 0.94
+  max_ppl_increase: 0.1
+  backend: vllm
+  apply_chat_template: false
+  fewshot_as_multiturn: false
+  enable_thinking: null
+  think_end_token: null
+  gen_kwargs: null
+  lm_eval_batch_size: auto
+  log_samples: true
+  samples_dir: null
+  samples_manifest: null
+  bootstrap_seed: 42
+  bootstrap_iters: 10000
+  tasks:
+  - name: wikitext
+    metric: word_perplexity,none
+    num_fewshot: 0
+    limit: null
+    higher_is_better: false
+  - name: mmlu
+    metric: acc,none
+    num_fewshot: 5
+    limit: null
+    higher_is_better: true
+  - name: arc_challenge
+    metric: acc_norm,none
+    num_fewshot: 25
+    limit: null
+    higher_is_better: true
+  - name: hellaswag
+    metric: acc_norm,none
+    num_fewshot: 10
+    limit: null
+    higher_is_better: true
+  - name: winogrande
+    metric: acc,none
+    num_fewshot: 5
+    limit: null
+    higher_is_better: true
+  - name: gsm8k
+    metric: exact_match,strict-match
+    num_fewshot: 5
+    limit: null
+    higher_is_better: true
+  - name: truthfulqa_mc2
+    metric: acc,none
+    num_fewshot: 0
+    limit: null
+    higher_is_better: true
+  - name: bbh
+    metric: exact_match,get-answer
+    num_fewshot: 3
+    limit: null
+    higher_is_better: true
+agentic:
+  enabled: false
+  harness: tau2
+  tau2_dir: null
+  calibration_script: null
+  domain: telecom
+  split: small
+  num_tasks: null
+  max_conc: 5
+  num_trials: 1
+  thinking: 'off'
+  agent_base: null
+  agent_model: null
+  user_base: null
+  user_model: null
+  user_key_file: null
+  save_to: evalsuite_agentic
+  max_steps: 50
+  timeout: 900
+  seed: 42
+compare:
+  flip_task_metrics:
+    mmlu: acc
+    arc_challenge: acc_norm
+    hellaswag: acc_norm
+    winogrande: acc
+    gsm8k: exact_match
+    truthfulqa_mc2: acc
+    bbh: exact_match
+  perplexity_tasks:
+  - wikitext
+  perplexity_metric: word_perplexity
+  agentic_reward_threshold: 1.0
+output_dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T170500Z-m3-ddp-quant-smoke-r3/gptq

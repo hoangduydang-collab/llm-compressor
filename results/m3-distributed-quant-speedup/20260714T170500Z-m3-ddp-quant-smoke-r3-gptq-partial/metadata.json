@@ -1,0 +1,35 @@
+{
+  "run_slug": "MiniMax-M3-gptq-W4AFP8",
+  "created_utc": "2026-07-14T17:07:48.429697+00:00",
+  "model_id": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+  "method": "gptq",
+  "scheme": "W4AFP8",
+  "git_sha": "f481561945dc7fd881333f3cb8e1c6c2e32878e6",
+  "python": "3.12.13",
+  "platform": "Linux-5.15.0-174-generic-x86_64-with-glibc2.35",
+  "packages": {
+    "llmcompressor": "0.1.dev3101+g46e6ba4",
+    "compressed-tensors": "0.17.2a20260707",
+    "transformers": "5.12.1",
+    "vllm": "0.24.0",
+    "lm_eval": "0.4.12"
+  },
+  "gpu": {
+    "torch": "2.11.0+cu130",
+    "cuda_available": true,
+    "device_count": 8,
+    "device_name": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0"
+  },
+  "distributed": {
+    "enabled": true,
+    "rank": 0,
+    "world_size": 8,
+    "local_rank": 0,
+    "slurm_job_id": "12923",
+    "slurm_step_id": "0",
+    "node": null,
+    "cuda_current_device": 0,
+    "cuda_device_name": "NVIDIA H100 80GB HBM3"
+  }
+}

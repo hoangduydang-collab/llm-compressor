@@ -38,13 +38,30 @@ bespoke files are now shelved.
 
 ## Roles
 
-- **Planner** (design + verify, local, CPU-only): investigates, plans, implements
-  and unit-tests locally, writes handoffs. Reads reputable sources and existing
-  code before building. On `duy-branch`, commit + push after finishing an
-  implementation without being asked.
-- **Executor** (cluster, GPU): runs the cluster/GPU jobs the planner hands off.
-  The planner must not assume GPU access; diagnostics must not allocate GPUs for
-  full quality eval / re-quantization without cause.
+- **Planner — brain and decision owner** (stronger agent resources; local,
+  CPU-only; no cluster access): owns the heavy reasoning work — research,
+  architecture, hypothesis selection, experiment design, local implementation and
+  tests, diagnosis, returned-evidence interpretation, and next-step decisions.
+  Planner instructions must minimize executor-side dynamic reasoning. Reads
+  reputable sources and existing code before building. On `duy-branch`, commit +
+  push after finishing an implementation without being asked.
+- **Executor — cluster hands and evidence owner** (constrained agent resources;
+  direct access to 15+ 8×H100 nodes): runs the planner's prepared cluster/GPU
+  work, monitors it, preserves raw evidence, and returns complete results. The
+  executor may reason enough to execute safely and capture failures, but does not
+  redesign experiments or make strategic decisions unless explicitly authorized.
+
+The planner must not assume GPU access. The executor's cluster access is not a
+reason to delegate open-ended analysis to it, and diagnostics must not allocate
+GPUs for full quality evaluation or re-quantization without cause.
+
+## Planner–executor protocol
+
+Both roles must read and follow `PLANNER_EXECUTOR_PROTOCOL.md`. It is the
+repo-wide source of truth for workflow states, decision authority, execution
+packets, evidence returns, retries, deviations, and stop conditions.
+Task-specific handoffs supply the experiment details; they do not override the
+general protocol unless they explicitly name and justify an exception.
 
 ## Handoffs
 
@@ -52,3 +69,7 @@ Cross-session/agent state lives in the repo (a fresh agent does not see prior
 chat or personal memory). Current speed-up conclusion + next steps are in the
 top "HANDOFF" section of `M3_QUANT_SPEEDUP_PLAN.md`. Other `*_HANDOFF.md` files
 hold task-specific executor procedures.
+
+Every new or materially revised planner/executor handoff must use the canonical
+packet contract. When a handoff is replaced, label the old instructions
+`SUPERSEDED` or `HISTORICAL` and point directly to the one active packet.

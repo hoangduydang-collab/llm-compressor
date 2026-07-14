@@ -217,6 +217,45 @@ probe. Full evidence remains on NFS:
 - `/mnt/nfs/hoangduy/results/m3-safe-diagnostic-full/20260714T050000Z-m3-diag-heavy-sequential`
 - `/mnt/nfs/hoangduy/results/m3-safe-diagnostic-full/20260714T050000Z-m3-diag-light-sequential`
 
+#### Root cause + fix (planner, this revision): float32 `linspace` index overshoot
+
+The `note_scale` assert is a **bug in the diagnostic probe itself**, not in native
+quantization, the MoE forward, or the sequential fix. The sketch-index tensor was
+built with `torch.linspace(0, numel-1, steps=count)`, which defaults to **float32**.
+Float32 cannot represent integers above `2**24` (16,777,216) exactly, so for large
+weights the rounded endpoint overshoots to `numel` — one index past the end — and
+`index_select` raises a device-side assert on CUDA. Verified on CPU: for the exact
+MiniMax-M3 per-expert numels the naive `linspace(...).round().long().max()` returns
+`numel`, off by +1.
+
+This explains every observed fact:
+- **Layer 3 onset.** Dense layers 0–2 have smooth-layer weights `<2**24` (e.g. the
+  6144 layernorm, ~9.4M dense proj) → no overshoot → complete. Layer 3 is the first
+  MoE layer; its per-expert up/down-proj smooth weights are 18.9M / 37.7M elements
+  `>2**24` → overshoot → assert.
+- **Both lanes identical.** `note_scale` runs in both light and heavy modes;
+  fake-quant runs only in heavy. The common failure ⇒ the shared `note_scale`
+  index build, exactly as observed.
+- **`CUDA_LAUNCH_BLOCKING=1` was effective**, so the cited line 609 is the true
+  culprit (not a stale async assert), and `_compute_best_scale` returned cleanly
+  before it — the native AWQ grid-search forward is fine.
+- **Safe production lanes are unaffected**: they use the stock `AWQModifier` with no
+  `note_scale`, which is why `safe-nosmooth` reached 108/128.
+
+Fixed at `pipeline/m3_guarded_full.py` by replacing both linspace call sites
+(`note_scale` and `deterministic_sketch`, which had the same latent bug on
+`module.weight`) with a new int64 helper `_evenly_spaced_indices(numel, count,
+device)` — exact integer round-to-nearest plus a `clamp_(0, numel-1)` guard, no
+float at all. Regression tests
+(`test_sketch_indices_stay_in_bounds_above_float32_integer_limit`,
+`test_deterministic_sketch_does_not_assert_above_float32_integer_limit`) assert the
+crashing numels now stay in bounds and document the old overshoot.
+
+**Executor action:** re-run both diagnostic lanes at this revision. Expectation:
+they now progress past layer 3 through all 60 sparse layers (or surface a *genuine*
+downstream signal). No architectural change needed; the native AWQ smoothing path
+was never the problem.
+
 The new controller first runs the pre-quantization compatibility gate and real
 two-root trace smoke. It then starts five jobs concurrently, with every job in
 its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:

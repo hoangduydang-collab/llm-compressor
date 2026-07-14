@@ -49,6 +49,25 @@ def _as_tensor(value: Any) -> torch.Tensor:
     raise TypeError(f"no tensor in {type(value).__name__}")
 
 
+def _evenly_spaced_indices(numel: int, count: int, device: Any) -> torch.Tensor:
+    """Evenly spaced [0, numel-1] index tensor, both endpoints included.
+
+    Uses int64 arithmetic instead of ``torch.linspace``: linspace defaults to
+    float32, which cannot represent integers above 2**24 exactly, so for large
+    tensors (e.g. MiniMax-M3 per-expert weights of 18.9M-37.7M elements) the
+    rounded endpoint overshoots to ``numel`` -- one past the end -- and the
+    downstream ``index_select`` raises a CUDA device-side assert. This is why
+    the diagnostic died at layer 3 (the first MoE layer) after the dense layers
+    0-2 (whose smooth weights are <2**24) passed. Integer math + clamp is exact.
+    """
+    if count <= 1:
+        return torch.zeros(max(count, 0), dtype=torch.long, device=device)
+    steps = torch.arange(count, device=device, dtype=torch.long)
+    # round(step * (numel-1) / (count-1)) with integer round-to-nearest.
+    indices = (steps * (numel - 1) + (count - 1) // 2) // (count - 1)
+    return indices.clamp_(0, numel - 1)
+
+
 def deterministic_sketch(
     value: Any, *, max_values: int = DEFAULT_SKETCH_VALUES
 ) -> torch.Tensor:
@@ -57,11 +76,7 @@ def deterministic_sketch(
     if tensor.numel() == 0:
         raise ValueError("cannot sketch an empty tensor")
     count = min(int(max_values), tensor.numel())
-    indices = (
-        torch.linspace(0, tensor.numel() - 1, steps=count, device=tensor.device)
-        .round()
-        .long()
-    )
+    indices = _evenly_spaced_indices(tensor.numel(), count, tensor.device)
     return tensor.index_select(0, indices).float().cpu()
 
 
@@ -601,11 +616,7 @@ class FullGuardController:
         scale = scales.detach().float().to(weight.device)
         flat = weight.reshape(-1)
         count = min(DEFAULT_SKETCH_VALUES, flat.numel())
-        indices = (
-            torch.linspace(0, flat.numel() - 1, steps=count, device=flat.device)
-            .round()
-            .long()
-        )
+        indices = _evenly_spaced_indices(flat.numel(), count, flat.device)
         before = flat.index_select(0, indices)
         if weight.ndim == 1:
             applied_scale = scale.index_select(0, indices)

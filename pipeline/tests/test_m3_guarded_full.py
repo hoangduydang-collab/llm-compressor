@@ -9,6 +9,7 @@ from pipeline.m3_guarded_full import (
     FullGuardController,
     GuardedRunAbort,
     LayerEvidenceWriter,
+    _evenly_spaced_indices,
     _fake_quant_input_descriptor,
     aggregate_runs,
     build_guarded_recipe,
@@ -63,6 +64,40 @@ def test_deterministic_sketch_is_bounded_and_repeatable():
     assert first.shape == (64,)
     assert torch.equal(first, second)
     assert first[0] == 0 and first[-1] == 9999
+
+
+def test_sketch_indices_stay_in_bounds_above_float32_integer_limit():
+    # torch.linspace defaults to float32, which cannot represent integers above
+    # 2**24 exactly, so its rounded endpoint overshoots to `numel` -- one past
+    # the end -- and index_select raises a CUDA device-side assert. This is the
+    # bug that killed the diagnostic at layer 3 (first MoE layer): dense layers
+    # 0-2 have smooth weights <2**24, MoE per-expert weights are 18.9M-37.7M.
+    for numel in (18_874_368, 37_748_736, 16_781_312, 30_000_000):
+        indices = _evenly_spaced_indices(numel, 4096, torch.device("cpu"))
+        assert int(indices.max()) == numel - 1  # exact upper endpoint, no +1
+        assert int(indices.min()) == 0
+        assert int(indices[0]) == 0 and int(indices[-1]) == numel - 1
+        # the naive float32 linspace this replaces DID overshoot here
+        naive = torch.linspace(0, numel - 1, steps=4096).round().long()
+        assert int(naive.max()) == numel  # documents the bug we fixed
+
+
+def test_sketch_indices_handle_small_and_degenerate_counts():
+    assert torch.equal(
+        _evenly_spaced_indices(1, 1, torch.device("cpu")),
+        torch.zeros(1, dtype=torch.long),
+    )
+    idx = _evenly_spaced_indices(5, 5, torch.device("cpu"))
+    assert torch.equal(idx, torch.arange(5))  # count==numel covers every element
+
+
+def test_deterministic_sketch_does_not_assert_above_float32_integer_limit():
+    # Regression: index_select must not receive an out-of-bounds index. Uses a
+    # sorted input so the sample must be non-decreasing and bracket both ends.
+    value = torch.arange(16_781_312, dtype=torch.float64)
+    sample = deterministic_sketch(value, max_values=4096)
+    assert sample.shape == (4096,)
+    assert torch.all(sample[1:] >= sample[:-1])
 
 
 def test_comparison_metrics_include_sign_flip_and_catastrophic_gates():

@@ -1,0 +1,13 @@
+index=0 arm=cyankiwi_awq/gpqa_diamond nodes=1 gpus=8
+index=1 arm=cyankiwi_awq/ifeval nodes=1 gpus=8
+index=2 arm=cyankiwi_awq/aime_2025 nodes=1 gpus=8
+index=3 arm=cyankiwi_awq/mmlu_pro nodes=1 gpus=8
+index=4 arm=cyankiwi_awq/gsm8k nodes=1 gpus=8
+index=5 arm=cyankiwi_awq/distributional_probe nodes=1 gpus=8
+index=6 arm=inhouse_gptq/gpqa_diamond nodes=1 gpus=8
+index=7 arm=inhouse_gptq/ifeval nodes=1 gpus=8
+index=8 arm=inhouse_gptq/aime_2025 nodes=1 gpus=8
+index=9 arm=inhouse_gptq/mmlu_pro nodes=1 gpus=8
+index=10 arm=inhouse_gptq/gsm8k nodes=1 gpus=8
+index=11 arm=inhouse_gptq/distributional_probe nodes=1 gpus=8
+sbatch --parsable --array=0-11%6 --nodes=1 --ntasks=1 --gpus-per-node=8 --exclusive --time=08:00:00 --output=results/m3-quality/20260714T145900Z-m3-paired-gptq-awq-task-isolated-r2/logs/production-%A_%a.out --error=results/m3-quality/20260714T145900Z-m3-paired-gptq-awq-task-isolated-r2/logs/production-%A_%a.err pipeline/slurm/run_m3_quality_eval_array_arm.sh --plan results/m3-quality/20260714T145900Z-m3-paired-gptq-awq-task-isolated-r2/production_launch_plan.json --run-root results/m3-quality/20260714T145900Z-m3-paired-gptq-awq-task-isolated-r2 --matrix pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml 

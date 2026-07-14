@@ -40,6 +40,8 @@ squeue -u hoangduy -o '%.18i %.12T %.10M %.24j %.14R'
 - Run root:
   `results/m3-quality/20260714T145900Z-m3-paired-gptq-awq-task-isolated-r2`
 - Preflight and manifest artifacts are under the run root.
+- `preflight.log` was not produced by the executor wrapper; the structured
+  preflight artifacts and successful continuation into the reuse check remain.
 - Smoke reuse result:
   `smoke_reuse_check.json` reports all six checks true.
 - Dry-run output:

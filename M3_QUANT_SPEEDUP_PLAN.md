@@ -167,9 +167,16 @@ Peak memory per rank ≈ one block's shard on GPU + a few shard files in rank-0 
 | Rank-0 sliding `param_buffer` shard streaming | Same, but discover shard filenames from the safetensors **index json** (not a hardcoded `-of-000163` pattern) |
 | FP8 dequant per block | **Drop** — MiniMax-M3 weights are bf16 (simpler) |
 | `first_k_dense_replace` dense/replicated path | Dense layers are **0–2** → `block_idx < 3` uses the replicated path |
-| `ep_size` gives per-rank 1/N **per-expert Linears** | MiniMax stores experts as **fused 3-D tensors** (`gate_up_proj[128,…]`) with no `ep_size`. Shard the fused expert dim `[rank*16:(rank+1)*16]` at load (rank 0 slices + sends). Mechanical. |
-| `ep_size` also enables an **expert-parallel forward (all-to-all)** so each rank's calibration tokens reach the expert that owns them | **The hard, load-bearing task (see §6).** MiniMax has no EP forward. With experts sharded, a rank cannot run `block(inputs)` end-to-end alone — it lacks 7/8 of the experts needed to (a) collect each expert's full Hessian and (b) reconstruct the full MoE output to propagate activations to the next block. We must add *some* inter-rank forward mechanism (EP all-to-all like MoE-Quant, **or** replicated router + all-gather of per-rank expert outputs). This is bigger than "slice the tensor." |
+| `ep_size` gives per-rank 1/N **per-expert Linears** | **De-risked (verified from HF `model.safetensors.index.json`).** The MiniMax-M3 *checkpoint* already stores experts per-expert — `…layers.N.block_sparse_moe.experts.{i}.w{1,2,3}.weight` (w1=gate, w3=up, w2=down) — **not** fused on disk (the fused `gate_up_proj[128,…]` is only a runtime module form). So the loader shards by expert index `i` over per-expert keys, exactly like MoE-Quant. Mechanical, not a fused-tensor problem. 59 shards, `model-XXXXX-of-00059.safetensors`. |
+| `ep_size` also enables an **expert-parallel forward (all-to-all)** so each rank's calibration tokens reach the expert that owns them | **The load-bearing task, now chosen: implement the EP all-to-all forward.** With experts sharded, a rank cannot run `block(inputs)` alone — it lacks 7/8 of the experts needed to (a) collect each expert's full Hessian and (b) rebuild the full MoE output for activation propagation. **Dispatch/combine core built + CPU-tested** (`pipeline/ep_moe.py`; parity vs dense across world_size 1/2/4/8, top-k 1–4, with routing bias + shared expert). Remaining: swap the simulated per-rank loop for real `all_to_all_single` under `torchrun`/nccl, and wire in MiniMax's exact `block_sparse_moe` forward (on-cluster modeling file). |
 | Custom Triton GPTQ kernel (~10×) | Optional later; start with llm-compressor's `quantize_weight` |
+
+MiniMax-M3 MoE config (HF `config.json`, verified): 60 layers (dense 0–2, MoE
+3–59), `hidden=6144`, expert `intermediate=3072`, 128 experts, **top-4**,
+`scoring_func=sigmoid` + `use_routing_bias` (`e_score_correction_bias`),
+`routed_scaling_factor=2.0`, **1 always-on shared expert**, `swigluoai`
+(`alpha=1.702`, `limit=7.0`). The shared expert is replicated on every rank (a
+local dense add, no all-to-all).
 
 ### GPTQ-first (recommended)
 
@@ -238,14 +245,22 @@ than GPTQ.
    can actually work and mirrors MoE-Quant. Re-run:
    `python -m pipeline.bench_expert_scatter --experts 128 --mode all`. Decision
    rule unchanged: proceed only if the best real-parallel mode ≥ ~0.5×ceiling.
-2. **MoE-Quant-style sharded loader + per-rank GPTQ (the real design; see §4).**
-   `torchrun`-launched, one process per GPU. Adopt MoE-Quant's loader almost
-   verbatim (empty meta skeleton, rank-0 sliding shard streaming, per-block
-   `to_empty` → shard-send → quantize-local → `to("meta")`), with the four
-   MiniMax adaptations in §4 — the load-bearing one being **sharding the fused 3-D
-   expert tensor by rank** (no `ep_size` in the modeling code). Each rank runs
-   llm-compressor's `quantize_weight` on its ~16 resident experts; shared layers
-   take the replicated + `all_reduce` path.
+2. **MoE-Quant-style sharded loader + EP forward + per-rank GPTQ (the real design;
+   see §4).** `torchrun`-launched, one process per GPU. Adopt MoE-Quant's loader
+   almost verbatim (empty meta skeleton, rank-0 sliding shard streaming, per-block
+   `to_empty` → shard-send → quantize-local → `to("meta")`); sharding is by
+   per-expert checkpoint key `experts.{i}.w{1,2,3}` (de-risked — not fused on disk).
+
+   **EP all-to-all forward — dispatch/combine core DONE + CPU-tested**
+   (`pipeline/ep_moe.py`, `pipeline/tests/test_ep_moe.py`): `route` (MiniMax
+   sigmoid + routing-bias + scaling), `plan_dispatch` (per-rank split sizes +
+   permutation for `all_to_all_single`), `ep_moe_simulated` (route → dispatch →
+   local experts → combine), matched bit-for-bit against a dense reference across
+   world_size 1/2/4/8 including the shared expert. Remaining (GPU): replace the
+   simulated per-rank loop with real `all_to_all_single`/nccl under `torchrun`,
+   and bind to MiniMax's on-cluster `block_sparse_moe` forward. Then each rank runs
+   llm-compressor's `quantize_weight` on its ~16 resident experts; shared/attention
+   /router layers take the replicated + `all_reduce` path.
 
    *Reusable from the abandoned single-process scatter:* `pipeline/expert_scatter.py`
    still applies as each rank's **local** per-expert quantization loop (its
@@ -269,18 +284,21 @@ than GPTQ.
   A shared-interpreter thread pool cannot parallelize GPTQ's GIL-bound per-column
   launch loop (0.88× measured). Decision: one OS process per GPU (MoE-Quant
   model). CUDA streams were considered and rejected (don't fix a GIL-bound loop).
-- **Sharded forward mechanism (the true crux, bigger than tensor-slicing)**:
-  MoE-Quant's expert sharding rides on `ep_size`'s all-to-all forward, so each
-  rank's tokens reach the owning expert. MiniMax has no EP forward. With experts
-  sharded, a rank can't run the block forward alone — it needs cross-rank routing
-  both to gather each expert's full Hessian and to reconstruct the full MoE output
-  for activation propagation. Decide early between: (a) add an EP all-to-all
-  forward (routing-heavy, more code), or (b) replicate the router on every rank
-  and `all_gather` per-rank expert outputs to rebuild the activation (simpler
-  comm, extra compute). Prototype (b) on a tiny 2-layer config first; it is likely
-  the lower-risk path. **Until this is settled, the speedup number is unproven.**
-- **Fused-expert tensor slicing**: mechanical (`gate_up_proj[rank*16:…]`), but the
-  skeleton must be built sharded or the slice managed outside the module.
+- **Sharded forward mechanism (chosen: EP all-to-all; core done)**: the
+  dispatch/combine bookkeeping — the part that gets EP forwards wrong — is built
+  and CPU-parity-tested in `pipeline/ep_moe.py`. Remaining risk is in the GPU
+  integration: real `all_to_all_single` split-size handling under nccl, and
+  binding to MiniMax's exact `block_sparse_moe` forward from the on-cluster
+  modeling file (which I cannot access locally — the HF repo ships only the
+  config, no `modeling_*.py`). Validate on a tiny 2-layer config before any full
+  run. Until the GPU integration lands, the end-to-end speedup is unproven.
+- **Fused-expert tensor slicing — de-risked**: the checkpoint stores experts
+  per-expert (`experts.{i}.w{1,2,3}`), so sharding is by expert index like
+  MoE-Quant; the fused runtime tensor is not involved at load.
+- **Router-weight normalization**: `ep_moe.route` uses a DeepSeek-V3-style
+  normalize-then-scale; confirm against MiniMax's modeling forward (config gives
+  sigmoid + bias + `routed_scaling_factor` but not the exact norm). Dispatch parity
+  is independent of this, but the final numbers are not.
 - **Numerical parity**: sharded multi-rank output must match single-rank serial
   within GPTQ tolerance. Gate on the tiny-model parity test before any full run.
 - **Distributed loader correctness**: rank-0 shard streaming + send/recv of expert

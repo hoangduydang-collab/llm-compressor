@@ -106,6 +106,30 @@ Rerun only the two diagnostic lanes (`LANE_FILTER` is per-lane; run
 `lanes/diag-heavy-offsetfix/fake_quant_probe.json` plus the lane log's now-synchronous
 traceback. Do not re-run the safe lanes for this; they are probe-free.
 
+### 2026-07-14 light-lane evidence for planner
+
+The requested light-lane artifacts were inspected directly:
+
+- `lanes/diag-light-offsetfix/failure.json`
+  - `status: aborted`
+  - `message: oneshot returned without all decoder layer guards: []`
+  - `completed_layers: []`
+- `lanes/diag-light-offsetfix/diagnostic_stages.json`
+  - `post_native_quantization`: complete, `decoder_layers` contains all
+    layers `0..59`
+  - `post_enable_quantization`: complete, `decoder_layers` contains all
+    layers `0..59`
+  - no later stage was recorded
+
+Therefore this is definitively the zero-layer case for the guard result, but
+the staged bookkeeping did see all 60 decoder layers through enablement. This
+does not support a model-load or global decoder-module discovery failure. It
+localizes the next investigation to the transition after enablement—most
+likely the `after_propagation`/layer-guard bookkeeping path, including the
+`_layers_for_modules` module-name/identity lookup used there. No hardening
+change was made in this executor step; this evidence is returned for planner
+analysis.
+
 The new controller first runs the pre-quantization compatibility gate and real
 two-root trace smoke. It then starts five jobs concurrently, with every job in
 its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:

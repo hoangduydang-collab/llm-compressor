@@ -124,27 +124,27 @@ def _quantize_resident(payload: dict, blocksize: int) -> None:
         torch.cuda.synchronize(dev)
 
 
-# ----- process-per-GPU mode (own interpreter per worker -> no shared GIL) -----
-_PROC_STATE: dict = {}
+# ----- process-per-GPU mode (own interpreter per rank -> no shared GIL) -----
+# One OS process per GPU, launched explicitly (NOT via ProcessPoolExecutor, which
+# lazily reuses a single worker for fast tasks and would leave most GPUs idle --
+# a measurement artifact). This is also the real torchrun model: rank r pins
+# cuda:r, holds its expert shard, and quantizes it independently.
 
 
-def _proc_init(dev_queue, blocksize: int, dtype_name: str) -> None:
+def _proc_worker(rank: int, n_local: int, blocksize: int, dtype_name: str, result_q) -> None:
     import torch as _t
 
-    device = _t.device(dev_queue.get())
+    device = _t.device(f"cuda:{rank}")
     _t.cuda.set_device(device)
     dtype = getattr(_t, dtype_name)
-    # One resident expert per worker (its GPU already holds the data), generated
-    # once here -- outside the timed region -- and reused per task.
-    _PROC_STATE["payload"] = _make_resident_payload(device, dtype, seed=int(device.index))
-    _PROC_STATE["blocksize"] = blocksize
-    _quantize_resident(_PROC_STATE["payload"], blocksize)  # warm up kernels/JIT
-
-
-def _proc_task(_i: int) -> float:
+    payload = _make_resident_payload(device, dtype, seed=rank)  # pre-timed data
+    _quantize_resident(payload, blocksize)  # warm up kernels/JIT
+    _t.cuda.synchronize(device)
     t0 = time.perf_counter()
-    _quantize_resident(_PROC_STATE["payload"], _PROC_STATE["blocksize"])
-    return time.perf_counter() - t0
+    for _ in range(n_local):
+        _quantize_resident(payload, blocksize)
+    _t.cuda.synchronize(device)
+    result_q.put((rank, time.perf_counter() - t0))
 
 
 def run_benchmark(
@@ -214,34 +214,50 @@ def run_benchmark(
             import multiprocessing as mp
 
             ctx = mp.get_context("spawn")
-            dev_queue = ctx.Queue()
-            for d in range(n_dev):
-                dev_queue.put(f"cuda:{d}")
+            result_q = ctx.Queue()
             dtype_name = str(dtype).split(".")[-1]
+            # split n_experts across ranks (remainder to the low ranks)
+            base, extra = divmod(n_experts, n_dev)
+            counts = [base + (1 if r < extra else 0) for r in range(n_dev)]
             t0 = time.perf_counter()
-            with ProcessPoolExecutor(
-                max_workers=n_dev, mp_context=ctx,
-                initializer=_proc_init, initargs=(dev_queue, blocksize, dtype_name),
-            ) as pool:
-                per_task = list(pool.map(_proc_task, range(n_experts)))
-            processes_s = time.perf_counter() - t0
-            sp = (serial_s / processes_s) if serial_s else None
+            procs = [
+                ctx.Process(target=_proc_worker,
+                            args=(r, counts[r], blocksize, dtype_name, result_q))
+                for r in range(n_dev) if counts[r] > 0
+            ]
+            for p in procs:
+                p.start()
+            per_rank = [result_q.get() for _ in procs]  # collect before join
+            for p in procs:
+                p.join()
+            processes_wall_s = time.perf_counter() - t0
+            # steady-state parallel compute = slowest rank's loop (spawn/CUDA-init
+            # is a one-time cost in production, not paid per layer)
+            max_rank_compute_s = max(t for _, t in per_rank)
+            sp_wall = (serial_s / processes_wall_s) if serial_s else None
+            sp_compute = (serial_s / max_rank_compute_s) if serial_s else None
             results["processes"] = {
-                "compute_s": processes_s,
-                "sum_worker_compute_s": sum(per_task),
-                "speedup_vs_serial": sp,
-                "note": "wall-clock includes worker spawn + CUDA init overhead "
-                        "(fixed cost, amortizes over a full 57-layer run)",
+                "wall_s": processes_wall_s,
+                "max_rank_compute_s": max_rank_compute_s,
+                "per_rank_compute_s": {r: t for r, t in sorted(per_rank)},
+                "speedup_wall_vs_serial": sp_wall,
+                "speedup_compute_vs_serial": sp_compute,
+                "note": "wall includes one-time spawn + CUDA init; "
+                        "speedup_compute (vs slowest rank's loop) is the "
+                        "steady-state per-layer parallelism the production run sees",
             }
             _write_json(out_path, results)
-            _log(f"[procs   {n_dev} GPU] {processes_s:7.2f}s"
-                 + (f"  speedup {sp:.2f}x" if sp else ""))
+            _log(f"[procs   {n_dev} GPU] wall {processes_wall_s:7.2f}s  "
+                 f"compute {max_rank_compute_s:7.2f}s"
+                 + (f"  speedup(compute) {sp_compute:.2f}x" if sp_compute else ""))
 
-        # === Verdict from the best real-parallel mode we measured. ===
-        best_sp = max(
-            [results.get(m, {}).get("speedup_vs_serial") or 0.0 for m in ("threads", "processes")],
-            default=0.0,
-        )
+        # === Verdict from the best real-parallel speedup we measured. ===
+        # processes: use steady-state compute speedup (spawn is one-time in prod).
+        candidates = [
+            results.get("threads", {}).get("speedup_vs_serial") or 0.0,
+            results.get("processes", {}).get("speedup_compute_vs_serial") or 0.0,
+        ]
+        best_sp = max(candidates, default=0.0)
         results["best_speedup_vs_serial"] = best_sp
         results["ceiling"] = n_dev
         results["real_parallelism"] = best_sp >= 0.5 * n_dev

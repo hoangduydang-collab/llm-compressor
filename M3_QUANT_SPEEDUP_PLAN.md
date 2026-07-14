@@ -1,9 +1,10 @@
 # MiniMax-M3 Quantization Speed-Up Plan (MoE-Quant–inspired)
 
-Status: **design / Phase 1 runnable.** Speed engineering is still gated on a
-quality-verified recipe (see §0), but the Phase-1 premise/concurrency benchmark
-(`pipeline/bench_expert_scatter.py`) has no such gate and runs now. Planner
-document; the executor owns cluster/GPU runs.
+Status: **design (v2: load-time sharding) / Phase 1 measured.** The Phase-1 bench
+retired the single-process thread-pool scatter (0.88×, GIL-bound) and the design
+pivoted to MoE-Quant's one-process-per-GPU load-time expert sharding (§4). Speed
+engineering is still gated on a quality-verified recipe (§0). Planner document;
+the executor owns cluster/GPU runs.
 
 > **2026-07-14 decision log.** The two in-house `safe-*` AWQ full-calibration
 > runs were cancelled: at ~half done after 15h they projected ~27–34h against a
@@ -112,46 +113,79 @@ port (see §5).
 | `config.ep_size` expert-parallel forward (all-to-all) | No EP support in modeling code | **Not needed** — one layer fits on one GPU; shard only the *quantization*, not the forward |
 | GPTQ, CausalLM, DeepSeek-hardcoded (`assert architectures==["DeepseekV3ForCausalLM"]`, 163-shard names, `first_k_dense_replace`) | AWQ+GPTQ, VL wrapper (`MiniMaxM3SparseForConditionalGeneration`) | Reimplement the ideas inside llm-compressor's pipeline; target `model.model.language_model.layers.N` |
 
-## 4. Proposed design
+## 4. Proposed design (revised 2026-07-14: load-time sharding, not scatter)
 
-Adopt MoE-Quant's three load-bearing ideas, adapted to a **single process** (our
-model fits in host RAM exactly once; multi-process would need 8 CPU copies ≈
-7.4 TB → infeasible):
+**Correction to the earlier design.** The Phase-1 bench (§5) killed the
+single-process thread-pool scatter: GPTQ's per-expert cost is a Python-driven
+per-column loop, and one interpreter's GIL serializes its kernel launches, so a
+thread pool over 8 GPUs gave 0.88× (slower than serial). The fix is not CUDA
+streams (they don't cure a GIL-bound launch loop) — it is **one OS process per
+GPU, each with its own interpreter**, which is exactly what MoE-Quant does.
 
-1. **Block streaming + offload** (already provided by llm-compressor's sequential
-   pipeline): one decoder layer onloaded to GPU at a time, model otherwise on CPU.
-2. **Per-block expert-scatter quantization** (new): for the current layer, place
-   its 128 (linearized) experts across the 8 GPUs (~16/GPU) and run their
-   per-expert scale/Hessian-quantization **concurrently**. CUDA ops release the
-   GIL, so a small thread pool (or per-device CUDA streams) over the 8 devices
-   yields real parallelism. Gather the quantized weights back.
-3. **Shared / non-expert layers** (attention, router gate, shared expert, and —
-   for AWQ — the single shared-input smoothing mapping) stay on the existing
-   single-GPU path; for the AWQ shared-input mapping, keep the current
-   data-parallel-style stats aggregation. These are O(1) per layer, not O(128).
+**The "7.4 TB / 8 CPU copies" objection that pushed the single-process design was
+wrong.** It assumed each process replicates the *full* model. MoE-Quant proves
+you never do that: each rank materializes only its **disjoint 1/N expert shard**,
+streamed from disk, and the full model is never resident anywhere. So the
+multi-process path is both feasible and the proven one.
+
+### How MoE-Quant loads a 671B model without holding it in one process
+
+Verified by reading `quant.py` + `loading_utils.py` (`scratchpad/moequant/`):
+
+1. **Empty skeleton.** `config.ep_size = world_size`, then
+   `with init_empty_weights(): AutoModelForCausalLM.from_config(...)` — the whole
+   model is built on the `meta` device (zero real weight bytes). Because of
+   `ep_size`, each rank's expert submodules are sized to only `1/world_size` of
+   the experts, so a rank's `block.state_dict()` keys *define its shard*.
+2. **Only rank 0 touches disk.** It streams safetensor shard files into a CPU
+   `param_buffer` dict (`safe_open` + `get_tensor`), pulling the *next* shard only
+   when the current block's keys aren't all present yet (a sliding window, not the
+   whole model).
+3. **Per block** (`for block_idx, block in enumerate(model.model.layers)`):
+   - rank 0 assembles the block's state dict from `param_buffer`, dequantizes
+     FP8→bf16 (DeepSeek-specific; **we skip this — MiniMax-M3 is already bf16**);
+   - `block.to_empty(device=cuda:rank)` materializes just this block's storage;
+   - **dense block** (`block_idx < first_k_dense_replace`): rank 0 loads it and
+     `broadcast`s to all ranks (replicated — these layers are small);
+   - **MoE block**: rank 0 slices the expert state dict per rank and `dist.send`s
+     each rank only its expert keys; each rank `recv`s and loads its shard.
+4. **Quantize.** Shared layers: Hessian `all_reduce`d, quantized on rank 0,
+   broadcast. Experts (`is_distributed=False`): each rank quantizes its own
+   resident experts with **zero communication** — the embarrassingly-parallel core.
+5. **Free and advance.** `block.to("meta")` + pop the block's keys from
+   `param_buffer` → both GPU and CPU RAM released; activations are offloaded to
+   CPU between blocks.
+
+Peak memory per rank ≈ one block's shard on GPU + a few shard files in rank-0 CPU
++ calibration activations. That is how 671B fits on 8×H100 with modest host RAM.
+
+### What we adopt vs. adapt for MiniMax-M3
+
+| MoE-Quant | MiniMax-M3 adaptation |
+|---|---|
+| `init_empty_weights` + `from_config` on meta | Same, via the VL wrapper; target `model.model.language_model.layers.N` |
+| Rank-0 sliding `param_buffer` shard streaming | Same, but discover shard filenames from the safetensors **index json** (not a hardcoded `-of-000163` pattern) |
+| FP8 dequant per block | **Drop** — MiniMax-M3 weights are bf16 (simpler) |
+| `first_k_dense_replace` dense/replicated path | Dense layers are **0–2** → `block_idx < 3` uses the replicated path |
+| `ep_size` gives per-rank 1/N **per-expert Linears** | MiniMax stores experts as **fused 3-D tensors** (`gate_up_proj[128,…]`) with no `ep_size`. Shard the fused expert dim `[rank*16:(rank+1)*16]` at load (rank 0 slices + sends). Mechanical. |
+| `ep_size` also enables an **expert-parallel forward (all-to-all)** so each rank's calibration tokens reach the expert that owns them | **The hard, load-bearing task (see §6).** MiniMax has no EP forward. With experts sharded, a rank cannot run `block(inputs)` end-to-end alone — it lacks 7/8 of the experts needed to (a) collect each expert's full Hessian and (b) reconstruct the full MoE output to propagate activations to the next block. We must add *some* inter-rank forward mechanism (EP all-to-all like MoE-Quant, **or** replicated router + all-gather of per-rank expert outputs). This is bigger than "slice the tensor." |
+| Custom Triton GPTQ kernel (~10×) | Optional later; start with llm-compressor's `quantize_weight` |
 
 ### GPTQ-first (recommended)
 
-Because GPTQ is the currently-verified recipe and its per-expert quantization is
-fully independent (a local Hessian per expert; no cross-expert scale), it maps
-onto expert-scatter with **zero** inter-expert communication — identical in
-spirit to MoE-Quant's `is_distributed=False` expert path. Plan:
-
-- Collect each expert's Hessian during one block forward on the (single) GPU
-  holding the block, capturing per-expert inputs (the sequential pipeline already
-  hooks these).
-- Scatter `{expert_weight, expert_hessian}` for the 128 experts across 8 GPUs.
-- Each GPU runs `quantize_weight` (llm-compressor's existing GPTQ core, or a
-  Triton kernel à la MoE-Quant for the ~10×) on its ~16 experts concurrently.
-- Gather `{qweight, scale, zero}`; write back; propagate activations; offload.
+GPTQ is the currently-verified recipe and its per-expert *quantization step* is
+fully independent (a local Hessian per expert; no cross-expert scale), so it is
+exactly MoE-Quant's `is_distributed=False` expert path: each rank quantizes its 16
+resident experts with no inter-rank comm. The comm is confined to the *forward*
+(Hessian collection + activation propagation) per the crux in §6, not the solve.
+Shared/attention/router layers take the replicated + `all_reduce` path.
 
 ### AWQ variant (only if AWQ becomes the chosen recipe)
 
-Same expert-scatter for the per-expert up→down mappings. The one shared-input
-mapping (post-attn-norm → all experts' gate/up, a single shared scale) is **not**
-expert-parallel; run it once data-parallel (all-reduce stats) as today. Expect a
-smaller win than GPTQ because that shared mapping's full-MoE forward is not
-sharded.
+Per-expert up→down mappings shard the same way. The single shared-input mapping
+(post-attn-norm → all experts' gate/up, one shared scale) is not expert-parallel;
+its full-MoE forward runs once with `all_reduce`d stats. Expect a smaller win
+than GPTQ.
 
 ### Expected speed-up (honest ceilings, not promises)
 
@@ -192,51 +226,67 @@ sharded.
    Raw artifacts:
    `results/m3-expert-scatter-bench/expert_scatter_bench.json` and
    `results/m3-expert-scatter-bench-20260714T0829Z.out`.
-2. **Expert-scatter GPTQ, single node.** Add a MoE-aware fast path to the GPTQ
-   modifier / sequential pipeline that, per decoder layer, dispatches the
-   linearized experts' `quantize_weight` calls across `cuda:0..7` concurrently
-   and gathers results. Keep it behind a flag (e.g. `M3_EXPERT_SCATTER=1`);
-   default off. Correctness gate: bit-identical (or within numerical tolerance)
-   quantized weights vs the serial path on a tiny model.
 
-   **Done (2026-07-14): device-agnostic orchestration core** in
-   `pipeline/expert_scatter.py` — `assign_devices` (largest-Hessian-first greedy
-   balance), `serial_quantize`/`scatter_quantize` (thread-pool dispatch, results
-   gathered by expert name, scheduling-order-independent), and
-   `default_gptq_quantize_fn` (lazy adapter to the real `quantize_weight`). CPU
-   bit-parity gate in `pipeline/tests/test_expert_scatter.py` (5 tests) proves
-   scatter == serial per expert across 1/4/8 workers and that there is no
-   cross-expert contamination. Rests on GPTQ's per-expert independence, so it
-   changes no quantization math.
+   **Bench v2 (schema_version=2): representativeness fix + process mode.** The v1
+   number was partly an artifact — 45% of the timed serial work was the bench
+   *fabricating* synthetic weights/Hessians on CPU, which the real pipeline never
+   does at quant time (weights are already on-GPU; the Hessian is accumulated in
+   the calibration forward). v2 moves all data generation OUTSIDE the timed region
+   (times only GPU-resident quant compute) and measures three modes:
+   `serial` / `threads` / `processes` (`--mode`). The **`processes`** mode
+   (one OS process per GPU, own interpreter → no shared GIL) is the mechanism that
+   can actually work and mirrors MoE-Quant. Re-run:
+   `python -m pipeline.bench_expert_scatter --experts 128 --mode all`. Decision
+   rule unchanged: proceed only if the best real-parallel mode ≥ ~0.5×ceiling.
+2. **MoE-Quant-style sharded loader + per-rank GPTQ (the real design; see §4).**
+   `torchrun`-launched, one process per GPU. Adopt MoE-Quant's loader almost
+   verbatim (empty meta skeleton, rank-0 sliding shard streaming, per-block
+   `to_empty` → shard-send → quantize-local → `to("meta")`), with the four
+   MiniMax adaptations in §4 — the load-bearing one being **sharding the fused 3-D
+   expert tensor by rank** (no `ep_size` in the modeling code). Each rank runs
+   llm-compressor's `quantize_weight` on its ~16 resident experts; shared layers
+   take the replicated + `all_reduce` path.
 
-   **Remaining (GPU-gated, after the Phase-1 bench verdict): modifier wiring.**
-   Relocate each expert onto its assigned device inside
-   `GPTQModifier.compress_module_list` using accelerate onload/offload, call the
-   scatter core, write params back with `update_offload_parameter`. This is the
-   part that touches offload accounting (cf. the FSDP2 reshard bug class) and
-   must be validated on GPU with a real small-model serial-vs-scatter parity run.
+   *Reusable from the abandoned single-process scatter:* `pipeline/expert_scatter.py`
+   still applies as each rank's **local** per-expert quantization loop (its
+   `serial_quantize` + the CPU bit-parity test carry over unchanged — within a
+   rank there is no GIL contention because there is nothing to parallelize
+   further). The thread-pool `scatter_quantize` path is retired.
+
+   Correctness gate: on a tiny 2-layer MoE config, the sharded multi-rank run must
+   produce quantized weights bit-identical (within GPTQ's numerical tolerance) to
+   a single-rank serial run.
 3. **Optional Triton GPTQ kernel** port (MoE-Quant `src/gptq_loop.py` +
-   `linalg_utils`) for the per-expert inner loop if step 2's gather isn't enough.
-4. **AWQ variant** (only if AWQ is chosen): expert-scatter the per-expert
-   mappings; keep the shared-input mapping data-parallel.
+   `linalg_utils`) for the per-expert inner loop if step 2 isn't enough.
+4. **AWQ variant** (only if AWQ is chosen): shard the per-expert mappings the same
+   way; keep the shared-input mapping replicated + `all_reduce`d.
 5. **Verify quality unchanged.** Re-run the paired eval (§0 harness) on the
    fast-path checkpoint; it must match the serial-path checkpoint within noise.
 
 ## 6. Risks / open questions
 
-- **Single-process 8-GPU concurrency**: GIL is released during CUDA kernels, but
-  Python-side per-expert setup (observer, packing) is serial. If setup dominates,
-  use per-device CUDA streams or a `ProcessPoolExecutor` sharing CPU-pinned
-  weights. Prototype early.
-- **Numerical parity**: expert-scatter must not change results vs serial. Gate on
-  a small-model bit-parity test before trusting a full run.
-- **Sequential-pipeline coupling**: the fast path must slot into the existing
-  onload/offload + activation-propagation loop without breaking offload
-  accounting (cf. the FSDP2 reshard bug class we've hit before).
-- **linearize_moe cost**: un-fusing 128 experts per layer itself has overhead; a
-  further optimization is to quantize the *fused* 3D tensors directly (batched
-  bmm over the expert dim), skipping linearization entirely — larger change,
-  deferred.
+- **RESOLVED — single-process 8-GPU concurrency**: the Phase-1 bench settled it.
+  A shared-interpreter thread pool cannot parallelize GPTQ's GIL-bound per-column
+  launch loop (0.88× measured). Decision: one OS process per GPU (MoE-Quant
+  model). CUDA streams were considered and rejected (don't fix a GIL-bound loop).
+- **Sharded forward mechanism (the true crux, bigger than tensor-slicing)**:
+  MoE-Quant's expert sharding rides on `ep_size`'s all-to-all forward, so each
+  rank's tokens reach the owning expert. MiniMax has no EP forward. With experts
+  sharded, a rank can't run the block forward alone — it needs cross-rank routing
+  both to gather each expert's full Hessian and to reconstruct the full MoE output
+  for activation propagation. Decide early between: (a) add an EP all-to-all
+  forward (routing-heavy, more code), or (b) replicate the router on every rank
+  and `all_gather` per-rank expert outputs to rebuild the activation (simpler
+  comm, extra compute). Prototype (b) on a tiny 2-layer config first; it is likely
+  the lower-risk path. **Until this is settled, the speedup number is unproven.**
+- **Fused-expert tensor slicing**: mechanical (`gate_up_proj[rank*16:…]`), but the
+  skeleton must be built sharded or the slice managed outside the module.
+- **Numerical parity**: sharded multi-rank output must match single-rank serial
+  within GPTQ tolerance. Gate on the tiny-model parity test before any full run.
+- **Distributed loader correctness**: rank-0 shard streaming + send/recv of expert
+  slices must deliver exactly each rank's keys; a missing/misrouted key corrupts a
+  rank silently. Assert key-set coverage per rank (MoE-Quant does this via
+  `send_object_list` of keys).
 - **Scope discipline**: this is a speed project. It must not alter the
   quantization math/recipe that passed the quality eval.
 

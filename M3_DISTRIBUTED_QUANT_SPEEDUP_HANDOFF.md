@@ -2,10 +2,10 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: `2026-07-15-r2`
+- Packet revision: `2026-07-15-r3`
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Base Git commit: `0c8c3186`
+- Required fix commit: `4801028f`
 - Decision question: Can native eight-rank llm-compressor GPTQ and AWQ process
   representative MiniMax-M3 layers with correct data sharding, shared model
   memory, complete evidence, and enough quantization-time improvement to justify
@@ -37,7 +37,8 @@ planner to decide; it does not authorize a full calibration.
   model provenance, calibration-partition, and scheduler evidence.
 - Not authorized: `pipeline.m3_awq_representative`, its runtime probes/audited
   modifiers, any quality evaluation, any usable checkpoint, a full calibration,
-  bespoke expert sharding, code changes, or a retry.
+  bespoke expert sharding, code changes during execution, or any retry beyond
+  the single fresh-ID r3 run authorized by this packet.
 - The current paired GPTQ/AWQ quality evaluation remains independent and running.
 
 ## Preconditions and exact environment
@@ -60,7 +61,7 @@ planner to decide; it does not authorize a full calibration.
 
 | Input | Exact path or identifier | Required validation |
 | --- | --- | --- |
-| Implementation | Git ancestor `0c8c3186` | `git merge-base --is-ancestor 0c8c3186 HEAD` |
+| Implementation | Git ancestor `4801028f` | `git merge-base --is-ancestor 4801028f HEAD` |
 | Smoke config | `pipeline/configs/minimax_m3_distributed_smoke.yaml` | load with `pipeline.config.load_config` |
 | Launcher | `pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh` | focused tests plus `bash -n` |
 | Model | `/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3` | directory and `config.json` exist |
@@ -102,7 +103,7 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-git merge-base --is-ancestor 0c8c3186 HEAD
+git merge-base --is-ancestor 4801028f HEAD
 
 source /mnt/nfs/hoangduy/env.sh
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
@@ -165,7 +166,7 @@ packages in response; return the exact failure.
 
 ```bash
 set -euo pipefail
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r2-dry"
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r3-dry"
 DRY_RUN=1 RUN_ID="$RUN_ID" \
   bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh \
   | tee "/tmp/$RUN_ID.txt"
@@ -183,7 +184,7 @@ containing one eight-rank evidence-only command and no representative harness.
 ```bash
 set -euo pipefail
 cd /mnt/nfs/hoangduy/projects/llm-compressor
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r2"
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r3"
 RESULT_ROOT="/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/$RUN_ID"
 LOG_ROOT="/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/$RUN_ID"
 OFFLOAD_ROOT="/mnt/nfs/hoangduy/offload/m3-distributed-quant-smoke/$RUN_ID"
@@ -546,9 +547,14 @@ reported separately and excluded from that comparison.
 
 ## Pre-authorized retries
 
-- Trigger: none.
-- Maximum retry count: 0.
-- Fresh run ID required: yes for any future planner-authorized packet.
+- This r3 execution is the single planner-authorized retry of r2, triggered by
+  the exact non-source-rank model-load failure recorded below:
+  `MiniMaxM3SparseForConditionalGeneration.__init__() got an unexpected keyword
+  argument 'tie_word_embeddings'`.
+- Required fix: commit `4801028f`, which moves compressed-tensors' injected
+  meta-rank setting onto the MiniMax composite config before construction.
+- Maximum additional retry count after the r3 launch: 0.
+- Fresh run ID required: yes; use the exact r3 run-ID commands above.
 - Inputs that must remain unchanged: all model, config, calibration, topology,
   environment, and launcher inputs.
 
@@ -606,6 +612,35 @@ Commit and push the complete evidence packet, set this packet state to
 `RETURNED_FOR_ANALYSIS`, and stop. Do not retry, patch, start full calibration,
 or launch downstream evaluation/performance work unless a new planner packet
 explicitly authorizes it.
+
+## Planner analysis and r3 authorization
+
+The r2 evidence isolates a deterministic compatibility failure before model
+weights, calibration, or quantization work. On non-source ranks,
+compressed-tensors changes the load to `device_map="meta"` and injects
+`tie_word_embeddings=False` to avoid Transformers comparing meta tensors.
+Transformers 5.12.1 forwards that otherwise-unconsumed keyword into
+`MiniMaxM3SparseForConditionalGeneration.__init__`, whose constructor does not
+accept it.
+
+Commit `4801028f` installs a narrow wrapper below compressed-tensors' loader. It
+removes the injected keyword only when `config.model_type == "minimax_m3_vl"`
+and writes the same value to both the top-level and text configs, preserving the
+meta-rank safety intent. Other models and source-rank loads are unchanged. The
+regression test reproduces the exact wrapper ordering and fails with the r2
+exception without the fix.
+
+Executor instructions for r3:
+
+1. Pull `duy-branch` and require `4801028f` as an ancestor.
+2. Run the complete setup, preflight, focused tests, and dry run above. The
+   focused suite must include and pass
+   `test_minimax_meta_rank_moves_tie_word_embeddings_to_config`.
+3. If preflight passes, execute exactly one fresh r3 run using the commands
+   above. Do not reuse or overwrite the r2 roots.
+4. Preserve and return evidence through the same aggregation contract. Do not
+   add a runtime probe, change model/calibration/layer/topology inputs, or retry
+   again if r3 fails.
 
 ## Executor evidence: 2026-07-14 r2
 

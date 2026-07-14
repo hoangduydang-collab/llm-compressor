@@ -1,7 +1,16 @@
 # MiniMax-M3 Quantization Speed-Up Plan (MoE-Quant–inspired)
 
-Status: **design / not yet implemented.** Gated on a quality-verified recipe
-(see §0). Planner document; the executor owns cluster/GPU runs.
+Status: **design / Phase 1 runnable.** Speed engineering is still gated on a
+quality-verified recipe (see §0), but the Phase-1 premise/concurrency benchmark
+(`pipeline/bench_expert_scatter.py`) has no such gate and runs now. Planner
+document; the executor owns cluster/GPU runs.
+
+> **2026-07-14 decision log.** The two in-house `safe-*` AWQ full-calibration
+> runs were cancelled: at ~half done after 15h they projected ~27–34h against a
+> ~9h-remaining wall-clock, so they could not finish, and a partially quantized
+> checkpoint is unusable. They are **not** in the paired eval (that compares our
+> GPTQ vs cyankiwi's external AWQ), so cancelling cost the eval nothing and freed
+> the GPUs for Phase 1. The paired production eval keeps running as the §0 gate.
 
 ## 0. Precondition (do not skip)
 
@@ -155,9 +164,16 @@ sharded.
 
 ## 5. Implementation phases
 
-1. **Validate premise (GPU-free where possible).** `nvidia-smi dmon` during the
-   current single-GPU run to confirm per-expert underutilization; profile one
-   layer's quantization wall-clock.
+1. **Validate premise + de-risk single-process concurrency (do this first).**
+   Runnable now: `python -m pipeline.bench_expert_scatter --experts 128` (on a
+   freed 8-GPU node). It measures serial-1-GPU vs thread-pool-8-GPU wall-clock on
+   a GPTQ-shaped per-expert proxy (real MiniMax-M3 expert dims), reports the
+   python-setup/CUDA split, and prints a go/no-go verdict on plan §6's top risk
+   (does the GIL + column-loop launch overhead eat the scatter win?). Also run
+   `nvidia-smi dmon -s u` during its serial phase to confirm per-expert SM
+   underutilization. **Do not write Phase-2 production scatter until this shows
+   real (≥~0.5×ceiling) parallelism.** Needs no model download, no chosen recipe,
+   and no eval verdict — so it proceeds in parallel with the paired eval.
 2. **Expert-scatter GPTQ, single node.** Add a MoE-aware fast path to the GPTQ
    modifier / sequential pipeline that, per decoder layer, dispatches the
    linearized experts' `quantize_weight` calls across `cuda:0..7` concurrently

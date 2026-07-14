@@ -25,10 +25,29 @@ Self-test the workload logic on CPU (planner, no GPU):
 from __future__ import annotations
 
 import argparse
+import json
+import platform
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import torch
+
+DEFAULT_OUT = Path("results/m3-expert-scatter-bench/expert_scatter_bench.json")
+
+
+def _log(msg: str = "") -> None:
+    """Print to stdout with an immediate flush so srun log capture never loses
+    lines to buffering when the job is killed or redirected."""
+    print(msg, flush=True)
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    _log(f"WROTE {path.resolve()}")
 
 # MiniMax-M3 per-expert dims (configuration_minimax_m3_vl.py): hidden=6144,
 # per-expert intermediate=3072. Each expert quantizes two Linears:
@@ -99,42 +118,83 @@ def _make_expert_task(device: torch.device, dtype: torch.dtype, blocksize: int):
     return task
 
 
-def run_benchmark(n_experts: int, blocksize: int, dtype: torch.dtype) -> None:
+def run_benchmark(n_experts: int, blocksize: int, dtype: torch.dtype, out_path: Path) -> dict:
     n_dev = torch.cuda.device_count()
     if n_dev == 0:
         raise SystemExit("no CUDA devices; use --self-test for a CPU logic check")
-    print(f"devices={n_dev}  experts={n_experts}  dtype={dtype}  blocksize={blocksize}")
-    print(f"per-expert: gate_up[{2*INTER},{HIDDEN}] + down[{HIDDEN},{INTER}]\n")
+    results: dict = {
+        "schema_version": 1,
+        "status": "running",
+        "node": platform.node(),
+        "devices": n_dev,
+        "device_names": [torch.cuda.get_device_name(d) for d in range(n_dev)],
+        "experts": n_experts,
+        "dtype": str(dtype),
+        "blocksize": blocksize,
+        "dims": {"hidden": HIDDEN, "inter": INTER},
+        "torch_version": torch.__version__,
+    }
+    # Persist a partial record up front so even a crash mid-run leaves evidence.
+    _write_json(out_path, results)
+    _log(f"devices={n_dev}  experts={n_experts}  dtype={dtype}  blocksize={blocksize}")
+    _log(f"per-expert: gate_up[{2*INTER},{HIDDEN}] + down[{HIDDEN},{INTER}]\n")
 
-    # --- Serial baseline: every expert on cuda:0 (the current behavior). ---
-    dev0 = torch.device("cuda:0")
-    serial_task = _make_expert_task(dev0, dtype, blocksize)
-    torch.cuda.synchronize(dev0)
-    t0 = time.perf_counter()
-    per_expert = [serial_task(seed) for seed in range(n_experts)]
-    serial_s = time.perf_counter() - t0
-    setup = sum(p["setup_s"] for p in per_expert)
-    kernel = sum(p["kernel_s"] for p in per_expert)
-    print(f"[serial  cuda:0] {serial_s:7.2f}s total  "
-          f"(python-setup {setup:6.2f}s / cuda {kernel:6.2f}s = "
-          f"{100*setup/(setup+kernel):.0f}% python)")
-    print("  -> watch `nvidia-smi dmon -s u`: low SM% here confirms the premise\n")
+    try:
+        # --- Serial baseline: every expert on cuda:0 (the current behavior). ---
+        dev0 = torch.device("cuda:0")
+        serial_task = _make_expert_task(dev0, dtype, blocksize)
+        torch.cuda.synchronize(dev0)
+        t0 = time.perf_counter()
+        per_expert = [serial_task(seed) for seed in range(n_experts)]
+        serial_s = time.perf_counter() - t0
+        setup = sum(p["setup_s"] for p in per_expert)
+        kernel = sum(p["kernel_s"] for p in per_expert)
+        results["serial"] = {
+            "total_s": serial_s,
+            "python_setup_s": setup,
+            "cuda_s": kernel,
+            "python_fraction": setup / (setup + kernel),
+        }
+        _write_json(out_path, results)
+        _log(f"[serial  cuda:0] {serial_s:7.2f}s total  "
+             f"(python-setup {setup:6.2f}s / cuda {kernel:6.2f}s = "
+             f"{100*setup/(setup+kernel):.0f}% python)")
+        _log("  -> watch `nvidia-smi dmon -s u`: low SM% here confirms the premise\n")
 
-    # --- Parallel: scatter experts round-robin across all GPUs via threads. ---
-    tasks = {d: _make_expert_task(torch.device(f"cuda:{d}"), dtype, blocksize) for d in range(n_dev)}
-    for d in range(n_dev):
-        torch.cuda.synchronize(d)
-    t0 = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=n_dev) as pool:
-        list(pool.map(lambda s: tasks[s % n_dev](s), range(n_experts)))
-    parallel_s = time.perf_counter() - t0
-    print(f"[scatter {n_dev} GPU] {parallel_s:7.2f}s total")
-    print(f"\nspeedup: {serial_s / parallel_s:.2f}x  (ceiling {n_dev}x)")
-    if serial_s / parallel_s < 0.5 * n_dev:
-        print("VERDICT: sub-half-ceiling -> Python/launch overhead is eating the win;\n"
-              "         plan  6 fallback (per-device CUDA streams / ProcessPool) needed.")
-    else:
-        print("VERDICT: real parallelism -> thread-pool expert-scatter is viable; proceed to Phase 2.")
+        # --- Parallel: scatter experts round-robin across all GPUs via threads. ---
+        tasks = {d: _make_expert_task(torch.device(f"cuda:{d}"), dtype, blocksize) for d in range(n_dev)}
+        for d in range(n_dev):
+            torch.cuda.synchronize(d)
+        t0 = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=n_dev) as pool:
+            list(pool.map(lambda s: tasks[s % n_dev](s), range(n_experts)))
+        parallel_s = time.perf_counter() - t0
+        speedup = serial_s / parallel_s
+        real = speedup >= 0.5 * n_dev
+        verdict = (
+            "real parallelism -> thread-pool expert-scatter is viable; proceed to Phase 2"
+            if real
+            else "sub-half-ceiling -> Python/launch overhead is eating the win; "
+            "plan 6 fallback (per-device CUDA streams / ProcessPool) needed"
+        )
+        results.update({
+            "scatter": {"total_s": parallel_s},
+            "speedup": speedup,
+            "ceiling": n_dev,
+            "real_parallelism": real,
+            "verdict": verdict,
+            "status": "ok",
+        })
+        _write_json(out_path, results)
+        _log(f"[scatter {n_dev} GPU] {parallel_s:7.2f}s total")
+        _log(f"\nspeedup: {speedup:.2f}x  (ceiling {n_dev}x)")
+        _log(f"VERDICT: {verdict}")
+    except Exception as exc:  # persist the failure instead of vanishing
+        results["status"] = "error"
+        results["error"] = f"{type(exc).__name__}: {exc}"
+        _write_json(out_path, results)
+        raise
+    return results
 
 
 def self_test() -> None:
@@ -148,21 +208,31 @@ def self_test() -> None:
     assert out1.shape == W.shape, out1.shape
     assert torch.equal(out1, out2), "workload must be deterministic"
     assert torch.isfinite(out1).all(), "workload produced non-finite values"
-    print("self-test OK: workload is shape-preserving, deterministic, finite")
+    _log("self-test OK: workload is shape-preserving, deterministic, finite")
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--experts", type=int, default=128)
     p.add_argument("--blocksize", type=int, default=128)
     p.add_argument("--dtype", choices=["bf16", "fp16", "fp32"], default="bf16")
+    p.add_argument(
+        "--out", type=Path, default=DEFAULT_OUT,
+        help=f"JSON results path (default: {DEFAULT_OUT})",
+    )
     p.add_argument("--self-test", action="store_true")
     args = p.parse_args(argv)
     if args.self_test:
         self_test()
         return 0
     dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[args.dtype]
-    run_benchmark(args.experts, args.blocksize, dtype)
+    results = run_benchmark(args.experts, args.blocksize, dtype, args.out)
+    # Also emit the machine-readable summary to stdout as a fallback if the file
+    # is on a path the caller can't reach.
+    _log("\n=== RESULTS JSON ===")
+    _log(json.dumps(results, indent=2))
     return 0
 
 

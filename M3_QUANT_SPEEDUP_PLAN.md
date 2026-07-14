@@ -166,7 +166,11 @@ sharded.
 
 1. **Validate premise + de-risk single-process concurrency (do this first).**
    Runnable now: `python -m pipeline.bench_expert_scatter --experts 128` (on a
-   freed 8-GPU node). It measures serial-1-GPU vs thread-pool-8-GPU wall-clock on
+   freed 8-GPU node). It persists a JSON record incrementally to
+   `results/m3-expert-scatter-bench/expert_scatter_bench.json` (override with
+   `--out`) and also dumps the final JSON to stdout, so the result survives even
+   if srun stdout is not captured. It measures serial-1-GPU vs thread-pool-8-GPU
+   wall-clock on
    a GPTQ-shaped per-expert proxy (real MiniMax-M3 expert dims), reports the
    python-setup/CUDA split, and prints a go/no-go verdict on plan §6's top risk
    (does the GIL + column-loop launch overhead eat the scatter win?). Also run

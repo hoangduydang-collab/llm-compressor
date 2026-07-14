@@ -77,9 +77,14 @@ print_lane() {
   else
     local mode="${lane#diag-}"
     mode="${mode%-offsetfix}"
+    # CUDA_LAUNCH_BLOCKING makes any device-side assert in the diagnostic probes
+    # raise synchronously at the offending kernel (with its real message and
+    # attributed to one module) instead of surfacing asynchronously at a later
+    # stage barrier where the culprit is unknowable.
     command=(
       srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1
       --time="$LANE_TIME_LIMIT" --kill-on-bad-exit=1 "${EXTRA_SRUN_ARGS[@]}"
+      env CUDA_LAUNCH_BLOCKING=1
       python -m pipeline.m3_guarded_full arm
       --variant offsetfix --diagnostic-mode "$mode" --config "$CONFIG"
       --output-dir "$RESULT_ROOT/lanes/$lane" "${model_args[@]}"
@@ -161,9 +166,12 @@ for lane in "${lanes[@]}"; do
     else
       mode="${lane#diag-}"
       mode="${mode%-offsetfix}"
+      # See print_lane: CUDA_LAUNCH_BLOCKING makes a device-side assert raise
+      # synchronously at the offending kernel instead of at a later barrier.
       command=(
         srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:1
         --time="$LANE_TIME_LIMIT" --kill-on-bad-exit=1 "${EXTRA_SRUN_ARGS[@]}"
+        env CUDA_LAUNCH_BLOCKING=1
         python -m pipeline.m3_guarded_full arm
         --variant offsetfix --diagnostic-mode "$mode" --config "$CONFIG"
         --output-dir "$RESULT_ROOT/lanes/$lane" "${model_args[@]}"

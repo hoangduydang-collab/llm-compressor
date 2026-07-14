@@ -69,6 +69,64 @@ def _safe_float(value: torch.Tensor) -> float:
     return float(value.detach().float().cpu().item())
 
 
+def _tensor_shape_descriptor(value: Any) -> dict[str, Any] | None:
+    """Shape/dtype/device of a tensor attribute, or None if it is absent."""
+    if not isinstance(value, torch.Tensor):
+        return None
+    return {
+        "shape": list(value.shape),
+        "dtype": str(value.dtype),
+        "device": str(value.device),
+    }
+
+
+def _fake_quant_input_descriptor(module: Any, scheme: Any) -> dict[str, Any]:
+    """Capture the operands and qparams a fake-quant kernel will index.
+
+    A device-side assert in W4 grouped fake-quant is almost always an
+    out-of-bounds group index, i.e. the weight's ``in_features`` is not
+    consistent with ``scale`` columns for the configured ``group_size``. Recording
+    these up front makes that mismatch legible from the crashed run's artifacts.
+    """
+    weight = getattr(module, "weight", None)
+    scale = getattr(module, "weight_scale", None)
+    zero_point = getattr(module, "weight_zero_point", None)
+    descriptor: dict[str, Any] = {
+        "weight": _tensor_shape_descriptor(weight),
+        "weight_scale": _tensor_shape_descriptor(scale),
+        "weight_zero_point": _tensor_shape_descriptor(zero_point),
+        "scheme": {
+            "num_bits": getattr(scheme, "num_bits", None),
+            "type": str(getattr(scheme, "type", None)),
+            "group_size": getattr(scheme, "group_size", None),
+            "strategy": str(getattr(scheme, "strategy", None)),
+            "symmetric": getattr(scheme, "symmetric", None),
+        },
+    }
+    # Flag the classic grouped-quant inconsistency directly: for group_size G, a
+    # weight of shape [out, in] expects scale columns == ceil(in / G).
+    try:
+        group_size = getattr(scheme, "group_size", None)
+        if (
+            isinstance(weight, torch.Tensor)
+            and isinstance(scale, torch.Tensor)
+            and group_size
+            and group_size > 0
+            and weight.dim() == 2
+            and scale.dim() == 2
+        ):
+            in_features = weight.shape[1]
+            expected_groups = -(-in_features // group_size)  # ceil div
+            descriptor["expected_scale_groups"] = expected_groups
+            descriptor["actual_scale_groups"] = scale.shape[1]
+            descriptor["group_geometry_consistent"] = (
+                expected_groups == scale.shape[1]
+            )
+    except Exception:
+        pass
+    return descriptor
+
+
 def tensor_summary(value: Any) -> dict[str, float | int | None]:
     """Summarize a tensor without allowing non-finite values to poison statistics."""
     tensor = _as_tensor(value).reshape(-1).float().cpu()
@@ -686,10 +744,28 @@ class FullGuardController:
         for sample in selected:
             module = sample["module_object"]
             item = sample["evidence"]
+            # Record the exact fake-quant inputs BEFORE launching the kernel and
+            # persist immediately. A device-side assert inside forward_quantize
+            # surfaces asynchronously (at the next synchronize) and is sticky --
+            # it poisons the CUDA context, so nothing after it can be trusted or
+            # written. Capturing the operand/qparam shapes up front, plus a
+            # per-module synchronize below, attributes the assert to one expert
+            # projection and leaves a durable breadcrumb (weight vs scale group
+            # geometry is the usual out-of-bounds-index culprit for W4 grouped
+            # fake-quant).
+            item["fake_quant_inputs"] = _fake_quant_input_descriptor(
+                module, sample["scheme"]
+            )
+            per_layer.setdefault(sample["layer"], []).append(item)
+            self._persist_fake_quant_probe(per_layer)
             try:
                 dequantized = forward_quantize(
                     module, module.weight, "weight", sample["scheme"]
                 )
+                if torch.cuda.is_available():
+                    # Force any async device-side assert to raise HERE, against
+                    # this module, instead of at the later stage barrier.
+                    torch.cuda.synchronize()
                 reference = deterministic_sketch(module.weight)
                 candidate = deterministic_sketch(dequantized)
                 item["reconstruction"] = compare_sketches(reference, candidate)
@@ -703,12 +779,36 @@ class FullGuardController:
                     )
             except Exception as exc:
                 item["reconstruction_error"] = f"{type(exc).__name__}: {exc}"
-            per_layer.setdefault(sample["layer"], []).append(item)
+                self._persist_fake_quant_probe(per_layer)
+                raise
+            self._persist_fake_quant_probe(per_layer)
         for layer, values in per_layer.items():
             self.quant_by_layer[layer] = {
                 "sampled_module_count": len(values),
                 "sampled_modules": values,
             }
+
+    def _persist_fake_quant_probe(
+        self, per_layer: dict[int, list[dict[str, Any]]]
+    ) -> None:
+        """Durably snapshot fake-quant probe progress so a sticky CUDA assert.
+
+        (which kills the process before ``after_propagation`` persists the layer
+        record) still leaves the failing module and its qparam geometry on disk.
+        """
+        snapshot = {
+            str(layer): {
+                "sampled_module_count": len(values),
+                "sampled_modules": values,
+            }
+            for layer, values in per_layer.items()
+        }
+        try:
+            _write_json_atomic(
+                self.output_dir / "fake_quant_probe.json", snapshot
+            )
+        except Exception:
+            pass
 
     @torch.no_grad()
     def note_quant_epoch(self, modules: list[Any]) -> None:

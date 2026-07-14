@@ -8,6 +8,7 @@ from pipeline.m3_guarded_full import (
     FullGuardController,
     GuardedRunAbort,
     LayerEvidenceWriter,
+    _fake_quant_input_descriptor,
     aggregate_runs,
     build_guarded_recipe,
     compare_sketches,
@@ -16,6 +17,42 @@ from pipeline.m3_guarded_full import (
     prepare_variant_config,
     tensor_summary,
 )
+
+
+class _FakeScheme:
+    def __init__(self, group_size):
+        self.num_bits = 4
+        self.type = "int"
+        self.group_size = group_size
+        self.strategy = "group"
+        self.symmetric = True
+
+
+class _FakeQuantModule(torch.nn.Module):
+    def __init__(self, weight, scale):
+        super().__init__()
+        self.weight = torch.nn.Parameter(weight, requires_grad=False)
+        self.register_buffer("weight_scale", scale)
+
+
+def test_fake_quant_descriptor_flags_group_geometry_mismatch():
+    # in_features=256, group_size=128 -> 2 groups expected. A scale with 3
+    # columns is the out-of-bounds-index shape that device-side asserts W4
+    # grouped fake-quant.
+    module = _FakeQuantModule(torch.zeros(8, 256), torch.ones(8, 3))
+    descriptor = _fake_quant_input_descriptor(module, _FakeScheme(128))
+    assert descriptor["expected_scale_groups"] == 2
+    assert descriptor["actual_scale_groups"] == 3
+    assert descriptor["group_geometry_consistent"] is False
+    assert descriptor["weight"]["shape"] == [8, 256]
+    assert descriptor["scheme"]["group_size"] == 128
+
+
+def test_fake_quant_descriptor_accepts_consistent_group_geometry():
+    module = _FakeQuantModule(torch.zeros(8, 256), torch.ones(8, 2))
+    descriptor = _fake_quant_input_descriptor(module, _FakeScheme(128))
+    assert descriptor["expected_scale_groups"] == 2
+    assert descriptor["group_geometry_consistent"] is True
 
 
 def test_deterministic_sketch_is_bounded_and_repeatable():

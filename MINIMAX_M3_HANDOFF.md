@@ -50,6 +50,62 @@ The controller and both safe AWQ lanes remained active at this snapshot.
 Do not start canonical chat or the full quality suite until the safe lanes
 finish and their static-check results are recorded.
 
+### 2026-07-14 planner analysis: the device-side assert is a probe artifact, not a checkpoint defect
+
+The heavy diagnostic lane's `torch.AcceleratorError: CUDA error: device-side
+assert triggered` is caused by the heavy probe's own fake-quantization call, not
+by the production quantization path. The evidence is the light-vs-heavy contrast
+plus the synchronize sequence in `note_quant_epoch`
+(`pipeline/m3_guarded_full.py`):
+
+- Both lanes run and **pass** the `post_native_quantization` and
+  `post_enable_quantization` `torch.cuda.synchronize()` barriers. A full
+  synchronize drains every prior kernel, so the CUDA context is proven clean
+  after native quantization and after `enable_quantization` -- i.e. after
+  exactly the work the *safe* production lanes do.
+- Heavy then runs an extra block: `before_qparam_inspection` (pass),
+  `after_qparam_inspection` (pass), `before_fake_quantization` (pass),
+  `_collect_fake_quant_evidence(...)`, `after_fake_quantization` (**fail**).
+- The only CUDA work between the last passing barrier and the failing one is
+  `_collect_fake_quant_evidence` -> `forward_quantize(module, module.weight,
+  "weight", scheme)` on sampled experts (0, 64, 127). The assert is therefore
+  launched by that fake-quant call and surfaces asynchronously at the next
+  synchronize.
+- The light lane, which omits qparam/weight/fake-quant inspection, never hits
+  the assert (it aborted later for an unrelated reason: no decoder-layer guards
+  recorded).
+
+This matches the handoff's own interpretation rule ("heavy fails while light
+passes: qparam/weight/fake-quant inspection is causal") and the refuted
+trust-remote-code result: the model classes and 60 target matches are correct.
+
+**Consequence:** the safe lanes are not invalidated. `safe-quant_only` already
+completed and passed static verification; `safe-offsetfix` / `safe-nosmooth`
+(real AWQ, no probes, no synchronize) are unaffected by this crash and remain
+the priority checkpoint candidates.
+
+**Fix applied (2026-07-14, this commit):** the heavy probe now self-localizes
+the assert so the next run yields the exact culprit instead of an opaque async
+error:
+
+- The diagnostic lanes run under `CUDA_LAUNCH_BLOCKING=1` (launcher), so a
+  device-side assert raises synchronously at the offending kernel with its real
+  message, attributed to one module.
+- `_collect_fake_quant_evidence` records each sampled module's operand/qparam
+  geometry (weight/scale/zero-point shape+dtype+device, `group_size`,
+  `strategy`) **before** launching the kernel, synchronizes per module, and
+  persists `fake_quant_probe.json` incrementally so a sticky assert still leaves
+  the failing expert projection and its shapes on disk.
+- The descriptor flags the most likely cause directly: for `group_size` G a
+  `[out, in]` weight expects `ceil(in / G)` scale columns; a mismatch
+  (`group_geometry_consistent: false`) is the out-of-bounds group index that
+  device-side-asserts W4 grouped fake-quant.
+
+Rerun only the two diagnostic lanes (`LANE_FILTER` is per-lane; run
+`diag-heavy-offsetfix` then `diag-light-offsetfix`) and read
+`lanes/diag-heavy-offsetfix/fake_quant_probe.json` plus the lane log's now-synchronous
+traceback. Do not re-run the safe lanes for this; they are probe-free.
+
 The new controller first runs the pre-quantization compatibility gate and real
 two-root trace smoke. It then starts five jobs concurrently, with every job in
 its own top-level `srun --exclusive --nodes=1 --ntasks=1` allocation:

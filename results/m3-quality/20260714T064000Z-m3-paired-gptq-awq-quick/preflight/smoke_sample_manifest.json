@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "seed": 42,
+  "harness_revision": "0.4.12",
+  "selection": "seeded_proportional_stratified_without_replacement",
+  "tasks": {
+    "gpqa_diamond_zeroshot": {
+      "gpqa_diamond_zeroshot": [
+        22,
+        195
+      ]
+    },
+    "ifeval": {
+      "ifeval": [
+        236,
+        455
+      ]
+    },
+    "aime25": {
+      "aime25": [
+        7,
+        16
+      ]
+    },
+    "mmlu_pro": {
+      "mmlu_pro_biology": [
+        398
+      ],
+      "mmlu_pro_business": [
+        550
+      ],
+      "mmlu_pro_chemistry": [
+        662
+      ],
+      "mmlu_pro_computer_science": [
+        325
+      ],
+      "mmlu_pro_economics": [
+        45
+      ],
+      "mmlu_pro_engineering": [
+        704
+      ],
+      "mmlu_pro_health": [
+        616
+      ],
+      "mmlu_pro_history": [
+        162
+      ],
+      "mmlu_pro_law": [
+        897
+      ],
+      "mmlu_pro_math": [
+        894
+      ],
+      "mmlu_pro_other": [
+        344
+      ],
+      "mmlu_pro_philosophy": [
+        468
+      ],
+      "mmlu_pro_physics": [
+        1021
+      ],
+      "mmlu_pro_psychology": [
+        790
+      ]
+    },
+    "gsm8k": {
+      "gsm8k": [
+        605,
+        859
+      ]
+    }
+  },
+  "sha256": "56a227e7f183024374648a2d4cb2f4100ab2ebb58f90afc7c41ce613a298e2aa"
+}

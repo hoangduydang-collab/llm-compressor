@@ -1,0 +1,27 @@
+{
+  "gpqa_diamond_zeroshot": {
+    "sample_len": 2.0,
+    "acc,none": 0.0,
+    "acc_norm,none": 0.0
+  },
+  "ifeval": {
+    "sample_len": 2.0,
+    "prompt_level_strict_acc,none": 0.5,
+    "inst_level_strict_acc,none": 0.8333333333333334,
+    "prompt_level_loose_acc,none": 1.0,
+    "inst_level_loose_acc,none": 1.0
+  },
+  "aime25": {
+    "sample_len": 2.0,
+    "exact_match,none": 0.0
+  },
+  "mmlu_pro": {
+    "sample_len": 14.0,
+    "exact_match,custom-extract": 0.8571428571428571
+  },
+  "gsm8k": {
+    "sample_len": 2.0,
+    "exact_match,strict-match": 1.0,
+    "exact_match,flexible-extract": 1.0
+  }
+}

@@ -13,6 +13,50 @@ go/no-go gate for adopting GPTQ as the production recipe** (and for starting
 Scope: model quality only. Do **not** start serving-throughput/CUDA-graph work.
 A gate FAIL is a valid result — return it, do not tune to pass.
 
+## Quick smoke result (2026-07-14)
+
+Run ID:
+`20260714T064000Z-m3-paired-gptq-awq-quick`
+
+The repaired-overlay GPTQ and cyankiwi AWQ smoke arms both completed
+successfully:
+
+- Controller return code: `0`
+- GPTQ arm return code: `0`
+- cyankiwi AWQ arm return code: `0`
+- Both arms scored all five tasks with the identical sample manifest
+- Both had `infrastructure_ok=true`, `artifacts_valid=true`, no empty outputs,
+  no periodic loops, and distributed world size 8
+- `smoke_gate.ready_for_production=true`
+
+Smoke aggregate results (two samples per generative task; MMLU-Pro has 14
+scored leaves) were:
+
+| Task | cyankiwi AWQ | in-house GPTQ |
+| --- | ---: | ---: |
+| GPQA Diamond | 0/2 | 0/2 |
+| IFEval prompt-level strict | 0.5 | 0.0 |
+| AIME 2025 | 0/2 | 0/2 |
+| MMLU-Pro | 12/14 | 12/14 |
+| GSM8K | 2/2 | 2/2 |
+
+The IFEval difference is directional only because this is the low-n smoke;
+the smoke gate is an infrastructure/readiness gate, not the definitive
+production-quality verdict. The GPTQ distributional probe also completed
+without degeneration failures. Its vLLM runtime used the expected metadata
+overlay and the recorded SWIGLU clamp patch; the raw GPTQ source was not
+served.
+
+Complete raw evidence, including preflight diagnostics, resolved manifests,
+per-task sample JSONL, generation-health files, distributional probe JSONL and
+summaries, arm logs, return codes, and smoke gate/report files is committed
+under:
+`results/m3-quality/20260714T064000Z-m3-paired-gptq-awq-quick/`
+
+This quick smoke unblocks the four-arm quick production paired run. It does
+not yet justify adopting GPTQ or starting the speed-up work; use the paired
+production gate for that decision.
+
 ## Which config to run
 
 - **Quick (run this now):** `pipeline/configs/minimax_m3_paired_gptq_awq_quick.yaml`

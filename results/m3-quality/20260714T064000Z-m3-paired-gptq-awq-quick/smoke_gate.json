@@ -1,0 +1,53 @@
+{
+  "ready_for_production": true,
+  "missing_models": [],
+  "unexpected_models": [],
+  "models": {
+    "cyankiwi_awq": {
+      "passed": true,
+      "checks": {
+        "infrastructure": true,
+        "artifacts": true,
+        "all_tasks_scored": true,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true,
+        "probe_budget": true
+      },
+      "distributed_world_size": 8,
+      "probe_projection": {
+        "smoke_tokens": 2047,
+        "smoke_elapsed_seconds": 7.198978867381811,
+        "tokens_per_second": 284.3458826188319,
+        "production_tokens": 8192,
+        "projected_seconds": 28.80998284396277,
+        "budget_seconds": 900.0,
+        "within_budget": true
+      }
+    },
+    "inhouse_gptq": {
+      "passed": true,
+      "checks": {
+        "infrastructure": true,
+        "artifacts": true,
+        "all_tasks_scored": true,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true,
+        "probe_budget": true
+      },
+      "distributed_world_size": 8,
+      "probe_projection": {
+        "smoke_tokens": 2047,
+        "smoke_elapsed_seconds": 8.77810613811016,
+        "tokens_per_second": 233.193808299144,
+        "production_tokens": 8192,
+        "projected_seconds": 35.12957766653563,
+        "budget_seconds": 900.0,
+        "within_budget": true
+      }
+    }
+  }
+}

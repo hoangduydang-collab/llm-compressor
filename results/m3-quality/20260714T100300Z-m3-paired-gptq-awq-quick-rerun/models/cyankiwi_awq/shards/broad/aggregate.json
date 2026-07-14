@@ -1,0 +1,11 @@
+{
+  "mmlu_pro": {
+    "sample_len": 100.0,
+    "exact_match,custom-extract": 0.76
+  },
+  "gsm8k": {
+    "sample_len": 100.0,
+    "exact_match,strict-match": 0.97,
+    "exact_match,flexible-extract": 0.97
+  }
+}

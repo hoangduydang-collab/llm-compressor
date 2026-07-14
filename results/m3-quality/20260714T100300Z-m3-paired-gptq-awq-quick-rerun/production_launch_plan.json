@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "profile": "production",
+  "arms": [
+    {
+      "model_label": "cyankiwi_awq",
+      "model_path": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+      "model_kind": "awq-w4a16",
+      "shard": "reasoning",
+      "nodes": 1,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "pipeline_parallel_size": 1,
+      "distributed_executor_backend": "mp",
+      "tasks": [
+        "gpqa_diamond",
+        "ifeval",
+        "aime_2025"
+      ],
+      "distributional_probe": false,
+      "samples_per_task": null,
+      "probe_tokens": 0
+    },
+    {
+      "model_label": "cyankiwi_awq",
+      "model_path": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+      "model_kind": "awq-w4a16",
+      "shard": "broad",
+      "nodes": 1,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "pipeline_parallel_size": 1,
+      "distributed_executor_backend": "mp",
+      "tasks": [
+        "mmlu_pro",
+        "gsm8k"
+      ],
+      "distributional_probe": true,
+      "samples_per_task": null,
+      "probe_tokens": 8192
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "model_path": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay",
+      "model_kind": "gptq-w4a8",
+      "shard": "reasoning",
+      "nodes": 1,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "pipeline_parallel_size": 1,
+      "distributed_executor_backend": "mp",
+      "tasks": [
+        "gpqa_diamond",
+        "ifeval",
+        "aime_2025"
+      ],
+      "distributional_probe": false,
+      "samples_per_task": null,
+      "probe_tokens": 0
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "model_path": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay",
+      "model_kind": "gptq-w4a8",
+      "shard": "broad",
+      "nodes": 1,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "pipeline_parallel_size": 1,
+      "distributed_executor_backend": "mp",
+      "tasks": [
+        "mmlu_pro",
+        "gsm8k"
+      ],
+      "distributional_probe": true,
+      "samples_per_task": null,
+      "probe_tokens": 8192
+    }
+  ],
+  "max_parallel_arms": 4,
+  "total_nodes": 4
+}

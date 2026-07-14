@@ -1,0 +1,12 @@
+{
+  "model": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "out_dir": "results/m3-quality/20260714T100300Z-m3-paired-gptq-awq-quick-rerun/models/cyankiwi_awq/shards/broad",
+  "static": {
+    "gate_passed": null,
+    "sample_counts": {
+      "mmlu_pro": 100,
+      "gsm8k": 200
+    }
+  },
+  "agentic": null
+}

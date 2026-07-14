@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "run_id": "20260714T100300Z-m3-paired-gptq-awq-quick-rerun",
+  "git_commit": "2f97ca85d8202c544cb062a8a9c23609c75c44bf",
+  "baseline_label": "cyankiwi_awq",
+  "models": [
+    "cyankiwi_awq",
+    "inhouse_gptq"
+  ],
+  "expected_arms": [
+    {
+      "model_label": "cyankiwi_awq",
+      "shard": "reasoning"
+    },
+    {
+      "model_label": "cyankiwi_awq",
+      "shard": "broad"
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "shard": "reasoning"
+    },
+    {
+      "model_label": "inhouse_gptq",
+      "shard": "broad"
+    }
+  ],
+  "sample_manifest_sha256": "7457d2b38397d9854b25bd5efd65675d15bc3b92c8c546c3440a053801ae358f",
+  "eval_config_sha256": "0e218b57c254fbad942bd324a4f71369170957c6a1f7a7fe05d170d1860395fc",
+  "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+  "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "resolved_tasks": {
+    "gpqa_diamond": "gpqa_diamond_zeroshot",
+    "ifeval": "ifeval",
+    "aime_2025": "aime25",
+    "mmlu_pro": "mmlu_pro",
+    "gsm8k": "gsm8k"
+  },
+  "lm_eval_version": "0.4.12",
+  "matrix_sha256": "32327f509a6078547374f0fd159dc148f9b32e4d8e221570627402657c805805"
+}

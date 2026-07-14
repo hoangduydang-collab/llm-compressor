@@ -1,0 +1,23 @@
+{
+  "samples": 0,
+  "not_applicable_count": 100,
+  "missing_count": 0,
+  "empty_count": 0,
+  "answer_extraction_failure_count": 0,
+  "length_cap_hit_count": 0,
+  "periodic_loop_count": 0,
+  "nonfinite_metric_count": 0,
+  "output_tokens": {
+    "count": 0,
+    "min": null,
+    "median": null,
+    "p95": null,
+    "max": null
+  },
+  "missing_rate": null,
+  "empty_rate": null,
+  "answer_extraction_failure_rate": null,
+  "length_cap_hit_rate": null,
+  "periodic_loop_rate": null,
+  "nonfinite_metric_rate": null
+}

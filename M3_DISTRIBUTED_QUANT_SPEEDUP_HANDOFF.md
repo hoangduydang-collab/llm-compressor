@@ -606,3 +606,77 @@ Commit and push the complete evidence packet, set this packet state to
 `RETURNED_FOR_ANALYSIS`, and stop. Do not retry, patch, start full calibration,
 or launch downstream evaluation/performance work unless a new planner packet
 explicitly authorizes it.
+
+## Executor evidence: 2026-07-14 r2
+
+- Protocol state: `RETURNED_FOR_ANALYSIS`
+- Packet revision: `2026-07-15-r2`
+- Expected ancestor: `0c8c3186`
+- Actual Git commit: `639061684db93a504a0f6e9b636e0230f9815786`
+- Execution classification: both evidence-only arms failed during model loading
+- Run ID: `20260714T164500Z-m3-ddp-quant-smoke-r2`
+- Controller session: `m3-ddp-quant-20260714T164500Z-m3-ddp-quant-smoke-r2`
+- Result root:
+  `/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2`
+- Log root:
+  `/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2`
+- Evidence root:
+  `results/m3-distributed-quant-speedup/20260714T164500Z-m3-ddp-quant-smoke-r2`
+
+### Gates and topology
+
+- Setup, revision, workspace, model-input, and environment checks: passed.
+- Config/import assertions: passed.
+- Focused tests: `39 passed in 0.55s`.
+- Launcher syntax: passed.
+- Dry-run: passed; exactly two sequential top-level `srun` commands, each
+  requesting one exclusive node with eight GPUs, each invoking eight-rank
+  `torchrun` and `--evidence-only`; no representative harness.
+- GPTQ: Slurm job `12921`, step `12921.0`, node `h108`, 8 H100 GPUs,
+  approximately 67 seconds, return code `1`.
+- AWQ: Slurm job `12922`, step `12922.0`, node `h108`, 8 H100 GPUs,
+  approximately 68 seconds, return code `1`.
+- Controller return code: `1`.
+- The unrelated paired quality jobs remained independent and were not changed.
+
+### First failure and last successful stage
+
+Both arms reached node preflight, initialized eight local ranks, and entered
+model loading. The first observed operation failure in both arms was:
+
+```text
+TypeError: MiniMaxM3SparseForConditionalGeneration.__init__() got an unexpected keyword argument 'tie_word_embeddings'
+```
+
+The failure occurred through `pipeline.quantize._load_model_and_tokenizer`,
+`linearize.py`, `compressed_tensors.offload.load`, and Transformers
+`from_pretrained`. Torchrun terminated the sibling ranks after the first rank
+failure. No calibration partition, native quantization, provenance, or
+completion stage was reached.
+
+### Environment and artifacts
+
+- Python `3.12.13`
+- llmcompressor `0.1.dev3101+g46e6ba4`
+- compressed-tensors `0.17.2a20260707`
+- torch `2.11.0`, CUDA build `13.0`
+- transformers `5.12.1`
+- GPUs: eight NVIDIA H100 80GB HBM3, driver `580.126.09`
+- Node preflight: `MemAvailable=2079369052 kB`; `/dev/shm` available
+  `1075820175360` bytes.
+- No OOM, cancellation, retry, or scheduler submission failure was observed.
+- No usable checkpoint was produced.
+- Missing expected artifacts for both methods: `smoke_complete.json`, eight
+  partition manifests, native metric files, and model-provenance files.
+- Raw `torchrun.out`, `torchrun.err`, and `resources.log` paths, byte sizes, and
+  SHA-256 hashes are recorded in `aggregate.json`.
+- The complete committed small evidence tree, including scheduler records,
+  environment, commands, return codes, controller output, preflight summary,
+  dry-run, and `small_artifacts.json`, is under the evidence root above.
+
+### Deviations and interpretation boundary
+
+No packet deviation, code/config edit, retry, full calibration, checkpoint
+save, quality evaluation, or performance run was performed. This is factual
+infrastructure/model-load evidence only; it is not a quantization-speed or
+model-quality verdict.

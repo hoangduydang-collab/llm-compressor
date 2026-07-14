@@ -1,0 +1,6 @@
+srun: error: gpu-h108: task 0: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12921.0
+method=gptq rc=1 logs=/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq results=/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq
+srun: error: gpu-h108: task 0: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12922.0
+method=awq rc=1 logs=/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq results=/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq

@@ -1,0 +1,122 @@
+[
+  {
+    "path": "aggregate.json",
+    "bytes": 5158,
+    "sha256": "ca64f69872b06e2212420bbbb28bce4acd55d35fee6e083ef215cdf36cd11b8d"
+  },
+  {
+    "path": "awq/log/command.txt",
+    "bytes": 510,
+    "sha256": "67a9764d96cfdcece88d3bdd462b62c142ffba8c940ac9df89b1ceb1f6fcfe39"
+  },
+  {
+    "path": "awq/log/environment.txt",
+    "bytes": 3141,
+    "sha256": "3000b49b5ed06a03a2c9154d0921adcbd379cf803058a2010ebcb386fcb2b38d"
+  },
+  {
+    "path": "awq/log/node_preflight.txt",
+    "bytes": 796,
+    "sha256": "8c258409e60654ae4436f9e5495177a0a703f9efa1a75a682f482ce42557b95d"
+  },
+  {
+    "path": "awq/log/rc",
+    "bytes": 2,
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+  },
+  {
+    "path": "awq/log/sacct.txt",
+    "bytes": 66,
+    "sha256": "047dfe466fde70b3e8ef2c4ab9051c43053c49df71206b7978f97c54a542129a"
+  },
+  {
+    "path": "awq/log/scheduler_ids.txt",
+    "bytes": 35,
+    "sha256": "a5c1cd0ee631e8536d544f3cbf395c32e2d0dcb8363b708e855ff27b27e16ab9"
+  },
+  {
+    "path": "awq/log/scontrol.txt",
+    "bytes": 1113,
+    "sha256": "a1230399384b23b517175936cf20b8fe1db208746527572639151e39b635dd5c"
+  },
+  {
+    "path": "controller.log",
+    "bytes": 671,
+    "sha256": "88cda68d9e26ac539a039faf7ba4cafa6766ab18cbd3de70596ab75e7bc171d6"
+  },
+  {
+    "path": "controller.rc",
+    "bytes": 2,
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+  },
+  {
+    "path": "dry_run.txt",
+    "bytes": 2124,
+    "sha256": "606c2a06eb3911e7c5996ebd1a12407798a9376edc20b47aa7e68011fd700688"
+  },
+  {
+    "path": "expected_git_commit.txt",
+    "bytes": 41,
+    "sha256": "aa4d57451f381728c0d03be3882f59c3bcf199bcf395f530430d2e3a076a2d29"
+  },
+  {
+    "path": "final_git_status.txt",
+    "bytes": 4679,
+    "sha256": "61743f95e0cce98762215f3636ad422653bd4fbf028e60fc715a3df6da67c1b7"
+  },
+  {
+    "path": "gptq/log/command.txt",
+    "bytes": 513,
+    "sha256": "9d11a651ce6277fe4fed154e68cd00db9a0cf1b5306bc82dd80b1f440a5b00de"
+  },
+  {
+    "path": "gptq/log/environment.txt",
+    "bytes": 3142,
+    "sha256": "1b01ebbd31ee75210bec2782406c56556fa10807b6f373b58118e96328b52e79"
+  },
+  {
+    "path": "gptq/log/node_preflight.txt",
+    "bytes": 796,
+    "sha256": "c773abbd18d0423615c50a9ee21ca5caf74855a1820de9641ae92a3ab67abaee"
+  },
+  {
+    "path": "gptq/log/rc",
+    "bytes": 2,
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+  },
+  {
+    "path": "gptq/log/sacct.txt",
+    "bytes": 66,
+    "sha256": "047dfe466fde70b3e8ef2c4ab9051c43053c49df71206b7978f97c54a542129a"
+  },
+  {
+    "path": "gptq/log/scheduler_ids.txt",
+    "bytes": 35,
+    "sha256": "a51cd06c5dfe2d4c9ea857fe8ea6287534f0251b90b445a22ed2becbd7619d3c"
+  },
+  {
+    "path": "gptq/log/scontrol.txt",
+    "bytes": 1113,
+    "sha256": "53baeb5facddbb9f497eb1677481f337a6cb0d1639da7fde5c09ffc403b462a6"
+  },
+  {
+    "path": "preflight_summary.txt",
+    "bytes": 178,
+    "sha256": "4159398403e8f4f76d1dbbc017cc7eb0cd348b09f1e20db17d5dc3f2b81df067"
+  },
+  {
+    "path": "run_id.txt",
+    "bytes": 39,
+    "sha256": "988e53c2efdfe26a14f1a3fefd740bb9f2923be77b9246152f93c6d73c4aae95"
+  },
+  {
+    "path": "untracked_blockers.txt",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "worktree.txt",
+    "bytes": 4638,
+    "sha256": "690d68ff40b98eed18ccbf349375502b77e86856ed96b485873e7aad6f1ce3df"
+  }
+]

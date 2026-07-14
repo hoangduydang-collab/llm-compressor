@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "run_id": "20260714T164500Z-m3-ddp-quant-smoke-r2",
+  "methods": {
+    "gptq": {
+      "rc": 1,
+      "run_dir": "/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq/MiniMax-M3-gptq-W4AFP8/20260714-164629",
+      "discovered_run_directories": [
+        "/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq/MiniMax-M3-gptq-W4AFP8/20260714-164629"
+      ],
+      "bounds": [],
+      "cuda_devices": [],
+      "native_layer_work": {
+        "record_count": 0,
+        "layers": [],
+        "unresolved_names": []
+      },
+      "per_rank_native_layer_work": [],
+      "peak_host_memory_delta_bytes": 9673560064,
+      "checks": {
+        "return_code_zero": false,
+        "one_run_directory": true,
+        "one_completion": false,
+        "eight_partition_manifests": false,
+        "ranks_zero_through_seven": false,
+        "manifest_and_distributed_ranks_match": true,
+        "world_size_is_eight": false,
+        "local_ranks_zero_through_seven": false,
+        "rank_bounds_cover_global_eight": false,
+        "global_num_samples_is_eight": false,
+        "each_rank_has_one_local_sample": false,
+        "token_hashes_are_valid_sha256": false,
+        "eight_distinct_sample_hashes": false,
+        "cuda_bindings_zero_through_seven": false,
+        "eight_metrics_files": false,
+        "metrics_files_nonempty": false,
+        "eight_provenance_files": false,
+        "provenance_files_nonempty": false,
+        "no_partial_checkpoint": true,
+        "peak_host_delta_under_1_35tb": true
+      },
+      "mechanical_pass": false,
+      "large_artifacts": [
+        {
+          "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq/torchrun.out",
+          "bytes": 1248,
+          "sha256": "7dcae23b2dde55e3e2a17d5160612230c284c7cd23803be6c07292a9bd940465"
+        },
+        {
+          "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq/torchrun.err",
+          "bytes": 17962,
+          "sha256": "d0ff5aec2823f84b585b51c0a36f437b1b3bf8b9d5b91224cce1c1de86d2b8cd"
+        },
+        {
+          "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/gptq/resources.log",
+          "bytes": 1375,
+          "sha256": "c0c99417d48e0383e7699607d3b0c888c02bd94b6c7f4f31563cc1fb50bec9f6"
+        }
+      ]
+    },
+    "awq": {
+      "rc": 1,
+      "run_dir": "/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq/MiniMax-M3-awq-W4AFP8/20260714-164749",
+      "discovered_run_directories": [
+        "/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq/MiniMax-M3-awq-W4AFP8/20260714-164749"
+      ],
+      "bounds": [],
+      "cuda_devices": [],
+      "native_layer_work": {
+        "record_count": 0,
+        "layers": [],
+        "unresolved_names": []
+      },
+      "per_rank_native_layer_work": [],
+      "peak_host_memory_delta_bytes": 9721139200,
+      "checks": {
+        "return_code_zero": false,
+        "one_run_directory": true,
+        "one_completion": false,
+        "eight_partition_manifests": false,
+        "ranks_zero_through_seven": false,
+        "manifest_and_distributed_ranks_match": true,
+        "world_size_is_eight": false,
+        "local_ranks_zero_through_seven": false,
+        "rank_bounds_cover_global_eight": false,
+        "global_num_samples_is_eight": false,
+        "each_rank_has_one_local_sample": false,
+        "token_hashes_are_valid_sha256": false,
+        "eight_distinct_sample_hashes": false,
+        "cuda_bindings_zero_through_seven": false,
+        "eight_metrics_files": false,
+        "metrics_files_nonempty": false,
+        "eight_provenance_files": false,
+        "provenance_files_nonempty": false,
+        "no_partial_checkpoint": true,
+        "peak_host_delta_under_1_35tb": true
+      },
+      "mechanical_pass": false,
+      "large_artifacts": [
+        {
+          "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq/torchrun.out",
+          "bytes": 1232,
+          "sha256": "1925e8677ab4eebc8a2c0b353279133bbd2f5412f220cde0d8da2903c4cf17ce"
+        },
+        {
+          "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq/torchrun.err",
+          "bytes": 17958,
+          "sha256": "8fb0708d4efa585233bf18411346a1be949a2613716d5c1405760955dc27d6e9"
+        },
+        {
+          "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/awq/resources.log",
+          "bytes": 1375,
+          "sha256": "103cbbda25b7a82c1d5e3e0d66ea12ee74fcd76c012b2c2d3beb84c521174fce"
+        }
+      ]
+    }
+  },
+  "controller_rc": 1,
+  "mechanical_pass": false,
+  "controller_log": {
+    "path": "/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T164500Z-m3-ddp-quant-smoke-r2/controller.log",
+    "bytes": 671,
+    "sha256": "88cda68d9e26ac539a039faf7ba4cafa6766ab18cbd3de70596ab75e7bc171d6"
+  }
+}

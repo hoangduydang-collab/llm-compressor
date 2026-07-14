@@ -1,0 +1,4 @@
+config assertions: passed
+focused pytest: 39 passed in 0.55s
+bash -n launcher: passed
+dry-run assertions: passed (2 srun, 2 torchrun, 2 evidence-only, no representative harness)

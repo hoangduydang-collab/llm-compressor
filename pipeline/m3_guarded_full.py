@@ -612,12 +612,15 @@ class FullGuardController:
         layer = _layer_from_name(mapping.smooth_name)
         if layer is None:
             return
-        weight = mapping.smooth_layer.weight.detach().float()
+        # Do NOT upcast the whole weight: for a MoE expert that is a 37.7M-element
+        # bf16->fp32 copy of which we keep only 4096 values. Gather in the native
+        # dtype (O(count)) and cast the tiny sample, like deterministic_sketch.
+        weight = mapping.smooth_layer.weight.detach()
         scale = scales.detach().float().to(weight.device)
         flat = weight.reshape(-1)
         count = min(DEFAULT_SKETCH_VALUES, flat.numel())
         indices = _evenly_spaced_indices(flat.numel(), count, flat.device)
-        before = flat.index_select(0, indices)
+        before = flat.index_select(0, indices).float()
         if weight.ndim == 1:
             applied_scale = scale.index_select(0, indices)
         else:

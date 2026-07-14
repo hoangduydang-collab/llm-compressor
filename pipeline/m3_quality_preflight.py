@@ -32,6 +32,41 @@ def _write(path: Path, data: object) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def tokenizer_contract(tokenizer) -> dict[str, str]:
+    """Fingerprint the tokenizer and the exact default chat rendering we serve."""
+    payload = tokenizer.backend_tokenizer.to_str()
+    chat = getattr(tokenizer, "chat_template", None) or ""
+    rendered = tokenizer.apply_chat_template(
+        [{"role": "user", "content": [{"type": "text", "text": "Harness contract probe."}]}],
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+    return {
+        "tokenizer_sha256": hashlib.sha256(payload.encode()).hexdigest(),
+        "chat_template_sha256": hashlib.sha256(chat.encode()).hexdigest(),
+        "rendered_prompt_sha256": hashlib.sha256(rendered.encode()).hexdigest(),
+    }
+
+
+def compare_tokenizer_contracts(
+    reference: dict[str, str], candidates: dict[str, dict[str, str]]
+) -> dict:
+    fields = tuple(reference)
+    models = {}
+    for label, candidate in candidates.items():
+        mismatches = [field for field in fields if candidate.get(field) != reference[field]]
+        models[label] = {
+            **candidate,
+            "matches_reference": not mismatches,
+            "mismatches": mismatches,
+        }
+    return {
+        "valid": all(model["matches_reference"] for model in models.values()),
+        "reference": reference,
+        "models": models,
+    }
+
+
 def _task_split(task) -> str:
     config = getattr(task, "config", None) or getattr(task, "_config", None)
     dataset = getattr(task, "dataset", None)
@@ -144,8 +179,28 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
     _write(out / "resolved_tasks.json", {"aliases": resolved, "leaf_sizes": leaf_sizes})
 
     tokenizer = AutoTokenizer.from_pretrained(str(spec.model_source), trust_remote_code=True)
-    tokenizer_payload = tokenizer.backend_tokenizer.to_str()
-    tokenizer_sha = hashlib.sha256(tokenizer_payload.encode()).hexdigest()
+    reference_tokenizer = tokenizer_contract(tokenizer)
+    served_tokenizers = {
+        model.label: tokenizer_contract(
+            AutoTokenizer.from_pretrained(str(model.path), trust_remote_code=True)
+        )
+        for model in spec.models
+    }
+    tokenizer_report = compare_tokenizer_contracts(
+        reference_tokenizer, served_tokenizers
+    )
+    _write(out / "tokenizer_contract.json", tokenizer_report)
+    if tokenizer_report["valid"] is not True:
+        mismatched = [
+            label
+            for label, contract in tokenizer_report["models"].items()
+            if not contract["matches_reference"]
+        ]
+        raise ValueError(
+            "served tokenizer/chat-template contract differs from official "
+            f"MiniMax-M3 source: {', '.join(mismatched)}"
+        )
+    tokenizer_sha = reference_tokenizer["tokenizer_sha256"]
     dataset_meta = {"id":"Salesforce/wikitext","config":"wikitext-2-raw-v1","split":"test","revision":None,"text_column":"text"}
     dataset = load_dataset(dataset_meta["id"], dataset_meta["config"], split=dataset_meta["split"])
     texts = dataset[dataset_meta["text_column"]]
@@ -158,7 +213,6 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         if model.label == spec.baseline_label: baseline_bytes = report["checkpoint_bytes"]
         diagnostics[model.label] = report
         _write(out / "checkpoint_diagnostics" / f"{model.label}.json", report)
-    chat = getattr(tokenizer, "chat_template", None) or ""
     commit = subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip()
     production_manifest = manifests["production"]
     run_manifest = {
@@ -168,7 +222,8 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         "expected_arms":[{"model_label":m,"shard":s} for m,s in spec.expected_arms],
         "sample_manifest_sha256":_sha(production_manifest),
         "eval_config_sha256":_sha(resolved_config), "tokenizer_sha256":tokenizer_sha,
-        "chat_template_sha256":hashlib.sha256(chat.encode()).hexdigest(),
+        "chat_template_sha256":reference_tokenizer["chat_template_sha256"],
+        "rendered_prompt_sha256":reference_tokenizer["rendered_prompt_sha256"],
         "resolved_tasks":resolved, "lm_eval_version":revision,
         "matrix_sha256":_sha(matrix_path),
     }

@@ -56,7 +56,16 @@ out,root,label,shard,samples,config=sys.argv[1:]
 def sha(p): return hashlib.sha256(open(p,'rb').read()).hexdigest()
 run=json.load(open(root+'/run_manifest.json'))
 data={k:run[k] for k in ('run_id','git_commit','tokenizer_sha256','chat_template_sha256') if k in run}
-data.update(schema_version=1,model_label=label,shard=shard,sample_manifest_sha256=sha(samples),eval_config_sha256=sha(config))
+data.update(
+    schema_version=1,
+    model_label=label,
+    shard=shard,
+    sample_manifest_sha256=sha(samples),
+    eval_config_sha256=sha(config),
+    slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+    slurm_step_id=os.environ.get("SLURM_STEP_ID"),
+    slurm_node_name=os.environ.get("SLURMD_NODENAME"),
+)
 json.dump(data,open(out,'w'),indent=2)
 PYMAN
 set +e

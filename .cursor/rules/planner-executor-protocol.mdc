@@ -16,6 +16,9 @@ repository-wide source of truth.
 - Verify the named Git revision, inputs, environment, and resource topology.
   Execute the packet exactly; do not redesign experiments, change configs,
   thresholds, sample counts, topology, time limits, or launch methods.
+- On the current executor cluster, use top-level `srun` from a persistent
+  detached controller; `sbatch` is unavailable. Use another scheduler interface
+  only when a packet explicitly targets a separately verified cluster.
 - Apply the packet's proportional condition levels: Record and proceed only for
   an explicitly pre-authorized benign condition; use a permitted adaptation only
   within its exact named boundary; stop when code, inputs, scientific validity,

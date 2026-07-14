@@ -10,6 +10,9 @@ from pathlib import Path
 
 SCRIPT = Path("pipeline/slurm/run_m3_quality_eval_srun.sh")
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
+GROUPED_MATRIX = Path(
+    "pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml"
+)
 
 
 def _run(*args):
@@ -77,6 +80,54 @@ def test_production_dry_run_requires_gate_and_has_six_arms(tmp_path, request):
     assert "test_m3_ray_topology.sh" in result.stdout
 
 
+def test_grouped_quality_dry_run_uses_six_independent_srun_arms_and_matrix_time(
+    tmp_path, request
+):
+    run_root = _workspace_tmp(tmp_path, request)
+    gate = run_root / "smoke_gate.json"
+    gate.write_text(json.dumps({"ready_for_production": True}))
+
+    result = _run(
+        "--profile", "production", "--matrix", str(GROUPED_MATRIX),
+        "--run-root", _bash_path(run_root),
+        "--smoke-gate", _bash_path(gate), "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    commands = [line for line in result.stdout.splitlines() if line.startswith("srun ")]
+    assert len(commands) == 6
+    assert all("--nodes=1" in line and "--gpus-per-node=8" in line for line in commands)
+    assert all("--time 16:00:00" in line for line in commands)
+    assert sum("--run-probe 1" in line for line in commands) == 2
+    assert sum("--run-probe 0" in line for line in commands) == 4
+    assert sum("--probe-tokens 8192" in line for line in commands) == 2
+    assert sum("--probe-tokens 0" in line for line in commands) == 4
+    assert "sbatch" not in result.stdout
+    assert "total_nodes=6" in result.stdout
+
+
+def test_grouped_quality_rejects_time_override_that_conflicts_with_matrix(
+    tmp_path, request
+):
+    run_root = _workspace_tmp(tmp_path, request)
+    gate = run_root / "smoke_gate.json"
+    gate.write_text(json.dumps({"ready_for_production": True}))
+    env = os.environ.copy()
+    env["TIME_LIMIT"] = "08:00:00"
+
+    result = subprocess.run(
+        [
+            "bash", str(SCRIPT), "--profile", "production",
+            "--matrix", str(GROUPED_MATRIX), "--run-root", _bash_path(run_root),
+            "--smoke-gate", _bash_path(gate), "--dry-run",
+        ],
+        text=True, capture_output=True, check=False, env=env,
+    )
+
+    assert result.returncode != 0
+    assert "TIME_LIMIT conflicts with matrix arm_time_limit" in result.stderr
+
+
 def test_runner_scripts_are_valid_bash():
     for script in (
         SCRIPT,
@@ -126,6 +177,13 @@ def test_ray_placement_group_diagnostic_is_bounded_and_captures_state():
 def test_distributional_probe_receives_distributed_backend():
     arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
     assert '--distributed-executor-backend "$BACKEND"' in arm
+
+
+def test_arm_manifest_records_srun_scheduler_identity():
+    arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+    assert 'slurm_job_id=os.environ.get("SLURM_JOB_ID")' in arm
+    assert 'slurm_step_id=os.environ.get("SLURM_STEP_ID")' in arm
+    assert 'slurm_node_name=os.environ.get("SLURMD_NODENAME")' in arm
 
 
 def test_multinode_arm_captures_vllm_placement_during_startup():

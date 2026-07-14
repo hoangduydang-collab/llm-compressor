@@ -135,6 +135,19 @@ def _write_samples(path: Path, rows: list[dict]) -> None:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _deduplicate_sample_rows(rows: list[dict]) -> list[dict]:
+    """Collapse repeated lm-eval records without hiding conflicting evidence."""
+    unique: dict[str, dict] = {}
+    for row in rows:
+        uid = str(row.get("sample_uid") or "")
+        previous = unique.get(uid)
+        if previous is None:
+            unique[uid] = row
+        elif previous != row:
+            raise ValueError(f"conflicting duplicate sample_uid: {uid}")
+    return list(unique.values())
+
+
 def _write_json_atomic(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -210,20 +223,22 @@ def checkpoint_task_result(
 ) -> list[dict]:
     """Persist one task's metrics (and optional samples) immediately after eval."""
     task_results = require_task_results_or_aggregate(batch, task)
-    aggregate[task.name] = _numeric_metrics(task_results)
-    aggregate_path.parent.mkdir(parents=True, exist_ok=True)
-    aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
-
     rows: list[dict] = []
     if log_samples:
         raw = _collect_task_samples(batch, task.name)
         if raw:
-            rows = [_extract_sample_row(s, task) for s in raw]
+            rows = _deduplicate_sample_rows(
+                [_extract_sample_row(s, task) for s in raw]
+            )
             _write_samples(samples_dir / f"{task.name}.jsonl", rows)
             _write_json_atomic(
                 samples_dir.parent / "generation_health" / f"{task.name}.json",
                 summarize_generation_health(rows),
             )
+
+    aggregate[task.name] = _numeric_metrics(task_results)
+    aggregate_path.parent.mkdir(parents=True, exist_ok=True)
+    aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
 
     print(
         f"[evalsuite] checkpoint: {task.name} "

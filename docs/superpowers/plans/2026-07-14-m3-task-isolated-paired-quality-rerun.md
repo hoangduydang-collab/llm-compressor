@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** Build a copy-ready, six-node-capped Slurm array run that evaluates 100 paired samples for each MiniMax-M3 quality task in isolated AWQ and GPTQ arms.
+**Goal:** Build a copy-ready six-node `srun` run that groups tasks per model, reuses the completed AWQ MMLU checkpoint, and evaluates 100 paired samples per task.
 
-**Architecture:** Add a backward-compatible scheduling contract to the quality matrix, then materialize twelve immutable model/shard arms from a new six-shard matrix. A submission script maps those arms onto a Slurm array capped at six concurrent single-node jobs, while the existing arm runner and merger gain the minimal probe-only and completion-integrity behavior needed by the new topology.
+**Architecture:** Materialize six model/shard arms from a three-shard matrix and launch them as independent top-level `srun` steps. Validate and import only the completed AWQ MMLU checkpoint before launch; keep GPTQ MMLU pending. Deduplicate normalized sample evidence by stable UID.
 
-**Tech Stack:** Python 3.11, dataclasses, PyYAML, pytest, Bash, Slurm `sbatch` arrays, existing EvalSuite and MiniMax-M3 quality tooling.
+**Tech Stack:** Python 3.11, dataclasses, PyYAML, pytest, Bash, Slurm `srun`, existing EvalSuite and MiniMax-M3 quality tooling.
 
 ## Global Constraints
 
@@ -19,6 +19,16 @@
 - Do not add automatic retries or authorize downstream performance work.
 - Follow `PLANNER_EXECUTOR_PROTOCOL.md`; historical executor evidence is immutable.
 - Run shell tests on Windows with `C:\Program Files\Git\bin` prepended to `PATH`.
+- The executor cluster supports `srun`, not `sbatch`.
+
+## Revision r3 tasks (approved 2026-07-14)
+
+- [x] Change the matrix to three grouped shards, six arms, and `16:00:00` limits.
+- [x] Replace array-launcher tests with `srun` dry-run tests and remove `sbatch` scripts.
+- [x] Test-first deduplicate identical normalized sample UIDs and reject conflicts.
+- [x] Add a fail-closed import for GPTQ GPQA plus AWQ GPQA/MMLU/GSM8K; keep all incomplete tasks pending.
+- [x] Record the `srun` constraint in persistent planner guidance.
+- [x] Verify, commit, and push `duy-branch`.
 
 ---
 

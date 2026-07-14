@@ -2,8 +2,64 @@
 
 **Date:** 2026-07-14
 **Scope:** MiniMax-M3 paired GPTQ-versus-AWQ quick quality evaluation
-**Status:** Approved for implementation planning
+**Status:** Approved for implementation (r3 amendment below supersedes conflicting r2 text)
 **Workflow state:** `PLANNER_ANALYSIS`
+
+## Approved r3 amendment: grouped `srun` execution
+
+The executor cluster supports top-level `srun` allocations, not `sbatch`. Replace
+the twelve task-isolated array arms with six independent one-node arms, all
+launched concurrently from a detached `tmux` controller outside any existing
+Slurm allocation:
+
+| Node arm | Ordered work |
+| --- | --- |
+| `inhouse_gptq/reasoning` | GPQA, then IFEval |
+| `inhouse_gptq/broad_math` | MMLU-Pro, then GSM8K, then AIME 2025 |
+| `inhouse_gptq/distributional_probe` | 8,192-token probe |
+| `cyankiwi_awq/reasoning` | GPQA, then IFEval |
+| `cyankiwi_awq/broad_math` | resume saved MMLU-Pro and GSM8K, then AIME 2025 |
+| `cyankiwi_awq/distributional_probe` | 8,192-token probe |
+
+Each EvalSuite arm loads its model once and checkpoints after every task. Each
+top-level `srun` requests one exclusive 8xH100 node and has an independent
+`16:00:00` ceiling. The ceiling is safety headroom, not expected runtime. One
+arm's failure must not cancel siblings, and no retry is automatic.
+
+The prior production run saved four complete task checkpoints: GPTQ GPQA
+(100/100, 0.28), AWQ GPQA (100/100, 0.24), AWQ MMLU-Pro (100/100, 0.76), and
+AWQ GSM8K (100/100, 0.97). Before launch, the r3 packet must verify identical
+old/new production manifests, each task aggregate, and 100 unique sample UIDs,
+then import only those task aggregates, samples, and generation-health records
+into the matching new arm. Existing EvalSuite resume behavior skips them.
+
+GPTQ MMLU-Pro reached only 96/100 and wrote no completed task checkpoint, so it
+must rerun. Neither IFEval, AIME, GPTQ GSM8K, nor either distributional probe
+completed. Missing or invalid source artifacts are a stop-and-return condition;
+a score found only in a log is not a substitute.
+
+The old GSM8K evidence also exposed a normalization defect: 200 stored rows but
+only 100 unique stable sample UIDs. Checkpoint writing must collapse identical
+rows with the same UID and reject conflicting rows with the same UID. Subtask
+namespaces remain part of the UID, preserving legitimate group-task rows.
+
+Implementation reuses `pipeline/slurm/run_m3_quality_eval_srun.sh`, removes the
+unusable `sbatch` array scripts, and records the cluster constraint in durable
+planner guidance. Acceptance is six dry-run `srun` commands, no `sbatch`, six
+nodes maximum, 100 paired samples per task (30 for the 30-item AIME dataset),
+one probe per model, validated AWQ MMLU reuse, and protocol-compliant evidence.
+
+Before GPU launch, r3 also writes a fail-closed harness-contract artifact. It
+pins lm-eval 0.4.12, resolved task aliases/metrics/few-shot counts, the official
+base tokenizer and chat-template hashes, requires both served checkpoint
+tokenizers plus a rendered default prompt to match that official source,
+adaptive thinking with `</mm:think>`,
+greedy 16k generation, and the TP8 vLLM/EP serving contract. This makes the
+paired result reflective of the model under a stable standard harness. The
+100-sample subset remains a directional paired comparison, not a directly
+comparable reproduction of full public leaderboard scores; MiniMax does not
+publish an identical five-task recipe, and its model card recommends sampling
+parameters for general inference rather than this deterministic benchmark run.
 
 ## Decision to make
 

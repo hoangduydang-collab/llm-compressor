@@ -67,6 +67,58 @@ def test_checkpoint_task_result_writes_aggregate_and_samples(tmp_path: Path):
     assert (tmp_path / "samples" / "gsm8k.jsonl").is_file()
 
 
+def test_checkpoint_collapses_identical_duplicate_sample_uids(tmp_path: Path):
+    task = EvalTask(name="gsm8k", metric="exact_match,strict-match")
+    sample = {
+        "doc_id": 7,
+        "target": "42",
+        "exact_match,strict-match": 1.0,
+        "resps": ["42"],
+    }
+    batch = {
+        "results": {"gsm8k": {"exact_match,strict-match": 1.0}},
+        "samples": {"gsm8k": [sample, dict(sample)]},
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        batch=batch,
+        aggregate={},
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert len(rows) == 1
+    assert len((tmp_path / "samples" / "gsm8k.jsonl").read_text().splitlines()) == 1
+
+
+def test_checkpoint_rejects_conflicting_duplicate_sample_uids(tmp_path: Path):
+    import pytest
+
+    task = EvalTask(name="gsm8k", metric="exact_match,strict-match")
+    batch = {
+        "results": {"gsm8k": {"exact_match,strict-match": 0.5}},
+        "samples": {
+            "gsm8k": [
+                {"doc_id": 7, "exact_match,strict-match": 1.0, "resps": ["42"]},
+                {"doc_id": 7, "exact_match,strict-match": 0.0, "resps": ["41"]},
+            ]
+        },
+    }
+
+    with pytest.raises(ValueError, match="conflicting duplicate sample_uid"):
+        checkpoint_task_result(
+            task=task,
+            batch=batch,
+            aggregate={},
+            aggregate_path=tmp_path / "aggregate.json",
+            samples_dir=tmp_path / "samples",
+            log_samples=True,
+        )
+    assert not (tmp_path / "aggregate.json").exists()
+
+
 def test_collect_task_samples_merges_group_subtasks():
     from pipeline.evalsuite.static import _collect_task_samples
 

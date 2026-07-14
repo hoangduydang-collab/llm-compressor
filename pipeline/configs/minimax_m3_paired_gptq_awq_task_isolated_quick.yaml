@@ -1,7 +1,7 @@
 schema_version: 1
 name: minimax-m3-paired-gptq-vs-cyankiwi-task-isolated-quick
-# Directional paired comparison with one task or probe per cluster arm. Both
-# models receive the same 100 seeded samples for every quality task.
+# Directional paired comparison with two task groups plus one probe per model.
+# Tasks in each group share one model load and checkpoint independently.
 backend: vllm
 baseline_label: cyankiwi_awq
 model_source: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
@@ -22,20 +22,11 @@ models:
     distributed_executor_backend: mp
 
 shards:
-  - name: gpqa_diamond
-    tasks: [gpqa_diamond]
+  - name: reasoning
+    tasks: [gpqa_diamond, ifeval]
     distributional_probe: false
-  - name: ifeval
-    tasks: [ifeval]
-    distributional_probe: false
-  - name: aime_2025
-    tasks: [aime_2025]
-    distributional_probe: false
-  - name: mmlu_pro
-    tasks: [mmlu_pro]
-    distributional_probe: false
-  - name: gsm8k
-    tasks: [gsm8k]
+  - name: broad_math
+    tasks: [mmlu_pro, gsm8k, aime_2025]
     distributional_probe: false
   - name: distributional_probe
     tasks: []
@@ -55,7 +46,7 @@ sampling:
 
 scheduling:
   max_parallel_arms: 6
-  arm_time_limit: "08:00:00"
+  arm_time_limit: "16:00:00"
 
 probe:
   total_tokens: 8192

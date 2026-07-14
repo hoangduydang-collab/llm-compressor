@@ -55,6 +55,25 @@ The planner must not assume GPU access. The executor's cluster access is not a
 reason to delegate open-ended analysis to it, and diagnostics must not allocate
 GPUs for full quality evaluation or re-quantization without cause.
 
+### Executor cluster scheduler constraint
+
+The current executor cluster accepts top-level `srun` allocations and does not
+support `sbatch`. Planner-authored launchers and handoffs for this cluster must
+use `srun` from a persistent detached controller (normally `tmux`) and must not
+emit `sbatch` commands. A different launch method requires an explicit packet
+targeting a separately verified cluster.
+
+### Evaluation harness contract
+
+Every planner packet that spends cluster time on model-quality evaluation must
+include a fail-closed, machine-readable harness check before GPU launch. Record
+and verify the tokenizer/chat-template hashes, model reasoning mode, task aliases
+and harness version, few-shot counts, metrics, generation/sampling parameters,
+serving backend/topology, and sample-manifest hash. State separately whether the
+run is directly score-comparable to a named public benchmark recipe. A paired
+subset can be valid for model-to-model decisions without being directly
+comparable to a full public leaderboard score; never conflate those claims.
+
 ## Planner–executor protocol
 
 Both roles must read and follow `PLANNER_EXECUTOR_PROTOCOL.md`. It is the

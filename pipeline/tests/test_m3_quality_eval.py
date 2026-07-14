@@ -57,45 +57,36 @@ def test_default_matrix_has_three_active_models_and_autoround_deferred():
     assert spec.probe.max_overhead_seconds == 1_800
 
 
-def test_task_isolated_matrix_has_twelve_arms_and_six_node_cap(tmp_path):
+def test_task_isolated_matrix_groups_tasks_into_six_model_arms(tmp_path):
     spec = load_matrix(TASK_ISOLATED_MATRIX)
 
     assert [shard.name for shard in spec.shards] == [
-        "gpqa_diamond",
-        "ifeval",
-        "aime_2025",
-        "mmlu_pro",
-        "gsm8k",
+        "reasoning",
+        "broad_math",
         "distributional_probe",
     ]
     assert [shard.tasks for shard in spec.shards] == [
-        ("gpqa_diamond",),
-        ("ifeval",),
-        ("aime_2025",),
-        ("mmlu_pro",),
-        ("gsm8k",),
+        ("gpqa_diamond", "ifeval"),
+        ("mmlu_pro", "gsm8k", "aime_2025"),
         (),
     ]
     assert [shard.distributional_probe for shard in spec.shards] == [
-        False,
-        False,
-        False,
         False,
         False,
         True,
     ]
     assert spec.sampling["production_samples_per_task"] == 100
     assert spec.scheduling.max_parallel_arms == 6
-    assert spec.scheduling.arm_time_limit == "08:00:00"
+    assert spec.scheduling.arm_time_limit == "16:00:00"
 
     gate = tmp_path / "smoke_gate.json"
     gate.write_text(json.dumps({"ready_for_production": True}))
     plan = build_launch_plan(spec, profile="production", smoke_gate=gate)
-    assert len(plan["arms"]) == 12
-    assert plan["total_nodes"] == 12
+    assert len(plan["arms"]) == 6
+    assert plan["total_nodes"] == 6
     assert plan["max_parallel_arms"] == 6
     assert plan["max_concurrent_nodes"] == 6
-    assert plan["arm_time_limit"] == "08:00:00"
+    assert plan["arm_time_limit"] == "16:00:00"
 
 
 def _write_matrix_variant(tmp_path, **updates):
@@ -605,6 +596,27 @@ def test_preflight_inspects_loaded_leaf_evaluation_splits():
     )
     manager = SimpleNamespace(load=lambda names: {"tasks": {"leaf_a": task_a, "leaf_b": task_b}})
     assert inspect_leaf_sizes(manager, "group") == {"leaf_a": 7, "leaf_b": 3}
+
+
+def test_tokenizer_contract_requires_every_served_model_to_match_reference():
+    from pipeline.m3_quality_preflight import compare_tokenizer_contracts
+
+    reference = {
+        "tokenizer_sha256": "tokenizer",
+        "chat_template_sha256": "chat",
+        "rendered_prompt_sha256": "prompt",
+    }
+    report = compare_tokenizer_contracts(
+        reference,
+        {
+            "awq": dict(reference),
+            "gptq": {**reference, "chat_template_sha256": "wrong"},
+        },
+    )
+
+    assert report["valid"] is False
+    assert report["models"]["awq"]["matches_reference"] is True
+    assert report["models"]["gptq"]["mismatches"] == ["chat_template_sha256"]
 
 
 def test_sample_index_validation_reports_resolved_leaf_bounds():

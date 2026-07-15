@@ -95,14 +95,9 @@ def enrich_generation_rows(
         response = unwrap_singleton(row.get("response"))
         if isinstance(response, str):
             row["response"] = response
-        if (
-            isinstance(response, str)
-            and health.get("token_count") is None
-        ):
+        if isinstance(response, str) and health.get("token_count") is None:
             token_ids = [int(token_id) for token_id in encode(response)]
-            extracted_answer = (
-                None if health.get("answer_extraction_failed") else True
-            )
+            extracted_answer = None if health.get("answer_extraction_failed") else True
             health = analyze_generation(
                 response,
                 token_ids=token_ids,
@@ -173,9 +168,7 @@ def _length_summary(values: list[int]) -> dict[str, float | int | None]:
 
 def summarize_generation_health(rows: Sequence[dict]) -> dict[str, Any]:
     applicable_rows = [
-        row
-        for row in rows
-        if (row.get("health") or {}).get("applicable", True)
+        row for row in rows if (row.get("health") or {}).get("applicable", True)
     ]
     count = len(applicable_rows)
     health_rows = [row.get("health") or {} for row in applicable_rows]
@@ -202,6 +195,15 @@ def summarize_generation_health(rows: Sequence[dict]) -> dict[str, Any]:
         "length_cap_hit_count": total("length_cap_hit"),
         "periodic_loop_count": total("periodic_loop"),
         "nonfinite_metric_count": nonfinite,
+        "reasoning_failure_count": sum(
+            bool(
+                health.get("answer_extraction_failed")
+                or health.get("length_cap_hit")
+                or health.get("empty")
+                or health.get("periodic_loop")
+            )
+            for health in health_rows
+        ),
         "output_tokens": _length_summary(token_counts),
     }
     for field in (
@@ -211,8 +213,7 @@ def summarize_generation_health(rows: Sequence[dict]) -> dict[str, Any]:
         "length_cap_hit",
         "periodic_loop",
         "nonfinite_metric",
+        "reasoning_failure",
     ):
-        result[f"{field}_rate"] = (
-            result[f"{field}_count"] / count if count else None
-        )
+        result[f"{field}_rate"] = result[f"{field}_count"] / count if count else None
     return result

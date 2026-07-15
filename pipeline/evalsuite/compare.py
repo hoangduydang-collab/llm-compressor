@@ -98,10 +98,7 @@ def _rows_by_key(
 
 
 def _delta_mean(values_a: list[float], values_b: list[float]) -> float:
-    return (
-        sum(b - a for a, b in zip(values_a, values_b, strict=True))
-        / len(values_a)
-    )
+    return sum(b - a for a, b in zip(values_a, values_b, strict=True)) / len(values_a)
 
 
 def _mean_second(_: list[float], values_b: list[float]) -> float:
@@ -192,11 +189,7 @@ def _pair_binary(
         "paired_coverage": n / denominator if denominator else None,
         "acc_a": acc_a,
         "acc_b": acc_b,
-        "delta": (
-            (acc_b - acc_a)
-            if acc_a is not None and acc_b is not None
-            else None
-        ),
+        "delta": ((acc_b - acc_a) if acc_a is not None and acc_b is not None else None),
         "score_recovery_ratio": (acc_b / acc_a) if acc_a else None,
         "both_correct": both_correct,
         "both_wrong": both_wrong,
@@ -216,6 +209,180 @@ def _pair_binary(
         "cohens_kappa": kappa,
         "mcnemar": mcnemar,
         "bootstrap": bootstrap,
+    }
+
+
+def _repeated_rows_by_key(
+    rows: list[dict],
+    *,
+    correct_key: str,
+) -> dict[tuple[object, int], dict]:
+    mapped: dict[tuple[object, int], dict] = {}
+    attempt_ids: set[object] = set()
+    for row in rows:
+        if row.get(correct_key) is None:
+            continue
+        sample_uid = row.get("sample_uid")
+        generation_seed = row.get("generation_seed")
+        attempt_uid = row.get("attempt_uid")
+        if sample_uid is None or generation_seed is None or attempt_uid is None:
+            raise ValueError(
+                "repeated paired sample requires sample_uid, generation_seed, "
+                "and attempt_uid"
+            )
+        if attempt_uid in attempt_ids:
+            raise ValueError(f"duplicate attempt identity: {attempt_uid!r}")
+        attempt_ids.add(attempt_uid)
+        key = (sample_uid, int(generation_seed))
+        if key in mapped:
+            raise ValueError(f"duplicate attempt grid cell: {key!r}")
+        mapped[key] = row
+    return mapped
+
+
+def _pair_repeated_binary(
+    rows_a: list[dict],
+    rows_b: list[dict],
+    correct_key: str = "correct",
+    *,
+    seed: int = 42,
+    iterations: int = 10_000,
+) -> dict:
+    """Compare repeated attempts while resampling independent questions."""
+    map_a = _repeated_rows_by_key(rows_a, correct_key=correct_key)
+    map_b = _repeated_rows_by_key(rows_b, correct_key=correct_key)
+    keys_a = set(map_a)
+    keys_b = set(map_b)
+    if keys_a != keys_b:
+        raise ValueError("repeated comparison seed grid differs between models")
+
+    questions = sorted({key[0] for key in keys_a}, key=str)
+    seeds_by_question = {
+        question: {grid_seed for uid, grid_seed in keys_a if uid == question}
+        for question in questions
+    }
+    seed_grids = {tuple(sorted(seeds)) for seeds in seeds_by_question.values()}
+    if len(seed_grids) > 1:
+        raise ValueError("repeated comparison has an incomplete seed grid")
+    seeds = list(next(iter(seed_grids), ()))
+
+    correctness_a: list[float] = []
+    correctness_b: list[float] = []
+    regressions = recoveries = both_correct = both_wrong = 0
+    per_seed: dict[str, dict[str, float]] = {}
+    for generation_seed in seeds:
+        seed_a: list[float] = []
+        seed_b: list[float] = []
+        for question in questions:
+            ca = float(map_a[(question, generation_seed)][correct_key])
+            cb = float(map_b[(question, generation_seed)][correct_key])
+            seed_a.append(ca)
+            seed_b.append(cb)
+            correctness_a.append(ca)
+            correctness_b.append(cb)
+            if ca and cb:
+                both_correct += 1
+            elif not ca and not cb:
+                both_wrong += 1
+            elif ca and not cb:
+                regressions += 1
+            else:
+                recoveries += 1
+        acc_seed_a = sum(seed_a) / len(seed_a) if seed_a else 0.0
+        acc_seed_b = sum(seed_b) / len(seed_b) if seed_b else 0.0
+        per_seed[str(generation_seed)] = {
+            "acc_a": acc_seed_a,
+            "acc_b": acc_seed_b,
+            "delta": acc_seed_b - acc_seed_a,
+        }
+
+    question_means_a = (
+        [
+            sum(
+                float(map_a[(question, generation_seed)][correct_key])
+                for generation_seed in seeds
+            )
+            / len(seeds)
+            for question in questions
+        ]
+        if seeds
+        else []
+    )
+    question_means_b = (
+        [
+            sum(
+                float(map_b[(question, generation_seed)][correct_key])
+                for generation_seed in seeds
+            )
+            / len(seeds)
+            for question in questions
+        ]
+        if seeds
+        else []
+    )
+    paired_question_means = zip(question_means_a, question_means_b, strict=True)
+    question_wins = sum(b > a for a, b in paired_question_means)
+    paired_question_means = zip(question_means_a, question_means_b, strict=True)
+    question_losses = sum(b < a for a, b in paired_question_means)
+    question_ties = len(questions) - question_wins - question_losses
+
+    n = len(correctness_a)
+    acc_a = sum(correctness_a) / n if n else None
+    acc_b = sum(correctness_b) / n if n else None
+    flips = regressions + recoveries
+    baseline_correct = both_correct + regressions
+    baseline_wrong = both_wrong + recoveries
+    accuracy_bootstrap = None
+    if questions:
+        accuracy_bootstrap = paired_bootstrap(
+            question_means_a,
+            question_means_b,
+            statistic=_delta_mean,
+            seed=seed,
+            iterations=iterations,
+        )
+        accuracy_bootstrap["resampling_unit"] = "question"
+
+    return {
+        "n_a": len(map_a),
+        "n_b": len(map_b),
+        "n_questions": len(questions),
+        "n_paired": n,
+        "missing_in_a": 0,
+        "missing_in_b": 0,
+        "paired_coverage": 1.0 if n else None,
+        "acc_a": acc_a,
+        "acc_b": acc_b,
+        "delta": acc_b - acc_a if acc_a is not None and acc_b is not None else None,
+        "score_recovery_ratio": acc_b / acc_a if acc_a else None,
+        "both_correct": both_correct,
+        "both_wrong": both_wrong,
+        "regressions_a_correct_b_wrong": regressions,
+        "recoveries_a_wrong_b_correct": recoveries,
+        "net_harmful_flips": regressions - recoveries,
+        "flip_rate": flips / n if n else None,
+        "regression_rate": regressions / n if n else None,
+        "recovery_rate": recoveries / n if n else None,
+        "conditional_regression_rate": (
+            regressions / baseline_correct if baseline_correct else None
+        ),
+        "conditional_recovery_rate": (
+            recoveries / baseline_wrong if baseline_wrong else None
+        ),
+        "agreement": (both_correct + both_wrong) / n if n else None,
+        "cohens_kappa": cohens_kappa(both_correct, both_wrong, regressions, recoveries),
+        "mcnemar": None,
+        "mcnemar_note": "not evaluated: attempts within a question are not independent",
+        "per_seed": per_seed,
+        "question_means_a": question_means_a,
+        "question_means_b": question_means_b,
+        "question_wins": question_wins,
+        "question_ties": question_ties,
+        "question_losses": question_losses,
+        "inference_unit": "question",
+        "bootstrap": (
+            {"accuracy_delta": accuracy_bootstrap} if accuracy_bootstrap else None
+        ),
     }
 
 
@@ -305,9 +472,19 @@ def _compare_task(
             iterations=iterations,
         )
 
-    return _pair_binary(
-        _load_jsonl(path_a),
-        _load_jsonl(path_b),
+    rows_a = _load_jsonl(path_a)
+    rows_b = _load_jsonl(path_b)
+    repeated_a = any("generation_seed" in row for row in rows_a)
+    repeated_b = any("generation_seed" in row for row in rows_b)
+    mixed_a = repeated_a and any("generation_seed" not in row for row in rows_a)
+    mixed_b = repeated_b and any("generation_seed" not in row for row in rows_b)
+    cross_mode = bool(rows_a and rows_b and repeated_a != repeated_b)
+    if mixed_a or mixed_b or cross_mode:
+        raise ValueError("mixed legacy/repeated samples cannot be compared")
+    pairer = _pair_repeated_binary if repeated_a or repeated_b else _pair_binary
+    return pairer(
+        rows_a,
+        rows_b,
         seed=seed,
         iterations=iterations,
     )
@@ -366,10 +543,9 @@ def _micro_macro(task_results: dict[str, dict]) -> dict:
     micro_recs = sum(v["recoveries_a_wrong_b_correct"] for v in scored.values())
 
     macro_flip = sum(v["flip_rate"] for v in scored.values()) / len(scored)
-    macro_delta = (
-        sum(v["delta"] for v in scored.values() if v.get("delta") is not None)
-        / len(scored)
-    )
+    macro_delta = sum(
+        v["delta"] for v in scored.values() if v.get("delta") is not None
+    ) / len(scored)
 
     return {
         "micro_flip_rate": micro_flips / total_n if total_n else None,

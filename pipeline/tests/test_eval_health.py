@@ -87,9 +87,30 @@ def test_summary_counts_health_and_nonfinite_metrics():
     assert result["periodic_loop_count"] == 1
     assert result["length_cap_hit_count"] == 1
     assert result["answer_extraction_failure_count"] == 1
+    assert result["reasoning_failure_count"] == 1
+    assert result["reasoning_failure_rate"] == 0.5
     assert result["nonfinite_metric_count"] == 1
     assert result["output_tokens"]["max"] == 16
 
+
+def test_reasoning_failure_is_row_union_not_sum_of_failure_flags():
+    rows = [
+        {
+            "health": {
+                "applicable": True,
+                "empty": True,
+                "answer_extraction_failed": True,
+                "length_cap_hit": True,
+                "periodic_loop": True,
+            }
+        },
+        {"health": {"applicable": True}},
+    ]
+
+    result = summarize_generation_health(rows)
+
+    assert result["reasoning_failure_count"] == 1
+    assert result["reasoning_failure_rate"] == 0.5
 
 
 def test_enrich_generation_rows_reencodes_missing_token_ids():
@@ -112,7 +133,6 @@ def test_enrich_generation_rows_reencodes_missing_token_ids():
     assert enriched[0]["health"]["token_count_source"] == "tokenizer_reencode"
     assert enriched[0]["health"]["periodic_loop"] is True
     assert enriched[0]["health"]["length_cap_hit"] is True
-
 
 
 def test_enrich_samples_file_rewrites_rows_and_health_summary(tmp_path):

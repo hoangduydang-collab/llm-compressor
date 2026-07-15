@@ -1,17 +1,16 @@
 """Unit tests for evalsuite comparison metrics."""
 
-import math
-
 import pytest
 
 from pipeline.config import PipelineConfig
 from pipeline.evalsuite.compare import (
+    _pair_binary,
+    _pair_perplexity,
+    _pair_repeated_binary,
     chi2_sf_df1,
     cohens_kappa,
     compare_eval_dirs,
     mcnemar_test,
-    _pair_binary,
-    _pair_perplexity,
 )
 
 
@@ -80,7 +79,6 @@ class TestPairBinary:
         assert r["n_paired"] == 0
         assert r["flip_rate"] is None
 
-
     def test_reports_quantization_conditionals_and_recovery(self):
         a = {"a": 1, "b": 1, "c": 0, "d": 0}
         b = {"a": 1, "b": 0, "c": 1, "d": 0}
@@ -137,6 +135,72 @@ class TestPairPerplexity:
         assert result["paired_coverage"] == 1.0
 
 
+class TestPairRepeatedBinary:
+    @staticmethod
+    def _rows(values: dict[str, list[int]], seeds=(42, 1234, 4158)):
+        return [
+            {
+                "sample_uid": question,
+                "generation_seed": seed,
+                "attempt_uid": f"{question}:{seed}",
+                "correct": correct,
+            }
+            for question, outcomes in values.items()
+            for seed, correct in zip(seeds, outcomes, strict=True)
+        ]
+
+    def test_groups_bootstrap_and_win_loss_by_question(self):
+        a = self._rows({"q1": [1, 1, 0], "q2": [0, 0, 0]})
+        b = self._rows({"q1": [1, 0, 0], "q2": [1, 1, 0]})
+
+        result = _pair_repeated_binary(a, b, seed=7, iterations=25)
+
+        assert result["n_questions"] == 2
+        assert result["n_paired"] == 6
+        assert result["acc_a"] == pytest.approx(2 / 6)
+        assert result["acc_b"] == pytest.approx(3 / 6)
+        assert result["per_seed"]["42"]["delta"] == pytest.approx(0.5)
+        assert result["question_wins"] == 1
+        assert result["question_ties"] == 0
+        assert result["question_losses"] == 1
+        assert result["inference_unit"] == "question"
+        assert result["bootstrap"]["accuracy_delta"]["resampling_unit"] == "question"
+        assert result["bootstrap"]["accuracy_delta"]["iterations"] == 25
+        assert result["mcnemar"] is None
+        assert result["regressions_a_correct_b_wrong"] == 1
+        assert result["recoveries_a_wrong_b_correct"] == 2
+
+    def test_rejects_duplicate_attempt_identity(self):
+        rows = self._rows({"q1": [1, 0, 1]})
+        with pytest.raises(ValueError, match="duplicate attempt"):
+            _pair_repeated_binary(rows + [dict(rows[0])], rows)
+
+    def test_rejects_incomplete_or_mismatched_seed_grid(self):
+        a = self._rows({"q1": [1, 0, 1], "q2": [0, 1, 0]})
+        b = self._rows({"q1": [1, 0, 1], "q2": [0, 1, 0]})
+        with pytest.raises(ValueError, match="seed grid"):
+            _pair_repeated_binary(a, b[:-1])
+
+    def test_compare_rejects_mixed_legacy_and_repeated_rows(self, tmp_path):
+        import json
+
+        for name, rows in (
+            ("a", [{"sample_uid": "q1", "correct": 1}]),
+            ("b", self._rows({"q1": [1, 0, 1]})),
+        ):
+            directory = tmp_path / name
+            (directory / "samples").mkdir(parents=True)
+            (directory / "aggregate.json").write_text(
+                json.dumps({"gpqa": {"exact_match": 1.0}}), encoding="utf-8"
+            )
+            (directory / "samples" / "gpqa.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+
+        with pytest.raises(ValueError, match="mixed legacy/repeated"):
+            compare_eval_dirs(tmp_path / "a", tmp_path / "b")
+
+
 class TestCompareEvalDirs:
     def test_end_to_end_self_compare(self, tmp_path):
         import json
@@ -171,16 +235,11 @@ class TestCompareEvalDirs:
 
         assert report["tasks"]["mmlu"]["flip_rate"] == 0.0
         assert (
-            report["tasks"]["mmlu"]["bootstrap"]["accuracy_delta"]["iterations"]
-            == 17
+            report["tasks"]["mmlu"]["bootstrap"]["accuracy_delta"]["iterations"] == 17
         )
-        assert (
-            report["tasks"]["mmlu"]["bootstrap"]["accuracy_delta"]["seed"]
-            == 9
-        )
+        assert report["tasks"]["mmlu"]["bootstrap"]["accuracy_delta"]["seed"] == 9
         assert report["summary"]["micro_flip_rate"] == 0.0
         assert (out / "compare.json").exists()
-
 
     def test_candidate_only_samples_are_not_silently_skipped(self, tmp_path):
         import json

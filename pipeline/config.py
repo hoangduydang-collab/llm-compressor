@@ -116,14 +116,25 @@ class EvalTask:
 def full_static_tasks() -> list[EvalTask]:
     """Default static lm-eval suite (8 tasks, full splits unless overridden)."""
     return [
-        EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False, limit=None),
+        EvalTask(
+            name="wikitext",
+            metric="word_perplexity,none",
+            higher_is_better=False,
+            limit=None,
+        ),
         EvalTask(name="mmlu", metric="acc,none", num_fewshot=5, limit=None),
-        EvalTask(name="arc_challenge", metric="acc_norm,none", num_fewshot=25, limit=None),
+        EvalTask(
+            name="arc_challenge", metric="acc_norm,none", num_fewshot=25, limit=None
+        ),
         EvalTask(name="hellaswag", metric="acc_norm,none", num_fewshot=10, limit=None),
         EvalTask(name="winogrande", metric="acc,none", num_fewshot=5, limit=None),
-        EvalTask(name="gsm8k", metric="exact_match,strict-match", num_fewshot=5, limit=None),
+        EvalTask(
+            name="gsm8k", metric="exact_match,strict-match", num_fewshot=5, limit=None
+        ),
         EvalTask(name="truthfulqa_mc2", metric="acc,none", num_fewshot=0, limit=None),
-        EvalTask(name="bbh", metric="exact_match,get-answer", num_fewshot=3, limit=None),
+        EvalTask(
+            name="bbh", metric="exact_match,get-answer", num_fewshot=3, limit=None
+        ),
     ]
 
 
@@ -192,6 +203,7 @@ class AgenticConfig:
 @dataclass
 class CompareConfig:
     """Post-hoc comparison knobs (used by evalsuite.compare)."""
+
     # Per-task lm-eval metric keys treated as binary correctness for flip-rate.
     flip_task_metrics: dict[str, str] = field(
         default_factory=lambda: {
@@ -266,9 +278,7 @@ def _build(cls: type, data: dict[str, Any] | None) -> Any:
             kwargs[key] = _build(f.type, value)
         # list[EvalTask]
         elif key == "tasks" and isinstance(value, list):
-            kwargs[key] = [
-                EvalTask(**t) if isinstance(t, dict) else t for t in value
-            ]
+            kwargs[key] = [EvalTask(**t) if isinstance(t, dict) else t for t in value]
         else:
             kwargs[key] = value
     return cls(**kwargs)

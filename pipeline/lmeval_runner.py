@@ -69,9 +69,7 @@ def model_args(cfg: PipelineConfig, model_path: str) -> str:
         return vllm_model_args(cfg, model_path)
     if backend == "sglang":
         return sglang_model_args(cfg, model_path)
-    raise ValueError(
-        f"unsupported eval.backend {backend!r}; valid: 'vllm', 'sglang'"
-    )
+    raise ValueError(f"unsupported eval.backend {backend!r}; valid: 'vllm', 'sglang'")
 
 
 def per_task_num_fewshot(tasks: list[EvalTask]) -> int | dict[str, int]:
@@ -90,7 +88,9 @@ def per_task_num_fewshot(tasks: list[EvalTask]) -> int | dict[str, int]:
     return by_name
 
 
-def per_task_limit(tasks: list[EvalTask]) -> int | float | dict[str, int | float] | None:
+def per_task_limit(
+    tasks: list[EvalTask],
+) -> int | float | dict[str, int | float] | None:
     """lm-eval ``limit``: omitted when all tasks are unlimited, else scalar or dict."""
     if not tasks:
         return None
@@ -108,6 +108,7 @@ def per_task_limit(tasks: list[EvalTask]) -> int | float | dict[str, int | float
 def _prepare_vllm_runtime(model_path: str, model_source: str) -> dict:
     """Apply the same MiniMax runtime preparation used by the fidelity probe."""
     from pathlib import Path
+
     from pipeline.m3_distributional_probe import _prepare_minimax_runtime
 
     return _prepare_minimax_runtime(Path(model_path), model_source)
@@ -119,8 +120,8 @@ def _load_lm_model(cfg: PipelineConfig, model_path: str):
         runtime = _prepare_vllm_runtime(model_path, cfg.model.id)
         if runtime:
             print(f"[lmeval] vLLM runtime preparation: {runtime}")
-    from lm_eval.api.registry import get_model
     import lm_eval.models  # noqa: F401  (populates the model registry)
+    from lm_eval.api.registry import get_model
 
     model_cls = get_model(cfg.eval.backend)
     batch_size = cfg.eval.lm_eval_batch_size
@@ -162,8 +163,6 @@ def evaluate_tasks(
     """
     if not tasks:
         raise ValueError("evaluate_tasks requires at least one task")
-
-    import os
 
     from pipeline._env import (
         apply_sglang_compat_env,
@@ -210,9 +209,7 @@ def evaluate_tasks(
     )
 
     manifest = (
-        load_sample_manifest(ev.samples_manifest)
-        if ev.samples_manifest
-        else None
+        load_sample_manifest(ev.samples_manifest) if ev.samples_manifest else None
     )
     exact_samples = {
         task.name: sample_map_for_task(manifest, task.name) if manifest else None
@@ -236,10 +233,14 @@ def evaluate_tasks(
     try:
         for task in tasks:
             for generation_seed in generation_seeds:
-                if generation_seed is not None and (
-                    task.name,
-                    generation_seed,
-                ) in completed_task_seeds:
+                if (
+                    generation_seed is not None
+                    and (
+                        task.name,
+                        generation_seed,
+                    )
+                    in completed_task_seeds
+                ):
                     continue
                 print(
                     f"[lmeval] task={task.name} seed={generation_seed} "

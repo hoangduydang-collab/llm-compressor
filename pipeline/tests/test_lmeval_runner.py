@@ -3,13 +3,13 @@
 import json
 import os
 import sys
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from pipeline.config import EvalTask, PipelineConfig, ServeConfig, load_config
 from pipeline._env import apply_lm_eval_sglang_compat, apply_sglang_compat_env
+from pipeline.config import EvalTask, PipelineConfig, ServeConfig, load_config
 from pipeline.lmeval_runner import (
     _prepare_vllm_runtime,
     model_args,
@@ -216,7 +216,7 @@ def test_sglang_model_args_thinking_harness():
     cfg.eval.think_end_token = "</think>"
     args = sglang_model_args(cfg, "/models/glm")
     assert "enable_thinking=True" in args
-    assert 'think_end_token=</think>' in args
+    assert "think_end_token=</think>" in args
 
 
 def test_sglang_model_args_no_thinking_when_unset():
@@ -340,8 +340,9 @@ def test_evaluate_tasks_passes_exact_samples(monkeypatch, tmp_path):
         sys.modules,
         "lm_eval",
         SimpleNamespace(
-            simple_evaluate=lambda **kwargs: calls.append(kwargs)
-            or {"results": {"mmlu_pro": {"acc,none": 1.0}}}
+            simple_evaluate=lambda **kwargs: (
+                calls.append(kwargs) or {"results": {"mmlu_pro": {"acc,none": 1.0}}}
+            )
         ),
     )
 
@@ -372,8 +373,10 @@ def test_evaluate_tasks_runs_paired_generation_seeds_with_one_model(monkeypatch)
         sys.modules,
         "lm_eval",
         SimpleNamespace(
-            simple_evaluate=lambda **kwargs: calls.append(kwargs)
-            or {"results": {kwargs["tasks"][0]: {"acc,none": 1.0}}}
+            simple_evaluate=lambda **kwargs: (
+                calls.append(kwargs)
+                or {"results": {kwargs["tasks"][0]: {"acc,none": 1.0}}}
+            )
         ),
     )
 
@@ -381,18 +384,14 @@ def test_evaluate_tasks_runs_paired_generation_seeds_with_one_model(monkeypatch)
         "/model",
         cfg,
         tasks,
-        on_task_complete=lambda task, seed, batch: completed.append(
-            (task.name, seed)
-        ),
+        on_task_complete=lambda task, seed, batch: completed.append((task.name, seed)),
     )
 
-    expected = [
-        (task, seed)
-        for task in ("gpqa", "aime")
-        for seed in (42, 1234, 4158)
-    ]
+    expected = [(task, seed) for task in ("gpqa", "aime") for seed in (42, 1234, 4158)]
     assert len(loads) == 1
-    assert [(call["tasks"][0], call["gen_kwargs"]["seed"]) for call in calls] == expected
+    assert [
+        (call["tasks"][0], call["gen_kwargs"]["seed"]) for call in calls
+    ] == expected
     assert completed == expected
     assert all(call["random_seed"] == 42 for call in calls)
     assert all(call["fewshot_random_seed"] == 42 for call in calls)
@@ -413,8 +412,9 @@ def test_evaluate_tasks_skips_completed_task_seed_pairs(monkeypatch):
         sys.modules,
         "lm_eval",
         SimpleNamespace(
-            simple_evaluate=lambda **kwargs: calls.append(kwargs)
-            or {"results": {"gpqa": {"acc,none": 1.0}}}
+            simple_evaluate=lambda **kwargs: (
+                calls.append(kwargs) or {"results": {"gpqa": {"acc,none": 1.0}}}
+            )
         ),
     )
 

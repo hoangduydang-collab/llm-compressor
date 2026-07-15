@@ -30,7 +30,9 @@ def test_load_aggregate_checkpoint_roundtrip(tmp_path: Path):
 
 def test_pending_eval_tasks_skips_completed():
     tasks = [
-        EvalTask(name="wikitext", metric="word_perplexity,none", higher_is_better=False),
+        EvalTask(
+            name="wikitext", metric="word_perplexity,none", higher_is_better=False
+        ),
         EvalTask(name="mmlu", metric="acc,none", num_fewshot=5),
         EvalTask(name="gsm8k", metric="exact_match,strict-match", num_fewshot=5),
     ]
@@ -65,7 +67,10 @@ def test_checkpoint_task_result_writes_aggregate_and_samples(tmp_path: Path):
     )
 
     assert aggregate["gsm8k"]["exact_match,strict-match"] == 0.42
-    assert json.loads((tmp_path / "aggregate.json").read_text(encoding="utf-8")) == aggregate
+    assert (
+        json.loads((tmp_path / "aggregate.json").read_text(encoding="utf-8"))
+        == aggregate
+    )
     assert len(rows) == 1
     assert (tmp_path / "samples" / "gsm8k.jsonl").is_file()
 
@@ -309,7 +314,6 @@ def test_group_rows_namespace_duplicate_doc_ids_by_subtask(tmp_path: Path):
     assert rows[0]["sample_uid"] != rows[1]["sample_uid"]
 
 
-
 def test_checkpoint_writes_generation_health_with_periodic_loop(tmp_path: Path):
     task = EvalTask(name="gsm8k", metric="exact_match,strict-match")
     batch = {
@@ -346,7 +350,6 @@ def test_checkpoint_writes_generation_health_with_periodic_loop(tmp_path: Path):
     assert health["length_cap_hit_count"] == 1
 
 
-
 def test_loglikelihood_response_is_not_treated_as_missing_generation(tmp_path: Path):
     task = EvalTask(name="mmlu_pro", metric="acc,none")
     batch = {
@@ -372,9 +375,7 @@ def test_loglikelihood_response_is_not_treated_as_missing_generation(tmp_path: P
     )
 
     assert rows[0]["health"] == {"applicable": False}
-    health = json.loads(
-        (tmp_path / "generation_health" / "mmlu_pro.json").read_text()
-    )
+    health = json.loads((tmp_path / "generation_health" / "mmlu_pro.json").read_text())
     assert health["samples"] == 0
     assert health["not_applicable_count"] == 1
 

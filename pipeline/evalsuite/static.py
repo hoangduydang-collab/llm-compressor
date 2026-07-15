@@ -7,13 +7,13 @@ import json
 from pathlib import Path
 
 from pipeline.config import EvalConfig, EvalTask, PipelineConfig
+from pipeline.eval_gate import _gate_metric
 from pipeline.evalsuite.health import (
     analyze_generation,
     summarize_generation_health,
     unwrap_singleton,
 )
 from pipeline.evalsuite.sampling import stable_sample_uid
-from pipeline.eval_gate import _gate_metric
 from pipeline.lmeval_runner import evaluate_tasks
 from pipeline.metrics_lmeval import (
     metric_base,
@@ -196,9 +196,7 @@ def load_aggregate_checkpoint(path: Path) -> dict[str, dict[str, float]]:
     return out
 
 
-def pending_eval_tasks(
-    tasks: list[EvalTask], completed: set[str]
-) -> list[EvalTask]:
+def pending_eval_tasks(tasks: list[EvalTask], completed: set[str]) -> list[EvalTask]:
     return [t for t in tasks if t.name not in completed]
 
 
@@ -217,9 +215,7 @@ def _collect_task_samples(batch: dict, task_name: str) -> list[dict]:
     if subtasks:
         merged: list[dict] = []
         for subtask in subtasks:
-            merged.extend(
-                _tag_samples(list(samples_map.get(subtask) or []), subtask)
-            )
+            merged.extend(_tag_samples(list(samples_map.get(subtask) or []), subtask))
         if merged:
             return merged
 
@@ -289,9 +285,7 @@ def checkpoint_task_result(
             sum(correctness) / len(correctness) if correctness else 0.0
         )
         all_correctness = [
-            float(row["correct"])
-            for row in rows
-            if row.get("correct") is not None
+            float(row["correct"]) for row in rows if row.get("correct") is not None
         ]
         task_metrics["mean_pass_at_1"] = (
             sum(all_correctness) / len(all_correctness) if all_correctness else 0.0
@@ -315,8 +309,7 @@ def checkpoint_task_result(
         _write_json_atomic(progress_path, progress)
 
     print(
-        f"[evalsuite] checkpoint: {task.name} "
-        f"({len(rows)} samples) -> {aggregate_path}"
+        f"[evalsuite] checkpoint: {task.name} ({len(rows)} samples) -> {aggregate_path}"
     )
     return rows
 
@@ -333,8 +326,6 @@ def _build_gate_report(
             baseline = json.load(fh)
 
     report: dict = {"checkpoint": str(ckpt), "tasks": {}, "passed": True}
-    task_by_name = {t.name: t for t in ev.tasks}
-
     for task in ev.tasks:
         metrics = aggregate.get(task.name)
         if metrics is None:
@@ -371,7 +362,9 @@ def run_static_eval(
     """
     model_path = Path(model_path)
     out_dir = Path(out_dir)
-    samples_dir = Path(cfg.eval.samples_dir) if cfg.eval.samples_dir else out_dir / "samples"
+    samples_dir = (
+        Path(cfg.eval.samples_dir) if cfg.eval.samples_dir else out_dir / "samples"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     ev = cfg.eval
@@ -394,11 +387,7 @@ def run_static_eval(
         completed = {
             task.name
             for task in ev.tasks
-            if {
-                seed
-                for name, seed in completed_task_seeds
-                if name == task.name
-            }
+            if {seed for name, seed in completed_task_seeds if name == task.name}
             == expected_seeds
         }
         pending = pending_eval_tasks(ev.tasks, completed)

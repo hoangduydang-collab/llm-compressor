@@ -315,8 +315,10 @@ test -z "$(git diff --cached --name-only)"
 python -m pytest -q \
   pipeline/tests/test_static_checkpoint.py \
   pipeline/tests/test_lmeval_runner.py \
-  pipeline/tests/test_m3_quality_preflight.py \
-  pipeline/tests/test_m3_quality_srun.py
+  pipeline/tests/test_m3_quality_eval.py \
+  pipeline/tests/test_m3_quality_eval_runner.py \
+  pipeline/tests/test_m3_quality_smoke_tmux.py \
+  pipeline/tests/test_m3_quality_evidence.py
 
 MATRIX=pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-paired-reasoning-r4"

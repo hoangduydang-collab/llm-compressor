@@ -4,9 +4,10 @@
 
 **Revision:** r4, approved 2026-07-15
 
-**Scope:** MiniMax-M3 paired GPTQ-versus-AWQ reasoning evaluation
+**Scope:** MiniMax-M3 paired GPTQ-versus-AWQ reasoning evaluation plus a
+comparable BF16 companion baseline
 
-**Status:** Approved design; implementation plan not yet written
+**Status:** r4 evaluation approved; BF16 companion approved 2026-07-15
 
 **Workflow state:** `PLANNER_ANALYSIS`
 
@@ -49,8 +50,10 @@ still apply. It does not create a second general evaluation framework.
 ## Non-goals
 
 - Reproducing a public full-dataset leaderboard number exactly.
-- Claiming recovery relative to BF16 or the official FP8 MiniMax-M3 checkpoint.
-  This experiment compares GPTQ with an AWQ reference only.
+- Claiming recovery relative to the official FP8 MiniMax-M3 checkpoint. The
+  initial r4 verdict remains GPTQ versus AWQ; the separately returned BF16
+  companion may support a later three-model comparison only after its complete
+  evidence passes planner review.
 - Rerunning IFEval. Its completed strict instruction-following result remains a
   separate, non-reasoning observation and is excluded from the new reasoning
   macro and gates.
@@ -91,9 +94,56 @@ variants, and unparseable outputs. Local modifications are limited to adapting
 lm-eval outputs to repository interfaces; no GPQA prompt or extractor is
 reimplemented locally.
 
+## BF16 companion baseline
+
+The BF16 baseline is a separate run which reuses the r4 reasoning harness. It
+must not modify, share a writable run root with, or relaunch the active GPTQ and
+AWQ jobs. A committed BF16-only matrix supplies the executor with one fixed
+model definition:
+
+- checkpoint: `/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3`;
+- two exclusive 8xH100 nodes per arm;
+- tensor parallel size 8 and pipeline parallel size 2;
+- Ray distributed executor;
+- the existing `eval_minimax_m3_reasoning_r4.yaml` configuration;
+- the same task aliases, two task shards, sampling seed, production limits,
+  gates, and disabled distributional probe as the GPTQ/AWQ r4 matrix.
+
+The smoke profile launches one two-node BF16 arm and evaluates two examples
+from each of GPQA Diamond, MMLU-Pro, GSM8K, and AIME. Its purpose is only to
+validate the two-node Ray topology, BF16 model loading, vLLM generation,
+per-filter checkpointing, three-seed execution, generation health, and artifact
+completion. Smoke results are not quality evidence. A false smoke gate stops
+the packet without a production launch or automatic retry.
+
+After a passing smoke gate, production launches two BF16 arms concurrently:
+
+1. `gpqa`: GPQA Diamond, 100 questions and all three seeds;
+2. `reasoning_suite`: MMLU-Pro 100, then GSM8K 100, then all 30 AIME 2025
+   questions, with one model load retained across the three tasks.
+
+Each production arm uses two nodes and has a 24-hour limit, so the maximum
+concurrent allocation is four 8xH100 nodes. The launcher remains top-level
+`srun` only. Task/seed checkpoints are atomic and resumable only within the
+same BF16 run and unchanged contract; a retry still requires planner approval.
+
+Comparability is fail-closed. Before BF16 production, the executor records the
+active GPTQ/AWQ run root and proves that both runs have identical lm-eval
+version, harness-contract SHA-256, tokenizer SHA-256, chat-template SHA-256,
+production sample-manifest SHA-256, resolved task aliases, question counts,
+few-shot settings, filter/metric keys, generation seeds, and generation
+parameters. The only permitted differences are model identity, quantization
+kind, and serving topology. A mismatch stops the run before production.
+
+The BF16 evidence is returned independently. The planner may later compare its
+sample/attempt UIDs against GPTQ and AWQ, but the executor does not merge roots,
+interpret quality, or publish BF16 recovery claims.
+
 ### Sample identity and choice permutation
 
-The sample manifest is created once and shared by both models. GPQA, GSM8K, and
+The main sample manifest is created once and shared by GPTQ and AWQ. The BF16
+companion creates the same deterministic manifest in its independent run root
+and must match the main manifest's SHA-256 before production. GPQA, GSM8K, and
 MMLU-Pro use deterministic seed-42 selection; MMLU-Pro allocation is
 proportional across resolved subject leaves with deterministic remainder
 assignment. AIME uses all 30 questions.
@@ -259,6 +309,10 @@ Automated CPU tests must establish that:
   the specified task order and 24-hour ceiling;
 - generated commands contain no `sbatch` or nested `srun` allocation;
 - IFEval and distributional probes are absent from the r4 reasoning verdict.
+- the BF16-only matrix emits one two-node TP8xPP2/Ray smoke arm and two
+  two-node TP8xPP2/Ray production arms without launching GPTQ or AWQ;
+- BF16 production is refused when any harness or production-manifest hash
+  differs from the active GPTQ/AWQ run.
 
 Shell scripts must pass syntax checks, focused Python tests must pass, and the
 dry-run output must show all resolved task, model, sampling, and resource values
@@ -277,6 +331,9 @@ before the executor is authorized to launch GPU work.
   question-level win/tie/loss.
 - Execution uses no more than four concurrent 8xH100 nodes, uses `srun` only,
   and preserves completed task/seed evidence when another arm fails.
+- The BF16 smoke passes on TP8xPP2/Ray before its quick evaluation starts, and
+  its returned GPQA/MMLU-Pro/GSM8K/AIME attempt grid matches the GPTQ/AWQ
+  manifest and three-seed contract exactly.
 - The report labels the result as a paired 100-question quantization study and
   does not present it as an exact reproduction of a public MiniMax-M3 score or
   as BF16 quality recovery.

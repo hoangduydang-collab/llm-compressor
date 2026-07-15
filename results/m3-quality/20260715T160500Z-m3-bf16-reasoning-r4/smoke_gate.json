@@ -1,0 +1,24 @@
+{
+  "ready_for_production": false,
+  "missing_models": [],
+  "unexpected_models": [],
+  "models": {
+    "bf16": {
+      "passed": false,
+      "checks": {
+        "infrastructure": false,
+        "artifacts": false,
+        "all_tasks_scored": false,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true
+      },
+      "empty_output_count": 0,
+      "max_smoke_empty_outputs": 1,
+      "warnings": [],
+      "distributed_world_size": 16,
+      "probe_projection": null
+    }
+  }
+}

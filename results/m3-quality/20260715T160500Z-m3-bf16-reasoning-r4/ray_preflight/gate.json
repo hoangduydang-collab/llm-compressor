@@ -1,0 +1,6 @@
+{
+  "ready": true,
+  "expected_nodes": 2,
+  "alive_nodes": 2,
+  "visible_gpus": 16.0
+}

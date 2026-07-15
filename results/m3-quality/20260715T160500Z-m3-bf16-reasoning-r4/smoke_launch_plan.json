@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "profile": "smoke",
+  "arms": [
+    {
+      "model_label": "bf16",
+      "model_path": "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3",
+      "model_kind": "bf16",
+      "shard": "smoke",
+      "nodes": 2,
+      "gpus_per_node": 8,
+      "tensor_parallel_size": 8,
+      "pipeline_parallel_size": 2,
+      "distributed_executor_backend": "ray",
+      "tasks": [
+        "gpqa_diamond",
+        "mmlu_pro",
+        "gsm8k",
+        "aime_2025"
+      ],
+      "distributional_probe": false,
+      "samples_per_task": 2,
+      "probe_tokens": 0
+    }
+  ],
+  "max_parallel_arms": 1,
+  "max_concurrent_nodes": 2,
+  "arm_time_limit": null,
+  "total_nodes": 2
+}

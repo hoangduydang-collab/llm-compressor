@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "valid": true,
+  "reference_root": "results/m3-quality/20260715T075800Z-m3-paired-reasoning-r4",
+  "candidate_root": "results/m3-quality/20260715T160500Z-m3-bf16-reasoning-r4",
+  "matched_fields": [
+    "lm_eval_version",
+    "harness_contract_sha256",
+    "sample_manifest_sha256",
+    "eval_config_sha256",
+    "tokenizer_sha256",
+    "chat_template_sha256",
+    "rendered_prompt_sha256",
+    "generation_seeds",
+    "expected_question_counts",
+    "resolved_tasks"
+  ],
+  "mismatches": {}
+}

@@ -2,12 +2,12 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: 2026-07-15-r4.2
+- Packet revision: 2026-07-15-r4.3
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Implementation base commit: `065ff302`
+- Implementation base commit: `15831064`
 - Branch: `duy-branch`
-- Retry authorization: one fresh run after the generated-task choice-inspection fix
+- Retry authorization: one fresh run after the lm-eval task-group inspection fix
 
 Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
 their GPQA/MMLU-Pro/GSM8K scores: r4 changes the reasoning harness to stock
@@ -26,7 +26,17 @@ method even though the task config intentionally leaves `doc_to_choice` unset;
 calling that method raises by design. Commit `065ff302` makes preflight inspect
 the processed GPQA document's `choices` field in that case and adds a regression
 test. Preserve both stopped evidence roots, but do not reuse either incomplete
-run root; this packet authorizes exactly one fresh r4.2 attempt.
+run root.
+
+The r4.2 attempt at
+`results/m3-quality/20260715T063400Z-m3-paired-reasoning-r4` stopped before GPU
+allocation because preflight assumed every installed alias resolves to one task
+object. In lm-eval 0.4.12, `mmlu_pro` is a group whose flat `tasks` map contains
+14 subject leaves. Commit `15831064` handles the native group shape, audits the
+shared output type, task version, and metric/filter contract across every leaf,
+and uses a deterministic leaf only for representative-prompt stability. Preserve
+all three stopped evidence roots, but do not reuse them; this packet authorizes
+exactly one fresh r4.3 attempt.
 
 ## Decision and fixed experiment
 
@@ -68,7 +78,7 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-git merge-base --is-ancestor 065ff302 HEAD
+git merge-base --is-ancestor 15831064 HEAD
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
 test -z "${SLURM_JOB_ID:-}"

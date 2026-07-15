@@ -82,6 +82,21 @@ def test_launcher_owns_top_level_srun_and_rejects_nested_slurm():
     assert "--run-probe" not in text
 
 
+def test_launcher_uses_configurable_post_linearization_memory_floors():
+    text = LAUNCHER.read_text(encoding="utf-8")
+
+    assert (
+        'MIN_MEM_AVAILABLE_BYTES="${MIN_MEM_AVAILABLE_BYTES:-1200000000000}"'
+        in text
+    )
+    assert (
+        'MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-128000000000}"'
+        in text
+    )
+    assert "900000000000" not in text
+    assert "shm_available < MIN_SHM_AVAILABLE_BYTES" in text
+
+
 def test_minimax_m3_linearizes_experts_while_loading():
     text = CONVERSION_MAPPINGS.read_text(encoding="utf-8")
 

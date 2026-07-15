@@ -64,7 +64,12 @@ def capture_quant_metrics(path):
     try:
         yield path
     finally:
-        _loguru.remove(sink_id)
+        try:
+            _loguru.remove(sink_id)
+        except ValueError:
+            # llm-compressor may replace/remove Loguru handlers internally.
+            # Cleanup of this passive evidence sink must therefore be idempotent.
+            pass
 
 
 def _iter_messages(path: Path):

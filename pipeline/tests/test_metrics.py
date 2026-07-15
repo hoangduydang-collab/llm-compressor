@@ -8,11 +8,13 @@ Run: pytest pipeline/tests/test_metrics.py
 """
 
 import json
+import sys
 from types import SimpleNamespace
 
 from pipeline.metrics import (
     _is_captured_message,
     _parse_awq_metrics,
+    capture_quant_metrics,
     summarize_quant_metrics,
     summarize_quantized_layers,
 )
@@ -60,6 +62,23 @@ AWQ_DATA = {
     ],
 }
 AWQ_MESSAGE = "AWQ per-mapping error metrics: " + repr(AWQ_DATA)
+
+
+def test_capture_cleanup_tolerates_sink_removed_by_library(monkeypatch, tmp_path):
+    class FakeLogger:
+        def level(self, *_args, **_kwargs):
+            return None
+
+        def add(self, *_args, **_kwargs):
+            return 2
+
+        def remove(self, sink_id):
+            raise ValueError(f"There is no existing handler with id {sink_id}")
+
+    monkeypatch.setitem(sys.modules, "loguru", SimpleNamespace(logger=FakeLogger()))
+
+    with capture_quant_metrics(tmp_path / "quant_metrics.jsonl"):
+        pass
 
 
 def _write_jsonl(path, records):

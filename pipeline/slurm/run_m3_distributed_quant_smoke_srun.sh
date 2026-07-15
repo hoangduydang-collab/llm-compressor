@@ -16,6 +16,11 @@ VENV_ACTIVATE="${VENV_ACTIVATE:-/mnt/nfs/hoangduy/venvs/quant/bin/activate}"
 TIME_LIMIT="${TIME_LIMIT:-24:00:00}"
 SAMPLE_INTERVAL="${SAMPLE_INTERVAL:-60}"
 DRY_RUN="${DRY_RUN:-0}"
+MIN_MEM_AVAILABLE_BYTES="${MIN_MEM_AVAILABLE_BYTES:-1200000000000}"
+# The load-time MiniMax mapping now avoids the r4 shared-memory duplication.
+# Keep a conservative floor for runtime IPC without requiring the obsolete
+# 900 GB linearization headroom.
+MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-128000000000}"
 
 worker_main() {
   local method="${1:?worker requires gptq or awq}"
@@ -54,12 +59,12 @@ PY
   local mem_available_kb shm_available
   mem_available_kb="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
   shm_available="$(df -B1 --output=avail /dev/shm | tail -1 | tr -d ' ')"
-  if (( mem_available_kb * 1024 < 1200000000000 )); then
-    echo "ERROR: MemAvailable below 1.2 TB: ${mem_available_kb} KiB" >&2
+  if (( mem_available_kb * 1024 < MIN_MEM_AVAILABLE_BYTES )); then
+    echo "ERROR: MemAvailable below ${MIN_MEM_AVAILABLE_BYTES} bytes: ${mem_available_kb} KiB" >&2
     return 3
   fi
-  if (( shm_available < 900000000000 )); then
-    echo "ERROR: /dev/shm available space below 900 GB: ${shm_available} bytes" >&2
+  if (( shm_available < MIN_SHM_AVAILABLE_BYTES )); then
+    echo "ERROR: /dev/shm available space below ${MIN_SHM_AVAILABLE_BYTES} bytes: ${shm_available} bytes" >&2
     return 3
   fi
 
@@ -137,6 +142,8 @@ for method in gptq awq; do
     OFFLOAD_ROOT="$OFFLOAD_ROOT" MODEL_ID="$MODEL_ID" CONFIG="$CONFIG"
     ENV_FILE="$ENV_FILE" VENV_ACTIVATE="$VENV_ACTIVATE"
     SAMPLE_INTERVAL="$SAMPLE_INTERVAL"
+    MIN_MEM_AVAILABLE_BYTES="$MIN_MEM_AVAILABLE_BYTES"
+    MIN_SHM_AVAILABLE_BYTES="$MIN_SHM_AVAILABLE_BYTES"
     bash "$SCRIPT_DIR/run_m3_distributed_quant_smoke_srun.sh" --worker "$method"
   )
   if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then

@@ -1,0 +1,256 @@
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+[pipeline] run dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/MiniMax-M3-gptq-W4AFP8/20260714-192046
+2026-07-14T23:06:13.9603 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:13.9608 | linearize_moe | INFO - linearize_moe start rss=1.48GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:13.9612 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:13.9617 | linearize_moe | INFO - linearize_moe start rss=1.48GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:13.9643 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:13.9648 | linearize_moe | INFO - linearize_moe start rss=1.47GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:13.9742 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:13.9747 | linearize_moe | INFO - linearize_moe start rss=1.48GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:13.9812 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:13.9817 | linearize_moe | INFO - linearize_moe start rss=1.48GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:13.9968 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:13.9973 | linearize_moe | INFO - linearize_moe start rss=1.48GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:14.0041 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:14.0046 | linearize_moe | INFO - linearize_moe start rss=1.48GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:14.0288 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.0389 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.0426 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.0498 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.0559 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-07-14T23:06:14.0566 | linearize_moe | INFO - linearize_moe start rss=796.97GiB mem_avail=1139.33GiB layers=57
+2026-07-14T23:06:14.0603 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.0712 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.0759 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:06:14.1469 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.3.mlp.experts` (1/57)
+2026-07-14T23:09:02.9727 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.48GiB peak=14.98GiB after_gc=14.96GiB (delta_gc=-0.02GiB) mem_avail=1131.24GiB
+2026-07-14T23:09:02.9731 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:02.9799 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.48GiB peak=14.98GiB after_gc=14.96GiB (delta_gc=-0.02GiB) mem_avail=1131.26GiB
+2026-07-14T23:09:02.9802 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:02.9890 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.47GiB peak=14.97GiB after_gc=14.95GiB (delta_gc=-0.02GiB) mem_avail=1131.27GiB
+2026-07-14T23:09:02.9894 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:03.0010 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.48GiB peak=14.98GiB after_gc=14.96GiB (delta_gc=-0.02GiB) mem_avail=1131.31GiB
+2026-07-14T23:09:03.0013 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:03.0020 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.48GiB peak=14.98GiB after_gc=14.96GiB (delta_gc=-0.02GiB) mem_avail=1131.31GiB
+2026-07-14T23:09:03.0024 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:03.0113 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.48GiB peak=14.98GiB after_gc=14.96GiB (delta_gc=-0.02GiB) mem_avail=1131.32GiB
+2026-07-14T23:09:03.0116 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:03.0191 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=1.48GiB peak=14.98GiB after_gc=14.96GiB (delta_gc=-0.02GiB) mem_avail=1131.34GiB
+2026-07-14T23:09:03.0195 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:09:03.4198 | linearize_moe | INFO - linearize_moe `model.language_model.layers.3.mlp.experts` rss before=796.97GiB peak=808.27GiB after_gc=808.17GiB (delta_gc=-0.11GiB) mem_avail=1130.47GiB
+2026-07-14T23:09:03.4203 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.4.mlp.experts` (2/57)
+2026-07-14T23:11:45.1126 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.96GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.76GiB
+2026-07-14T23:11:45.1130 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.1379 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.96GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.75GiB
+2026-07-14T23:11:45.1382 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.1402 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.96GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.75GiB
+2026-07-14T23:11:45.1405 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.1517 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.96GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.75GiB
+2026-07-14T23:11:45.1521 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.2328 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.96GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.72GiB
+2026-07-14T23:11:45.2332 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.2556 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=808.17GiB peak=821.67GiB after_gc=821.67GiB (delta_gc=-0.00GiB) mem_avail=1117.67GiB
+2026-07-14T23:11:45.2559 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.3028 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.96GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.59GiB
+2026-07-14T23:11:45.3032 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:11:45.3068 | linearize_moe | INFO - linearize_moe `model.language_model.layers.4.mlp.experts` rss before=14.95GiB peak=28.46GiB after_gc=28.46GiB (delta_gc=-0.00GiB) mem_avail=1117.59GiB
+2026-07-14T23:11:45.3074 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.5.mlp.experts` (3/57)
+2026-07-14T23:14:26.9177 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.97GiB after_gc=41.97GiB (delta_gc=-0.00GiB) mem_avail=1104.02GiB
+2026-07-14T23:14:26.9215 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.96GiB after_gc=41.96GiB (delta_gc=-0.00GiB) mem_avail=1104.02GiB
+2026-07-14T23:14:26.9219 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:26.9332 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.96GiB after_gc=41.96GiB (delta_gc=-0.00GiB) mem_avail=1104.02GiB
+2026-07-14T23:14:26.9337 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:26.9375 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.97GiB after_gc=41.96GiB (delta_gc=-0.00GiB) mem_avail=1104.02GiB
+2026-07-14T23:14:26.9378 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:26.9464 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:26.9771 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.96GiB after_gc=41.96GiB (delta_gc=-0.00GiB) mem_avail=1104.02GiB
+2026-07-14T23:14:26.9775 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:27.0143 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.96GiB after_gc=41.96GiB (delta_gc=-0.00GiB) mem_avail=1103.99GiB
+2026-07-14T23:14:27.0146 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:27.0749 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=28.46GiB peak=41.96GiB after_gc=41.96GiB (delta_gc=-0.00GiB) mem_avail=1103.88GiB
+2026-07-14T23:14:27.0752 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:14:27.1996 | linearize_moe | INFO - linearize_moe `model.language_model.layers.5.mlp.experts` rss before=821.67GiB peak=835.17GiB after_gc=835.17GiB (delta_gc=-0.00GiB) mem_avail=1103.56GiB
+2026-07-14T23:14:27.2001 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.6.mlp.experts` (4/57)
+2026-07-14T23:17:07.9201 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.97GiB peak=55.47GiB after_gc=55.47GiB (delta_gc=-0.00GiB) mem_avail=1090.27GiB
+2026-07-14T23:17:07.9205 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:07.9522 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.96GiB peak=55.47GiB after_gc=55.47GiB (delta_gc=-0.00GiB) mem_avail=1090.27GiB
+2026-07-14T23:17:07.9525 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:07.9605 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.96GiB peak=55.46GiB after_gc=55.46GiB (delta_gc=-0.00GiB) mem_avail=1090.27GiB
+2026-07-14T23:17:07.9608 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:07.9774 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.96GiB peak=55.46GiB after_gc=55.46GiB (delta_gc=-0.00GiB) mem_avail=1090.27GiB
+2026-07-14T23:17:07.9778 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:07.9919 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.96GiB peak=55.47GiB after_gc=55.47GiB (delta_gc=-0.00GiB) mem_avail=1090.27GiB
+2026-07-14T23:17:07.9923 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:08.0037 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.96GiB peak=55.47GiB after_gc=55.47GiB (delta_gc=-0.00GiB) mem_avail=1090.26GiB
+2026-07-14T23:17:08.0040 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:08.0465 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=41.96GiB peak=55.47GiB after_gc=55.47GiB (delta_gc=-0.00GiB) mem_avail=1090.22GiB
+2026-07-14T23:17:08.0469 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:17:08.0557 | linearize_moe | INFO - linearize_moe `model.language_model.layers.6.mlp.experts` rss before=835.17GiB peak=848.67GiB after_gc=848.67GiB (delta_gc=-0.00GiB) mem_avail=1090.21GiB
+2026-07-14T23:17:08.0561 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.7.mlp.experts` (5/57)
+2026-07-14T23:19:47.8684 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.47GiB peak=68.97GiB after_gc=68.97GiB (delta_gc=-0.00GiB) mem_avail=1076.54GiB
+2026-07-14T23:19:47.8688 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:47.8741 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.47GiB peak=68.97GiB after_gc=68.97GiB (delta_gc=-0.00GiB) mem_avail=1076.54GiB
+2026-07-14T23:19:47.8744 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:47.8848 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.47GiB peak=68.97GiB after_gc=68.97GiB (delta_gc=-0.00GiB) mem_avail=1076.54GiB
+2026-07-14T23:19:47.8851 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:47.9117 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.46GiB peak=68.96GiB after_gc=68.96GiB (delta_gc=-0.00GiB) mem_avail=1076.53GiB
+2026-07-14T23:19:47.9122 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:47.9420 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.47GiB peak=68.97GiB after_gc=68.97GiB (delta_gc=-0.00GiB) mem_avail=1076.53GiB
+2026-07-14T23:19:47.9424 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:47.9799 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.47GiB peak=68.97GiB after_gc=68.97GiB (delta_gc=-0.00GiB) mem_avail=1076.50GiB
+2026-07-14T23:19:47.9802 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:48.0068 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=55.46GiB peak=68.97GiB after_gc=68.97GiB (delta_gc=-0.00GiB) mem_avail=1076.46GiB
+2026-07-14T23:19:48.0072 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:19:48.1636 | linearize_moe | INFO - linearize_moe `model.language_model.layers.7.mlp.experts` rss before=848.67GiB peak=862.18GiB after_gc=862.18GiB (delta_gc=-0.00GiB) mem_avail=1076.05GiB
+2026-07-14T23:19:48.1641 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.8.mlp.experts` (6/57)
+2026-07-14T23:22:30.1688 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.97GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.81GiB
+2026-07-14T23:22:30.1692 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.1876 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.97GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.81GiB
+2026-07-14T23:22:30.1879 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.2378 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.97GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.80GiB
+2026-07-14T23:22:30.2381 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.2468 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.96GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.80GiB
+2026-07-14T23:22:30.2472 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.2548 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.97GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.80GiB
+2026-07-14T23:22:30.2551 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.2630 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.97GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.80GiB
+2026-07-14T23:22:30.2634 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.2774 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=862.18GiB peak=875.68GiB after_gc=875.68GiB (delta_gc=-0.00GiB) mem_avail=1062.79GiB
+2026-07-14T23:22:30.2888 | linearize_moe | INFO - linearize_moe `model.language_model.layers.8.mlp.experts` rss before=68.97GiB peak=82.47GiB after_gc=82.47GiB (delta_gc=-0.00GiB) mem_avail=1062.78GiB
+2026-07-14T23:22:30.2891 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:22:30.2944 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.9.mlp.experts` (7/57)
+2026-07-14T23:25:12.2513 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.97GiB after_gc=95.97GiB (delta_gc=-0.00GiB) mem_avail=1049.05GiB
+2026-07-14T23:25:12.2515 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.97GiB after_gc=95.97GiB (delta_gc=-0.00GiB) mem_avail=1049.05GiB
+2026-07-14T23:25:12.2517 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.2518 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.3066 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.97GiB after_gc=95.97GiB (delta_gc=-0.00GiB) mem_avail=1049.05GiB
+2026-07-14T23:25:12.3070 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.3281 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.98GiB after_gc=95.98GiB (delta_gc=-0.00GiB) mem_avail=1049.05GiB
+2026-07-14T23:25:12.3285 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.3314 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.97GiB after_gc=95.97GiB (delta_gc=-0.00GiB) mem_avail=1049.05GiB
+2026-07-14T23:25:12.3318 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.3465 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.97GiB after_gc=95.97GiB (delta_gc=-0.00GiB) mem_avail=1049.04GiB
+2026-07-14T23:25:12.3468 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.3820 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=875.68GiB peak=889.18GiB after_gc=889.18GiB (delta_gc=-0.00GiB) mem_avail=1049.00GiB
+2026-07-14T23:25:12.4065 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:25:12.4532 | linearize_moe | INFO - linearize_moe `model.language_model.layers.9.mlp.experts` rss before=82.47GiB peak=95.97GiB after_gc=95.97GiB (delta_gc=-0.00GiB) mem_avail=1048.85GiB
+2026-07-14T23:25:12.4536 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.10.mlp.experts` (8/57)
+2026-07-14T23:27:55.6961 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.97GiB peak=109.47GiB after_gc=109.47GiB (delta_gc=-0.00GiB) mem_avail=1035.34GiB
+2026-07-14T23:27:55.6965 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:55.7167 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.97GiB peak=109.47GiB after_gc=109.47GiB (delta_gc=-0.00GiB) mem_avail=1035.34GiB
+2026-07-14T23:27:55.7170 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:55.7438 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.97GiB peak=109.47GiB after_gc=109.47GiB (delta_gc=-0.00GiB) mem_avail=1035.34GiB
+2026-07-14T23:27:55.7441 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:55.8068 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.98GiB peak=109.48GiB after_gc=109.48GiB (delta_gc=-0.00GiB) mem_avail=1035.31GiB
+2026-07-14T23:27:55.8071 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:55.8277 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.97GiB peak=109.48GiB after_gc=109.48GiB (delta_gc=-0.00GiB) mem_avail=1035.30GiB
+2026-07-14T23:27:55.8281 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:55.8496 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.97GiB peak=109.47GiB after_gc=109.47GiB (delta_gc=-0.00GiB) mem_avail=1035.32GiB
+2026-07-14T23:27:55.8502 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:55.9150 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=95.97GiB peak=109.48GiB after_gc=109.48GiB (delta_gc=-0.00GiB) mem_avail=1035.17GiB
+2026-07-14T23:27:55.9154 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:27:56.9464 | linearize_moe | INFO - linearize_moe `model.language_model.layers.10.mlp.experts` rss before=889.18GiB peak=902.68GiB after_gc=902.68GiB (delta_gc=-0.00GiB) mem_avail=1032.41GiB
+2026-07-14T23:27:56.9471 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.11.mlp.experts` (9/57)
+2026-07-14T23:30:41.2151 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.48GiB peak=122.98GiB after_gc=122.98GiB (delta_gc=-0.00GiB) mem_avail=1021.64GiB
+2026-07-14T23:30:41.2155 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.2203 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.48GiB peak=122.98GiB after_gc=122.98GiB (delta_gc=-0.00GiB) mem_avail=1021.64GiB
+2026-07-14T23:30:41.2206 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.2316 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.47GiB peak=122.98GiB after_gc=122.98GiB (delta_gc=-0.00GiB) mem_avail=1021.64GiB
+2026-07-14T23:30:41.2320 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.2560 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.47GiB peak=122.97GiB after_gc=122.97GiB (delta_gc=-0.00GiB) mem_avail=1021.63GiB
+2026-07-14T23:30:41.2563 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.2779 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=902.68GiB peak=916.18GiB after_gc=916.18GiB (delta_gc=-0.00GiB) mem_avail=1021.63GiB
+2026-07-14T23:30:41.2949 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.48GiB peak=122.98GiB after_gc=122.98GiB (delta_gc=-0.00GiB) mem_avail=1021.62GiB
+2026-07-14T23:30:41.2953 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.3049 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.47GiB peak=122.97GiB after_gc=122.97GiB (delta_gc=-0.00GiB) mem_avail=1021.62GiB
+2026-07-14T23:30:41.3053 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.3064 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:30:41.3420 | linearize_moe | INFO - linearize_moe `model.language_model.layers.11.mlp.experts` rss before=109.47GiB peak=122.98GiB after_gc=122.98GiB (delta_gc=-0.00GiB) mem_avail=1021.56GiB
+2026-07-14T23:30:41.3423 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.12.mlp.experts` (10/57)
+2026-07-14T23:33:23.1696 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.98GiB peak=136.48GiB after_gc=136.48GiB (delta_gc=-0.00GiB) mem_avail=1007.89GiB
+2026-07-14T23:33:23.1700 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.1935 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.98GiB peak=136.48GiB after_gc=136.48GiB (delta_gc=-0.00GiB) mem_avail=1007.89GiB
+2026-07-14T23:33:23.1939 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.2060 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.98GiB peak=136.48GiB after_gc=136.48GiB (delta_gc=-0.00GiB) mem_avail=1007.89GiB
+2026-07-14T23:33:23.2064 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.2196 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.97GiB peak=136.48GiB after_gc=136.48GiB (delta_gc=-0.00GiB) mem_avail=1007.89GiB
+2026-07-14T23:33:23.2200 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.2635 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.98GiB peak=136.48GiB after_gc=136.48GiB (delta_gc=-0.00GiB) mem_avail=1007.88GiB
+2026-07-14T23:33:23.2639 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.2699 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.97GiB peak=136.47GiB after_gc=136.47GiB (delta_gc=-0.00GiB) mem_avail=1007.87GiB
+2026-07-14T23:33:23.2702 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.2719 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=916.18GiB peak=929.69GiB after_gc=929.69GiB (delta_gc=-0.00GiB) mem_avail=1007.87GiB
+2026-07-14T23:33:23.2784 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:33:23.2990 | linearize_moe | INFO - linearize_moe `model.language_model.layers.12.mlp.experts` rss before=122.98GiB peak=136.48GiB after_gc=136.48GiB (delta_gc=-0.00GiB) mem_avail=1007.83GiB
+2026-07-14T23:33:23.2994 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.13.mlp.experts` (11/57)
+2026-07-14T23:36:04.5929 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=929.69GiB peak=943.19GiB after_gc=943.19GiB (delta_gc=-0.00GiB) mem_avail=994.16GiB
+2026-07-14T23:36:04.5933 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.6147 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.48GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.16GiB
+2026-07-14T23:36:04.6151 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.6193 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.47GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.16GiB
+2026-07-14T23:36:04.6196 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.6244 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.48GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.16GiB
+2026-07-14T23:36:04.6247 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.6736 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.48GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.15GiB
+2026-07-14T23:36:04.6740 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.7191 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.48GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.09GiB
+2026-07-14T23:36:04.7194 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.7207 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.48GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.09GiB
+2026-07-14T23:36:04.7211 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:36:04.7430 | linearize_moe | INFO - linearize_moe `model.language_model.layers.13.mlp.experts` rss before=136.48GiB peak=149.98GiB after_gc=149.98GiB (delta_gc=-0.00GiB) mem_avail=994.05GiB
+2026-07-14T23:36:04.7434 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.14.mlp.experts` (12/57)
+2026-07-14T23:38:47.9673 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.48GiB after_gc=163.48GiB (delta_gc=-0.00GiB) mem_avail=980.42GiB
+2026-07-14T23:38:47.9678 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:47.9946 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.48GiB after_gc=163.48GiB (delta_gc=-0.00GiB) mem_avail=980.42GiB
+2026-07-14T23:38:47.9949 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:47.9964 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.48GiB after_gc=163.48GiB (delta_gc=-0.00GiB) mem_avail=980.42GiB
+2026-07-14T23:38:47.9968 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:48.0010 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.49GiB after_gc=163.49GiB (delta_gc=-0.00GiB) mem_avail=980.42GiB
+2026-07-14T23:38:48.0013 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:48.0374 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.48GiB after_gc=163.48GiB (delta_gc=-0.00GiB) mem_avail=980.42GiB
+2026-07-14T23:38:48.0378 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:48.0424 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.48GiB after_gc=163.48GiB (delta_gc=-0.00GiB) mem_avail=980.41GiB
+2026-07-14T23:38:48.0427 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:48.1051 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=943.19GiB peak=956.69GiB after_gc=956.69GiB (delta_gc=-0.00GiB) mem_avail=980.34GiB
+2026-07-14T23:38:48.1055 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:38:48.1345 | linearize_moe | INFO - linearize_moe `model.language_model.layers.14.mlp.experts` rss before=149.98GiB peak=163.48GiB after_gc=163.48GiB (delta_gc=-0.00GiB) mem_avail=980.27GiB
+2026-07-14T23:38:48.1349 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.15.mlp.experts` (13/57)
+2026-07-14T23:41:30.1246 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.48GiB peak=176.98GiB after_gc=176.98GiB (delta_gc=-0.00GiB) mem_avail=966.67GiB
+2026-07-14T23:41:30.1250 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.1470 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.48GiB peak=176.98GiB after_gc=176.98GiB (delta_gc=-0.00GiB) mem_avail=966.67GiB
+2026-07-14T23:41:30.1475 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.1590 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.48GiB peak=176.99GiB after_gc=176.99GiB (delta_gc=-0.00GiB) mem_avail=966.67GiB
+2026-07-14T23:41:30.1612 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.2224 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.48GiB peak=176.99GiB after_gc=176.99GiB (delta_gc=-0.00GiB) mem_avail=966.65GiB
+2026-07-14T23:41:30.2228 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.2260 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.48GiB peak=176.98GiB after_gc=176.98GiB (delta_gc=-0.00GiB) mem_avail=966.65GiB
+2026-07-14T23:41:30.2272 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.49GiB peak=176.99GiB after_gc=176.99GiB (delta_gc=-0.00GiB) mem_avail=966.65GiB
+2026-07-14T23:41:30.2277 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.2382 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=163.48GiB peak=176.99GiB after_gc=176.99GiB (delta_gc=-0.00GiB) mem_avail=966.65GiB
+2026-07-14T23:41:30.2387 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.2446 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:41:30.2555 | linearize_moe | INFO - linearize_moe `model.language_model.layers.15.mlp.experts` rss before=956.69GiB peak=970.19GiB after_gc=970.19GiB (delta_gc=-0.00GiB) mem_avail=966.63GiB
+2026-07-14T23:41:30.2579 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.16.mlp.experts` (14/57)
+2026-07-14T23:44:11.0867 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.98GiB peak=190.49GiB after_gc=190.49GiB (delta_gc=-0.00GiB) mem_avail=952.96GiB
+2026-07-14T23:44:11.0872 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.0922 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.99GiB peak=190.49GiB after_gc=190.49GiB (delta_gc=-0.00GiB) mem_avail=952.96GiB
+2026-07-14T23:44:11.0925 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.0972 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.98GiB peak=190.48GiB after_gc=190.48GiB (delta_gc=-0.00GiB) mem_avail=952.96GiB
+2026-07-14T23:44:11.0976 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.1262 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.99GiB peak=190.49GiB after_gc=190.49GiB (delta_gc=-0.00GiB) mem_avail=952.95GiB
+2026-07-14T23:44:11.1265 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.2222 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.99GiB peak=190.49GiB after_gc=190.49GiB (delta_gc=-0.00GiB) mem_avail=952.87GiB
+2026-07-14T23:44:11.2225 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.2549 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.99GiB peak=190.49GiB after_gc=190.49GiB (delta_gc=-0.00GiB) mem_avail=952.82GiB
+2026-07-14T23:44:11.2553 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.2612 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=970.19GiB peak=983.69GiB after_gc=983.69GiB (delta_gc=-0.00GiB) mem_avail=952.81GiB
+2026-07-14T23:44:11.2616 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)
+2026-07-14T23:44:11.3549 | linearize_moe | INFO - linearize_moe `model.language_model.layers.16.mlp.experts` rss before=176.98GiB peak=190.48GiB after_gc=190.48GiB (delta_gc=-0.00GiB) mem_avail=952.61GiB
+2026-07-14T23:44:11.3554 | linearize_moe | INFO - Linearizing experts at `model.language_model.layers.17.mlp.experts` (15/57)

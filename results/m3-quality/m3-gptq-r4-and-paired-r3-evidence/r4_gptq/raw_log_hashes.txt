@@ -1,0 +1,3 @@
+ef918e0ffbbdd1389a81239b5a3c50073d4627a1f26bc3b84dc01e39a0c3b4c7  /mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/torchrun.out
+b61d28c52c77646715075f7adc82ed1225f69ab8534bcafdfa0ac969e1933e90  /mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/torchrun.err
+f0b11bf5f3266c1221bc9e66c18eb5a6eda2b242db603f30474df01aad5a3d24  /mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260714T191900Z-m3-ddp-quant-smoke-r4-gptq/gptq/resources.log

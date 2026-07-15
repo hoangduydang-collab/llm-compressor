@@ -1,0 +1,14 @@
+{
+  "gpqa_diamond_zeroshot": {
+    "sample_len": 100.0,
+    "acc,none": 0.24,
+    "acc_norm,none": 0.24
+  },
+  "ifeval": {
+    "sample_len": 100.0,
+    "prompt_level_strict_acc,none": 0.84,
+    "inst_level_strict_acc,none": 0.8823529411764706,
+    "prompt_level_loose_acc,none": 0.86,
+    "inst_level_loose_acc,none": 0.8954248366013072
+  }
+}

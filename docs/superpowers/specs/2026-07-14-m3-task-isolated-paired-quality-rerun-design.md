@@ -9,7 +9,7 @@ comparable BF16 companion baseline
 
 **Status:** r4.7 evaluation, BF16 companion, and empty-output diagnostic approved
 
-**Workflow state:** `DESIGN_REVIEW`
+**Workflow state:** `READY_FOR_EXECUTOR`
 
 This r4 design supersedes the earlier task-isolation, greedy GPQA, `sbatch`,
 distributional-probe, and checkpoint-reuse designs in this file. Historical

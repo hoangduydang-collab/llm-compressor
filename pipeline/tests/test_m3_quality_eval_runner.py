@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from pipeline.m3_quality_eval import build_launch_plan, load_matrix
+
 SCRIPT = Path("pipeline/slurm/run_m3_quality_eval_srun.sh")
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
 GROUPED_MATRIX = Path(
@@ -15,6 +17,9 @@ GROUPED_MATRIX = Path(
 )
 REASONING_R4_MATRIX = Path(
     "pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml"
+)
+BF16_REASONING_R4_MATRIX = Path(
+    "pipeline/configs/minimax_m3_bf16_reasoning_r4.yaml"
 )
 
 
@@ -206,6 +211,48 @@ def test_r4_dry_run_emits_four_top_level_srun_arms(tmp_path, request):
     assert sum(r"--tasks mmlu_pro\,gsm8k_cot\,aime25" in line for line in commands) == 2
     assert "sbatch" not in result.stdout
     assert "total_nodes=4" in result.stdout
+
+
+def test_bf16_reasoning_r4_matrix_uses_two_tp8_pp2_ray_arms(tmp_path):
+    spec = load_matrix(BF16_REASONING_R4_MATRIX)
+    model = spec.models[0]
+
+    assert len(spec.models) == 1
+    assert model.label == "bf16"
+    assert model.kind == "bf16"
+    assert model.nodes == 2
+    assert model.tensor_parallel_size == 8
+    assert model.pipeline_parallel_size == 2
+    assert model.distributed_executor_backend == "ray"
+    assert spec.scheduling.max_parallel_arms == 2
+    assert spec.scheduling.arm_time_limit == "24:00:00"
+
+    smoke = build_launch_plan(spec, profile="smoke")
+    assert len(smoke["arms"]) == 1
+    assert smoke["total_nodes"] == 2
+    assert smoke["arms"][0]["tasks"] == [
+        "gpqa_diamond",
+        "mmlu_pro",
+        "gsm8k",
+        "aime_2025",
+    ]
+
+    gate = tmp_path / "smoke_gate.json"
+    gate.write_text(json.dumps({"ready_for_production": True}), encoding="utf-8")
+    production = build_launch_plan(spec, profile="production", smoke_gate=gate)
+    assert production["total_nodes"] == 4
+    assert production["max_parallel_arms"] == 2
+    assert [arm["shard"] for arm in production["arms"]] == [
+        "gpqa",
+        "reasoning_suite",
+    ]
+    assert all(arm["nodes"] == 2 for arm in production["arms"])
+    assert all(arm["tensor_parallel_size"] == 8 for arm in production["arms"])
+    assert all(arm["pipeline_parallel_size"] == 2 for arm in production["arms"])
+    assert all(
+        arm["distributed_executor_backend"] == "ray"
+        for arm in production["arms"]
+    )
 
 
 def test_runner_scripts_are_valid_bash():

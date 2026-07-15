@@ -63,8 +63,8 @@ still apply. It does not create a second general evaluation framework.
 
 ## Chosen approach
 
-Use task-native generated-answer adapters behind one small reasoning-runner
-interface. The runner sends requests to the same vLLM server used by EvalSuite,
+Use the stock task-native lm-eval generated-answer tasks through the existing
+reasoning runner interface. The runner uses the same vLLM backend as EvalSuite,
 records responses in the existing per-task sample/checkpoint structure, and
 feeds normalized binary outcomes into the existing paired comparison code.
 
@@ -79,16 +79,17 @@ from scratch.
 
 | Task | Questions | Attempts per question | Prompt and scoring contract |
 | --- | ---: | ---: | --- |
-| GPQA Diamond | 100 seeded from 198 | 3 | Zero-shot generated answer following the Simple-Evals/Artificial Analysis style. Deterministically permute the four choices per question, label them A-D, request a final `Answer: X`, and score the extracted label. |
+| GPQA Diamond | 100 seeded from 198 | 3 | Pinned lm-eval `gpqa_diamond_cot_zeroshot`: zero-shot `generate_until`, four displayed A-D choices, and `exact_match,flexible-extract` scoring. |
 | MMLU-Pro | 100 seeded and subject-stratified | 3 | Official five-shot chain-of-thought prompt and generated answer. Preserve ten A-J choices and use the official answer extractor. |
 | GSM8K | 100 seeded | 3 | Existing official few-shot generated-solution task semantics with numeric final-answer extraction. |
 | AIME 2025 | all 30 | 3 | Zero-shot generated reasoning with final boxed-integer extraction and exact integer scoring. |
 
-The implementation must pin the exact upstream revision or installed harness
-version from which every prompt formatter and extractor is obtained. Focused
-fixtures must cover representative valid answers, formatting variants, and
-unparseable outputs. Local modifications are limited to adapting inputs and
-outputs to repository interfaces.
+The implementation must pin lm-eval 0.4.12 and record each resolved task name,
+task version, output type, prompt configuration, filter/metric, and few-shot
+count. Focused fixtures must cover representative valid answers, formatting
+variants, and unparseable outputs. Local modifications are limited to adapting
+lm-eval outputs to repository interfaces; no GPQA prompt or extractor is
+reimplemented locally.
 
 ### Sample identity and choice permutation
 
@@ -98,10 +99,11 @@ proportional across resolved subject leaves with deterministic remainder
 assignment. AIME uses all 30 questions.
 
 Every question has a stable `sample_uid`. Every generated attempt is keyed by
-`(sample_uid, generation_seed)`. GPQA's choice permutation is derived from the
-question UID and is therefore identical across models and across all three
-generation seeds. The recorded row contains both the source answer mapping and
-the displayed permutation so extraction can be audited.
+`(sample_uid, generation_seed)`. GPQA uses the pinned lm-eval task's choice
+preprocessing under fixed harness seed 42. Preflight must resolve the task twice
+and prove that representative prompts and displayed-choice mappings are stable.
+Runtime rows record the processed document and displayed choices, and merging
+requires them to be identical across models and all three generation seeds.
 
 ## Shared generation contract
 
@@ -224,9 +226,9 @@ The implementation should be a natural extension of the current pipeline:
 
 1. Add an r4 reasoning configuration or explicitly version the current M3
    quality config; never silently change the historical config's meaning.
-2. Add the narrow task-native generated-answer adapter/runner while reusing the
-   current vLLM lifecycle, sample UID utilities, static checkpoint layout,
-   generation-health summaries, and comparison/reporting modules.
+2. Extend the existing lm-eval runner for repeated generated-answer seeds while
+   reusing the current vLLM lifecycle, sample UID utilities, static checkpoint
+   layout, generation-health summaries, and comparison/reporting modules.
 3. Extend paired statistics to group repeated seed outcomes by question during
    bootstrap and win/tie/loss calculation.
 4. Update the task-isolated matrix and `srun` launcher to emit exactly the four
@@ -244,7 +246,8 @@ Automated CPU tests must establish that:
   all 30 AIME questions;
 - MMLU-Pro selection is deterministic and subject-stratified;
 - each question expands to exactly the three pinned generation seeds;
-- GPQA choice permutations are deterministic, paired, and auditable;
+- GPQA's pinned lm-eval prompts and choice permutations are stable, paired, and
+  auditable;
 - upstream-derived formatters and extractors pass pinned fixtures;
 - invalid and ambiguous final answers become explicit parse failures;
 - aggregate pass@1 averages attempts without voting;

@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "valid": true,
+  "format": "pack-quantized",
+  "inventory": {
+    "quantized_modules": 22116,
+    "plain_modules": 982,
+    "plain_quantizable_modules": 624,
+    "runtime_modules_checked": 22740
+  },
+  "components": {
+    "attention": {
+      "quantized": 228,
+      "plain": 126,
+      "plain_unignored": 0
+    },
+    "dense_mlp": {
+      "quantized": 0,
+      "plain": 9,
+      "plain_unignored": 0
+    },
+    "lm_head": {
+      "quantized": 0,
+      "plain": 1,
+      "plain_unignored": 0
+    },
+    "norms": {
+      "quantized": 0,
+      "plain": 355,
+      "plain_unignored": 0
+    },
+    "other": {
+      "quantized": 0,
+      "plain": 3,
+      "plain_unignored": 0
+    },
+    "routed_experts": {
+      "quantized": 21888,
+      "plain": 0,
+      "plain_unignored": 0
+    },
+    "routers": {
+      "quantized": 0,
+      "plain": 57,
+      "plain_unignored": 0
+    },
+    "shared_experts": {
+      "quantized": 0,
+      "plain": 171,
+      "plain_unignored": 0
+    },
+    "vision": {
+      "quantized": 0,
+      "plain": 260,
+      "plain_unignored": 0
+    }
+  },
+  "patterns": [
+    {
+      "pattern": "re:.*vision_tower[.].*",
+      "source_matches": 258,
+      "runtime_matches": 258
+    },
+    {
+      "pattern": "re:.*multi_modal_projector[.].*",
+      "source_matches": 2,
+      "runtime_matches": 2
+    },
+    {
+      "pattern": "re:.*patch_merge_mlp[.].*",
+      "source_matches": 0,
+      "runtime_matches": 0
+    },
+    {
+      "pattern": "re:.*block_sparse_moe[.]gate",
+      "source_matches": 0,
+      "runtime_matches": 57
+    },
+    {
+      "pattern": "re:.*block_sparse_moe[.]shared_experts[.].*",
+      "source_matches": 0,
+      "runtime_matches": 171
+    },
+    {
+      "pattern": "re:.*self_attn[.]index_[qk]_proj",
+      "source_matches": 0,
+      "runtime_matches": 114
+    },
+    {
+      "pattern": "re:.*layers[.][0-2][.]self_attn[.][qkvo]_proj",
+      "source_matches": 21,
+      "runtime_matches": 21
+    },
+    {
+      "pattern": "re:.*layers[.][0-2][.]self_attn[.]qkv_proj",
+      "source_matches": 0,
+      "runtime_matches": 0
+    },
+    {
+      "pattern": "re:.*layers[.][0-2][.]mlp[.](gate|up|down)_proj",
+      "source_matches": 9,
+      "runtime_matches": 9
+    },
+    {
+      "pattern": "re:.*layers[.][0-2][.]mlp[.]gate_up_proj",
+      "source_matches": 0,
+      "runtime_matches": 0
+    },
+    {
+      "pattern": "re:.*lm_head",
+      "source_matches": 1,
+      "runtime_matches": 1
+    }
+  ],
+  "errors": []
+}

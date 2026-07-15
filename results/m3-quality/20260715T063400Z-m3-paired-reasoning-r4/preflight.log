@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 543, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 538, in main
+    run_preflight(args.matrix, args.run_root)
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 407, in run_preflight
+    task_records = inspect_reasoning_task_records(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 230, in inspect_reasoning_task_records
+    first = _representative_task_view(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 177, in _representative_task_view
+    task = _loaded_task(manager, installed_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 164, in _loaded_task
+    raise ValueError(
+ValueError: cannot select a single task object for 'mmlu_pro': ['mmlu_pro_biology', 'mmlu_pro_business', 'mmlu_pro_chemistry', 'mmlu_pro_computer_science', 'mmlu_pro_economics', 'mmlu_pro_engineering', 'mmlu_pro_health', 'mmlu_pro_history', 'mmlu_pro_law', 'mmlu_pro_math', 'mmlu_pro_other', 'mmlu_pro_philosophy', 'mmlu_pro_physics', 'mmlu_pro_psychology']

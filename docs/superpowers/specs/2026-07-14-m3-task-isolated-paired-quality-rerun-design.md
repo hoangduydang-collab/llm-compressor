@@ -1,319 +1,281 @@
-# MiniMax-M3 Task-Isolated Paired Quality Rerun Design
+# MiniMax-M3 Paired Reasoning Quality Rerun Design
 
 **Date:** 2026-07-14
-**Scope:** MiniMax-M3 paired GPTQ-versus-AWQ quick quality evaluation
-**Status:** Approved for implementation (r3 amendment below supersedes conflicting r2 text)
+
+**Revision:** r4, approved 2026-07-15
+
+**Scope:** MiniMax-M3 paired GPTQ-versus-AWQ reasoning evaluation
+
+**Status:** Approved design; implementation plan not yet written
+
 **Workflow state:** `PLANNER_ANALYSIS`
 
-## Approved r3 amendment: grouped `srun` execution
+This r4 design supersedes the earlier task-isolation, greedy GPQA, `sbatch`,
+distributional-probe, and checkpoint-reuse designs in this file. Historical
+artifacts and reports remain immutable, but none of their reasoning scores are
+inputs to the r4 verdict.
 
-The executor cluster supports top-level `srun` allocations, not `sbatch`. Replace
-the twelve task-isolated array arms with six independent one-node arms, all
-launched concurrently from a detached `tmux` controller outside any existing
-Slurm allocation:
+## Decision and motivation
 
-| Node arm | Ordered work |
-| --- | --- |
-| `inhouse_gptq/reasoning` | GPQA, then IFEval |
-| `inhouse_gptq/broad_math` | MMLU-Pro, then GSM8K, then AIME 2025 |
-| `inhouse_gptq/distributional_probe` | 8,192-token probe |
-| `cyankiwi_awq/reasoning` | GPQA, then IFEval |
-| `cyankiwi_awq/broad_math` | resume saved MMLU-Pro and GSM8K, then AIME 2025 |
-| `cyankiwi_awq/distributional_probe` | 8,192-token probe |
+Determine whether the repaired in-house GPTQ checkpoint preserves reasoning
+quality relative to the cyankiwi AWQ checkpoint. The earlier quick run cannot
+answer that question reliably: its GPQA score used normalized continuation
+likelihood, while current reasoning-model evaluations ask the model to generate
+an answer after reasoning. A likelihood score is useful for conventional
+quantization regression, but it is not comparable to the generated-answer
+protocol behind modern MiniMax-M3 reasoning claims.
 
-Each EvalSuite arm loads its model once and checkpoints after every task. Each
-top-level `srun` requests one exclusive 8xH100 node and has an independent
-`16:00:00` ceiling. The ceiling is safety headroom, not expected runtime. One
-arm's failure must not cancel siblings, and no retry is automatic.
-
-The prior production run saved four complete task checkpoints: GPTQ GPQA
-(100/100, 0.28), AWQ GPQA (100/100, 0.24), AWQ MMLU-Pro (100/100, 0.76), and
-AWQ GSM8K (100/100, 0.97). Before launch, the r3 packet must verify identical
-old/new production manifests, each task aggregate, and 100 unique sample UIDs,
-then import only those task aggregates, samples, and generation-health records
-into the matching new arm. Existing EvalSuite resume behavior skips them.
-
-GPTQ MMLU-Pro reached only 96/100 and wrote no completed task checkpoint, so it
-must rerun. Neither IFEval, AIME, GPTQ GSM8K, nor either distributional probe
-completed. Missing or invalid source artifacts are a stop-and-return condition;
-a score found only in a log is not a substitute.
-
-The old GSM8K evidence also exposed a normalization defect: 200 stored rows but
-only 100 unique stable sample UIDs. Checkpoint writing must collapse identical
-rows with the same UID and reject conflicting rows with the same UID. Subtask
-namespaces remain part of the UID, preserving legitimate group-task rows.
-
-Implementation reuses `pipeline/slurm/run_m3_quality_eval_srun.sh`, removes the
-unusable `sbatch` array scripts, and records the cluster constraint in durable
-planner guidance. Acceptance is six dry-run `srun` commands, no `sbatch`, six
-nodes maximum, 100 paired samples per task (30 for the 30-item AIME dataset),
-one probe per model, validated AWQ MMLU reuse, and protocol-compliant evidence.
-
-Before GPU launch, r3 also writes a fail-closed harness-contract artifact. It
-pins lm-eval 0.4.12, resolved task aliases/metrics/few-shot counts, the official
-base tokenizer and chat-template hashes, requires both served checkpoint
-tokenizers plus a rendered default prompt to match that official source,
-adaptive thinking with `</mm:think>`,
-greedy 16k generation, and the TP8 vLLM/EP serving contract. This makes the
-paired result reflective of the model under a stable standard harness. The
-100-sample subset remains a directional paired comparison, not a directly
-comparable reproduction of full public leaderboard scores; MiniMax does not
-publish an identical five-task recipe, and its model card recommends sampling
-parameters for general inference rather than this deterministic benchmark run.
-
-## Decision to make
-
-Determine whether the repaired in-house GPTQ checkpoint preserves enough quality
-relative to the cyankiwi AWQ baseline to justify further performance work.
-
-The prior quick rerun did not answer this question. Its four production arms
-shared several tasks per model and hit three-hour scheduler limits after producing
-only partial results. Raw logs also show that the GPTQ broad arm loaded
-successfully and reached 96/100 MMLU-Pro prompts, contrary to the historical
-executor report's statement that it timed out during startup. The historical
-evidence remains immutable; the correction will be recorded in the new planner
-handoff and analysis rather than by editing the returned packet.
+The rerun therefore keeps the paired 100-question budget but changes the four
+reasoning tasks to task-native generated-answer protocols. It reuses the
+repository's existing vLLM serving, manifests, checkpoint layout, health
+records, paired statistics, and `srun` orchestration wherever their contracts
+still apply. It does not create a second general evaluation framework.
 
 ## Goals
 
-1. Keep exactly 100 paired samples for every quality task.
-2. Isolate each model/task combination so one slow task cannot discard another
-   task's completed work.
-3. Run no more than six 8xH100 nodes concurrently, leaving approximately five of
-   the currently idle nodes available for other work.
-4. Give every GPU arm an independent eight-hour scheduler limit.
-5. Preserve the existing paired sample manifest, evaluation semantics, 16k
-   production generation ceiling, and 8,192-token distributional probe.
-6. Make execution copy-ready for the executor and return protocol-compliant raw
-   evidence even when one or more arms fail.
+1. Evaluate GPQA Diamond, MMLU-Pro, GSM8K, and AIME 2025 with generated answers
+   and task-appropriate extraction.
+2. Use 100 unique paired questions per task and three paired sampling seeds per
+   question. AIME 2025 is the only exception because its complete dataset has
+   30 questions.
+3. Make prompts, choice order, sampling, extraction, and scoring identical
+   between AWQ and GPTQ.
+4. Keep one model loaded while its node runs several tasks, avoiding repeated
+   MiniMax-M3 startup cost.
+5. Produce raw, auditable responses and failure diagnostics in the established
+   EvalSuite artifact shape.
+6. Give the executor copy-ready `srun` commands and no experiment-design work.
 
 ## Non-goals
 
-- Changing models, prompts, task aliases, sample seed, sample count, evaluation
-  thresholds, or serving topology.
-- Treating the 100-sample quick matrix as the final definitive quality verdict.
-- Automatically retrying failed or timed-out arms.
-- Running speed benchmarks, publishing a result, or adopting GPTQ downstream.
-- Rewriting or deleting the pre-protocol evidence packet.
+- Reproducing a public full-dataset leaderboard number exactly.
+- Claiming recovery relative to BF16 or the official FP8 MiniMax-M3 checkpoint.
+  This experiment compares GPTQ with an AWQ reference only.
+- Rerunning IFEval. Its completed strict instruction-following result remains a
+  separate, non-reasoning observation and is excluded from the new reasoning
+  macro and gates.
+- Rerunning either failed distributional probe.
+- Reporting majority vote, pass@3, or best-of-three accuracy.
+- Changing the model checkpoints, serving topology, tokenizer, chat template,
+  or maximum output length.
+- Adding automatic retries or letting the executor change prompts, seeds,
+  sample IDs, thresholds, or task grouping at runtime.
 
-## Chosen architecture
+## Chosen approach
 
-### Preserve the historical matrix
+Use task-native generated-answer adapters behind one small reasoning-runner
+interface. The runner sends requests to the same vLLM server used by EvalSuite,
+records responses in the existing per-task sample/checkpoint structure, and
+feeds normalized binary outcomes into the existing paired comparison code.
 
-`pipeline/configs/minimax_m3_paired_gptq_awq_quick.yaml` remains unchanged so
-historical runs stay reproducible. A new task-isolated quick matrix will contain
-six shards:
+This is preferable to changing only GPQA because all four capability tasks are
+reasoning tasks, and preferable to copying an external harness wholesale
+because serving, artifact validation, checkpointing, pairing, and reporting are
+already implemented locally. Task prompts and extractors should be adapted from
+the established upstream implementations named below rather than reauthored
+from scratch.
 
-| Shard | Tasks | Probe |
-| --- | --- | --- |
-| `gpqa_diamond` | `gpqa_diamond` | no |
-| `ifeval` | `ifeval` | no |
-| `aime_2025` | `aime_2025` | no |
-| `mmlu_pro` | `mmlu_pro` | no |
-| `gsm8k` | `gsm8k` | no |
-| `distributional_probe` | none | yes |
+## Task contracts
 
-With two models, the production launch plan contains twelve independent
-single-node arms. Each quality sample is selected once per model from the same
-seeded manifest, retaining exact paired comparisons.
+| Task | Questions | Attempts per question | Prompt and scoring contract |
+| --- | ---: | ---: | --- |
+| GPQA Diamond | 100 seeded from 198 | 3 | Zero-shot generated answer following the Simple-Evals/Artificial Analysis style. Deterministically permute the four choices per question, label them A-D, request a final `Answer: X`, and score the extracted label. |
+| MMLU-Pro | 100 seeded and subject-stratified | 3 | Official five-shot chain-of-thought prompt and generated answer. Preserve ten A-J choices and use the official answer extractor. |
+| GSM8K | 100 seeded | 3 | Existing official few-shot generated-solution task semantics with numeric final-answer extraction. |
+| AIME 2025 | all 30 | 3 | Zero-shot generated reasoning with final boxed-integer extraction and exact integer scoring. |
 
-The new matrix also carries an explicit operational scheduling contract:
+The implementation must pin the exact upstream revision or installed harness
+version from which every prompt formatter and extractor is obtained. Focused
+fixtures must cover representative valid answers, formatting variants, and
+unparseable outputs. Local modifications are limited to adapting inputs and
+outputs to repository interfaces.
 
-```yaml
-scheduling:
-  max_parallel_arms: 6
-  arm_time_limit: "08:00:00"
-```
+### Sample identity and choice permutation
 
-The parsed matrix and generated launch plan expose these values together with
-`max_concurrent_nodes: 6`. `total_nodes: 12` continues to describe the sum of
-all arm requirements, not a simultaneous reservation.
+The sample manifest is created once and shared by both models. GPQA, GSM8K, and
+MMLU-Pro use deterministic seed-42 selection; MMLU-Pro allocation is
+proportional across resolved subject leaves with deterministic remainder
+assignment. AIME uses all 30 questions.
 
-### Slurm array with a six-arm concurrency cap
+Every question has a stable `sample_uid`. Every generated attempt is keyed by
+`(sample_uid, generation_seed)`. GPQA's choice permutation is derived from the
+question UID and is therefore identical across models and across all three
+generation seeds. The recorded row contains both the source answer mapping and
+the displayed permutation so extraction can be audited.
 
-The launcher materializes the existing JSON launch plan in the fresh run root,
-then submits its twelve production entries as a Slurm array equivalent to:
+## Shared generation contract
 
-```bash
-sbatch --array=0-11%6 --nodes=1 --ntasks=1 --gpus-per-node=8 \
-  --exclusive --time=08:00:00 \
-  pipeline/slurm/run_m3_quality_eval_array_arm.sh \
-  --plan "$RUN_ROOT/production_launch_plan.json" \
-  --run-root "$RUN_ROOT" --matrix "$MATRIX"
-```
+- Apply the official MiniMax-M3 tokenizer and chat template.
+- Explicitly enable thinking; do not inherit an unset/default thinking mode.
+- Set `temperature=1.0`, `top_p=0.95`, and `do_sample=true`.
+- Use paired generation seeds `42`, `1234`, and `4158`.
+- Allow at most 16,384 generated tokens per attempt.
+- Generate exactly one response for each question and seed.
+- Retain the complete raw response, including reasoning. Strip or normalize
+  text only in the task extractor, never in the evidence copy.
 
-Each array index selects exactly one immutable launch-plan entry and invokes the
-existing arm runner. Slurm may schedule entries in any order; simultaneous
-execution is not part of the paired statistical contract. At most six arms may
-run at once, and a completed array task releases its node immediately instead of
-holding a six-node parent allocation while slower arms finish.
+The preflight must render a representative prompt for each task and verify the
+resolved tokenizer, chat-template hash, thinking parameters, sampling values,
+task formatter/extractor revision, sample-manifest hash, and model paths before
+GPU launch. A mismatch is a stop-and-return condition.
 
-The array job replaces the current production use of a single allocation that
-starts every `srun` concurrently. Existing smoke and legacy launch behavior
-remain available. The new launcher must print the resolved array mapping and
-submission command in dry-run mode before it is allowed to submit work.
+## Metrics and statistical contract
 
-The launcher derives the `%6` limit and eight-hour per-arm time from the
-committed matrix, while the execution packet repeats and verifies them. They are
-not executor-selected overrides. Changing either value requires a new packet
-revision.
+The primary task metric is **mean pass@1**: the arithmetic mean of the binary
+correctness of all individual attempts. Thus a 100-question task contributes
+300 paired attempts per model, while AIME contributes 90. The three generations
+are repeated measurements, not candidates for majority vote or pass@3.
 
-### Probe-only arm
+For each task, report:
 
-The current arm runner always invokes EvalSuite, which is invalid for an empty
-task list. For the probe-only shard, the runner will:
+- each seed's pass@1 and the aggregate mean pass@1;
+- GPTQ minus AWQ paired delta;
+- paired bootstrap 95% confidence interval with 10,000 iterations;
+- question-level GPTQ win, tie, and loss counts;
+- parse failure, truncation, empty-response, and degeneration rates;
+- output-token and reasoning-token distributions.
 
-1. write the normal arm manifest;
-2. skip EvalSuite when the resolved task list is empty;
-3. write a valid empty `aggregate.json` (`{}`);
-4. run the distributional probe once;
-5. write `return_code.txt` and `arm_complete.json` normally.
+The bootstrap resampling unit is the question UID, not an individual attempt.
+All three paired seed outcomes for a selected question stay together during a
+bootstrap draw. Question-level win/tie/loss compares the mean correctness over
+the three seeds. This avoids treating repeated generations as 300 independent
+questions.
 
-A shard is valid only when it contains at least one task or enables the probe.
-This rule prevents accidental no-op arms while making the deliberate probe-only
-arm explicit.
+Existing quality thresholds apply to aggregate task pass@1 and the macro over
+the four reasoning tasks. A positive verdict also requires complete paired
+attempts and no unexplained parser, empty-response, truncation, or degeneration
+asymmetry. Report health failures even when the scalar score passes. Because
+the experiment uses 100-question subsets, the confidence intervals and raw
+deltas take priority over a binary gate near the threshold.
 
-## Data and artifact flow
+## Execution architecture
+
+Use four independent top-level `srun` arms launched concurrently from a
+detached `tmux` controller outside any existing Slurm allocation:
+
+| Node arm | Ordered work |
+| --- | --- |
+| `cyankiwi_awq/gpqa` | GPQA |
+| `inhouse_gptq/gpqa` | GPQA |
+| `cyankiwi_awq/reasoning_suite` | MMLU-Pro, then GSM8K, then AIME 2025 |
+| `inhouse_gptq/reasoning_suite` | MMLU-Pro, then GSM8K, then AIME 2025 |
+
+Each arm requests one exclusive 8xH100 node and has an independent 24-hour
+ceiling. The two suite arms load their model once and checkpoint after every
+task and generation seed. GPQA receives separate nodes because its repeated
+long reasoning generations would otherwise delay every other task. Four nodes
+leave cluster capacity available for unrelated work.
+
+The cluster does not provide `sbatch`. The execution packet and durable planner
+guidance must use top-level `srun` only. No worker may start a nested allocation,
+and failure of one arm must not cancel siblings.
+
+## Data flow and artifacts
 
 ```text
-new matrix + prior passing smoke gate
-             |
-             v
-preflight hashes and seeded 100-sample manifest
-             |
-             v
-12-entry immutable production_launch_plan.json
-             |
-             v
-Slurm array 0-11%6 -> one model/shard arm per array task
-             |
-             v
-per-arm manifest, raw logs, aggregate/probe, return code, completion marker
-             |
-             v
-existing model-arm merge -> matrix.json -> gates.json -> report.md
-             |
-             v
-protocol-compliant executor evidence packet
+task-native upstream definitions + committed r4 config
+                         |
+                         v
+preflight contract + one paired question manifest
+                         |
+                         v
+four srun arms -> vLLM -> raw response per UID/seed
+                         |
+                         v
+task extractor -> correctness + parse/health metadata
+                         |
+                         v
+per-seed checkpoints -> model merge -> paired statistics
+                         |
+                         v
+reasoning report + protocol-compliant executor evidence packet
 ```
 
-The existing `_merge_model_arms` behavior is retained: it combines disjoint task
-aggregates and sample records and copies exactly one distributional probe per
-model. The merger must accept the probe-only arm's empty aggregate, but still
-reject duplicate task results or multiple probe artifacts for one model.
+Every attempt row must include model label, task, source doc ID, sample UID,
+generation seed, prompt/template identifiers, displayed choices when present,
+raw response, extracted answer, reference answer, correctness, finish reason,
+token counts, parse status, and timestamps. The checkpoint marker records the
+expected and observed UID/seed pairs. Duplicate identical rows collapse;
+conflicting duplicates fail closed.
 
-## Smoke-gate reuse
+The executor returns summaries and small artifacts in git. Raw logs and large
+response files may remain in cluster storage, but the handoff must provide exact
+paths, byte sizes, SHA-256 hashes, and bounded excerpts for failures.
 
-The previous passing smoke result may be reused because running another smoke is
-not scientifically useful when evaluation inputs and serving semantics are
-unchanged. Reuse is authorized only after a preflight records and verifies exact
-equality of:
+## Resume and failure handling
 
-- sample-manifest hash;
-- resolved evaluation-config hash;
-- tokenizer hash;
-- chat-template hash;
-- model paths and model kinds;
-- serving topology and relevant vLLM overrides.
+- Do not import old GPQA, MMLU-Pro, GSM8K, or AIME checkpoints because their
+  generation contracts differ from r4.
+- Resume is allowed only within the same r4 run when the task contract,
+  manifest, model, and generation settings hashes match exactly.
+- Checkpoint after each generation seed so a scheduler interruption loses at
+  most the active seed for the active task.
+- A missing attempt, duplicate conflict, nonzero arm return code, false
+  completion marker, contract mismatch, malformed artifact, or asymmetric task
+  definition blocks a positive verdict.
+- Sampling/runtime failures are evidence, not silent skips. No automatic retry
+  is authorized; the planner decides whether a revised packet is warranted.
+- Aggregate completed siblings even after partial failure, clearly labelling
+  the result incomplete and scientifically non-decisive.
 
-The matrix hash is expected to differ because shard layout changes and is not a
-reuse equality requirement. The execution packet names the exact prior
-`smoke_gate.json` and its source run. A missing field, mismatch, non-passing gate,
-or unverifiable source is a stop-and-return condition; the executor does not
-choose a substitute smoke artifact.
+## Implementation boundaries
 
-## Failure handling
+The implementation should be a natural extension of the current pipeline:
 
-- Array arms are independent. Failure, timeout, cancellation, or OOM in one arm
-  must not cancel healthy arms.
-- The array uses no automatic retries. A retry requires planner analysis, a new
-  packet revision, and a fresh result root.
-- Every arm writes to a unique model/shard directory. Prior and partial results
-  are never overwritten.
-- The eight-hour limit applies independently to each array task, not to time
-  spent pending in the scheduler.
-- Aggregation runs after the array reaches terminal state, including partial
-  failure, so it can record missing or invalid arms and preserve a mechanical
-  failure report.
-- Any missing arm, nonzero return code, false completion marker, malformed
-  artifact, provenance mismatch, or failed gate prevents a positive quality
-  verdict. Infrastructure failure is reported separately from measured model
-  quality.
-- The executor captures `sacct`, scheduler stdout/stderr, exact array-to-arm
-  mapping, job IDs, nodes, timestamps, elapsed times, states, exit codes, and
-  failure signals before returning.
-
-## Planner/executor boundary
-
-The planner will commit a `READY_FOR_EXECUTOR` packet containing:
-
-- the exact base commit and prior smoke-gate path;
-- copy-ready preflight, dry-run, submission, monitoring, aggregation, evidence
-  packaging, commit, and push commands;
-- a fresh run-ID construction command;
-- the exact twelve expected arms and six-arm concurrency cap;
-- explicit stop conditions, no-retry policy, and prohibited downstream work;
-- required small artifacts and path/size/SHA-256 records for large artifacts.
-
-The executor only verifies, submits, monitors, aggregates, and returns evidence.
-It does not select a different concurrency level, regroup tasks, extend time
-limits, rerun an arm, change a gate, or interpret whether GPTQ should be adopted.
-
-## Implementation surface
-
-Expected implementation changes are deliberately bounded:
-
-1. Add
-   `pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml`.
-2. Extend matrix validation and launch-plan metadata in
-   `pipeline/m3_quality_eval.py` for valid probe-only shards, the explicit
-   scheduling contract, and truthful completion-marker validation.
-3. Extend `pipeline/slurm/test_m3_quality_eval_arm.sh` to support a probe-only
-   arm without invoking EvalSuite.
-4. Add `pipeline/slurm/submit_m3_quality_eval_array.sh` to materialize, print,
-   dry-run, and submit the array, plus
-   `pipeline/slurm/run_m3_quality_eval_array_arm.sh` to select one arm by
-   launch-plan index and invoke the existing arm runner. Neither interface asks
-   the executor to reconstruct commands.
-5. Add focused CPU contract tests in the existing quality-evaluation test
-   modules (and a new launcher test module if separation is clearer).
-6. Add a planner-to-executor execution packet and planner evidence addendum;
-   do not mutate the historical executor report.
+1. Add an r4 reasoning configuration or explicitly version the current M3
+   quality config; never silently change the historical config's meaning.
+2. Add the narrow task-native generated-answer adapter/runner while reusing the
+   current vLLM lifecycle, sample UID utilities, static checkpoint layout,
+   generation-health summaries, and comparison/reporting modules.
+3. Extend paired statistics to group repeated seed outcomes by question during
+   bootstrap and win/tie/loss calculation.
+4. Update the task-isolated matrix and `srun` launcher to emit exactly the four
+   arms above with a 24-hour ceiling and no distributional probe.
+5. Add a fail-closed preflight contract and a copy-ready planner-to-executor
+   packet. The executor must not reconstruct task commands.
+6. Record the cluster's `srun`-only rule in durable planner guidance if it is
+   not already present.
 
 ## Validation plan
 
-Automated tests will establish that:
+Automated CPU tests must establish that:
 
-- the new matrix loads with six unique, valid shards;
-- every quality task appears exactly once per model;
-- exactly one probe-only shard exists per model;
-- the production plan contains twelve one-node, eight-GPU arms;
-- the production submission caps concurrency at six and assigns eight hours per
-  array task;
-- a shard with neither tasks nor probe is rejected;
-- the probe-only runner skips EvalSuite, writes `{}` to `aggregate.json`, runs
-  the probe, and writes normal completion evidence;
-- merging five task arms plus one probe-only arm per model succeeds;
-- duplicate tasks, duplicate probes, incomplete arms, and bad return codes remain
-  rejected;
-- dry-run output deterministically maps all twelve array indices to arms without
-  submitting work;
-- shell scripts pass `bash -n` and the focused Python test suite passes.
+- the manifest selects identical UIDs for both models, exactly 100 per task and
+  all 30 AIME questions;
+- MMLU-Pro selection is deterministic and subject-stratified;
+- each question expands to exactly the three pinned generation seeds;
+- GPQA choice permutations are deterministic, paired, and auditable;
+- upstream-derived formatters and extractors pass pinned fixtures;
+- invalid and ambiguous final answers become explicit parse failures;
+- aggregate pass@1 averages attempts without voting;
+- bootstrap resamples question groups while retaining all three paired seeds;
+- question-level win/tie/loss uses the three-seed mean;
+- checkpoint/resume rejects any contract hash mismatch or incomplete UID/seed
+  grid and collapses only identical duplicates;
+- the launch plan contains exactly four one-node, eight-GPU `srun` arms with
+  the specified task order and 24-hour ceiling;
+- generated commands contain no `sbatch` or nested `srun` allocation;
+- IFEval and distributional probes are absent from the r4 reasoning verdict.
 
-The final implementation review also runs `git diff --check` and inspects the
-generated launch-plan and dry-run commands for exact resource values.
+Shell scripts must pass syntax checks, focused Python tests must pass, and the
+dry-run output must show all resolved task, model, sampling, and resource values
+before the executor is authorized to launch GPU work.
 
 ## Acceptance criteria
 
-- One executor command can submit the complete run without dynamic experiment
-  design or manual task-to-node assignment.
-- No more than six cluster nodes are consumed concurrently by the rerun.
-- Each of the five tasks evaluates 100 identical paired samples on AWQ and GPTQ.
-- Each model produces exactly one 8,192-token distributional probe.
-- A slow or failed arm cannot erase completed evidence from another arm.
-- Partial failure produces actionable raw scheduler and arm evidence and cannot
-  be mistaken for a quality result.
-- Successful aggregation produces the existing decision artifacts without
-  changing quality thresholds or statistical semantics.
-- Execution stops in `RETURNED_FOR_ANALYSIS`; only the planner decides whether
-  the evidence supports further GPTQ performance work.
+- GPTQ and AWQ are evaluated on the same question IDs, prompts, displayed
+  choices, and three generation seeds.
+- GPQA, MMLU-Pro, and GSM8K each produce 300 complete attempts per model; AIME
+  produces 90 per model.
+- All four tasks use generated-answer reasoning protocols with explicit
+  thinking, not continuation likelihood.
+- Results include raw auditable responses, parse/health diagnostics, per-seed
+  pass@1, aggregate pass@1, paired deltas, grouped-bootstrap intervals, and
+  question-level win/tie/loss.
+- Execution uses no more than four concurrent 8xH100 nodes, uses `srun` only,
+  and preserves completed task/seed evidence when another arm fails.
+- The report labels the result as a paired 100-question quantization study and
+  does not present it as an exact reproduction of a public MiniMax-M3 score or
+  as BF16 quality recovery.
+- The executor returns in `RETURNED_FOR_ANALYSIS`; only the planner interprets
+  the evidence and authorizes follow-up work.

@@ -155,14 +155,19 @@ def _metric_filter_keys(task) -> list[str]:
     )
 
 
-def _loaded_task(manager, installed_name: str):
-    tasks = manager.load([installed_name]).get("tasks") or {}
+def _loaded_tasks(manager, installed_name: str) -> dict[str, object]:
+    loaded = manager.load([installed_name])
+    tasks = loaded.get("tasks") or {}
+    groups = loaded.get("groups") or {}
+    if installed_name in groups and tasks:
+        return {name: tasks[name] for name in sorted(tasks)}
     if installed_name in tasks:
-        return tasks[installed_name]
+        return {installed_name: tasks[installed_name]}
     if len(tasks) == 1:
-        return next(iter(tasks.values()))
+        name, task = next(iter(tasks.items()))
+        return {name: task}
     raise ValueError(
-        f"cannot select a single task object for {installed_name!r}: {sorted(tasks)}"
+        f"cannot resolve task leaves for {installed_name!r}: {sorted(tasks)}"
     )
 
 
@@ -174,7 +179,9 @@ def _representative_task_view(
     num_fewshot: int,
 ) -> dict:
     random.seed(42)
-    task = _loaded_task(manager, installed_name)
+    tasks = _loaded_tasks(manager, installed_name)
+    representative_leaf = sorted(tasks)[0]
+    task = tasks[representative_leaf]
     if hasattr(task, "set_fewshot_seed"):
         task.set_fewshot_seed(42)
     docs = task.eval_docs
@@ -206,6 +213,8 @@ def _representative_task_view(
     target = task.doc_to_target(doc)
     return {
         "task": task,
+        "tasks": tasks,
+        "representative_leaf": representative_leaf,
         "prompt_sha256": hashlib.sha256(prompt_text.encode()).hexdigest(),
         "displayed_choices": (
             [str(choice) for choice in choices] if choices is not None else None
@@ -240,14 +249,33 @@ def inspect_reasoning_task_records(
             num_fewshot=int(task_config["num_fewshot"]),
         )
         task = first["task"]
+        tasks = first["tasks"]
+        leaf_tasks = sorted(tasks)
+        if leaf_tasks != sorted(second["tasks"]):
+            raise ValueError(f"{canonical} resolved task leaves are unstable")
+
+        output_types = {
+            str(getattr(leaf, "OUTPUT_TYPE", "")) for leaf in tasks.values()
+        }
+        task_versions = {str(getattr(leaf, "VERSION", "")) for leaf in tasks.values()}
+        if len(output_types) != 1:
+            raise ValueError(f"{canonical} task leaves disagree on output_type")
+        if len(task_versions) != 1:
+            raise ValueError(f"{canonical} task leaves disagree on task_version")
+        common_metric_filters = set(_metric_filter_keys(task))
+        for leaf in tasks.values():
+            common_metric_filters.intersection_update(_metric_filter_keys(leaf))
+
         records[canonical] = {
             "canonical_name": canonical,
             "installed_name": installed,
-            "output_type": str(getattr(task, "OUTPUT_TYPE", "")),
-            "task_version": str(getattr(task, "VERSION", "")),
+            "leaf_tasks": leaf_tasks,
+            "representative_leaf": first["representative_leaf"],
+            "output_type": next(iter(output_types)),
+            "task_version": next(iter(task_versions)),
             "num_fewshot": int(task_config["num_fewshot"]),
             "metric": str(task_config["metric"]),
-            "available_metric_filters": _metric_filter_keys(task),
+            "available_metric_filters": sorted(common_metric_filters),
             "dataset_path": str(_task_config_value(task, "dataset_path")),
             "dataset_name": str(_task_config_value(task, "dataset_name")),
             "representative_doc_id": 0,

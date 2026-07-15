@@ -26,6 +26,7 @@ from pipeline.m3_quality_eval import (
 from pipeline.m3_quality_preflight import (
     _representative_task_view,
     build_reasoning_harness_contract,
+    inspect_reasoning_task_records,
 )
 
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
@@ -407,6 +408,71 @@ def test_representative_generated_task_uses_processed_gpqa_choices():
         "fourth",
     ]
     assert record["correct_displayed_label"] == "(C)"
+
+
+def test_reasoning_inspection_handles_task_group_and_audits_all_leaves():
+    class FakeTask:
+        OUTPUT_TYPE = "generate_until"
+        VERSION = "3.1"
+
+        def __init__(self, task_name, subject):
+            self.task_name = task_name
+            self.config = {
+                "dataset_path": "TIGER-Lab/MMLU-Pro",
+                "dataset_name": subject,
+                "metric_list": [{"metric": "exact_match"}],
+                "filter_list": [{"name": "custom-extract"}],
+            }
+            self.eval_docs = [{"question": subject, "answer": "A"}]
+
+        def set_fewshot_seed(self, seed):
+            pass
+
+        def fewshot_context(self, doc, num_fewshot, **kwargs):
+            return f"{self.task_name}:{doc['question']}:{num_fewshot}"
+
+        def doc_to_target(self, doc):
+            return doc["answer"]
+
+    class FakeManager:
+        def load(self, names):
+            assert names == ["mmlu_pro"]
+            return {
+                "tasks": {
+                    "mmlu_pro_math": FakeTask("mmlu_pro_math", "math"),
+                    "mmlu_pro_biology": FakeTask("mmlu_pro_biology", "biology"),
+                },
+                "groups": {"mmlu_pro": object()},
+                "group_map": {"mmlu_pro": ["mmlu_pro_math", "mmlu_pro_biology"]},
+            }
+
+    class FakeTokenizer:
+        name_or_path = "fake"
+
+        def apply_chat_template(self, messages, **kwargs):
+            return "rendered"
+
+    records = inspect_reasoning_task_records(
+        FakeManager(),
+        FakeTokenizer(),
+        resolved={"mmlu_pro": "mmlu_pro"},
+        configured_tasks=[
+            {
+                "name": "mmlu_pro",
+                "metric": "exact_match,custom-extract",
+                "num_fewshot": 5,
+            }
+        ],
+        leaf_sizes={"mmlu_pro": {"mmlu_pro_biology": 10, "mmlu_pro_math": 20}},
+    )
+
+    record = records["mmlu_pro"]
+    assert record["leaf_tasks"] == ["mmlu_pro_biology", "mmlu_pro_math"]
+    assert record["representative_leaf"] == "mmlu_pro_biology"
+    assert record["output_type"] == "generate_until"
+    assert record["task_version"] == "3.1"
+    assert record["available_metric_filters"] == ["exact_match,custom-extract"]
+    assert record["available_samples"] == 30
 
 
 @pytest.mark.parametrize(

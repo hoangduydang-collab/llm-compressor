@@ -2,10 +2,11 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: `2026-07-15-r5`
+- Packet revision: `2026-07-15-r6`
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Required fix commit: `b907eaf4`
+- Required fix commit: `4fb77f13`
+- Executor evidence: `M3_R4_4_AND_DDP_R5_FAILURE_EVIDENCE.md`
 - Decision question: Can native eight-rank llm-compressor GPTQ and AWQ process
   representative MiniMax-M3 layers with correct data sharding, shared model
   memory, complete evidence, and enough quantization-time improvement to justify
@@ -15,9 +16,10 @@ This is the single active packet for MiniMax-M3 quantization speed-up Phase 1.
 It supersedes the informal launch commands in `M3_QUANT_SPEEDUP_PLAN.md`; that
 document remains the rationale and history.
 
-> **r5 execution notice:** The original r3/r4 packets below are retained as execution
-> history and must not be launched again. The only current authorization and
-> executable command are in **Planner analysis and r5 GPTQ/AWQ authorization**
+> **r6 execution notice:** The original r3/r4/r5 packets below are retained as
+> execution history and must not be launched again. The only current
+> authorization and executable command are in **Planner analysis and r6
+> GPTQ/AWQ authorization**
 > at the end of this file.
 
 ## Archived r3 packet (do not execute)
@@ -911,3 +913,77 @@ printf 'RUN_ID=%s\nRESULT_ROOT=%s\nLOG_ROOT=%s\nOFFLOAD_ROOT=%s\nSESSION=%s\n' \
 - After both arms reach terminal state, use the existing aggregation/return
   contract, commit and push the evidence, set this packet to
   `RETURNED_FOR_ANALYSIS`, and stop. No additional retry is authorized.
+
+## Planner analysis and r6 GPTQ/AWQ authorization
+
+The r5 GPTQ arm validated the load-time MiniMax expert mapping: on eight H100s
+it loaded the model and ran calibration/early-layer work for 2:11:07 without
+the r4 shared-memory exhaustion. It then failed outside the quantization
+algorithm when the passive metrics context tried to remove Loguru handler id 2
+after llm-compressor had already removed it. Commit `4fb77f13` makes only that
+cleanup idempotent; it does not change GPTQ/AWQ execution or metric capture.
+
+The sequential r5 AWQ allocation was stopped before `torchrun` by the obsolete
+900 GB `/dev/shm` guard. That threshold protected the r4 path which duplicated
+roughly 13.5 GiB of expert storage per layer during post-load linearization.
+Commit `b907eaf4` removed that path, and r5 GPTQ reached calibration with
+213,176,926,208 bytes free at preflight. Commit `4fb77f13` therefore keeps the
+1.2 TB host-RAM floor but replaces the obsolete shared-memory requirement with
+a configurable 128 GB IPC safety floor. The controller passes both thresholds
+unchanged into each `srun` worker and still fails closed below them.
+
+This section supersedes r5 authorization. Run GPTQ and then AWQ once each with
+a fresh r6 ID through the unchanged native llm-compressor evidence-only path.
+Keep model, recipe, representative layers, eight calibration samples, one
+node/eight ranks, sequential method order, passive evidence, and 24-hour arm
+limits unchanged.
+
+```bash
+set -euo pipefail
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+git fetch origin
+git checkout duy-branch
+git pull --ff-only origin duy-branch
+git merge-base --is-ancestor 4fb77f13 HEAD
+
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
+test -z "${SLURM_JOB_ID:-}"
+test -z "$(git diff --name-only)"
+test -z "$(git diff --cached --name-only)"
+
+python -m pytest -q \
+  pipeline/tests/test_distributed.py \
+  pipeline/tests/test_calibration_partition.py \
+  pipeline/tests/test_distributed_quantize_contract.py \
+  pipeline/tests/test_metrics.py \
+  pipeline/tests/test_m3_distributed_quant_smoke.py
+python -m pytest -q \
+  tests/llmcompressor/modeling/test_linearize.py \
+  -k minimax_m3_load_mapping_keeps_experts_two_dimensional
+bash -n pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh
+
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r6"
+RESULT_ROOT="/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/$RUN_ID"
+LOG_ROOT="/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/$RUN_ID"
+OFFLOAD_ROOT="/mnt/nfs/hoangduy/offload/m3-distributed-quant-smoke/$RUN_ID"
+SESSION="m3-ddp-quant-${RUN_ID}"
+test ! -e "$RESULT_ROOT"
+test ! -e "$LOG_ROOT"
+test ! -e "$OFFLOAD_ROOT"
+mkdir -p "$LOG_ROOT"
+git rev-parse HEAD >"$LOG_ROOT/expected_git_commit.txt"
+
+tmux new-session -d -s "$SESSION" \
+  "cd '$PWD'; rc=0; RUN_ID='$RUN_ID' RESULT_ROOT='$RESULT_ROOT' LOG_ROOT='$LOG_ROOT' OFFLOAD_ROOT='$OFFLOAD_ROOT' bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh >'$LOG_ROOT/controller.log' 2>&1 || rc=\$?; printf '%s\n' \"\$rc\" >'$LOG_ROOT/controller.rc'"
+
+printf 'RUN_ID=%s\nRESULT_ROOT=%s\nLOG_ROOT=%s\nOFFLOAD_ROOT=%s\nSESSION=%s\n' \
+  "$RUN_ID" "$RESULT_ROOT" "$LOG_ROOT" "$OFFLOAD_ROOT" "$SESSION"
+```
+
+Wait for `controller.rc`, package both methods with the existing evidence
+contract, commit and push the small artifacts, set this packet to
+`RETURNED_FOR_ANALYSIS`, and stop. If either method fails, preserve its first
+rank-local Python exception before secondary distributed errors. No r6 retry,
+threshold override, or runtime patch is authorized.

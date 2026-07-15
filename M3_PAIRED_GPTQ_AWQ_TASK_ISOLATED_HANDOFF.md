@@ -1,13 +1,13 @@
 # Execution packet: MiniMax-M3 paired generated-reasoning r4
 
 - Protocol version: 1
-- State: `RETURNED_FOR_ANALYSIS`
-- Packet revision: 2026-07-15-r4.4
+- State: `READY_FOR_EXECUTOR`
+- Packet revision: 2026-07-15-r4.5
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Implementation base commit: `849b2071`
+- Required fix commit: `c5a0b755`
 - Branch: `duy-branch`
-- Retry authorization: one fresh run after the lm-eval TaskConfig adapter fix
+- Retry authorization: one fresh r4.5 run after filter and sampling fixes
 - Executor evidence: `M3_R4_4_AND_DDP_R5_FAILURE_EVIDENCE.md`
 
 Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
@@ -65,9 +65,10 @@ MiniMax's private benchmark recipe.
 | AIME 2025 | `aime25` | 0 | `exact_match,none` | all 30 |
 
 Every question runs seeds `42`, `1234`, and `4158`. Generation uses explicit
-thinking, `temperature=1.0`, `top_p=0.95`, and `max_gen_toks=16384`. Positive
-temperature activates sampling in vLLM; `do_sample=true` is retained as
-harness intent but is not passed to vLLM `SamplingParams`.
+thinking, `temperature=1.0`, `top_p=0.95`, and `max_gen_toks=16384`. The harness
+passes `do_sample=true` through lm-eval so its generation normalizer cannot
+silently replace positive-temperature sampling with greedy decoding; lm-eval
+removes that compatibility key before constructing vLLM `SamplingParams`.
 
 Production is exactly four independent top-level allocations:
 
@@ -273,3 +274,75 @@ For retained large files record absolute path, byte size, and SHA-256.
 Commit and push evidence on `duy-branch`, change this packet state to
 `RETURNED_FOR_ANALYSIS`, and stop. Do not retry, interpret quality, adopt a
 model, begin performance work, or publish results.
+
+## Planner analysis and r4.5 authorization
+
+The r4.4 jobs ended but produced no quality scores. Both models loaded and
+generated both smoke requests, then checkpointing failed because lm-eval logs
+one sample record for every configured filter pipeline. GPQA's
+`strict-match` and `flexible-extract` records described the same document and
+generation seed, so they correctly shared one `attempt_uid` but contained
+different extracted answers and metrics. Adding model or filter identity to
+the UID would hide this conflict and break paired comparison semantics.
+
+Commit `c5a0b755` instead selects the filter named by each task's configured
+metric before normalization and deduplication. It fails closed if lm-eval logs
+filter names but omits the configured filter. The same commit preserves
+`do_sample=true` in the lm-eval generation override. r4.4 logs showed lm-eval
+otherwise receiving `do_sample=false` from task defaults and forcing
+temperature to zero, so those two smoke generations are not reusable.
+
+This section supersedes r4.4 authorization. Run exactly one fresh r4.5 smoke
+and, only if its gate passes, the four-arm production evaluation defined above.
+All models, task aliases, exact sample manifests, question caps, shots, three
+seeds, generation parameters, topology, and time limits remain unchanged.
+
+```bash
+set -euo pipefail
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+git fetch origin
+git checkout duy-branch
+git pull --ff-only origin duy-branch
+git merge-base --is-ancestor c5a0b755 HEAD
+
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
+test -z "${SLURM_JOB_ID:-}"
+test -z "$(git diff --name-only)"
+test -z "$(git diff --cached --name-only)"
+
+python -m pytest -q \
+  pipeline/tests/test_static_checkpoint.py \
+  pipeline/tests/test_lmeval_runner.py \
+  pipeline/tests/test_m3_quality_preflight.py \
+  pipeline/tests/test_m3_quality_srun.py
+
+MATRIX=pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-paired-reasoning-r4"
+RUN_ROOT="results/m3-quality/$RUN_ID"
+test ! -e "$RUN_ROOT"
+mkdir -p "$RUN_ROOT"
+
+python -m pipeline.m3_quality_preflight \
+  --matrix "$MATRIX" --run-root "$RUN_ROOT"
+
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile smoke --matrix "$MATRIX" --run-root "$RUN_ROOT"
+
+python - "$RUN_ROOT/smoke_gate.json" <<'PY'
+import json, sys
+gate = json.load(open(sys.argv[1]))
+assert gate["ready_for_production"] is True, gate
+PY
+
+SESSION="m3-quality-$RUN_ID"
+tmux new-session -d -s "$SESSION" \
+  "cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD/src:$PWD' && bash pipeline/slurm/run_m3_quality_eval_srun.sh --profile production --matrix '$MATRIX' --run-root '$RUN_ROOT' --smoke-gate '$RUN_ROOT/smoke_gate.json' >'$RUN_ROOT/controller.log' 2>&1; printf '%s\n' \$? >'$RUN_ROOT/controller.rc'"
+printf 'RUN_ID=%s\nRUN_ROOT=%s\nSESSION=%s\n' "$RUN_ID" "$RUN_ROOT" "$SESSION"
+```
+
+Wait for `controller.rc`, then follow Sections 6-8 above verbatim to collect,
+aggregate, commit, and push the evidence. On any preflight, smoke, or production
+failure, preserve the first exception and partial artifacts, return the packet
+for analysis, and stop. No r4.5 retry or runtime patch is authorized.

@@ -1,0 +1,56 @@
+schema_version: 1
+name: minimax-m3-paired-gptq-vs-cyankiwi-reasoning-r4
+backend: vllm
+baseline_label: cyankiwi_awq
+model_source: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+eval_config: pipeline/configs/eval_minimax_m3_reasoning_r4.yaml
+
+models:
+  - label: cyankiwi_awq
+    path: /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+    kind: awq-w4a16
+    nodes: 1
+    tensor_parallel_size: 8
+    distributed_executor_backend: mp
+  - label: inhouse_gptq
+    path: /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay
+    kind: gptq-w4a8
+    nodes: 1
+    tensor_parallel_size: 8
+    distributed_executor_backend: mp
+
+shards:
+  - name: gpqa
+    tasks: [gpqa_diamond]
+    distributional_probe: false
+  - name: reasoning_suite
+    tasks: [mmlu_pro, gsm8k, aime_2025]
+    distributional_probe: false
+
+task_aliases:
+  gpqa_diamond: [gpqa_diamond_cot_zeroshot]
+  mmlu_pro: [mmlu_pro]
+  gsm8k: [gsm8k_cot]
+  aime_2025: [aime25, aime_2025]
+
+sampling:
+  seed: 42
+  mmlu_pro_samples: 100
+  production_samples_per_task: 100
+
+scheduling:
+  max_parallel_arms: 4
+  arm_time_limit: "24:00:00"
+
+probe:
+  enabled: false
+  total_tokens: 8192
+  top_k: 20
+  max_overhead_seconds: 900
+
+gates:
+  max_task_drop: 0.02
+  min_macro_recovery: 0.98
+  max_conditional_regression: 0.05
+  max_perplexity_increase: 0.10
+  max_degeneration_failures: 0

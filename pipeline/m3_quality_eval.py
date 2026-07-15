@@ -50,6 +50,7 @@ class ShardSpec:
 
 @dataclass(frozen=True)
 class ProbeSpec:
+    enabled: bool
     total_tokens: int
     top_k: int
     max_overhead_seconds: float
@@ -211,6 +212,7 @@ def load_matrix(path: str | Path) -> MatrixSpec:
         sampling=dict(raw.get("sampling") or {}),
         scheduling=SchedulingSpec(max_parallel_arms, arm_time_limit),
         probe=ProbeSpec(
+            bool(probe_raw.get("enabled", True)),
             int(probe_raw["total_tokens"]),
             int(probe_raw["top_k"]),
             float(probe_raw["max_overhead_seconds"]),

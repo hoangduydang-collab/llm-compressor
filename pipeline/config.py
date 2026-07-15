@@ -147,6 +147,8 @@ class EvalConfig:
     think_end_token: str | None = None
     # Override task generation_kwargs (e.g. ``max_gen_toks`` for long CoT).
     gen_kwargs: dict[str, Any] | None = None
+    # Repeated generated-answer attempts. Empty preserves legacy one-pass behavior.
+    generation_seeds: list[int] = field(default_factory=list)
     # lm-eval per-forward batch (SGLang). Use an int (e.g. 8) to avoid huge
     # auto-detected chunks on MMLU; "auto" probes and can stall on first batch.
     lm_eval_batch_size: str | int = "auto"

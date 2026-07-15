@@ -29,6 +29,9 @@ MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
 TASK_ISOLATED_MATRIX = Path(
     "pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml"
 )
+REASONING_R4_MATRIX = Path(
+    "pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml"
+)
 
 
 def test_default_matrix_has_three_active_models_and_autoround_deferred():
@@ -87,6 +90,32 @@ def test_task_isolated_matrix_groups_tasks_into_six_model_arms(tmp_path):
     assert plan["max_parallel_arms"] == 6
     assert plan["max_concurrent_nodes"] == 6
     assert plan["arm_time_limit"] == "16:00:00"
+
+
+def test_reasoning_r4_matrix_has_four_arms_and_no_probe(tmp_path):
+    spec = load_matrix(REASONING_R4_MATRIX)
+
+    assert [(shard.name, shard.tasks) for shard in spec.shards] == [
+        ("gpqa", ("gpqa_diamond",)),
+        ("reasoning_suite", ("mmlu_pro", "gsm8k", "aime_2025")),
+    ]
+    assert spec.task_aliases["gpqa_diamond"] == (
+        "gpqa_diamond_cot_zeroshot",
+    )
+    assert spec.probe.enabled is False
+    assert spec.sampling["production_samples_per_task"] == 100
+    assert spec.scheduling.max_parallel_arms == 4
+    assert spec.scheduling.arm_time_limit == "24:00:00"
+
+    gate = tmp_path / "smoke_gate.json"
+    gate.write_text(json.dumps({"ready_for_production": True}))
+    plan = build_launch_plan(spec, profile="production", smoke_gate=gate)
+    assert len(plan["arms"]) == 4
+    assert plan["total_nodes"] == 4
+    assert plan["max_parallel_arms"] == 4
+    assert plan["max_concurrent_nodes"] == 4
+    assert plan["arm_time_limit"] == "24:00:00"
+    assert all(arm["distributional_probe"] is False for arm in plan["arms"])
 
 
 def _write_matrix_variant(tmp_path, **updates):

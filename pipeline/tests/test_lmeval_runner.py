@@ -20,6 +20,33 @@ from pipeline.lmeval_runner import (
 )
 
 
+def test_m3_reasoning_r4_config_pins_generation_contract():
+    cfg = load_config("pipeline/configs/eval_minimax_m3_reasoning_r4.yaml")
+
+    assert cfg.eval.generation_seeds == [42, 1234, 4158]
+    assert cfg.eval.enable_thinking is True
+    assert cfg.eval.think_end_token == "</mm:think>"
+    assert cfg.eval.gen_kwargs == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "do_sample": True,
+        "max_gen_toks": 16384,
+    }
+    assert [task.name for task in cfg.eval.tasks] == [
+        "gpqa_diamond",
+        "mmlu_pro",
+        "gsm8k",
+        "aime_2025",
+    ]
+    assert [task.metric for task in cfg.eval.tasks] == [
+        "exact_match,flexible-extract",
+        "exact_match,custom-extract",
+        "exact_match,strict-match",
+        "exact_match,none",
+    ]
+    assert [task.num_fewshot for task in cfg.eval.tasks] == [0, 5, 8, 0]
+
+
 def test_per_task_num_fewshot_scalar_when_uniform():
     tasks = [
         EvalTask(name="a", num_fewshot=5),

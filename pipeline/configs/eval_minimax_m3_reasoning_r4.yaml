@@ -1,0 +1,58 @@
+name: eval-minimax-m3-reasoning-r4
+
+model:
+  id: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+
+serve:
+  tensor_parallel_size: 8
+  enable_expert_parallel: true
+  block_size: 128
+  kv_cache_dtype: fp8
+  max_model_len: 65536
+  gpu_memory_utilization: 0.85
+  enforce_eager: true
+  disable_custom_all_reduce: true
+
+eval:
+  enabled: true
+  backend: vllm
+  apply_chat_template: true
+  fewshot_as_multiturn: true
+  enable_thinking: true
+  think_end_token: "</mm:think>"
+  generation_seeds: [42, 1234, 4158]
+  lm_eval_batch_size: auto
+  log_samples: true
+  bootstrap_seed: 42
+  bootstrap_iters: 10000
+  gen_kwargs:
+    temperature: 1.0
+    top_p: 0.95
+    do_sample: true
+    max_gen_toks: 16384
+  tasks:
+    - name: gpqa_diamond
+      metric: exact_match,flexible-extract
+      num_fewshot: 0
+      limit: null
+    - name: mmlu_pro
+      metric: exact_match,custom-extract
+      num_fewshot: 5
+      limit: null
+    - name: gsm8k
+      metric: exact_match,strict-match
+      num_fewshot: 8
+      limit: null
+    - name: aime_2025
+      metric: exact_match,none
+      num_fewshot: 0
+      limit: null
+
+agentic:
+  enabled: false
+
+quantization:
+  method: gptq
+  scheme: W4AFP8

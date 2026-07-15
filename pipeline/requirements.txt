@@ -10,7 +10,7 @@
 # sglang-eval needs lm-eval >= c1c4bea (PR #3675: enable_thinking/think_end_token
 # on sglang; disallows thinking on loglikelihood tasks like leaderboard_bbh).
 vllm>=0.11.0
-lm-eval>=0.4.5
+lm-eval==0.4.12
 pyyaml>=6.0.1
 
 # Agentic eval (optional): tau2-bench is NOT a pip dependency.

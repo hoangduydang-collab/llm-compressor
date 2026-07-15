@@ -1,0 +1,133 @@
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:   0% Completed | 0/49 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:   2% Completed | 1/49 [00:02<02:23,  2.99s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:   4% Completed | 2/49 [00:08<03:33,  4.55s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:   6% Completed | 3/49 [00:14<03:56,  5.15s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:   8% Completed | 4/49 [00:20<04:01,  5.38s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  10% Completed | 5/49 [00:25<04:00,  5.46s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  12% Completed | 6/49 [00:31<03:57,  5.51s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  14% Completed | 7/49 [00:37<03:53,  5.56s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  16% Completed | 8/49 [00:42<03:49,  5.59s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  18% Completed | 9/49 [00:48<03:45,  5.63s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  20% Completed | 10/49 [00:54<03:38,  5.61s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  22% Completed | 11/49 [00:59<03:32,  5.59s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  24% Completed | 12/49 [01:05<03:29,  5.65s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  27% Completed | 13/49 [01:11<03:24,  5.67s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  29% Completed | 14/49 [01:16<03:17,  5.63s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  31% Completed | 15/49 [01:22<03:12,  5.67s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  33% Completed | 16/49 [01:27<03:05,  5.63s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  35% Completed | 17/49 [01:33<03:00,  5.65s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  37% Completed | 18/49 [01:38<02:51,  5.53s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  39% Completed | 19/49 [01:44<02:48,  5.62s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  41% Completed | 20/49 [01:50<02:43,  5.62s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  43% Completed | 21/49 [01:56<02:38,  5.66s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  45% Completed | 22/49 [02:01<02:33,  5.69s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  47% Completed | 23/49 [02:07<02:26,  5.65s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  49% Completed | 24/49 [02:13<02:22,  5.72s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  51% Completed | 25/49 [02:18<02:16,  5.70s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  53% Completed | 26/49 [02:24<02:10,  5.66s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  55% Completed | 27/49 [02:29<02:01,  5.51s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  57% Completed | 28/49 [02:35<01:55,  5.52s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  59% Completed | 29/49 [02:40<01:51,  5.55s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  61% Completed | 30/49 [02:46<01:44,  5.48s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  63% Completed | 31/49 [02:51<01:38,  5.47s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  65% Completed | 32/49 [02:57<01:33,  5.52s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  67% Completed | 33/49 [03:02<01:28,  5.51s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  69% Completed | 34/49 [03:08<01:22,  5.50s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  71% Completed | 35/49 [03:13<01:17,  5.52s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  73% Completed | 36/49 [03:19<01:12,  5.60s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  76% Completed | 37/49 [03:24<01:06,  5.55s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  78% Completed | 38/49 [03:30<01:01,  5.63s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  80% Completed | 39/49 [03:36<00:57,  5.76s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  82% Completed | 40/49 [03:42<00:51,  5.70s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  84% Completed | 41/49 [03:48<00:45,  5.74s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  86% Completed | 42/49 [03:53<00:40,  5.72s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  88% Completed | 43/49 [03:59<00:34,  5.76s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  90% Completed | 44/49 [04:05<00:28,  5.63s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  92% Completed | 45/49 [04:10<00:22,  5.55s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  94% Completed | 46/49 [04:16<00:16,  5.66s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  96% Completed | 47/49 [04:21<00:11,  5.64s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards:  98% Completed | 48/49 [04:27<00:05,  5.63s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards: 100% Completed | 49/49 [04:28<00:00,  4.15s/it]
+(Worker_TP0_EP0 pid=2930816) Loading safetensors checkpoint shards: 100% Completed | 49/49 [04:28<00:00,  5.47s/it]
+(Worker_TP0_EP0 pid=2930816) 
+(Worker_TP0_EP0 pid=2930816) 2026-07-15 07:18:32,308 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2930818) 2026-07-15 07:18:32,321 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=2930821) 2026-07-15 07:18:32,323 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2930820) 2026-07-15 07:18:32,324 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=2930822) 2026-07-15 07:18:32,326 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2930817) 2026-07-15 07:18:32,332 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2930823) 2026-07-15 07:18:32,333 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2930819) 2026-07-15 07:18:32,334 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2930819) 2026-07-15 07:18:33,259 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2930820) 2026-07-15 07:18:33,259 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=2930817) 2026-07-15 07:18:33,260 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2930821) 2026-07-15 07:18:33,260 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2930822) 2026-07-15 07:18:33,261 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP2_EP2 pid=2930818) 2026-07-15 07:18:33,261 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=2930823) 2026-07-15 07:18:33,261 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2930816) 2026-07-15 07:18:33,273 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 47.38it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]do_sample=False` but temperature=1.0; setting `temperature` to 0.0 for greedy decoding. For non-greedy decoding, set `do_sample=True`.
+
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][A
+Rendering prompts:  50%|█████     | 1/2 [00:00<00:00,  6.03it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 12.01it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A(Worker_TP0_EP0 pid=2930816) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=2930816)   return func(*args, **kwargs)
+
+Processed prompts:  50%|█████     | 1/2 [02:59<02:59, 179.74s/it, est. speed input: 2.21 toks/s, output: 1.42 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:01<00:00, 74.86s/it, est. speed input: 4.07 toks/s, output: 2.83 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:01<00:00, 74.86s/it, est. speed input: 4.07 toks/s, output: 2.83 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:01<00:00, 90.59s/it, est. speed input: 4.07 toks/s, output: 2.83 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:01<03:01, 181.35s/it]Running generate_until requests: 100%|██████████| 2/2 [03:01<00:00, 90.67s/it] 
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/cli.py", line 142, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/cli.py", line 138, in main
+    return args.func(args)
+           ^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/cli.py", line 49, in _cmd_run
+    static_result = run_static_eval(cfg, model_path, out_dir)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 440, in run_static_eval
+    evaluate_tasks(
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/lmeval_runner.py", line 283, in evaluate_tasks
+    on_task_complete(task, generation_seed, batch)
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 427, in _on_task_complete
+    rows = checkpoint_task_result(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 253, in checkpoint_task_result
+    rows = _deduplicate_sample_rows(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 166, in _deduplicate_sample_rows
+    raise ValueError(f"conflicting duplicate {label}: {uid}")
+ValueError: conflicting duplicate attempt_uid: 6603d0d7855e94dbd674069fa295250d240668b953dcd5583d426046b7d3146b
+[rank3]:[W715 07:22:46.693512665 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:59052, remote=[localhost]:34441): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f2588b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f24f22b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f24f22b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f24d4a9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f2558eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f2589d20ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f2589db28d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W715 07:22:46.696331245 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank7]:[W715 07:22:46.732528611 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:59092, remote=[localhost]:34441): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f8f21b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f8e8b2b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f8e8b2b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f8e6da9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f8ef1eb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f8f22d57ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f8f22de98d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W715 07:22:46.734998128 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+srun: error: gpu-h117: task 0: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12928.0

@@ -1,13 +1,14 @@
 # Execution packet: MiniMax-M3 paired generated-reasoning r4
 
 - Protocol version: 1
-- State: `READY_FOR_EXECUTOR`
+- State: `RETURNED_FOR_ANALYSIS`
 - Packet revision: 2026-07-15-r4.4
 - Planner owner: Codex planner
 - Intended executor: cluster executor
 - Implementation base commit: `849b2071`
 - Branch: `duy-branch`
 - Retry authorization: one fresh run after the lm-eval TaskConfig adapter fix
+- Executor evidence: `M3_R4_4_AND_DDP_R5_FAILURE_EVIDENCE.md`
 
 Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
 their GPQA/MMLU-Pro/GSM8K scores: r4 changes the reasoning harness to stock

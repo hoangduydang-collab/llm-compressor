@@ -1,0 +1,35 @@
+{
+  "ready_for_production": false,
+  "missing_models": [],
+  "unexpected_models": [],
+  "models": {
+    "cyankiwi_awq": {
+      "passed": false,
+      "checks": {
+        "infrastructure": false,
+        "artifacts": false,
+        "all_tasks_scored": false,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true
+      },
+      "distributed_world_size": 8,
+      "probe_projection": null
+    },
+    "inhouse_gptq": {
+      "passed": false,
+      "checks": {
+        "infrastructure": false,
+        "artifacts": false,
+        "all_tasks_scored": false,
+        "sample_manifest": true,
+        "empty_outputs": true,
+        "periodic_loops": true,
+        "distributed_world_size": true
+      },
+      "distributed_world_size": 8,
+      "probe_projection": null
+    }
+  }
+}

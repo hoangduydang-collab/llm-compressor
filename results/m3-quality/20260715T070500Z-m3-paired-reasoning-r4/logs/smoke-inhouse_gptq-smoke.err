@@ -1,0 +1,110 @@
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards:  20% Completed | 1/5 [01:03<04:12, 63.12s/it]
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards:  40% Completed | 2/5 [02:13<03:21, 67.30s/it]
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards:  60% Completed | 3/5 [03:23<02:17, 68.55s/it]
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards:  80% Completed | 4/5 [04:35<01:09, 69.92s/it]
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards: 100% Completed | 5/5 [05:32<00:00, 65.40s/it]
+(Worker_TP0_EP0 pid=2284559) Loading safetensors checkpoint shards: 100% Completed | 5/5 [05:32<00:00, 66.56s/it]
+(Worker_TP0_EP0 pid=2284559) 
+(Worker_TP7_EP7 pid=2284566) 2026-07-15 07:19:12,716 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2284562) 2026-07-15 07:19:12,719 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=2284565) 2026-07-15 07:19:12,726 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2284563) 2026-07-15 07:19:12,732 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=2284564) 2026-07-15 07:19:12,733 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2284561) 2026-07-15 07:19:12,723 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2284560) 2026-07-15 07:19:12,740 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=2284559) 2026-07-15 07:19:12,743 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2284560) 2026-07-15 07:19:13,230 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2284559) 2026-07-15 07:19:13,251 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2284564) 2026-07-15 07:19:13,260 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2284565) 2026-07-15 07:19:13,268 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP2_EP2 pid=2284561) 2026-07-15 07:19:13,272 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP3_EP3 pid=2284562) 2026-07-15 07:19:13,283 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=2284566) 2026-07-15 07:19:13,298 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2284563) 2026-07-15 07:19:13,303 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 69.97it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]do_sample=False` but temperature=1.0; setting `temperature` to 0.0 for greedy decoding. For non-greedy decoding, set `do_sample=True`.
+
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 21.62it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A(Worker_TP0_EP0 pid=2284559) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=2284559)   return func(*args, **kwargs)
+
+Processed prompts:  50%|█████     | 1/2 [03:07<03:07, 187.77s/it, est. speed input: 2.11 toks/s, output: 1.36 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:09<00:00, 78.24s/it, est. speed input: 3.90 toks/s, output: 2.70 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:09<00:00, 78.24s/it, est. speed input: 3.90 toks/s, output: 2.70 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:09<00:00, 94.67s/it, est. speed input: 3.90 toks/s, output: 2.70 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:09<03:09, 189.45s/it]Running generate_until requests: 100%|██████████| 2/2 [03:09<00:00, 94.73s/it] 
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/cli.py", line 142, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/cli.py", line 138, in main
+    return args.func(args)
+           ^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/cli.py", line 49, in _cmd_run
+    static_result = run_static_eval(cfg, model_path, out_dir)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 440, in run_static_eval
+    evaluate_tasks(
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/lmeval_runner.py", line 283, in evaluate_tasks
+    on_task_complete(task, generation_seed, batch)
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 427, in _on_task_complete
+    rows = checkpoint_task_result(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 253, in checkpoint_task_result
+    rows = _deduplicate_sample_rows(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/evalsuite/static.py", line 166, in _deduplicate_sample_rows
+    raise ValueError(f"conflicting duplicate {label}: {uid}")
+ValueError: conflicting duplicate attempt_uid: 6603d0d7855e94dbd674069fa295250d240668b953dcd5583d426046b7d3146b
+[rank5]:[W715 07:23:08.151869052 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:51434, remote=[localhost]:56621): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f972ab7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f96946b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f96946b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f9676e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f96fb2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f972c042ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f972c0d48d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W715 07:23:08.154668630 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank7]:[W715 07:23:09.189066228 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:51400, remote=[localhost]:56621): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f72df57305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f7248cb24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f7248cb0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f722b49c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f72af8b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f72e07a7ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f72e08398d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W715 07:23:09.191453885 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank4]:[W715 07:23:09.210189643 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:51446, remote=[localhost]:56621): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f920bf7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f91756b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f91756b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f9157e9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f91dc2b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f920d0ddac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f920d16f8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W715 07:23:09.212690758 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank3]:[W715 07:23:09.353660670 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:51404, remote=[localhost]:56621): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7faba117305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fab0a8b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fab0a8b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7faaed09c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fab714b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7faba22ceac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7faba23608d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W715 07:23:09.356141286 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+srun: error: gpu-h123: task 0: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12929.0

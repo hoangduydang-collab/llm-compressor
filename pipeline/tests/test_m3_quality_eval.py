@@ -23,7 +23,10 @@ from pipeline.m3_quality_eval import (
     validate_sample_indices,
     validate_smoke_gate,
 )
-from pipeline.m3_quality_preflight import build_reasoning_harness_contract
+from pipeline.m3_quality_preflight import (
+    _representative_task_view,
+    build_reasoning_harness_contract,
+)
 
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
 TASK_ISOLATED_MATRIX = Path(
@@ -301,6 +304,60 @@ def test_reasoning_contract_pins_paper_grade_generation_tasks():
     assert contract["tasks"]["gpqa_diamond"]["output_type"] == "generate_until"
     assert contract["tasks"]["gsm8k"]["num_fewshot"] == 8
     assert contract["generation"]["generation_seeds"] == [42, 1234, 4158]
+
+
+def test_representative_prompt_passes_callable_chat_renderer_to_lm_eval():
+    class FakeTask:
+        eval_docs = [{"question": "Q", "answer": "B"}]
+
+        def set_fewshot_seed(self, seed):
+            assert seed == 42
+
+        def fewshot_context(
+            self,
+            doc,
+            num_fewshot,
+            *,
+            apply_chat_template,
+            fewshot_as_multiturn,
+            chat_template,
+            system_instruction,
+        ):
+            assert apply_chat_template is True
+            assert fewshot_as_multiturn is True
+            assert callable(chat_template)
+            return chat_template(
+                [{"role": "user", "content": doc["question"]}],
+                add_generation_prompt=True,
+            )
+
+        def doc_to_choice(self, doc):
+            return ["A", "B", "C", "D"]
+
+        def doc_to_target(self, doc):
+            return doc["answer"]
+
+    class FakeManager:
+        def load(self, names):
+            return {"tasks": {names[0]: FakeTask()}}
+
+    class FakeTokenizer:
+        chat_template = "a Jinja template string is not the renderer"
+        name_or_path = "fake"
+
+        def apply_chat_template(self, messages, *, add_generation_prompt=False):
+            suffix = "<assistant>" if add_generation_prompt else ""
+            return messages[0]["content"] + suffix
+
+    record = _representative_task_view(
+        FakeManager(),
+        FakeTokenizer(),
+        installed_name="gpqa_diamond_cot_zeroshot",
+        num_fewshot=0,
+    )
+
+    assert record["displayed_choices"] == ["A", "B", "C", "D"]
+    assert record["correct_displayed_label"] == "B"
 
 
 @pytest.mark.parametrize(

@@ -186,7 +186,7 @@ def _representative_task_view(
         "system_instruction": None,
         "apply_chat_template": True,
         "fewshot_as_multiturn": True,
-        "chat_template": getattr(tokenizer, "chat_template", None),
+        "chat_template": getattr(tokenizer, "apply_chat_template", None),
         "tokenizer_name": getattr(tokenizer, "name_or_path", ""),
     }
     kwargs = {key: value for key, value in optional.items() if key in parameters}

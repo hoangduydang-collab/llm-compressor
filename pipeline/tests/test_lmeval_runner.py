@@ -351,6 +351,83 @@ def test_evaluate_tasks_passes_exact_samples(monkeypatch, tmp_path):
     assert "limit" not in calls[0]
 
 
+def test_evaluate_tasks_runs_paired_generation_seeds_with_one_model(monkeypatch):
+    from pipeline.lmeval_runner import evaluate_tasks
+
+    cfg = PipelineConfig()
+    cfg.eval.generation_seeds = [42, 1234, 4158]
+    cfg.eval.gen_kwargs = {"temperature": 1.0, "top_p": 0.95}
+    tasks = [EvalTask(name="gpqa", limit=None), EvalTask(name="aime", limit=None)]
+    calls = []
+    completed = []
+    loads = []
+    fake_lm = SimpleNamespace(clean=lambda: None)
+
+    def fake_load(*_):
+        loads.append(True)
+        return fake_lm
+
+    monkeypatch.setattr("pipeline.lmeval_runner._load_lm_model", fake_load)
+    monkeypatch.setitem(
+        sys.modules,
+        "lm_eval",
+        SimpleNamespace(
+            simple_evaluate=lambda **kwargs: calls.append(kwargs)
+            or {"results": {kwargs["tasks"][0]: {"acc,none": 1.0}}}
+        ),
+    )
+
+    evaluate_tasks(
+        "/model",
+        cfg,
+        tasks,
+        on_task_complete=lambda task, seed, batch: completed.append(
+            (task.name, seed)
+        ),
+    )
+
+    expected = [
+        (task, seed)
+        for task in ("gpqa", "aime")
+        for seed in (42, 1234, 4158)
+    ]
+    assert len(loads) == 1
+    assert [(call["tasks"][0], call["gen_kwargs"]["seed"]) for call in calls] == expected
+    assert completed == expected
+    assert all(call["random_seed"] == 42 for call in calls)
+    assert all(call["fewshot_random_seed"] == 42 for call in calls)
+
+
+def test_evaluate_tasks_skips_completed_task_seed_pairs(monkeypatch):
+    from pipeline.lmeval_runner import evaluate_tasks
+
+    cfg = PipelineConfig()
+    cfg.eval.generation_seeds = [42, 1234]
+    cfg.eval.gen_kwargs = {"temperature": 1.0}
+    calls = []
+    monkeypatch.setattr(
+        "pipeline.lmeval_runner._load_lm_model",
+        lambda *_: SimpleNamespace(clean=lambda: None),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "lm_eval",
+        SimpleNamespace(
+            simple_evaluate=lambda **kwargs: calls.append(kwargs)
+            or {"results": {"gpqa": {"acc,none": 1.0}}}
+        ),
+    )
+
+    evaluate_tasks(
+        "/model",
+        cfg,
+        [EvalTask(name="gpqa", limit=None)],
+        completed_task_seeds={("gpqa", 42)},
+    )
+
+    assert [call["gen_kwargs"]["seed"] for call in calls] == [1234]
+
+
 def test_evaluate_tasks_rejects_limit_with_exact_samples(monkeypatch, tmp_path):
     from pipeline.lmeval_runner import evaluate_tasks
 

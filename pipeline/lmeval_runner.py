@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from pipeline.config import EvalTask, PipelineConfig
 
-TaskBatchCallback = Callable[[EvalTask, dict], None]
+TaskBatchCallback = Callable[[EvalTask, int | None, dict], None]
 
 
 def _arg_parts(parts: list[str]) -> str:
@@ -151,12 +151,14 @@ def evaluate_tasks(
     tasks: list[EvalTask],
     *,
     log_samples: bool = False,
+    completed_task_seeds: set[tuple[str, int]] | None = None,
     on_task_complete: TaskBatchCallback | None = None,
 ) -> dict:
     """Evaluate ``tasks`` with one model load; returns merged ``simple_evaluate`` dict.
 
-    If ``on_task_complete`` is set, it is called after each task with that task's
-    raw ``simple_evaluate`` batch (for incremental checkpointing).
+    Repeated generation seeds reuse the same loaded backend. If
+    ``on_task_complete`` is set, it receives the task, generation seed (or
+    ``None`` for legacy one-pass evaluation), and raw result batch.
     """
     if not tasks:
         raise ValueError("evaluate_tasks requires at least one task")
@@ -224,35 +226,60 @@ def evaluate_tasks(
 
     lm = _load_lm_model(cfg, model_path)
     merged: dict = {}
+    completed_task_seeds = completed_task_seeds or set()
+    generation_seeds: tuple[int | None, ...] = (
+        tuple(int(seed) for seed in ev.generation_seeds)
+        if ev.generation_seeds
+        else (None,)
+    )
 
     try:
         for task in tasks:
-            print(
-                f"[lmeval] task={task.name} num_fewshot={task.num_fewshot} "
-                f"limit={task.limit}"
-            )
-            kwargs: dict = {
-                "model": lm,
-                "tasks": [task.name],
-                "num_fewshot": task.num_fewshot,
-                "apply_chat_template": ev.apply_chat_template,
-            }
-            if ev.fewshot_as_multiturn:
-                kwargs["fewshot_as_multiturn"] = True
-            if ev.gen_kwargs:
-                kwargs["gen_kwargs"] = ev.gen_kwargs
-            sample_map = exact_samples[task.name]
-            if sample_map is not None:
-                kwargs["samples"] = sample_map
-            elif task.limit is not None:
-                kwargs["limit"] = task.limit
-            if log_samples:
-                kwargs["log_samples"] = True
+            for generation_seed in generation_seeds:
+                if generation_seed is not None and (
+                    task.name,
+                    generation_seed,
+                ) in completed_task_seeds:
+                    continue
+                print(
+                    f"[lmeval] task={task.name} seed={generation_seed} "
+                    f"num_fewshot={task.num_fewshot} limit={task.limit}"
+                )
+                kwargs: dict = {
+                    "model": lm,
+                    "tasks": [task.name],
+                    "num_fewshot": task.num_fewshot,
+                    "apply_chat_template": ev.apply_chat_template,
+                }
+                if ev.fewshot_as_multiturn:
+                    kwargs["fewshot_as_multiturn"] = True
+                if ev.gen_kwargs:
+                    gen_kwargs = dict(ev.gen_kwargs)
+                    # vLLM samples whenever temperature is positive; its native
+                    # SamplingParams does not accept the HF-only do_sample key.
+                    gen_kwargs.pop("do_sample", None)
+                    if generation_seed is not None:
+                        gen_kwargs["seed"] = generation_seed
+                    kwargs["gen_kwargs"] = gen_kwargs
+                sample_map = exact_samples[task.name]
+                if sample_map is not None:
+                    kwargs["samples"] = sample_map
+                elif task.limit is not None:
+                    kwargs["limit"] = task.limit
+                if log_samples:
+                    kwargs["log_samples"] = True
+                if generation_seed is not None:
+                    kwargs.update(
+                        random_seed=42,
+                        numpy_random_seed=42,
+                        torch_random_seed=42,
+                        fewshot_random_seed=42,
+                    )
 
-            batch = lm_eval.simple_evaluate(**kwargs)
-            _merge_eval_results(merged, batch)
-            if on_task_complete is not None:
-                on_task_complete(task, batch)
+                batch = lm_eval.simple_evaluate(**kwargs)
+                _merge_eval_results(merged, batch)
+                if on_task_complete is not None:
+                    on_task_complete(task, generation_seed, batch)
     finally:
         cleanup = getattr(lm, "clean", None) or getattr(lm, "cleanup", None)
         if callable(cleanup):

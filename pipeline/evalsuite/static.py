@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -21,7 +22,16 @@ from pipeline.metrics_lmeval import (
 )
 
 
-def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
+def _stable_attempt_uid(sample_uid: str, generation_seed: int) -> str:
+    payload = f"{sample_uid}\0{generation_seed}".encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _extract_sample_row(
+    sample: dict,
+    task: EvalTask,
+    generation_seed: int | None = None,
+) -> dict:
     """Normalize one lm-eval logged sample into a pairable JSONL row."""
     doc_id = sample.get("doc_id")
     if doc_id is None:
@@ -84,6 +94,14 @@ def _extract_sample_row(sample: dict, task: EvalTask) -> dict:
         "metric": used_metric or base,
         "metric_value": metric_value,
     }
+    if generation_seed is not None:
+        row.update(
+            generation_seed=generation_seed,
+            attempt_uid=_stable_attempt_uid(row["sample_uid"], generation_seed),
+            source_doc=sample.get("doc"),
+            generation_arguments=sample.get("arguments"),
+            extracted_answer=extracted_answer,
+        )
 
     if task.higher_is_better:
         if metric_value is not None:
@@ -139,12 +157,13 @@ def _deduplicate_sample_rows(rows: list[dict]) -> list[dict]:
     """Collapse repeated lm-eval records without hiding conflicting evidence."""
     unique: dict[str, dict] = {}
     for row in rows:
-        uid = str(row.get("sample_uid") or "")
+        uid = str(row.get("attempt_uid") or row.get("sample_uid") or "")
         previous = unique.get(uid)
         if previous is None:
             unique[uid] = row
         elif previous != row:
-            raise ValueError(f"conflicting duplicate sample_uid: {uid}")
+            label = "attempt_uid" if row.get("attempt_uid") else "sample_uid"
+            raise ValueError(f"conflicting duplicate {label}: {uid}")
     return list(unique.values())
 
 
@@ -220,25 +239,80 @@ def checkpoint_task_result(
     aggregate_path: Path,
     samples_dir: Path,
     log_samples: bool,
+    generation_seed: int | None = None,
+    expected_generation_seeds: list[int] | None = None,
+    progress_path: Path | None = None,
 ) -> list[dict]:
     """Persist one task's metrics (and optional samples) immediately after eval."""
+    if generation_seed is not None and (
+        expected_generation_seeds is None
+        or generation_seed not in expected_generation_seeds
+    ):
+        raise ValueError(f"unexpected generation seed: {generation_seed}")
     task_results = require_task_results_or_aggregate(batch, task)
     rows: list[dict] = []
     if log_samples:
         raw = _collect_task_samples(batch, task.name)
         if raw:
             rows = _deduplicate_sample_rows(
-                [_extract_sample_row(s, task) for s in raw]
+                [_extract_sample_row(s, task, generation_seed) for s in raw]
             )
-            _write_samples(samples_dir / f"{task.name}.jsonl", rows)
+            sample_path = samples_dir / f"{task.name}.jsonl"
+            if generation_seed is not None and sample_path.is_file():
+                existing = [
+                    json.loads(line)
+                    for line in sample_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                rows = _deduplicate_sample_rows(existing + rows)
+            _write_samples(sample_path, rows)
             _write_json_atomic(
                 samples_dir.parent / "generation_health" / f"{task.name}.json",
                 summarize_generation_health(rows),
             )
 
-    aggregate[task.name] = _numeric_metrics(task_results)
+    if generation_seed is None:
+        aggregate[task.name] = _numeric_metrics(task_results)
+    else:
+        task_metrics = {
+            key: value
+            for key, value in aggregate.get(task.name, {}).items()
+            if key.startswith("pass_at_1_seed_")
+        }
+        correctness = [
+            float(row["correct"])
+            for row in rows
+            if row.get("generation_seed") == generation_seed
+            and row.get("correct") is not None
+        ]
+        task_metrics[f"pass_at_1_seed_{generation_seed}"] = (
+            sum(correctness) / len(correctness) if correctness else 0.0
+        )
+        all_correctness = [
+            float(row["correct"])
+            for row in rows
+            if row.get("correct") is not None
+        ]
+        task_metrics["mean_pass_at_1"] = (
+            sum(all_correctness) / len(all_correctness) if all_correctness else 0.0
+        )
+        task_metrics[task.metric] = task_metrics["mean_pass_at_1"]
+        aggregate[task.name] = task_metrics
     aggregate_path.parent.mkdir(parents=True, exist_ok=True)
-    aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
+    _write_json_atomic(aggregate_path, aggregate)
+
+    if generation_seed is not None and progress_path is not None:
+        progress = (
+            json.loads(progress_path.read_text(encoding="utf-8"))
+            if progress_path.is_file()
+            else {"schema_version": 1, "tasks": {}}
+        )
+        completed = set(progress.setdefault("tasks", {}).get(task.name, []))
+        completed.add(generation_seed)
+        progress["tasks"][task.name] = [
+            seed for seed in expected_generation_seeds or [] if seed in completed
+        ]
+        _write_json_atomic(progress_path, progress)
 
     print(
         f"[evalsuite] checkpoint: {task.name} "
@@ -304,8 +378,33 @@ def run_static_eval(
     log_samples = ev.log_samples
     aggregate_path = out_dir / "aggregate.json"
     aggregate = load_aggregate_checkpoint(aggregate_path)
-    completed = set(aggregate)
-    pending = pending_eval_tasks(ev.tasks, completed)
+    progress_path = out_dir / "seed_progress.json"
+    progress = (
+        json.loads(progress_path.read_text(encoding="utf-8"))
+        if progress_path.is_file()
+        else {"schema_version": 1, "tasks": {}}
+    )
+    completed_task_seeds = {
+        (str(task_name), int(seed))
+        for task_name, seeds in (progress.get("tasks") or {}).items()
+        for seed in seeds
+    }
+    if ev.generation_seeds:
+        expected_seeds = set(ev.generation_seeds)
+        completed = {
+            task.name
+            for task in ev.tasks
+            if {
+                seed
+                for name, seed in completed_task_seeds
+                if name == task.name
+            }
+            == expected_seeds
+        }
+        pending = pending_eval_tasks(ev.tasks, completed)
+    else:
+        completed = set(aggregate)
+        pending = pending_eval_tasks(ev.tasks, completed)
     all_samples: dict[str, list[dict]] = {}
 
     if completed:
@@ -331,7 +430,11 @@ def run_static_eval(
 
     if pending:
 
-        def _on_task_complete(task: EvalTask, batch: dict) -> None:
+        def _on_task_complete(
+            task: EvalTask,
+            generation_seed: int | None,
+            batch: dict,
+        ) -> None:
             rows = checkpoint_task_result(
                 task=task,
                 batch=batch,
@@ -339,6 +442,9 @@ def run_static_eval(
                 aggregate_path=aggregate_path,
                 samples_dir=samples_dir,
                 log_samples=log_samples,
+                generation_seed=generation_seed,
+                expected_generation_seeds=ev.generation_seeds or None,
+                progress_path=progress_path,
             )
             all_samples[task.name] = rows
 
@@ -347,6 +453,7 @@ def run_static_eval(
             cfg,
             pending,
             log_samples=log_samples,
+            completed_task_seeds=completed_task_seeds,
             on_task_complete=_on_task_complete,
         )
 

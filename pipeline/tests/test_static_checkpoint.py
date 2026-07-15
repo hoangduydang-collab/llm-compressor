@@ -3,11 +3,14 @@
 import json
 from pathlib import Path
 
-from pipeline.config import EvalTask
+import pytest
+
+from pipeline.config import EvalTask, PipelineConfig
 from pipeline.evalsuite.static import (
     checkpoint_task_result,
     load_aggregate_checkpoint,
     pending_eval_tasks,
+    run_static_eval,
 )
 
 
@@ -94,8 +97,6 @@ def test_checkpoint_collapses_identical_duplicate_sample_uids(tmp_path: Path):
 
 
 def test_checkpoint_rejects_conflicting_duplicate_sample_uids(tmp_path: Path):
-    import pytest
-
     task = EvalTask(name="gsm8k", metric="exact_match,strict-match")
     batch = {
         "results": {"gsm8k": {"exact_match,strict-match": 0.5}},
@@ -117,6 +118,123 @@ def test_checkpoint_rejects_conflicting_duplicate_sample_uids(tmp_path: Path):
             log_samples=True,
         )
     assert not (tmp_path / "aggregate.json").exists()
+
+
+def test_repeated_checkpoint_preserves_question_and_attempt_identity(tmp_path: Path):
+    task = EvalTask(name="gpqa", metric="exact_match,flexible-extract")
+    aggregate: dict[str, dict[str, float]] = {}
+    for seed, correct in ((42, 1), (1234, 0), (4158, 1)):
+        batch = {
+            "results": {"gpqa": {"exact_match,flexible-extract": correct}},
+            "samples": {
+                "gpqa": [
+                    {
+                        "doc_id": 7,
+                        "doc": {"Question": "Q", "answer": "A"},
+                        "arguments": [["Q\nAnswer:", {"max_gen_toks": 16384}]],
+                        "target": "A",
+                        "resps": [["Answer: A"]],
+                        "filtered_resps": ["A"],
+                        "exact_match,flexible-extract": correct,
+                    }
+                ]
+            },
+        }
+        checkpoint_task_result(
+            task=task,
+            generation_seed=seed,
+            expected_generation_seeds=[42, 1234, 4158],
+            batch=batch,
+            aggregate=aggregate,
+            aggregate_path=tmp_path / "aggregate.json",
+            samples_dir=tmp_path / "samples",
+            progress_path=tmp_path / "seed_progress.json",
+            log_samples=True,
+        )
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "samples/gpqa.jsonl").read_text().splitlines()
+    ]
+    assert len({row["sample_uid"] for row in rows}) == 1
+    assert len({row["attempt_uid"] for row in rows}) == 3
+    assert {row["generation_seed"] for row in rows} == {42, 1234, 4158}
+    assert all(row["source_doc"] == {"Question": "Q", "answer": "A"} for row in rows)
+    assert aggregate["gpqa"]["pass_at_1_seed_42"] == 1.0
+    assert aggregate["gpqa"]["pass_at_1_seed_1234"] == 0.0
+    assert aggregate["gpqa"]["mean_pass_at_1"] == pytest.approx(2 / 3)
+    progress = json.loads((tmp_path / "seed_progress.json").read_text())
+    assert progress["tasks"]["gpqa"] == [42, 1234, 4158]
+
+
+def test_repeated_checkpoint_rejects_unexpected_seed(tmp_path: Path):
+    task = EvalTask(name="gpqa", metric="exact_match,flexible-extract")
+    with pytest.raises(ValueError, match="unexpected generation seed"):
+        checkpoint_task_result(
+            task=task,
+            generation_seed=99,
+            expected_generation_seeds=[42, 1234, 4158],
+            batch={
+                "results": {"gpqa": {"exact_match,flexible-extract": 1.0}},
+                "samples": {"gpqa": []},
+            },
+            aggregate={},
+            aggregate_path=tmp_path / "aggregate.json",
+            samples_dir=tmp_path / "samples",
+            progress_path=tmp_path / "seed_progress.json",
+            log_samples=True,
+        )
+
+
+def test_run_static_eval_resumes_completed_generation_seeds(monkeypatch, tmp_path):
+    cfg = PipelineConfig()
+    cfg.eval.tasks = [
+        EvalTask(name="gpqa", metric="exact_match,flexible-extract", limit=None)
+    ]
+    cfg.eval.generation_seeds = [42, 1234]
+    seen_completed = []
+
+    def fake_evaluate(
+        model_path,
+        config,
+        tasks,
+        *,
+        log_samples,
+        completed_task_seeds,
+        on_task_complete,
+    ):
+        seen_completed.append(set(completed_task_seeds))
+        for seed in config.eval.generation_seeds:
+            if ("gpqa", seed) in completed_task_seeds:
+                continue
+            on_task_complete(
+                tasks[0],
+                seed,
+                {
+                    "results": {"gpqa": {"exact_match,flexible-extract": 1.0}},
+                    "samples": {
+                        "gpqa": [
+                            {
+                                "doc_id": 0,
+                                "exact_match,flexible-extract": 1.0,
+                                "resps": ["A"],
+                                "filtered_resps": ["A"],
+                            }
+                        ]
+                    },
+                },
+            )
+            break
+        return {}
+
+    monkeypatch.setattr("pipeline.evalsuite.static.evaluate_tasks", fake_evaluate)
+
+    first = run_static_eval(cfg, "/model", tmp_path)
+    second = run_static_eval(cfg, "/model", tmp_path)
+
+    assert seen_completed == [set(), {("gpqa", 42)}]
+    assert first["aggregate"]["gpqa"]["pass_at_1_seed_42"] == 1.0
+    assert second["sample_counts"] == {"gpqa": 2}
 
 
 def test_collect_task_samples_merges_group_subtasks():

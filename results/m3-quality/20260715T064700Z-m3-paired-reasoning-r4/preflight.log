@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 571, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 566, in main
+    run_preflight(args.matrix, args.run_root)
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 442, in run_preflight
+    harness_contract = build_reasoning_harness_contract(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 96, in build_reasoning_harness_contract
+    raise ValueError(
+ValueError: gpqa_diamond installed task does not expose metric/filter 'exact_match,flexible-extract'

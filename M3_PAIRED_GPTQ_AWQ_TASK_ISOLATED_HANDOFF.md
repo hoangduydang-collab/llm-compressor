@@ -1,34 +1,51 @@
-# Execution packet: MiniMax-M3 grouped paired quality rerun
+# Execution packet: MiniMax-M3 paired generated-reasoning r4
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: 2026-07-14-r3
+- Packet revision: 2026-07-15-r4
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Base Git commit: `eb1a025e`
-- Decision question: Does repaired in-house GPTQ preserve enough quality versus
-  cyankiwi AWQ to justify later performance evaluation?
+- Implementation base commit: `ca044dff`
+- Branch: `duy-branch`
+- Retry authorization: none
 
-This packet supersedes r2. The executor cluster supports `srun`, not `sbatch`.
-Run six independent one-node allocations from detached `tmux`; do not translate
-this packet into an array or a parent allocation.
+Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
+their GPQA/MMLU-Pro/GSM8K scores: r4 changes the reasoning harness to stock
+generated-answer lm-eval tasks and runs three paired sampling seeds.
 
-## Exact work and reuse
+## Decision and fixed experiment
 
-| Arm | Reused checkpoint | Remaining work |
-| --- | --- | --- |
-| GPTQ `reasoning` | GPQA 100/100 (0.28) | IFEval |
-| GPTQ `broad_math` | none | MMLU-Pro, GSM8K, AIME 2025 |
-| GPTQ `distributional_probe` | none | 8,192-token probe |
-| AWQ `reasoning` | GPQA 100/100 (0.24) | IFEval |
-| AWQ `broad_math` | MMLU-Pro 100/100 (0.76), GSM8K 100/100 (0.97) | AIME 2025 |
-| AWQ `distributional_probe` | none | 8,192-token probe |
+Compare the repaired in-house GPTQ checkpoint against cyankiwi AWQ under the
+same paper-grade generated-reasoning harness. This is a paired directional
+quantization comparison, not a BF16 recovery measurement or a reproduction of
+MiniMax's private benchmark recipe.
 
-GPTQ MMLU reached 96/100 before timeout but did not checkpoint, so it must rerun.
-No production IFEval, AIME, or probe completed. Each `srun` has an independent
-`16:00:00` ceiling. Do not retry or start performance work.
+| Canonical task | Installed lm-eval 0.4.12 task | Shots | Metric/filter | Questions |
+| --- | --- | ---: | --- | ---: |
+| GPQA Diamond | `gpqa_diamond_cot_zeroshot` v2.2 | 0 | `exact_match,flexible-extract` | 100 |
+| MMLU-Pro | `mmlu_pro` | 5 | `exact_match,custom-extract` | 100 |
+| GSM8K | `gsm8k_cot` | 8 | `exact_match,strict-match` | 100 |
+| AIME 2025 | `aime25` | 0 | `exact_match,none` | all 30 |
 
-## Pull, environment, and workspace
+Every question runs seeds `42`, `1234`, and `4158`. Generation uses explicit
+thinking, `temperature=1.0`, `top_p=0.95`, and `max_gen_toks=16384`. Positive
+temperature activates sampling in vLLM; `do_sample=true` is retained as
+harness intent but is not passed to vLLM `SamplingParams`.
+
+Production is exactly four independent top-level allocations:
+
+1. AWQ: GPQA.
+2. GPTQ: GPQA.
+3. AWQ: MMLU-Pro, then GSM8K, then AIME in one loaded-model process.
+4. GPTQ: MMLU-Pro, then GSM8K, then AIME in one loaded-model process.
+
+Each allocation is one node, eight H100s, and has a `24:00:00` limit. The
+cluster supports `srun`, not `sbatch`. No distributional probe or IFEval is in
+scope.
+
+## 1. Pull and validate the workspace
+
+Run on the login/controller node, outside any Slurm allocation:
 
 ```bash
 set -euo pipefail
@@ -36,30 +53,32 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-git merge-base --is-ancestor eb1a025e HEAD
+git merge-base --is-ancestor ca044dff HEAD
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
 test -z "${SLURM_JOB_ID:-}"
 test -z "$(git diff --name-only)"
 test -z "$(git diff --cached --name-only)"
-git ls-files --others --exclude-standard | awk '!/^(results|artifacts)\//' | tee /tmp/m3-r3-workspace-blockers
-test ! -s /tmp/m3-r3-workspace-blockers
+git ls-files --others --exclude-standard \
+  | awk '!/^(results|artifacts)\//' \
+  | tee /tmp/m3-r4-workspace-blockers
+test ! -s /tmp/m3-r4-workspace-blockers
+python - <<'PY'
+import importlib.metadata
+assert importlib.metadata.version("lm-eval") == "0.4.12"
+PY
 ```
 
-Stop if any check fails. Existing untracked paths under `results/` and
-`artifacts/` are record-and-proceed conditions under the repo protocol.
+Stop if a check fails. Existing untracked data under `results/` or `artifacts/`
+is record-and-proceed evidence; do not delete it.
 
-## Fresh run, preflight, and smoke reuse
+## 2. Create a fresh run and execute CPU preflight
 
 ```bash
 set -euo pipefail
-MATRIX=pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml
-OLD_ROOT=results/m3-quality/20260714T100300Z-m3-paired-gptq-awq-quick-rerun
-SMOKE_ROOT=results/m3-quality/20260714T064000Z-m3-paired-gptq-awq-quick
-SMOKE_GATE="$SMOKE_ROOT/smoke_gate.json"
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-paired-gptq-awq-grouped-r3"
+MATRIX=pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-paired-reasoning-r4"
 RUN_ROOT="results/m3-quality/$RUN_ID"
-test -f "$SMOKE_GATE"
 test ! -e "$RUN_ROOT"
 mkdir -p "$RUN_ROOT"
 date -u +%FT%TZ >"$RUN_ROOT/controller_start_utc.txt"
@@ -68,270 +87,152 @@ python -m pipeline.m3_quality_preflight \
   --matrix "$MATRIX" --run-root "$RUN_ROOT" \
   2>&1 | tee "$RUN_ROOT/preflight.log"
 test "${PIPESTATUS[0]}" -eq 0
-cmp "$OLD_ROOT/preflight/production_sample_manifest.json" \
-    "$RUN_ROOT/preflight/production_sample_manifest.json"
-python - "$SMOKE_ROOT/run_manifest.json" "$RUN_ROOT/run_manifest.json" \
-  pipeline/configs/minimax_m3_paired_gptq_awq_quick.yaml "$MATRIX" \
-  "$SMOKE_GATE" <<'PYSMOKE' | tee "$RUN_ROOT/smoke_reuse_check.json"
-import json, sys, yaml
-from pathlib import Path
 
-old_run = json.loads(Path(sys.argv[1]).read_text())
-new_run = json.loads(Path(sys.argv[2]).read_text())
-old_matrix = yaml.safe_load(Path(sys.argv[3]).read_text())
-new_matrix = yaml.safe_load(Path(sys.argv[4]).read_text())
-gate = json.loads(Path(sys.argv[5]).read_text())
-fields = ("sample_manifest_sha256", "eval_config_sha256", "tokenizer_sha256", "chat_template_sha256")
-checks = {field: old_run.get(field) == new_run.get(field) for field in fields}
-def contract(matrix):
-    keys = ("label", "path", "kind", "nodes", "tensor_parallel_size",
-            "pipeline_parallel_size", "distributed_executor_backend")
-    return [{key: model.get(key, 1 if key == "pipeline_parallel_size" else None)
-             for key in keys} for model in matrix["models"]]
-checks["model_and_serving_contract"] = contract(old_matrix) == contract(new_matrix)
-checks["prior_gate_ready"] = gate.get("ready_for_production") is True
-result = {"reusable": all(checks.values()), "checks": checks}
-print(json.dumps(result, indent=2))
-raise SystemExit(0 if result["reusable"] else 1)
-PYSMOKE
-test "${PIPESTATUS[0]}" -eq 0
-```
-
-The exact manifest comparison is mandatory. Stop rather than importing prior
-tasks if it fails.
-
-## Fail-closed harness contract
-
-This is a deterministic lm-eval paired-quality harness, not a reproduction of
-MiniMax's undisclosed full internal evaluation recipe. It uses the official base
-tokenizer/chat template, adaptive thinking, standard lm-eval task definitions,
-and greedy decoding so AWQ and GPTQ see identical requests. Because this quick
-run uses a seeded 100-item subset (and all 30 AIME items), its absolute scores
-must not be presented as directly comparable to full public leaderboard scores.
-The official model card recommends `temperature=1.0, top_p=0.95` for general
-inference, but does not publish an equivalent recipe for these five benchmark
-scores: https://huggingface.co/MiniMaxAI/MiniMax-M3
-
-```bash
-set -euo pipefail
-python - "$RUN_ROOT" <<'PYHARNESS' | tee "$RUN_ROOT/harness_contract_check.json"
-import json, sys, yaml
+python - "$RUN_ROOT" <<'PY'
+import hashlib, json, sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-cfg = yaml.safe_load((root / "preflight/resolved_eval_config.yaml").read_text())
+contract_path = root / "preflight/harness_contract.json"
+contract = json.loads(contract_path.read_text())
 run = json.loads((root / "run_manifest.json").read_text())
-tokenizers = json.loads((root / "preflight/tokenizer_contract.json").read_text())
-ev, serve = cfg["eval"], cfg["serve"]
-expected_tasks = {
-    "gpqa_diamond_zeroshot": ("acc_norm,none", 0),
-    "ifeval": ("prompt_level_strict_acc,none", 0),
-    "aime25": ("exact_match,none", 0),
-    "mmlu_pro": ("exact_match,custom-extract", 5),
-    "gsm8k": ("exact_match,strict-match", 5),
+assert contract["valid"] is True
+assert contract["lm_eval_version"] == "0.4.12"
+assert contract["generation"]["generation_seeds"] == [42, 1234, 4158]
+assert contract["tasks"]["gpqa_diamond"]["installed_name"] == "gpqa_diamond_cot_zeroshot"
+assert contract["tasks"]["gpqa_diamond"]["task_version"] == "2.2"
+assert all(task["output_type"] == "generate_until" for task in contract["tasks"].values())
+assert run["harness_contract_sha256"] == hashlib.sha256(contract_path.read_bytes()).hexdigest()
+assert run["expected_question_counts"] == {
+    "gpqa_diamond_cot_zeroshot": 100,
+    "mmlu_pro": 100,
+    "gsm8k_cot": 100,
+    "aime25": 30,
 }
-actual_tasks = {task["name"]: (task["metric"], task["num_fewshot"])
-                for task in ev["tasks"] if task.get("limit") is None}
-checks = {
-    "lm_eval_0_4_12": run.get("lm_eval_version") == "0.4.12",
-    "served_tokenizers_match_official_source": tokenizers.get("valid") is True,
-    "resolved_tasks": actual_tasks == expected_tasks,
-    "chat_template": ev.get("apply_chat_template") is True,
-    "fewshot_multiturn": ev.get("fewshot_as_multiturn") is True,
-    "adaptive_thinking": ev.get("enable_thinking") is None,
-    "think_end_token": ev.get("think_end_token") == "</mm:think>",
-    "greedy": ev.get("gen_kwargs", {}).get("temperature") == 0.0
-              and ev.get("gen_kwargs", {}).get("do_sample") is False,
-    "generation_ceiling": ev.get("gen_kwargs", {}).get("max_gen_toks") == 16384,
-    "vllm_backend": ev.get("backend") == "vllm",
-    "tp8_ep": serve.get("tensor_parallel_size") == 8
-              and serve.get("enable_expert_parallel") is True,
-    "serving_shape": serve.get("block_size") == 128
-                     and serve.get("kv_cache_dtype") == "fp8"
-                     and serve.get("max_model_len") == 65536,
-}
-result = {
-    "valid": all(checks.values()), "checks": checks,
-    "comparison_scope": "paired directional quick evaluation",
-    "direct_public_score_comparability": False,
-    "reason": "seeded 100-item subsets (AIME has 30) and no published identical MiniMax recipe",
-}
-print(json.dumps(result, indent=2))
-raise SystemExit(0 if result["valid"] else 1)
-PYHARNESS
-test "${PIPESTATUS[0]}" -eq 0
+print(json.dumps({"valid": True, "contract": contract_path.as_posix()}, indent=2))
+PY
 ```
 
-## Validate and import four completed task checkpoints
+Preflight must finish before any GPU allocation. It validates checkpoint serving
+ABI, exact task aliases/output types/metrics/shots, GPQA v2.2, prompt stability,
+choice mapping, tokenizer/chat-template equality, sample manifests, and the
+harness hash. Do not bypass or edit a failed preflight artifact.
+
+## 3. Run the fresh r4 smoke gate
+
+Do not reuse an r1-r3 smoke gate because the task and generation contracts
+changed.
 
 ```bash
 set -euo pipefail
-python - "$OLD_ROOT" "$RUN_ROOT" <<'PYREUSE' | tee "$RUN_ROOT/reused_task_checkpoints.json"
-import hashlib, json, math, sys
-from pathlib import Path
-from pipeline.evalsuite.health import summarize_generation_health
-from pipeline.evalsuite.sampling import stable_sample_uid
-
-old, new = map(Path, sys.argv[1:])
-mappings = [
-    ("inhouse_gptq", "reasoning", "reasoning", "gpqa_diamond_zeroshot", "acc_norm,none", 100, 0.28),
-    ("cyankiwi_awq", "reasoning", "reasoning", "gpqa_diamond_zeroshot", "acc_norm,none", 100, 0.24),
-    ("cyankiwi_awq", "broad", "broad_math", "mmlu_pro", "exact_match,custom-extract", 100, 0.76),
-    ("cyankiwi_awq", "broad", "broad_math", "gsm8k", "exact_match,strict-match", 100, 0.97),
-]
-old_sample_manifest = old / "preflight" / "production_sample_manifest.json"
-new_sample_manifest = new / "preflight" / "production_sample_manifest.json"
-new_eval_config = new / "preflight" / "resolved_eval_config.yaml"
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-if old_sample_manifest.read_bytes() != new_sample_manifest.read_bytes():
-    raise SystemExit("old/new production manifests differ")
-selection = json.loads(new_sample_manifest.read_text())["tasks"]
-sample_sha = sha(new_sample_manifest)
-config_sha = sha(new_eval_config)
-old_run = json.loads((old / "run_manifest.json").read_text())
-new_run = json.loads((new / "run_manifest.json").read_text())
-records = []
-targets = {}
-for model, old_shard, new_shard, task, metric, expected, expected_score in mappings:
-    source = old / "models" / model / "shards" / old_shard
-    arm_manifest_path = source / "arm_manifest.json"
-    aggregate_path = source / "aggregate.json"
-    sample_path = source / "samples" / f"{task}.jsonl"
-    if not arm_manifest_path.is_file() or not aggregate_path.is_file() or not sample_path.is_file():
-        raise SystemExit(f"missing reusable checkpoint for {model}/{task}")
-    arm_manifest = json.loads(arm_manifest_path.read_text())
-    required_manifest = {
-        "run_id": old_run["run_id"], "git_commit": old_run["git_commit"],
-        "model_label": model, "shard": old_shard,
-        "sample_manifest_sha256": sample_sha, "eval_config_sha256": config_sha,
-        "tokenizer_sha256": new_run["tokenizer_sha256"],
-        "chat_template_sha256": new_run["chat_template_sha256"],
-    }
-    for key, value in required_manifest.items():
-        if arm_manifest.get(key) != value:
-            raise SystemExit(f"source provenance mismatch {model}/{task}/{key}")
-    aggregate = json.loads(aggregate_path.read_text())
-    metrics = aggregate.get(task)
-    if not isinstance(metrics, dict) or not metrics:
-        raise SystemExit(f"missing aggregate task {model}/{task}")
-    score = metrics.get(metric)
-    if not isinstance(score, (int, float)) or not math.isfinite(float(score)) \
-            or abs(float(score) - expected_score) >= 1e-9:
-        raise SystemExit(f"unexpected {metric} for {model}/{task}: {score}")
-    allowed = {(subtask, int(doc_id)) for subtask, ids in selection[task].items()
-               for doc_id in ids}
-    unique = {}
-    for line in sample_path.read_text().splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
-        uid = row.get("sample_uid")
-        if not uid:
-            raise SystemExit(f"missing sample_uid for {model}/{task}")
-        subtask, doc_id = row.get("subtask"), row.get("doc_id")
-        if row.get("task") != task or (subtask, int(doc_id)) not in allowed:
-            raise SystemExit(f"sample outside manifest for {model}/{task}/{uid}")
-        if uid != stable_sample_uid(task, subtask, doc_id):
-            raise SystemExit(f"invalid stable UID for {model}/{task}/{uid}")
-        if uid in unique and unique[uid] != row:
-            raise SystemExit(f"conflicting duplicate {model}/{task}/{uid}")
-        unique[uid] = row
-    if len(unique) != expected:
-        raise SystemExit(f"expected {expected} unique rows for {model}/{task}, got {len(unique)}")
-    target = new / "models" / model / "shards" / new_shard
-    (target / "samples").mkdir(parents=True, exist_ok=True)
-    (target / "generation_health").mkdir(parents=True, exist_ok=True)
-    target_aggregate = targets.setdefault(target, {})
-    target_aggregate[task] = aggregate[task]
-    rows = [unique[key] for key in sorted(unique)]
-    (target / "samples" / f"{task}.jsonl").write_text(
-        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-    )
-    (target / "generation_health" / f"{task}.json").write_text(
-        json.dumps(summarize_generation_health(rows), indent=2)
-    )
-    records.append({"model": model, "task": task, "rows": len(rows), "source": str(source)})
-for target, aggregate in targets.items():
-    (target / "aggregate.json").write_text(json.dumps(aggregate, indent=2))
-print(json.dumps({"validated": True, "imports": records}, indent=2))
-PYREUSE
+bash pipeline/slurm/run_m3_quality_eval_srun.sh \
+  --profile smoke --matrix "$MATRIX" --run-root "$RUN_ROOT" \
+  2>&1 | tee "$RUN_ROOT/smoke_controller.log"
 test "${PIPESTATUS[0]}" -eq 0
+python - "$RUN_ROOT/smoke_gate.json" <<'PY'
+import json, sys
+gate = json.load(open(sys.argv[1]))
+assert gate["ready_for_production"] is True, gate
+assert all("probe_budget" not in item["checks"] for item in gate["models"].values())
+PY
 ```
 
-This deliberately deduplicates the old GSM8K evidence from 200 stored rows to
-100 identical stable UIDs. Any conflict or missing artifact is a stop condition.
+The smoke profile uses two one-node arms and no runtime/distributional probe.
+Stop on failure and return evidence; no retry is authorized.
 
-## Dry run, then persistent launch
+## 4. Verify the four production commands
 
 ```bash
 set -euo pipefail
 bash pipeline/slurm/run_m3_quality_eval_srun.sh \
   --profile production --matrix "$MATRIX" --run-root "$RUN_ROOT" \
-  --smoke-gate "$SMOKE_GATE" --dry-run | tee "$RUN_ROOT/srun_dry_run.log"
-test "$(grep -c '^srun ' "$RUN_ROOT/srun_dry_run.log")" -eq 6
-test "$(grep -c -- '--time 16:00:00' "$RUN_ROOT/srun_dry_run.log")" -eq 6
+  --smoke-gate "$RUN_ROOT/smoke_gate.json" --dry-run \
+  | tee "$RUN_ROOT/srun_dry_run.log"
+test "$(grep -c '^srun ' "$RUN_ROOT/srun_dry_run.log")" -eq 4
+test "$(grep -c -- '--nodes=1' "$RUN_ROOT/srun_dry_run.log")" -eq 4
+test "$(grep -c -- '--gpus-per-node=8' "$RUN_ROOT/srun_dry_run.log")" -eq 4
+test "$(grep -c -- '--time 24:00:00' "$RUN_ROOT/srun_dry_run.log")" -eq 4
+test "$(grep -c -- '--run-probe 0' "$RUN_ROOT/srun_dry_run.log")" -eq 4
+grep -q 'total_nodes=4' "$RUN_ROOT/srun_dry_run.log"
 ! grep -q sbatch "$RUN_ROOT/srun_dry_run.log"
+```
 
+## 5. Launch persistently
+
+The controller must remain outside another allocation. It starts all four
+top-level `srun` commands concurrently.
+
+```bash
+set -euo pipefail
 SESSION="m3-quality-$RUN_ID"
 tmux new-session -d -s "$SESSION" \
-  "cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD/src:$PWD' && bash pipeline/slurm/run_m3_quality_eval_srun.sh --profile production --matrix '$MATRIX' --run-root '$RUN_ROOT' --smoke-gate '$SMOKE_GATE' >'$RUN_ROOT/controller.log' 2>&1; printf '%s\n' \$? >'$RUN_ROOT/controller.rc'"
+  "cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD/src:$PWD' && bash pipeline/slurm/run_m3_quality_eval_srun.sh --profile production --matrix '$MATRIX' --run-root '$RUN_ROOT' --smoke-gate '$RUN_ROOT/smoke_gate.json' >'$RUN_ROOT/controller.log' 2>&1; printf '%s\n' \$? >'$RUN_ROOT/controller.rc'"
 printf '%s\n' "$SESSION" >"$RUN_ROOT/tmux_session.txt"
 ```
 
-Do not run the controller inside another allocation. Do not cancel healthy arms
-when a sibling fails.
+Model loading is amortized on the three-task arm. Seed and task checkpoints are
+written atomically, so evidence survives interruption, but interruption does
+not authorize a retry.
 
-## Monitor, aggregate, and return
+## 6. Monitor without taking ownership
 
 ```bash
 set -euo pipefail
 tmux capture-pane -pt "$SESSION" -S -200
 squeue -u "$USER" -o '%.18i %.9T %.20N %.10M %.10l'
 tail -n 100 "$RUN_ROOT/controller.log"
+find "$RUN_ROOT/models" -name seed_progress.json -print -exec cat {} \;
 ```
 
-Wait for `controller.rc`. Then capture exact scheduler accounting from the IDs
-recorded by the six arm manifests. If fewer manifests exist, preserve the
-controller logs and report the missing allocations rather than inventing IDs:
+Wait for `controller.rc`. Do not cancel healthy sibling arms if one arm fails.
+
+## 7. Capture scheduler evidence and aggregate
 
 ```bash
 set -euo pipefail
-python - "$RUN_ROOT" <<'PYJOBS' >"$RUN_ROOT/slurm_job_ids.txt"
+python - "$RUN_ROOT" <<'PY' >"$RUN_ROOT/slurm_job_ids.txt"
 import json, sys
 from pathlib import Path
 root = Path(sys.argv[1])
-ids = sorted({json.loads(path.read_text()).get("slurm_job_id")
-              for path in root.glob("models/*/shards/*/arm_manifest.json")})
+ids = sorted({
+    json.loads(path.read_text()).get("slurm_job_id")
+    for path in root.glob("models/*/shards/*/arm_manifest.json")
+})
 for job_id in ids:
     if job_id:
         print(job_id)
-PYJOBS
+PY
 while read -r job_id; do
   sacct -j "$job_id" \
     --format=JobIDRaw,JobName%40,State,ExitCode,NodeList,AllocTRES,Submit,Start,End,Elapsed,Timelimit
   scontrol show job "$job_id" -dd
-done <"$RUN_ROOT/slurm_job_ids.txt" | tee "$RUN_ROOT/slurm_accounting_final.txt"
-```
+done <"$RUN_ROOT/slurm_job_ids.txt" \
+  | tee "$RUN_ROOT/slurm_accounting_final.txt"
 
-Aggregate even after partial failure:
-
-```bash
-set -uo pipefail
 set +e
-python -m pipeline.m3_quality_eval aggregate --matrix "$MATRIX" --root "$RUN_ROOT" \
+python -m pipeline.m3_quality_eval aggregate \
+  --matrix "$MATRIX" --root "$RUN_ROOT" \
   2>&1 | tee "$RUN_ROOT/aggregate.log"
 AGGREGATE_RC=${PIPESTATUS[0]}
 set -e
 printf '%s\n' "$AGGREGATE_RC" >"$RUN_ROOT/aggregate.return_code.txt"
 ```
 
-Return the full small evidence tree: preflight/manifests, reuse validation,
-tokenizer and harness-contract checks, launch plan, dry-run, controller log/rc,
-six arm manifests and logs, aggregates,
-deduplicated samples, generation health, probes, scheduler evidence, matrix,
+Aggregation is partial-safe for infrastructure failures, but a successful r4
+merge is fail-closed: every expected question must contain all three seeds,
+attempt IDs must be unique, harness hashes must match, and both AWQ and GPTQ
+must provide all generation-health counters. Statistical confidence intervals
+resample questions while keeping their three seed outcomes together.
+
+## 8. Return evidence
+
+Return the full small evidence tree: preflight reports, harness contract,
+sample manifests, smoke report/gate, launch plan, dry-run, controller log/rc,
+four arm manifests and return codes, seed progress, aggregates, sample JSONL,
+generation-health summaries, comparisons, scheduler accounting, matrix,
 gates, report, commands, versions, timings, deviations, and missing artifacts.
-For retained large files record absolute path, byte size, and SHA-256. Commit and
-push on `duy-branch`, mark this packet `RETURNED_FOR_ANALYSIS`, and stop. No retry,
-quality interpretation, model adoption, performance run, or publication is
-authorized.
+For retained large files record absolute path, byte size, and SHA-256.
+
+Commit and push evidence on `duy-branch`, change this packet state to
+`RETURNED_FOR_ANALYSIS`, and stop. Do not retry, interpret quality, adopt a
+model, begin performance work, or publish results.

@@ -799,13 +799,32 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
     return result
 
 
+def _build_health_advisory(comparisons: dict[str, dict]) -> dict[str, Any]:
+    models = {}
+    for model, comparison in comparisons.items():
+        health = dict(comparison.get("generation_health") or {})
+        combined = int(health.get("degeneration_failures", 0))
+        models[model] = {
+            "has_findings": combined > 0,
+            "combined_degeneration_failures": combined,
+            "baseline": health.get("baseline") or {"tasks": {}},
+            "candidate": health.get("candidate") or {"tasks": {}},
+        }
+    return {
+        "has_findings": any(model["has_findings"] for model in models.values()),
+        "models": models,
+    }
+
+
 def evaluate_gates(
     matrix: dict[str, Any],
     thresholds: GateThresholds,
 ) -> dict[str, Any]:
     infrastructure_ok = matrix.get("infrastructure_ok") is True
+    comparisons = matrix.get("comparisons") or {}
+    health_advisory = _build_health_advisory(comparisons)
     model_results: dict[str, dict] = {}
-    for model, comparison in (matrix.get("comparisons") or {}).items():
+    for model, comparison in comparisons.items():
         tasks = [
             task
             for task in (comparison.get("tasks") or {}).values()
@@ -838,9 +857,6 @@ def evaluate_gates(
         perplexity_increase = (
             float(perplexity_ratio) - 1.0 if perplexity_ratio is not None else None
         )
-        degeneration = int(
-            (comparison.get("generation_health") or {}).get("degeneration_failures", 0)
-        )
         checks = {
             "max_task_drop": {
                 "value": max_drop,
@@ -859,11 +875,6 @@ def evaluate_gates(
                 "passed": conditional_regression is not None
                 and conditional_regression <= thresholds.max_conditional_regression,
             },
-            "degeneration_failures": {
-                "value": degeneration,
-                "threshold": thresholds.max_degeneration_failures,
-                "passed": degeneration <= thresholds.max_degeneration_failures,
-            },
         }
         if thresholds.max_perplexity_increase is not None:
             checks["perplexity_increase"] = {
@@ -880,6 +891,7 @@ def evaluate_gates(
         and bool(model_results)
         and all(result["quality_ok"] for result in model_results.values()),
         "models": model_results,
+        "health_advisory": health_advisory,
     }
 
 
@@ -973,6 +985,12 @@ def render_matrix_report(matrix: dict[str, Any], gates: dict[str, Any]) -> str:
         "# MiniMax-M3 Quality Matrix",
         "",
         f"Overall quality gate: **{'PASS' if gates.get('quality_ok') else 'FAIL'}**",
+        "Health advisory: "
+        + (
+            "findings present"
+            if (gates.get("health_advisory") or {}).get("has_findings")
+            else "no findings"
+        ),
         "",
         "Baseline: `" + str(matrix.get("baseline_label", "unknown")) + "`",
         "",

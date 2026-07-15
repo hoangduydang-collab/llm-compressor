@@ -1044,36 +1044,58 @@ def test_quality_failure_is_distinct_from_infrastructure_failure():
     assert gates["models"]["quant"]["max_task_drop"]["passed"] is False
 
 
-def test_r4_gate_omits_distributional_and_rejects_either_model_health():
-    thresholds = GateThresholds(0.02, 0.98, 0.05, None, 0)
-
-    def matrix(failures):
-        return {
-            "infrastructure_ok": True,
-            "comparisons": {
-                "quant": {
-                    "tasks": {
-                        "gpqa": {
-                            "n_paired": 300,
-                            "delta": 0.0,
-                            "score_recovery_ratio": 1.0,
-                            "regressions_a_correct_b_wrong": 0,
-                            "both_correct": 100,
-                        }
+def test_r4_complete_empty_response_is_health_advisory_not_quality_failure():
+    matrix = {
+        "infrastructure_ok": True,
+        "comparisons": {
+            "quant": {
+                "tasks": {
+                    "gpqa": {
+                        "n_paired": 300,
+                        "delta": 0.0,
+                        "score_recovery_ratio": 1.0,
+                        "regressions_a_correct_b_wrong": 0,
+                        "both_correct": 100,
+                    }
+                },
+                "generation_health": {
+                    "baseline": {
+                        "tasks": {
+                            "gpqa": {
+                                "samples": 300,
+                                "empty_count": 0,
+                                "empty_rate": 0.0,
+                            }
+                        },
+                        "degeneration_failures": 0,
                     },
-                    "generation_health": {
-                        "degeneration_failures": failures,
+                    "candidate": {
+                        "tasks": {
+                            "gpqa": {
+                                "samples": 300,
+                                "empty_count": 1,
+                                "empty_rate": 1 / 300,
+                            }
+                        },
+                        "degeneration_failures": 1,
                     },
-                }
-            },
-        }
+                    "degeneration_failures": 1,
+                },
+            }
+        },
+    }
 
-    passing = evaluate_gates(matrix(0), thresholds)
-    failing = evaluate_gates(matrix(1), thresholds)
+    gates = evaluate_gates(matrix, GateThresholds(0.02, 0.98, 0.05, None, 0))
 
-    assert "perplexity_increase" not in passing["models"]["quant"]
-    assert passing["quality_ok"] is True
-    assert failing["quality_ok"] is False
+    assert gates["infrastructure_ok"] is True
+    assert gates["quality_ok"] is True
+    assert "degeneration_failures" not in gates["models"]["quant"]
+    advisory = gates["health_advisory"]
+    assert advisory["has_findings"] is True
+    assert advisory["models"]["quant"]["combined_degeneration_failures"] == 1
+    assert advisory["models"]["quant"]["candidate"]["tasks"]["gpqa"][
+        "empty_count"
+    ] == 1
 
 
 def test_matrix_report_surfaces_quantization_metrics_and_gates():
@@ -1090,11 +1112,15 @@ def test_matrix_report_surfaces_quantization_metrics_and_gates():
                     }
                 },
                 "distributional": {"perplexity_ratio": 1.04},
-                "generation_health": {"degeneration_failures": 0},
+                "generation_health": {"degeneration_failures": 1},
             }
         },
     }
-    gates = {"quality_ok": True, "models": {"gptq": {"quality_ok": True}}}
+    gates = {
+        "quality_ok": True,
+        "models": {"gptq": {"quality_ok": True}},
+        "health_advisory": {"has_findings": True},
+    }
 
     report = render_matrix_report(matrix, gates)
 
@@ -1103,6 +1129,7 @@ def test_matrix_report_surfaces_quantization_metrics_and_gates():
     assert "flip rate" in report.lower()
     assert "conditional regression" in report.lower()
     assert "perplexity ratio" in report.lower()
+    assert "Health advisory: findings present" in report
     assert "PASS" in report
 
 

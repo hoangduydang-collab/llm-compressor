@@ -2,16 +2,24 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: 2026-07-15-r4
+- Packet revision: 2026-07-15-r4.1
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Implementation base commit: `ca044dff`
+- Implementation base commit: `3171dd8e`
 - Branch: `duy-branch`
-- Retry authorization: none
+- Retry authorization: one fresh run after the preflight chat-renderer fix
 
 Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
 their GPQA/MMLU-Pro/GSM8K scores: r4 changes the reasoning harness to stock
 generated-answer lm-eval tasks and runs three paired sampling seeds.
+
+The first r4 attempt at
+`results/m3-quality/20260715T061300Z-m3-paired-reasoning-r4` stopped before GPU
+allocation because preflight passed a Jinja template string where lm-eval
+0.4.12 requires a callable chat renderer. Commit `3171dd8e` fixes that source
+error and adds a regression test. Preserve the stopped evidence, but do not
+reuse its incomplete run root; this packet authorizes exactly one fresh r4.1
+attempt.
 
 ## Decision and fixed experiment
 
@@ -53,7 +61,7 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-git merge-base --is-ancestor ca044dff HEAD
+git merge-base --is-ancestor 3171dd8e HEAD
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
 test -z "${SLURM_JOB_ID:-}"

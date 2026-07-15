@@ -752,6 +752,13 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
     }
     baseline_label = str(manifest["baseline_label"])
     baseline = merged[baseline_label]
+    generation_health = {}
+    for model, directory in merged.items():
+        tasks = _read_json(directory / "generation_health.json")
+        generation_health[model] = {
+            "tasks": tasks,
+            "degeneration_failures": _degeneration_failures(tasks),
+        }
     comparisons: dict[str, dict] = {}
     for model, directory in merged.items():
         if model == baseline_label:
@@ -770,20 +777,15 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
             comparison["distributional"] = compare_distributional_records(
                 _read_jsonl(ref_probe), _read_jsonl(candidate_probe)
             )
-        baseline_health = _read_json(baseline / "generation_health.json")
-        candidate_health = _read_json(directory / "generation_health.json")
-        baseline_failures = _degeneration_failures(baseline_health)
-        candidate_failures = _degeneration_failures(candidate_health)
+        baseline_health = generation_health[baseline_label]
+        candidate_health = generation_health[model]
         comparison["generation_health"] = {
-            "baseline": {
-                "tasks": baseline_health,
-                "degeneration_failures": baseline_failures,
-            },
-            "candidate": {
-                "tasks": candidate_health,
-                "degeneration_failures": candidate_failures,
-            },
-            "degeneration_failures": baseline_failures + candidate_failures,
+            "baseline": baseline_health,
+            "candidate": candidate_health,
+            "degeneration_failures": (
+                baseline_health["degeneration_failures"]
+                + candidate_health["degeneration_failures"]
+            ),
         }
         _write_json(comparison_dir / "compare.json", comparison)
         comparisons[model] = comparison
@@ -793,15 +795,16 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
         "failures": [],
         "baseline_label": baseline_label,
         "models": list(merged),
+        "generation_health": generation_health,
         "comparisons": comparisons,
     }
     _write_json(root / "matrix.json", result)
     return result
 
 
-def _build_health_advisory(comparisons: dict[str, dict]) -> dict[str, Any]:
+def _build_health_advisory(matrix: dict[str, Any]) -> dict[str, Any]:
     models = {}
-    for model, comparison in comparisons.items():
+    for model, comparison in (matrix.get("comparisons") or {}).items():
         health = dict(comparison.get("generation_health") or {})
         combined = int(health.get("degeneration_failures", 0))
         models[model] = {
@@ -810,6 +813,16 @@ def _build_health_advisory(comparisons: dict[str, dict]) -> dict[str, Any]:
             "baseline": health.get("baseline") or {"tasks": {}},
             "candidate": health.get("candidate") or {"tasks": {}},
         }
+    if not models:
+        baseline_label = matrix.get("baseline_label")
+        for model, health in (matrix.get("generation_health") or {}).items():
+            failures = int(health.get("degeneration_failures", 0))
+            models[model] = {
+                "has_findings": failures > 0,
+                "combined_degeneration_failures": failures,
+                "baseline": health if model == baseline_label else {"tasks": {}},
+                "candidate": health if model != baseline_label else {"tasks": {}},
+            }
     return {
         "has_findings": any(model["has_findings"] for model in models.values()),
         "models": models,
@@ -822,7 +835,7 @@ def evaluate_gates(
 ) -> dict[str, Any]:
     infrastructure_ok = matrix.get("infrastructure_ok") is True
     comparisons = matrix.get("comparisons") or {}
-    health_advisory = _build_health_advisory(comparisons)
+    health_advisory = _build_health_advisory(matrix)
     model_results: dict[str, dict] = {}
     for model, comparison in comparisons.items():
         tasks = [

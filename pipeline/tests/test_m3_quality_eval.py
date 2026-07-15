@@ -40,6 +40,10 @@ REASONING_R4_MATRIX = Path(
     "pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml"
 )
 
+BF16_REASONING_R4_MATRIX = Path(
+    "pipeline/configs/minimax_m3_bf16_reasoning_r4.yaml"
+)
+
 
 def test_default_matrix_has_three_active_models_and_autoround_deferred():
     spec = load_matrix(MATRIX)
@@ -1095,6 +1099,69 @@ def test_r4_complete_empty_response_is_health_advisory_not_quality_failure():
     assert advisory["models"]["quant"]["combined_degeneration_failures"] == 1
     assert advisory["models"]["quant"]["candidate"]["tasks"]["gpqa"][
         "empty_count"
+    ] == 1
+
+
+def test_bf16_only_matrix_preserves_merged_health_in_advisory(tmp_path):
+    spec = load_matrix(BF16_REASONING_R4_MATRIX)
+    _write_run_manifest(
+        tmp_path,
+        expected_arms=[
+            {"model_label": model, "shard": shard}
+            for model, shard in spec.expected_arms
+        ],
+    )
+    manifest_path = tmp_path / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["models"] = [model.label for model in spec.models]
+    manifest["baseline_label"] = spec.baseline_label
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    for shard in spec.shards:
+        task = shard.tasks[0]
+        _write_arm(
+            tmp_path,
+            model="bf16",
+            shard=shard.name,
+            sample_sha="samples",
+            task=task,
+            sample_uid=f"{shard.name}-sample",
+        )
+        health_dir = (
+            tmp_path
+            / "models"
+            / "bf16"
+            / "shards"
+            / shard.name
+            / "generation_health"
+        )
+        health_dir.mkdir()
+        health_dir.joinpath(f"{task}.json").write_text(
+            json.dumps(
+                {
+                    "samples": 100,
+                    "empty_count": 1 if task == "gpqa_diamond" else 0,
+                    "reasoning_failure_count": (
+                        1 if task == "gpqa_diamond" else 0
+                    ),
+                    "nonfinite_metric_count": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    matrix = validate_and_merge(tmp_path)
+    gates = evaluate_gates(matrix, spec.gates)
+
+    assert matrix["comparisons"] == {}
+    assert matrix["generation_health"]["bf16"]["tasks"]["gpqa_diamond"][
+        "empty_count"
+    ] == 1
+    advisory = gates["health_advisory"]
+    assert advisory["has_findings"] is True
+    assert advisory["models"]["bf16"]["has_findings"] is True
+    assert advisory["models"]["bf16"]["baseline"]["tasks"]["gpqa_diamond"][
+        "reasoning_failure_count"
     ] == 1
 
 

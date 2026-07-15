@@ -2,10 +2,10 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: `2026-07-15-r4`
+- Packet revision: `2026-07-15-r5`
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Required fix commit: `71372092`
+- Required fix commit: `b907eaf4`
 - Decision question: Can native eight-rank llm-compressor GPTQ and AWQ process
   representative MiniMax-M3 layers with correct data sharding, shared model
   memory, complete evidence, and enough quantization-time improvement to justify
@@ -15,9 +15,9 @@ This is the single active packet for MiniMax-M3 quantization speed-up Phase 1.
 It supersedes the informal launch commands in `M3_QUANT_SPEEDUP_PLAN.md`; that
 document remains the rationale and history.
 
-> **r4 execution notice:** The original r3 packet below is retained as execution
+> **r5 execution notice:** The original r3/r4 packets below are retained as execution
 > history and must not be launched again. The only current authorization and
-> executable command are in **Planner analysis and r4 GPTQ/AWQ authorization**
+> executable command are in **Planner analysis and r5 GPTQ/AWQ authorization**
 > at the end of this file.
 
 ## Archived r3 packet (do not execute)
@@ -826,3 +826,88 @@ launcher continues to AWQ if GPTQ fails so both corrected-path outcomes are
 returned. Record each method's first failing operation and last successful
 stage if r4 is nonzero. Commit and push the evidence, set the packet to
 `RETURNED_FOR_ANALYSIS`, and stop; no additional retry is authorized.
+
+## Planner analysis and r5 GPTQ/AWQ authorization
+
+The r4 GPTQ failure is a host shared-memory exhaustion during post-load MoE
+linearization, not a GPTQ solve or NCCL defect. Source rank 0 loaded the fused
+3D expert tensors successfully, then `linearize_moe` created shared per-expert
+2D modules. Shared RSS grew by roughly 13.5 GiB per layer until `/dev/shm` could
+not allocate another storage object near layer 17. The other ranks subsequently
+timed out in a broadcast because rank 0 had already failed.
+
+Commit `b907eaf4` uses llm-compressor's existing DeepSeek/Qwen load-converter
+extension point for `minimax_m3_vl`. It retains Transformers' official MiniMax
+structural conversion mapping, removes only the converters that fuse all expert
+weights into `gate_up_proj`/`down_proj`, and adds per-expert
+`w1/w2/w3 -> gate/down/up` renames. `load_quantizable_moe` can therefore install
+`LinearExperts2D` before checkpoint loading and materialize the final 2D expert
+layout directly. It does not duplicate a loaded 3D model, change the GPTQ/AWQ
+recipes, or add a bespoke loader.
+
+This section supersedes all r4 launch authorization. Run GPTQ and then AWQ once
+each through the existing sequential launcher. AWQ is included because it uses
+the same load context and was previously authorized but not launched in r4.
+
+### r5 preflight and launch
+
+Run from outside a Slurm allocation:
+
+```bash
+set -euo pipefail
+cd /mnt/nfs/hoangduy/projects/llm-compressor
+git fetch origin
+git checkout duy-branch
+git pull --ff-only origin duy-branch
+git merge-base --is-ancestor b907eaf4 HEAD
+
+source /mnt/nfs/hoangduy/env.sh
+source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
+test -z "${SLURM_JOB_ID:-}"
+test -z "$(git diff --name-only)"
+test -z "$(git diff --cached --name-only)"
+
+python -m pytest -q \
+  pipeline/tests/test_distributed.py \
+  pipeline/tests/test_calibration_partition.py \
+  pipeline/tests/test_distributed_quantize_contract.py \
+  pipeline/tests/test_metrics.py \
+  pipeline/tests/test_m3_distributed_quant_smoke.py
+python -m pytest -q \
+  tests/llmcompressor/modeling/test_linearize.py \
+  -k minimax_m3_load_mapping_keeps_experts_two_dimensional
+bash -n pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh
+
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-quant-smoke-r5"
+RESULT_ROOT="/mnt/nfs/hoangduy/results/m3-distributed-quant-smoke/$RUN_ID"
+LOG_ROOT="/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/$RUN_ID"
+OFFLOAD_ROOT="/mnt/nfs/hoangduy/offload/m3-distributed-quant-smoke/$RUN_ID"
+SESSION="m3-ddp-quant-${RUN_ID}"
+test ! -e "$RESULT_ROOT"
+test ! -e "$LOG_ROOT"
+test ! -e "$OFFLOAD_ROOT"
+mkdir -p "$LOG_ROOT"
+git rev-parse HEAD >"$LOG_ROOT/expected_git_commit.txt"
+
+tmux new-session -d -s "$SESSION" \
+  "cd '$PWD'; rc=0; RUN_ID='$RUN_ID' RESULT_ROOT='$RESULT_ROOT' LOG_ROOT='$LOG_ROOT' OFFLOAD_ROOT='$OFFLOAD_ROOT' bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh >'$LOG_ROOT/controller.log' 2>&1 || rc=\$?; printf '%s\n' \"\$rc\" >'$LOG_ROOT/controller.rc'"
+
+printf 'RUN_ID=%s\nRESULT_ROOT=%s\nLOG_ROOT=%s\nOFFLOAD_ROOT=%s\nSESSION=%s\n' \
+  "$RUN_ID" "$RESULT_ROOT" "$LOG_ROOT" "$OFFLOAD_ROOT" "$SESSION" \
+  | tee "/tmp/${RUN_ID}-locations.txt"
+```
+
+### r5 evidence interpretation
+
+- Expected healthy-load evidence: no post-load `linearize_moe` progress and no
+  warning that the MoE is being linearized after loading; calibration partition
+  or later native quantization stages become reachable.
+- Failure evidence: preserve the first rank-local Python exception before any
+  later NCCL timeout. Report `/dev/shm`, `MemAvailable`, source-rank RSS, last
+  completed load stage, and whether the load-time mapping test passed.
+- Keep every resource, recipe, sample, layer, timeout, evidence-only, and
+  sequential-launch input unchanged from r4. Do not retry or patch dynamically.
+- After both arms reach terminal state, use the existing aggregation/return
+  contract, commit and push the evidence, set this packet to
+  `RETURNED_FOR_ANALYSIS`, and stop. No additional retry is authorized.

@@ -19,8 +19,33 @@ them.**
 ### Approved Phase 1 design (2026-07-15)
 
 Active execution packet: `M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md`, revision
-`2026-07-15-r1`. It supersedes the informal launch instructions in this plan;
+`2026-07-15-r5`. It supersedes the informal launch instructions in this plan;
 the analysis and rationale here remain current.
+
+### What was missing despite built-in parallelization
+
+The AWQ/GPTQ parallel algorithms were already implemented. The required work is
+integration and model compatibility, not a new quantizer:
+
+- `pipeline.run` did not initialize compressed-tensors distributed state, so a
+  `torchrun` launch alone left the distributed branches inactive.
+- The configured calibration dataset needed deterministic rank-local slicing;
+  the inherited sampler path could index the unsliced dataset and overlap work.
+- Multi-rank metrics, metadata, completion, and evidence writes needed ownership
+  rules, while collective checkpoint operations still had to remain collective.
+- The cluster needs an `srun`-owned persistent controller, resource preflights,
+  and partial-layer evidence-only safety.
+- MiniMax-M3's unusually large composite VL/MoE load exposed three upstream
+  integration gaps: a composite-config constructor keyword, an insufficient
+  collective timeout during asymmetric loading, and post-load fused-expert
+  linearization that duplicated shared storage. Revision r5 fixes the last item
+  through llm-compressor's existing load-conversion registry, not a custom
+  loader.
+
+The earlier expert-scatter and expert-parallel implementation was unnecessary;
+it remains shelved. The remaining code should continue to be judged as the
+minimum adapter needed to reach and verify the existing native quantization
+paths.
 
 Phase 1 is an integration and evidence task, not a new quantization algorithm.
 It must extend the existing `pipeline.run` path in the same way as the repository's

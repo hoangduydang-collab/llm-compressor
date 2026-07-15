@@ -52,5 +52,5 @@ gates:
   max_task_drop: 0.02
   min_macro_recovery: 0.98
   max_conditional_regression: 0.05
-  max_perplexity_increase: 0.10
+  max_perplexity_increase: null
   max_degeneration_failures: 0

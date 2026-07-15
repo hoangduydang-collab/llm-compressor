@@ -61,7 +61,7 @@ class GateThresholds:
     max_task_drop: float
     min_macro_recovery: float
     max_conditional_regression: float
-    max_perplexity_increase: float
+    max_perplexity_increase: float | None
     max_degeneration_failures: int
 
 
@@ -219,7 +219,11 @@ def load_matrix(path: str | Path) -> MatrixSpec:
             float(gates_raw["max_task_drop"]),
             float(gates_raw["min_macro_recovery"]),
             float(gates_raw["max_conditional_regression"]),
-            float(gates_raw["max_perplexity_increase"]),
+            (
+                float(gates_raw["max_perplexity_increase"])
+                if gates_raw.get("max_perplexity_increase") is not None
+                else None
+            ),
             int(gates_raw["max_degeneration_failures"]),
         ),
     )
@@ -428,25 +432,27 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
         evidence = reported_models.get(model.label)
         if not isinstance(evidence, dict):
             continue
-        probe = evidence.get("probe") or {}
-        smoke_tokens = int(probe.get("tokens", 0))
-        smoke_elapsed_seconds = float(probe.get("elapsed_seconds", 0.0))
-        if smoke_tokens > 0 and smoke_elapsed_seconds > 0:
-            projection = project_probe_overhead(
-                smoke_tokens=smoke_tokens,
-                smoke_elapsed_seconds=smoke_elapsed_seconds,
-                production_tokens=spec.probe.total_tokens,
-                budget_seconds=spec.probe.max_overhead_seconds,
-            )
-        else:
-            projection = {
-                "smoke_tokens": smoke_tokens,
-                "smoke_elapsed_seconds": smoke_elapsed_seconds,
-                "production_tokens": spec.probe.total_tokens,
-                "budget_seconds": spec.probe.max_overhead_seconds,
-                "within_budget": False,
-                "reason": "missing positive smoke probe timing",
-            }
+        projection = None
+        if spec.probe.enabled:
+            probe = evidence.get("probe") or {}
+            smoke_tokens = int(probe.get("tokens", 0))
+            smoke_elapsed_seconds = float(probe.get("elapsed_seconds", 0.0))
+            if smoke_tokens > 0 and smoke_elapsed_seconds > 0:
+                projection = project_probe_overhead(
+                    smoke_tokens=smoke_tokens,
+                    smoke_elapsed_seconds=smoke_elapsed_seconds,
+                    production_tokens=spec.probe.total_tokens,
+                    budget_seconds=spec.probe.max_overhead_seconds,
+                )
+            else:
+                projection = {
+                    "smoke_tokens": smoke_tokens,
+                    "smoke_elapsed_seconds": smoke_elapsed_seconds,
+                    "production_tokens": spec.probe.total_tokens,
+                    "budget_seconds": spec.probe.max_overhead_seconds,
+                    "within_budget": False,
+                    "reason": "missing positive smoke probe timing",
+                }
         checks = {
             "infrastructure": evidence.get("infrastructure_ok") is True,
             "artifacts": evidence.get("artifacts_valid") is True,
@@ -458,8 +464,9 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
             "periodic_loops": int(evidence.get("periodic_loop_count", 0)) == 0,
             "distributed_world_size": int(evidence.get("distributed_world_size", 0))
             == model.tensor_parallel_size * model.pipeline_parallel_size,
-            "probe_budget": projection["within_budget"],
         }
+        if projection is not None:
+            checks["probe_budget"] = projection["within_budget"]
         results[model.label] = {
             "passed": all(checks.values()),
             "checks": checks,
@@ -488,6 +495,7 @@ def _validate_arm_manifest(root_manifest: dict, arm_manifest: dict) -> None:
         ("eval_config_sha256", "eval config"),
         ("tokenizer_sha256", "tokenizer"),
         ("chat_template_sha256", "chat template"),
+        ("harness_contract_sha256", "harness contract"),
     )
     for field, label in fields:
         if arm_manifest.get(field) != root_manifest.get(field):
@@ -497,7 +505,38 @@ def _validate_arm_manifest(root_manifest: dict, arm_manifest: dict) -> None:
             )
 
 
-def _merge_model_arms(root: Path, model: str, arms: list[Path]) -> Path:
+def _validate_repeated_grid(
+    task: str,
+    rows: list[dict],
+    *,
+    expected_seeds: list[int],
+    expected_questions: int | None,
+) -> None:
+    by_question: dict[object, set[int]] = {}
+    for row in rows:
+        question = row.get("sample_uid")
+        generation_seed = row.get("generation_seed")
+        if question is None or generation_seed is None:
+            raise ValueError(f"{task} repeated sample is missing question or seed")
+        by_question.setdefault(question, set()).add(int(generation_seed))
+    expected = set(expected_seeds)
+    if any(seeds != expected for seeds in by_question.values()):
+        raise ValueError(f"{task} repeated seed grid is incomplete or mismatched")
+    if expected_questions is not None and len(by_question) != expected_questions:
+        raise ValueError(
+            f"{task} expected {expected_questions} questions, "
+            f"received {len(by_question)}"
+        )
+
+
+def _merge_model_arms(
+    root: Path,
+    model: str,
+    arms: list[Path],
+    *,
+    generation_seeds: list[int] | None = None,
+    expected_question_counts: dict[str, int] | None = None,
+) -> Path:
     destination = root / "merged" / model
     samples_destination = destination / "samples"
     samples_destination.mkdir(parents=True, exist_ok=True)
@@ -515,12 +554,14 @@ def _merge_model_arms(root: Path, model: str, arms: list[Path]) -> Path:
             task = sample_path.stem
             by_uid = samples.setdefault(task, {})
             for row in _read_jsonl(sample_path):
-                uid = row.get("sample_uid")
-                if not uid:
-                    raise ValueError(f"sample without stable UID in {sample_path}")
-                if uid in by_uid and by_uid[uid] != row:
-                    raise ValueError(f"conflicting duplicate sample {uid} in {task}")
-                by_uid[uid] = row
+                identity = row.get("attempt_uid") or row.get("sample_uid")
+                if not identity:
+                    raise ValueError(f"sample without stable identity in {sample_path}")
+                if identity in by_uid and by_uid[identity] != row:
+                    raise ValueError(
+                        f"conflicting duplicate sample {identity} in {task}"
+                    )
+                by_uid[identity] = row
         health_dir = arm / "generation_health"
         if health_dir.is_dir():
             for health_path in health_dir.glob("*.json"):
@@ -535,8 +576,43 @@ def _merge_model_arms(root: Path, model: str, arms: list[Path]) -> Path:
                 raise ValueError(f"multiple distributional probes for {model}")
             distributional = probe
 
+    if generation_seeds and expected_question_counts:
+        expected_tasks = set(expected_question_counts)
+        missing_samples = sorted(expected_tasks - set(samples))
+        missing_health = sorted(expected_tasks - set(health))
+        if missing_samples:
+            raise ValueError(
+                f"{model} repeated run is missing sample tasks: {missing_samples}"
+            )
+        if missing_health:
+            raise ValueError(
+                f"{model} repeated run is missing health tasks: {missing_health}"
+            )
+        required_health = {
+            "missing_count",
+            "empty_count",
+            "answer_extraction_failure_count",
+            "length_cap_hit_count",
+            "periodic_loop_count",
+            "nonfinite_metric_count",
+            "reasoning_failure_count",
+        }
+        for task in expected_tasks:
+            absent = sorted(required_health - set(health[task]))
+            if absent:
+                raise ValueError(
+                    f"{model}/{task} health evidence is missing fields: {absent}"
+                )
+
     _write_json(destination / "aggregate.json", aggregate)
     for task, by_uid in samples.items():
+        if generation_seeds:
+            _validate_repeated_grid(
+                task,
+                list(by_uid.values()),
+                expected_seeds=generation_seeds,
+                expected_questions=(expected_question_counts or {}).get(task),
+            )
         output = samples_destination / f"{task}.jsonl"
         with output.open("w", encoding="utf-8") as handle:
             for uid in sorted(by_uid):
@@ -549,8 +625,15 @@ def _merge_model_arms(root: Path, model: str, arms: list[Path]) -> Path:
 
 def _degeneration_failures(health: dict[str, dict]) -> int:
     return sum(
-        int(task.get("empty_count", 0))
-        + int(task.get("periodic_loop_count", 0))
+        int(
+            task.get(
+                "reasoning_failure_count",
+                int(task.get("empty_count", 0))
+                + int(task.get("answer_extraction_failure_count", 0))
+                + int(task.get("length_cap_hit_count", 0))
+                + int(task.get("periodic_loop_count", 0)),
+            )
+        )
         + int(task.get("nonfinite_metric_count", 0))
         for task in health.values()
     )
@@ -599,8 +682,19 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
         _write_json(root / "matrix.json", result)
         return result
 
+    generation_seeds = [int(seed) for seed in manifest.get("generation_seeds") or []]
+    expected_question_counts = {
+        str(task): int(count)
+        for task, count in (manifest.get("expected_question_counts") or {}).items()
+    }
     merged = {
-        model: _merge_model_arms(root, model, arms)
+        model: _merge_model_arms(
+            root,
+            model,
+            arms,
+            generation_seeds=generation_seeds,
+            expected_question_counts=expected_question_counts,
+        )
         for model, arms in arms_by_model.items()
     }
     baseline_label = str(manifest["baseline_label"])
@@ -623,10 +717,20 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
             comparison["distributional"] = compare_distributional_records(
                 _read_jsonl(ref_probe), _read_jsonl(candidate_probe)
             )
+        baseline_health = _read_json(baseline / "generation_health.json")
         candidate_health = _read_json(directory / "generation_health.json")
+        baseline_failures = _degeneration_failures(baseline_health)
+        candidate_failures = _degeneration_failures(candidate_health)
         comparison["generation_health"] = {
-            "tasks": candidate_health,
-            "degeneration_failures": _degeneration_failures(candidate_health),
+            "baseline": {
+                "tasks": baseline_health,
+                "degeneration_failures": baseline_failures,
+            },
+            "candidate": {
+                "tasks": candidate_health,
+                "degeneration_failures": candidate_failures,
+            },
+            "degeneration_failures": baseline_failures + candidate_failures,
         }
         _write_json(comparison_dir / "compare.json", comparison)
         comparisons[model] = comparison
@@ -702,18 +806,19 @@ def evaluate_gates(
                 "passed": conditional_regression is not None
                 and conditional_regression <= thresholds.max_conditional_regression,
             },
-            "perplexity_increase": {
-                "value": perplexity_increase,
-                "threshold": thresholds.max_perplexity_increase,
-                "passed": perplexity_increase is not None
-                and perplexity_increase <= thresholds.max_perplexity_increase,
-            },
             "degeneration_failures": {
                 "value": degeneration,
                 "threshold": thresholds.max_degeneration_failures,
                 "passed": degeneration <= thresholds.max_degeneration_failures,
             },
         }
+        if thresholds.max_perplexity_increase is not None:
+            checks["perplexity_increase"] = {
+                "value": perplexity_increase,
+                "threshold": thresholds.max_perplexity_increase,
+                "passed": perplexity_increase is not None
+                and perplexity_increase <= thresholds.max_perplexity_increase,
+            }
         checks["quality_ok"] = all(check["passed"] for check in checks.values())
         model_results[model] = checks
     return {
@@ -746,9 +851,9 @@ def build_launch_plan(
                 "pipeline_parallel_size": model.pipeline_parallel_size,
                 "distributed_executor_backend": model.distributed_executor_backend,
                 "tasks": list(all_tasks),
-                "distributional_probe": True,
+                "distributional_probe": spec.probe.enabled,
                 "samples_per_task": 2,
-                "probe_tokens": 2048,
+                "probe_tokens": 2048 if spec.probe.enabled else 0,
             }
             for model in spec.models
         ]

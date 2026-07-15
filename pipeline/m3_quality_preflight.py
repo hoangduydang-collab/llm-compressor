@@ -454,31 +454,34 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
             f"MiniMax-M3 source: {', '.join(mismatched)}"
         )
     tokenizer_sha = reference_tokenizer["tokenizer_sha256"]
-    dataset_meta = {
-        "id": "Salesforce/wikitext",
-        "config": "wikitext-2-raw-v1",
-        "split": "test",
-        "revision": None,
-        "text_column": "text",
-    }
-    dataset = load_dataset(
-        dataset_meta["id"], dataset_meta["config"], split=dataset_meta["split"]
-    )
-    texts = dataset[dataset_meta["text_column"]]
-    write_probe_corpus(
-        out / "smoke_probe_corpus.json",
-        build_probe_corpus(texts, tokenizer, seed=42, buckets={"short": (1, 2048)}),
-        tokenizer_sha256=tokenizer_sha,
-        dataset=dataset_meta,
-        seed=42,
-    )
-    write_probe_corpus(
-        out / "production_probe_corpus.json",
-        build_probe_corpus(texts, tokenizer, seed=42),
-        tokenizer_sha256=tokenizer_sha,
-        dataset=dataset_meta,
-        seed=42,
-    )
+    if spec.probe.enabled:
+        dataset_meta = {
+            "id": "Salesforce/wikitext",
+            "config": "wikitext-2-raw-v1",
+            "split": "test",
+            "revision": None,
+            "text_column": "text",
+        }
+        dataset = load_dataset(
+            dataset_meta["id"],
+            dataset_meta["config"],
+            split=dataset_meta["split"],
+        )
+        texts = dataset[dataset_meta["text_column"]]
+        write_probe_corpus(
+            out / "smoke_probe_corpus.json",
+            build_probe_corpus(texts, tokenizer, seed=42, buckets={"short": (1, 2048)}),
+            tokenizer_sha256=tokenizer_sha,
+            dataset=dataset_meta,
+            seed=42,
+        )
+        write_probe_corpus(
+            out / "production_probe_corpus.json",
+            build_probe_corpus(texts, tokenizer, seed=42),
+            tokenizer_sha256=tokenizer_sha,
+            dataset=dataset_meta,
+            seed=42,
+        )
 
     baseline_bytes = None
     diagnostics = {}
@@ -490,6 +493,11 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         _write(out / "checkpoint_diagnostics" / f"{model.label}.json", report)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     production_manifest = manifests["production"]
+    production_samples = json.loads(production_manifest.read_text(encoding="utf-8"))
+    expected_question_counts = {
+        task: sum(len(indices) for indices in leaves.values())
+        for task, leaves in production_samples["tasks"].items()
+    }
     run_manifest = {
         "schema_version": 1,
         "run_id": run_root.name,
@@ -505,6 +513,8 @@ def run_preflight(matrix_path: Path, run_root: Path) -> dict:
         "chat_template_sha256": reference_tokenizer["chat_template_sha256"],
         "rendered_prompt_sha256": reference_tokenizer["rendered_prompt_sha256"],
         "harness_contract_sha256": _sha(harness_contract_path),
+        "generation_seeds": list(raw["eval"].get("generation_seeds") or []),
+        "expected_question_counts": expected_question_counts,
         "resolved_tasks": resolved,
         "lm_eval_version": revision,
         "matrix_sha256": _sha(matrix_path),

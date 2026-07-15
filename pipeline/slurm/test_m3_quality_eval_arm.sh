@@ -50,18 +50,20 @@ if ((nodes > 1)); then
   placement_monitor_pid=$!
 fi
 if ((rank != 0)); then exit 0; fi
-python - "$ARM/arm_manifest.json" "$RUN_ROOT" "$LABEL" "$SHARD" "$SAMPLES_MANIFEST" "$EVAL_CONFIG" <<'PYMAN'
+python - "$ARM/arm_manifest.json" "$RUN_ROOT" "$LABEL" "$SHARD" "$SAMPLES_MANIFEST" "$EVAL_CONFIG" "$TASKS" <<'PYMAN'
 import hashlib,json,os,subprocess,sys
-out,root,label,shard,samples,config=sys.argv[1:]
+out,root,label,shard,samples,config,tasks=sys.argv[1:]
 def sha(p): return hashlib.sha256(open(p,'rb').read()).hexdigest()
 run=json.load(open(root+'/run_manifest.json'))
-data={k:run[k] for k in ('run_id','git_commit','tokenizer_sha256','chat_template_sha256') if k in run}
+data={k:run[k] for k in ('run_id','git_commit','tokenizer_sha256','chat_template_sha256','harness_contract_sha256') if k in run}
 data.update(
     schema_version=1,
     model_label=label,
     shard=shard,
     sample_manifest_sha256=sha(samples),
     eval_config_sha256=sha(config),
+    generation_seeds=run.get('generation_seeds',[]),
+    selected_tasks=[task for task in tasks.split(',') if task],
     slurm_job_id=os.environ.get("SLURM_JOB_ID"),
     slurm_step_id=os.environ.get("SLURM_STEP_ID"),
     slurm_node_name=os.environ.get("SLURMD_NODENAME"),

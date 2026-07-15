@@ -113,6 +113,22 @@ def test_reasoning_r4_matrix_has_four_arms_and_no_probe(tmp_path):
     assert plan["max_concurrent_nodes"] == 4
     assert plan["arm_time_limit"] == "24:00:00"
     assert all(arm["distributional_probe"] is False for arm in plan["arms"])
+    assert spec.gates.max_perplexity_increase is None
+
+
+def test_reasoning_r4_smoke_omits_disabled_probe_budget():
+    spec = load_matrix(REASONING_R4_MATRIX)
+    report = _passing_smoke_report(spec)
+    for evidence in report["models"].values():
+        evidence["tasks_scored"] = 4
+        evidence.pop("probe")
+
+    result = validate_smoke_gate(spec, report)
+
+    assert result["ready_for_production"] is True
+    assert all(
+        "probe_budget" not in model["checks"] for model in result["models"].values()
+    )
 
 
 def _write_matrix_variant(tmp_path, **updates):
@@ -529,6 +545,113 @@ def test_merge_builds_pairwise_self_consistent_comparison(tmp_path):
     assert (tmp_path / "merged" / "quant" / "samples" / "gpqa_diamond.jsonl").is_file()
 
 
+def _write_repeated_arm(root: Path, model: str, *, missing_last=False) -> None:
+    arm = root / "models" / model / "shards" / "gpqa"
+    (arm / "samples").mkdir(parents=True)
+    manifest = json.loads((root / "run_manifest.json").read_text())
+    (arm / "arm_manifest.json").write_text(
+        json.dumps(
+            {
+                **{
+                    field: manifest[field]
+                    for field in (
+                        "run_id",
+                        "git_commit",
+                        "sample_manifest_sha256",
+                        "eval_config_sha256",
+                        "tokenizer_sha256",
+                        "chat_template_sha256",
+                        "harness_contract_sha256",
+                    )
+                },
+                "model_label": model,
+                "shard": "gpqa",
+            }
+        ),
+        encoding="utf-8",
+    )
+    rows = [
+        {
+            "sample_uid": question,
+            "attempt_uid": f"{question}:{seed}",
+            "generation_seed": seed,
+            "correct": 1,
+        }
+        for question in ("q1", "q2")
+        for seed in (42, 1234, 4158)
+    ]
+    if missing_last:
+        rows.pop()
+    (arm / "samples" / "gpqa_diamond_cot_zeroshot.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    (arm / "aggregate.json").write_text(
+        json.dumps({"gpqa_diamond_cot_zeroshot": {"exact_match": 1.0}}),
+        encoding="utf-8",
+    )
+    health = arm / "generation_health"
+    health.mkdir()
+    (health / "gpqa_diamond_cot_zeroshot.json").write_text(
+        json.dumps(
+            {
+                "missing_count": 0,
+                "empty_count": 0,
+                "answer_extraction_failure_count": 0,
+                "length_cap_hit_count": 0,
+                "periodic_loop_count": 0,
+                "nonfinite_metric_count": 0,
+                "reasoning_failure_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (arm / "return_code.txt").write_text("0\n", encoding="utf-8")
+    (arm / "arm_complete.json").write_text(
+        json.dumps({"complete": True}), encoding="utf-8"
+    )
+
+
+def _prepare_repeated_run(root: Path) -> None:
+    _write_run_manifest(
+        root,
+        expected_arms=[
+            {"model_label": model, "shard": "gpqa"} for model in ("bf16", "quant")
+        ],
+    )
+    manifest_path = root / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.update(
+        harness_contract_sha256="harness",
+        generation_seeds=[42, 1234, 4158],
+        expected_question_counts={"gpqa_diamond_cot_zeroshot": 2},
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_merge_preserves_three_attempts_per_question(tmp_path):
+    _prepare_repeated_run(tmp_path)
+    for model in ("bf16", "quant"):
+        _write_repeated_arm(tmp_path, model)
+
+    result = validate_and_merge(tmp_path)
+    sample_file = tmp_path / "merged/quant/samples/gpqa_diamond_cot_zeroshot.jsonl"
+    rows = [json.loads(line) for line in sample_file.read_text().splitlines()]
+
+    assert result["infrastructure_ok"] is True
+    assert len(rows) == 6
+    assert len({row["sample_uid"] for row in rows}) == 2
+    assert len({row["attempt_uid"] for row in rows}) == 6
+
+
+def test_merge_rejects_incomplete_repeated_seed_grid(tmp_path):
+    _prepare_repeated_run(tmp_path)
+    _write_repeated_arm(tmp_path, "bf16")
+    _write_repeated_arm(tmp_path, "quant", missing_last=True)
+
+    with pytest.raises(ValueError, match="seed grid"):
+        validate_and_merge(tmp_path)
+
+
 def test_merge_rejects_false_completion_marker(tmp_path):
     _write_run_manifest(tmp_path)
     _write_arm(
@@ -622,6 +745,38 @@ def test_quality_failure_is_distinct_from_infrastructure_failure():
     assert gates["infrastructure_ok"] is True
     assert gates["quality_ok"] is False
     assert gates["models"]["quant"]["max_task_drop"]["passed"] is False
+
+
+def test_r4_gate_omits_distributional_and_rejects_either_model_health():
+    thresholds = GateThresholds(0.02, 0.98, 0.05, None, 0)
+
+    def matrix(failures):
+        return {
+            "infrastructure_ok": True,
+            "comparisons": {
+                "quant": {
+                    "tasks": {
+                        "gpqa": {
+                            "n_paired": 300,
+                            "delta": 0.0,
+                            "score_recovery_ratio": 1.0,
+                            "regressions_a_correct_b_wrong": 0,
+                            "both_correct": 100,
+                        }
+                    },
+                    "generation_health": {
+                        "degeneration_failures": failures,
+                    },
+                }
+            },
+        }
+
+    passing = evaluate_gates(matrix(0), thresholds)
+    failing = evaluate_gates(matrix(1), thresholds)
+
+    assert "perplexity_increase" not in passing["models"]["quant"]
+    assert passing["quality_ok"] is True
+    assert failing["quality_ok"] is False
 
 
 def test_matrix_report_surfaces_quantization_metrics_and_gates():

@@ -1,4 +1,5 @@
 """CPU contract tests for the srun quality launcher."""
+
 from __future__ import annotations
 
 import json
@@ -7,11 +8,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-
 SCRIPT = Path("pipeline/slurm/run_m3_quality_eval_srun.sh")
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
 GROUPED_MATRIX = Path(
     "pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml"
+)
+REASONING_R4_MATRIX = Path(
+    "pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml"
 )
 
 
@@ -47,8 +50,13 @@ def _workspace_tmp(tmp_path: Path, request) -> Path:
 def test_smoke_dry_run_has_ray_preflight_and_three_parallel_arms(tmp_path, request):
     run_root = _workspace_tmp(tmp_path, request)
     result = _run(
-        "--profile", "smoke", "--matrix", str(MATRIX),
-        "--run-root", _bash_path(run_root), "--dry-run",
+        "--profile",
+        "smoke",
+        "--matrix",
+        str(MATRIX),
+        "--run-root",
+        _bash_path(run_root),
+        "--dry-run",
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("test_m3_ray_topology.sh") == 1
@@ -60,16 +68,27 @@ def test_smoke_dry_run_has_ray_preflight_and_three_parallel_arms(tmp_path, reque
 def test_production_dry_run_requires_gate_and_has_six_arms(tmp_path, request):
     run_root = _workspace_tmp(tmp_path, request)
     failed = _run(
-        "--profile", "production", "--matrix", str(MATRIX),
-        "--run-root", _bash_path(run_root), "--dry-run",
+        "--profile",
+        "production",
+        "--matrix",
+        str(MATRIX),
+        "--run-root",
+        _bash_path(run_root),
+        "--dry-run",
     )
     assert failed.returncode != 0
     gate = run_root / "smoke_gate.json"
     gate.write_text(json.dumps({"ready_for_production": True}))
     result = _run(
-        "--profile", "production", "--matrix", str(MATRIX),
-        "--run-root", _bash_path(run_root),
-        "--smoke-gate", _bash_path(gate), "--dry-run",
+        "--profile",
+        "production",
+        "--matrix",
+        str(MATRIX),
+        "--run-root",
+        _bash_path(run_root),
+        "--smoke-gate",
+        _bash_path(gate),
+        "--dry-run",
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("test_m3_quality_eval_arm.sh") == 6
@@ -88,9 +107,15 @@ def test_grouped_quality_dry_run_uses_six_independent_srun_arms_and_matrix_time(
     gate.write_text(json.dumps({"ready_for_production": True}))
 
     result = _run(
-        "--profile", "production", "--matrix", str(GROUPED_MATRIX),
-        "--run-root", _bash_path(run_root),
-        "--smoke-gate", _bash_path(gate), "--dry-run",
+        "--profile",
+        "production",
+        "--matrix",
+        str(GROUPED_MATRIX),
+        "--run-root",
+        _bash_path(run_root),
+        "--smoke-gate",
+        _bash_path(gate),
+        "--dry-run",
     )
 
     assert result.returncode == 0, result.stderr
@@ -117,15 +142,70 @@ def test_grouped_quality_rejects_time_override_that_conflicts_with_matrix(
 
     result = subprocess.run(
         [
-            "bash", str(SCRIPT), "--profile", "production",
-            "--matrix", str(GROUPED_MATRIX), "--run-root", _bash_path(run_root),
-            "--smoke-gate", _bash_path(gate), "--dry-run",
+            "bash",
+            str(SCRIPT),
+            "--profile",
+            "production",
+            "--matrix",
+            str(GROUPED_MATRIX),
+            "--run-root",
+            _bash_path(run_root),
+            "--smoke-gate",
+            _bash_path(gate),
+            "--dry-run",
         ],
-        text=True, capture_output=True, check=False, env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
     )
 
     assert result.returncode != 0
     assert "TIME_LIMIT conflicts with matrix arm_time_limit" in result.stderr
+
+
+def test_r4_dry_run_emits_four_top_level_srun_arms(tmp_path, request):
+    run_root = _workspace_tmp(tmp_path, request)
+    gate = run_root / "smoke_gate.json"
+    gate.write_text(json.dumps({"ready_for_production": True}))
+    preflight = run_root / "preflight"
+    preflight.mkdir()
+    (preflight / "resolved_tasks.json").write_text(
+        json.dumps(
+            {
+                "aliases": {
+                    "gpqa_diamond": "gpqa_diamond_cot_zeroshot",
+                    "mmlu_pro": "mmlu_pro",
+                    "gsm8k": "gsm8k_cot",
+                    "aime_2025": "aime25",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(
+        "--profile",
+        "production",
+        "--matrix",
+        str(REASONING_R4_MATRIX),
+        "--run-root",
+        _bash_path(run_root),
+        "--smoke-gate",
+        _bash_path(gate),
+        "--dry-run",
+    )
+
+    assert result.returncode == 0, result.stderr
+    commands = [line for line in result.stdout.splitlines() if line.startswith("srun ")]
+    assert len(commands) == 4
+    assert all("--nodes=1" in line and "--gpus-per-node=8" in line for line in commands)
+    assert all("--time 24:00:00" in line for line in commands)
+    assert all("--run-probe 0" in line for line in commands)
+    assert sum("--tasks gpqa_diamond_cot_zeroshot" in line for line in commands) == 2
+    assert sum(r"--tasks mmlu_pro\,gsm8k_cot\,aime25" in line for line in commands) == 2
+    assert "sbatch" not in result.stdout
+    assert "total_nodes=4" in result.stdout
 
 
 def test_runner_scripts_are_valid_bash():
@@ -149,29 +229,28 @@ def test_bf16_arm_requires_ray_gate_before_eval():
 
 def test_smoke_probe_runs_before_eval_and_failure_skips_eval():
     arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
-    probe = 'python -m pipeline.m3_distributional_probe run'
+    probe = "python -m pipeline.m3_distributional_probe run"
     evaluate = '"${eval_cmd[@]}"'
 
     assert arm.index(probe) < arm.index(evaluate)
     assert 'if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then' in arm
     assert (
-        'if ((rc == 0)); then\n  if [[ -n "$TASKS" ]]; then\n'
-        '    "${eval_cmd[@]}"'
+        'if ((rc == 0)); then\n  if [[ -n "$TASKS" ]]; then\n    "${eval_cmd[@]}"'
     ) in arm
-    assert 'if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then' in arm
+    assert "if ((rc == 0 && RUN_PROBE == 1 && probe_ran == 0)); then" in arm
 
 
 def test_ray_placement_group_diagnostic_is_bounded_and_captures_state():
     script = Path("pipeline/slurm/test_m3_ray_placement_group.sh").read_text()
 
-    assert 'EXPECTED_BUNDLES=16' in script
-    assert 'TIMEOUT_SECONDS=120' in script
+    assert "EXPECTED_BUNDLES=16" in script
+    assert "TIMEOUT_SECONDS=120" in script
     assert 'placement_group([{"GPU": 1}] * expected' in script
-    assert 'ray.get(group.ready(), timeout=timeout)' in script
-    assert 'ray list placement-groups' in script
-    assert 'ray-logs-rank-$rank.tar.gz' in script
-    assert 'driver-done' in script
-    assert 'ray stop --force' in script
+    assert "ray.get(group.ready(), timeout=timeout)" in script
+    assert "ray list placement-groups" in script
+    assert "ray-logs-rank-$rank.tar.gz" in script
+    assert "driver-done" in script
+    assert "ray stop --force" in script
 
 
 def test_distributional_probe_receives_distributed_backend():
@@ -199,21 +278,15 @@ def test_smoke_evidence_counts_tp_times_pp_workers():
     assert "'distributed_world_size':tp * pp" in arm
 
 
-def test_probe_only_arm_skips_evalsuite_and_writes_empty_aggregate(
-    tmp_path, request
-):
+def test_probe_only_arm_skips_evalsuite_and_writes_empty_aggregate(tmp_path, request):
     work_dir = _workspace_tmp(tmp_path, request)
     run_root = work_dir / "run"
     preflight = run_root / "preflight"
     preflight.mkdir(parents=True)
     (run_root / "run_manifest.json").write_text("{}", encoding="utf-8")
-    (preflight / "production_sample_manifest.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    (preflight / "production_sample_manifest.json").write_text("{}", encoding="utf-8")
     (preflight / "resolved_eval_config.yaml").write_text("{}", encoding="utf-8")
-    (preflight / "production_probe_corpus.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    (preflight / "production_probe_corpus.json").write_text("{}", encoding="utf-8")
 
     fake_bin = work_dir / "bin"
     fake_bin.mkdir()
@@ -223,7 +296,9 @@ def test_probe_only_arm_skips_evalsuite_and_writes_empty_aggregate(
 set -euo pipefail
 if [[ "$1" == "-" ]]; then
   case "$2" in
-    *arm_manifest.json) printf '{"model_label":"gptq","shard":"distributional_probe"}\n' >"$2" ;;
+    *arm_manifest.json)
+      printf '{"model_label":"gptq","shard":"distributional_probe"}\n' >"$2"
+      ;;
     *arm_complete.json)
       [[ "$3" == "0" ]] && complete=true || complete=false
       printf '{"complete":%s}\n' "$complete" >"$2"

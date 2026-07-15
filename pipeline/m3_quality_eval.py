@@ -90,9 +90,7 @@ class MatrixSpec:
     @property
     def expected_arms(self) -> tuple[tuple[str, str], ...]:
         return tuple(
-            (model.label, shard.name)
-            for model in self.models
-            for shard in self.shards
+            (model.label, shard.name) for model in self.models for shard in self.shards
         )
 
     @property
@@ -227,15 +225,26 @@ def load_matrix(path: str | Path) -> MatrixSpec:
     )
 
 
-
 def validate_reasoning_config(raw: dict[str, Any]) -> None:
     """Reject MiniMax/lm-eval reasoning combinations before GPU allocation."""
     eval_raw = raw.get("eval") or {}
+    generation_seeds = eval_raw.get("generation_seeds") or []
+    if generation_seeds:
+        if eval_raw.get("enable_thinking") is not True:
+            raise ValueError("r4 reasoning evaluation requires enable_thinking=true")
+        if generation_seeds != [42, 1234, 4158]:
+            raise ValueError(
+                "r4 reasoning evaluation requires generation_seeds [42, 1234, 4158]"
+            )
+        if eval_raw.get("think_end_token") != "</mm:think>":
+            raise ValueError(
+                "MiniMax-M3 reasoning requires think_end_token='</mm:think>'"
+            )
+        return
     if eval_raw.get("enable_thinking") is True:
         raise ValueError(
-            "lm-eval 0.4.12 disallows enable_thinking=True for the mixed "
-            "multiple-choice/loglikelihood and generative MiniMax suite; leave "
-            "it unset to use the chat template's adaptive mode"
+            "legacy MiniMax-M3 evaluation requires adaptive mode; leave "
+            "enable_thinking unset"
         )
     if eval_raw.get("think_end_token") != "</mm:think>":
         raise ValueError(
@@ -366,8 +375,7 @@ def build_profile_sample_manifests(
     outputs = {}
     for profile, tasks in (("smoke", smoke_tasks), ("production", production_tasks)):
         installed_leaf_sizes = {
-            resolved_tasks[canonical]: sizes
-            for canonical, sizes in leaf_sizes.items()
+            resolved_tasks[canonical]: sizes for canonical, sizes in leaf_sizes.items()
         }
         validate_sample_indices(tasks, installed_leaf_sizes)
         data: dict[str, Any] = {
@@ -404,7 +412,6 @@ def project_probe_overhead(
         "budget_seconds": budget_seconds,
         "within_budget": projected <= budget_seconds,
     }
-
 
 
 def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, Any]:
@@ -449,9 +456,7 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
             and evidence.get("sample_manifest_sha256") == root_sample_sha,
             "empty_outputs": int(evidence.get("empty_count", 0)) == 0,
             "periodic_loops": int(evidence.get("periodic_loop_count", 0)) == 0,
-            "distributed_world_size": int(
-                evidence.get("distributed_world_size", 0)
-            )
+            "distributed_world_size": int(evidence.get("distributed_world_size", 0))
             == model.tensor_parallel_size * model.pipeline_parallel_size,
             "probe_budget": projection["within_budget"],
         }
@@ -461,8 +466,11 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
             "distributed_world_size": evidence.get("distributed_world_size"),
             "probe_projection": projection,
         }
-    ready = not missing and not extra and len(results) == len(spec.models) and all(
-        result["passed"] for result in results.values()
+    ready = (
+        not missing
+        and not extra
+        and len(results) == len(spec.models)
+        and all(result["passed"] for result in results.values())
     )
     return {
         "ready_for_production": ready,
@@ -571,13 +579,14 @@ def validate_and_merge(root: str | Path) -> dict[str, Any]:
             failures.append({"arm": f"{model}/{shard}", "return_code": "nonzero"})
             continue
         if _read_json(arm / "arm_complete.json").get("complete") is not True:
-            failures.append(
-                {"arm": f"{model}/{shard}", "arm_complete": False}
-            )
+            failures.append({"arm": f"{model}/{shard}", "arm_complete": False})
             continue
         arm_manifest = _read_json(arm / "arm_manifest.json")
         _validate_arm_manifest(manifest, arm_manifest)
-        if arm_manifest.get("model_label") != model or arm_manifest.get("shard") != shard:
+        if (
+            arm_manifest.get("model_label") != model
+            or arm_manifest.get("shard") != shard
+        ):
             raise ValueError(f"arm identity mismatch for {model}/{shard}")
         arms_by_model.setdefault(model, []).append(arm)
     if failures:
@@ -645,7 +654,9 @@ def evaluate_gates(
             for task in (comparison.get("tasks") or {}).values()
             if task.get("n_paired", 1) > 0 and task.get("kind") != "perplexity"
         ]
-        deltas = [float(task["delta"]) for task in tasks if task.get("delta") is not None]
+        deltas = [
+            float(task["delta"]) for task in tasks if task.get("delta") is not None
+        ]
         recoveries = [
             float(task["score_recovery_ratio"])
             for task in tasks
@@ -671,9 +682,7 @@ def evaluate_gates(
             float(perplexity_ratio) - 1.0 if perplexity_ratio is not None else None
         )
         degeneration = int(
-            (comparison.get("generation_health") or {}).get(
-                "degeneration_failures", 0
-            )
+            (comparison.get("generation_health") or {}).get("degeneration_failures", 0)
         )
         checks = {
             "max_task_drop": {
@@ -763,7 +772,9 @@ def build_launch_plan(
                 "tasks": list(shard.tasks),
                 "distributional_probe": shard.distributional_probe,
                 "samples_per_task": None,
-                "probe_tokens": spec.probe.total_tokens if shard.distributional_probe else 0,
+                "probe_tokens": spec.probe.total_tokens
+                if shard.distributional_probe
+                else 0,
             }
             for model in spec.models
             for shard in spec.shards
@@ -771,15 +782,11 @@ def build_launch_plan(
     else:
         raise ValueError(f"unknown launch profile {profile!r}")
     configured_parallel = (
-        spec.scheduling.max_parallel_arms
-        if profile == "production"
-        else None
+        spec.scheduling.max_parallel_arms if profile == "production" else None
     )
     max_parallel_arms = min(configured_parallel or len(arms), len(arms))
     max_concurrent_nodes = sum(
-        sorted((int(arm["nodes"]) for arm in arms), reverse=True)[
-            :max_parallel_arms
-        ]
+        sorted((int(arm["nodes"]) for arm in arms), reverse=True)[:max_parallel_arms]
     )
     return {
         "schema_version": 1,
@@ -811,7 +818,8 @@ def render_matrix_report(matrix: dict[str, Any], gates: dict[str, Any]) -> str:
         "",
         "Baseline: `" + str(matrix.get("baseline_label", "unknown")) + "`",
         "",
-        "| Model | Task | Accuracy delta | Flip rate | Conditional regression | Score recovery | Perplexity ratio | Degeneration failures | Gate |",
+        "| Model | Task | Accuracy delta | Flip rate | Conditional regression "
+        "| Score recovery | Perplexity ratio | Degeneration failures | Gate |",
         "|---|---|---:|---:|---:|---:|---:|---:|---|",
     ]
     for model, comparison in (matrix.get("comparisons") or {}).items():
@@ -821,7 +829,8 @@ def render_matrix_report(matrix: dict[str, Any], gates: dict[str, Any]) -> str:
         health = comparison.get("generation_health") or {}
         for task_name, task in tasks.items():
             lines.append(
-                "| " + " | ".join(
+                "| "
+                + " | ".join(
                     [
                         str(model),
                         str(task_name),
@@ -833,9 +842,12 @@ def render_matrix_report(matrix: dict[str, Any], gates: dict[str, Any]) -> str:
                         _fmt_metric(health.get("degeneration_failures")),
                         "PASS" if model_gate.get("quality_ok") else "FAIL",
                     ]
-                ) + " |"
+                )
+                + " |"
             )
-    lines.extend(["", "Full machine-readable evidence: `matrix.json` and `gates.json`.", ""])
+    lines.extend(
+        ["", "Full machine-readable evidence: `matrix.json` and `gates.json`.", ""]
+    )
     return "\n".join(lines)
 
 

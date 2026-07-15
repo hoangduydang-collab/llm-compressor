@@ -10,25 +10,26 @@ import yaml
 
 from pipeline.m3_quality_eval import (
     GateThresholds,
-    evaluate_gates,
-    load_matrix,
     build_exact_sample_manifest,
     build_launch_plan,
+    build_profile_sample_manifests,
+    evaluate_gates,
+    load_matrix,
     project_probe_overhead,
     render_matrix_report,
-    build_profile_sample_manifests,
     resolve_task_aliases,
+    validate_and_merge,
     validate_reasoning_config,
     validate_sample_indices,
-    validate_and_merge,
     validate_smoke_gate,
 )
-
+from pipeline.m3_quality_preflight import build_reasoning_harness_contract
 
 MATRIX = Path("pipeline/configs/minimax_m3_quality_matrix.yaml")
 TASK_ISOLATED_MATRIX = Path(
     "pipeline/configs/minimax_m3_paired_gptq_awq_task_isolated_quick.yaml"
 )
+
 REASONING_R4_MATRIX = Path(
     "pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml"
 )
@@ -42,9 +43,7 @@ def test_default_matrix_has_three_active_models_and_autoround_deferred():
         "inhouse_gptq",
         "cyankiwi_awq",
     ]
-    assert [model.label for model in spec.deferred_models] == [
-        "aquaman_autoround"
-    ]
+    assert [model.label for model in spec.deferred_models] == ["aquaman_autoround"]
     assert "OneCompression" in spec.deferred_models[0].reason
     assert [shard.name for shard in spec.shards] == ["reasoning", "broad"]
     assert len(spec.expected_arms) == 6
@@ -99,9 +98,7 @@ def test_reasoning_r4_matrix_has_four_arms_and_no_probe(tmp_path):
         ("gpqa", ("gpqa_diamond",)),
         ("reasoning_suite", ("mmlu_pro", "gsm8k", "aime_2025")),
     ]
-    assert spec.task_aliases["gpqa_diamond"] == (
-        "gpqa_diamond_cot_zeroshot",
-    )
+    assert spec.task_aliases["gpqa_diamond"] == ("gpqa_diamond_cot_zeroshot",)
     assert spec.probe.enabled is False
     assert spec.sampling["production_samples_per_task"] == 100
     assert spec.scheduling.max_parallel_arms == 4
@@ -172,15 +169,12 @@ def test_probe_projection_enforces_overhead_budget():
     assert slow["within_budget"] is False
 
 
-
 def test_task_alias_resolution_is_explicit_and_fails_missing():
     aliases = {
         "gpqa_diamond": ("gpqa_diamond", "leaderboard_gpqa"),
         "ifeval": ("ifeval", "leaderboard_ifeval"),
     }
-    assert resolve_task_aliases(
-        aliases, {"leaderboard_gpqa", "ifeval"}
-    ) == {
+    assert resolve_task_aliases(aliases, {"leaderboard_gpqa", "ifeval"}) == {
         "gpqa_diamond": "leaderboard_gpqa",
         "ifeval": "ifeval",
     }
@@ -201,7 +195,7 @@ def test_reasoning_config_uses_adaptive_minimax_mode_and_strip_token():
 
 
 def test_reasoning_config_rejects_enable_thinking_before_gpu_load():
-    with pytest.raises(ValueError, match="lm-eval 0.4.12"):
+    with pytest.raises(ValueError, match="adaptive mode"):
         validate_reasoning_config(
             {
                 "eval": {
@@ -211,6 +205,113 @@ def test_reasoning_config_rejects_enable_thinking_before_gpu_load():
                 }
             }
         )
+
+
+def test_r4_reasoning_config_requires_explicit_thinking_seeds_and_end_token():
+    valid = {
+        "eval": {
+            "enable_thinking": True,
+            "think_end_token": "</mm:think>",
+            "generation_seeds": [42, 1234, 4158],
+        }
+    }
+    validate_reasoning_config(valid)
+
+    for field, value, message in (
+        ("enable_thinking", False, "enable_thinking"),
+        ("generation_seeds", [42], "generation_seeds"),
+        ("think_end_token", "</think>", "think_end_token"),
+    ):
+        invalid = {"eval": dict(valid["eval"])}
+        invalid["eval"][field] = value
+        with pytest.raises(ValueError, match=message):
+            validate_reasoning_config(invalid)
+
+
+def _valid_reasoning_contract_inputs():
+    task_details = {
+        "gpqa_diamond": (
+            "gpqa_diamond_cot_zeroshot",
+            "2.2",
+            0,
+            "exact_match,flexible-extract",
+        ),
+        "mmlu_pro": ("mmlu_pro", "3.1", 5, "exact_match,custom-extract"),
+        "gsm8k": ("gsm8k_cot", "3.0", 8, "exact_match,strict-match"),
+        "aime_2025": ("aime25", "1.0", 0, "exact_match,none"),
+    }
+    records = {}
+    for canonical, (installed, version, shots, metric) in task_details.items():
+        records[canonical] = {
+            "canonical_name": canonical,
+            "installed_name": installed,
+            "output_type": "generate_until",
+            "task_version": version,
+            "num_fewshot": shots,
+            "metric": metric,
+            "available_metric_filters": [metric],
+            "representative_prompt_sha256": f"prompt-{canonical}",
+            "repeat_prompt_sha256": f"prompt-{canonical}",
+            "displayed_choices": ["A", "B", "C", "D"]
+            if canonical == "gpqa_diamond"
+            else None,
+            "repeat_displayed_choices": ["A", "B", "C", "D"]
+            if canonical == "gpqa_diamond"
+            else None,
+            "correct_displayed_label": "B" if canonical == "gpqa_diamond" else None,
+            "repeat_correct_displayed_label": "B"
+            if canonical == "gpqa_diamond"
+            else None,
+        }
+    return {
+        "revision": "0.4.12",
+        "task_records": records,
+        "generation_seeds": [42, 1234, 4158],
+        "gen_kwargs": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "do_sample": True,
+            "max_gen_toks": 16384,
+        },
+    }
+
+
+def test_reasoning_contract_pins_paper_grade_generation_tasks():
+    contract = build_reasoning_harness_contract(**_valid_reasoning_contract_inputs())
+
+    assert contract["valid"] is True
+    assert contract["lm_eval_version"] == "0.4.12"
+    assert contract["tasks"]["gpqa_diamond"]["task_version"] == "2.2"
+    assert contract["tasks"]["gpqa_diamond"]["output_type"] == "generate_until"
+    assert contract["tasks"]["gsm8k"]["num_fewshot"] == 8
+    assert contract["generation"]["generation_seeds"] == [42, 1234, 4158]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda values: values.update(revision="0.4.11"), "revision"),
+        (
+            lambda values: values["task_records"]["gpqa_diamond"].update(
+                output_type="multiple_choice"
+            ),
+            "output_type",
+        ),
+        (lambda values: values.update(generation_seeds=[42]), "generation_seeds"),
+        (
+            lambda values: values["task_records"]["gpqa_diamond"].update(
+                repeat_prompt_sha256="different"
+            ),
+            "prompt",
+        ),
+    ],
+)
+def test_reasoning_contract_rejects_harness_drift(mutation, message):
+    values = _valid_reasoning_contract_inputs()
+    mutation(values)
+
+    with pytest.raises(ValueError, match=message):
+        build_reasoning_harness_contract(**values)
 
 
 def test_build_exact_sample_manifest_writes_stratified_hash(tmp_path):
@@ -226,11 +327,8 @@ def test_build_exact_sample_manifest_writes_stratified_hash(tmp_path):
 
     assert output.is_file()
     assert manifest["sha256"]
-    assert sum(
-        len(indices) for indices in manifest["tasks"]["mmlu_pro"].values()
-    ) == 30
+    assert sum(len(indices) for indices in manifest["tasks"]["mmlu_pro"].values()) == 30
     assert json.loads(output.read_text()) == manifest
-
 
 
 def _passing_smoke_report(spec):
@@ -348,9 +446,7 @@ def _write_arm(
                     "position": 1,
                     "observed_token_id": 7,
                     "observed_logprob": -1.0,
-                    "top_logprobs": [
-                        {"token_id": 7, "logprob": -1.0, "rank": 1}
-                    ],
+                    "top_logprobs": [{"token_id": 7, "logprob": -1.0, "rank": 1}],
                 }
             )
             + "\n",
@@ -362,7 +458,9 @@ def _write_arm(
     )
 
 
-def _write_run_manifest(root: Path, *, sample_sha="samples", expected_arms=None) -> None:
+def _write_run_manifest(
+    root: Path, *, sample_sha="samples", expected_arms=None
+) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "run_manifest.json").write_text(
         json.dumps(
@@ -454,9 +552,7 @@ def test_merge_rejects_false_completion_marker(tmp_path):
     result = validate_and_merge(tmp_path)
 
     assert result["infrastructure_ok"] is False
-    assert result["failures"] == [
-        {"arm": "quant/reasoning", "arm_complete": False}
-    ]
+    assert result["failures"] == [{"arm": "quant/reasoning", "arm_complete": False}]
 
 
 def test_merge_accepts_one_probe_only_arm_per_model(tmp_path):
@@ -488,13 +584,9 @@ def test_merge_accepts_one_probe_only_arm_per_model(tmp_path):
 
     assert result["infrastructure_ok"] is True
     assert "gpqa_diamond" in result["comparisons"]["quant"]["tasks"]
-    assert result["comparisons"]["quant"]["distributional"][
-        "perplexity_ratio"
-    ] == 1.0
+    assert result["comparisons"]["quant"]["distributional"]["perplexity_ratio"] == 1.0
     for model in ("bf16", "quant"):
-        assert (
-            tmp_path / "merged" / model / "distributional_probe.jsonl"
-        ).is_file()
+        assert (tmp_path / "merged" / model / "distributional_probe.jsonl").is_file()
 
 
 def test_quality_failure_is_distinct_from_infrastructure_failure():
@@ -612,7 +704,9 @@ def test_profile_manifests_make_tiny_smoke_and_mmlu_only_production(tmp_path):
 
 def test_preflight_inspects_loaded_leaf_evaluation_splits():
     from types import SimpleNamespace
+
     from pipeline.m3_quality_preflight import inspect_leaf_sizes
+
     task_a = SimpleNamespace(
         config=SimpleNamespace(test_split="test"),
         dataset={"test": range(70)},
@@ -623,7 +717,9 @@ def test_preflight_inspects_loaded_leaf_evaluation_splits():
         dataset={"validation": range(30)},
         eval_docs=range(3),
     )
-    manager = SimpleNamespace(load=lambda names: {"tasks": {"leaf_a": task_a, "leaf_b": task_b}})
+    manager = SimpleNamespace(
+        load=lambda names: {"tasks": {"leaf_a": task_a, "leaf_b": task_b}}
+    )
     assert inspect_leaf_sizes(manager, "group") == {"leaf_a": 7, "leaf_b": 3}
 
 
@@ -662,8 +758,11 @@ def test_sample_index_validation_reports_resolved_leaf_bounds():
         validate_sample_indices(tasks, sizes)
 
 
-def test_static_serving_abi_gate_collects_all_model_reports_before_failure(tmp_path, monkeypatch):
+def test_static_serving_abi_gate_collects_all_model_reports_before_failure(
+    tmp_path, monkeypatch
+):
     from types import SimpleNamespace
+
     from pipeline import m3_quality_preflight as preflight
 
     models = [
@@ -697,7 +796,10 @@ def test_static_serving_abi_gate_rejects_before_runtime():
         "errors": [
             {
                 "code": "plain_runtime_module_not_ignored",
-                "module": "language_model.model.layers.3.block_sparse_moe.shared_experts.gate_up_proj",
+                "module": (
+                    "language_model.model.layers.3.block_sparse_moe."
+                    "shared_experts.gate_up_proj"
+                ),
             }
         ],
     }
@@ -709,6 +811,8 @@ def test_static_serving_abi_gate_rejects_before_runtime():
 def test_minimax_mmlu_metric_matches_installed_generation_task():
     import yaml
 
-    config = yaml.safe_load(Path("pipeline/configs/eval_minimax_m3_quality.yaml").read_text())
+    config = yaml.safe_load(
+        Path("pipeline/configs/eval_minimax_m3_quality.yaml").read_text()
+    )
     mmlu = next(task for task in config["eval"]["tasks"] if task["name"] == "mmlu_pro")
     assert mmlu["metric"] == "exact_match,custom-extract"

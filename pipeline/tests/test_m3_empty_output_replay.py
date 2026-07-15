@@ -16,7 +16,6 @@ from pipeline.m3_empty_output_replay import (
     run_controls,
 )
 
-
 ROW = {
     "attempt_uid": "8e98c89a40db606e115a1d388e89a58518582d44f2f48dafcf389a1e1e146878",
     "task": "mmlu_pro",

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-
 REPLAY_CAPS = (256, 16384)
 EXPECTED_ATTEMPT = {
     "task": "mmlu_pro",

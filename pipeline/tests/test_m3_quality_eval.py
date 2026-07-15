@@ -360,6 +360,55 @@ def test_representative_prompt_passes_callable_chat_renderer_to_lm_eval():
     assert record["correct_displayed_label"] == "B"
 
 
+def test_representative_generated_task_uses_processed_gpqa_choices():
+    class FakeTask:
+        config = {"doc_to_choice": None}
+        eval_docs = [
+            {
+                "Question": "Q",
+                "choices": ["first", "second", "third", "fourth"],
+                "answer": "(C)",
+            }
+        ]
+
+        def set_fewshot_seed(self, seed):
+            pass
+
+        def fewshot_context(self, doc, num_fewshot, **kwargs):
+            return "rendered GPQA prompt"
+
+        def doc_to_choice(self, doc):
+            raise TypeError("doc_to_choice was called but not set in config")
+
+        def doc_to_target(self, doc):
+            return doc["answer"]
+
+    class FakeManager:
+        def load(self, names):
+            return {"tasks": {names[0]: FakeTask()}}
+
+    class FakeTokenizer:
+        name_or_path = "fake"
+
+        def apply_chat_template(self, messages, **kwargs):
+            return "rendered"
+
+    record = _representative_task_view(
+        FakeManager(),
+        FakeTokenizer(),
+        installed_name="gpqa_diamond_cot_zeroshot",
+        num_fewshot=0,
+    )
+
+    assert record["displayed_choices"] == [
+        "first",
+        "second",
+        "third",
+        "fourth",
+    ]
+    assert record["correct_displayed_label"] == "(C)"
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

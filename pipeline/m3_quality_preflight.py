@@ -195,7 +195,14 @@ def _representative_task_view(
         prompt = prompt[0]
     prompt_text = str(prompt)
     choice_formatter = getattr(task, "doc_to_choice", None)
-    choices = choice_formatter(doc) if callable(choice_formatter) else None
+    task_config = getattr(task, "config", None) or getattr(task, "_config", None)
+    choice_is_configured = (
+        task_config is None or _task_config_value(task, "doc_to_choice") is not None
+    )
+    if choice_is_configured and callable(choice_formatter):
+        choices = choice_formatter(doc)
+    else:
+        choices = doc.get("choices") if isinstance(doc, dict) else None
     target = task.doc_to_target(doc)
     return {
         "task": task,

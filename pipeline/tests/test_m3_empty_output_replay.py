@@ -351,6 +351,22 @@ def test_write_replay_report_replaces_temporary_file_atomically(
     assert not (tmp_path / "report.json.tmp").exists()
 
 
+def test_write_replay_report_rejects_non_finite_json(tmp_path: Path):
+    output = tmp_path / "report.json"
+
+    with pytest.raises(ValueError, match="Out of range float values"):
+        replay.write_replay_report(output, {"stop_reason": float("nan")})
+
+    assert not output.exists()
+    assert not (tmp_path / "report.json.tmp").exists()
+
+
+def test_json_safe_scalar_stringifies_non_finite_float():
+    assert replay._json_safe_scalar(float("nan")) == "nan"
+    assert replay._json_safe_scalar(float("inf")) == "inf"
+    assert replay._json_safe_scalar(float("-inf")) == "-inf"
+
+
 def test_cli_parser_exposes_only_approved_inputs():
     parser = replay._build_parser()
     options = {
@@ -363,6 +379,44 @@ def test_cli_parser_exposes_only_approved_inputs():
     assert options == {"--config", "--model", "--samples", "--attempt-uid", "--out"}
     assert "--min-tokens" not in options
     assert "--max-gen-toks" not in options
+
+
+def test_cli_rejects_resolved_output_samples_alias_before_model_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    samples = tmp_path / "samples.jsonl"
+    _write_rows(samples, [ROW])
+    source_bytes = samples.read_bytes()
+    model_load_calls = []
+
+    def unexpected_replay(*args, **kwargs):
+        model_load_calls.append((args, kwargs))
+        return {"schema_version": 1}
+
+    monkeypatch.setattr(replay, "run_raw_vllm_replay", unexpected_replay)
+    monkeypatch.chdir(tmp_path)
+
+    try:
+        with pytest.raises(ValueError, match="different files"):
+            replay.main(
+                [
+                    "--config",
+                    "eval.yaml",
+                    "--model",
+                    "checkpoint",
+                    "--samples",
+                    str(samples.resolve()),
+                    "--attempt-uid",
+                    ROW["attempt_uid"],
+                    "--out",
+                    "samples.jsonl",
+                ]
+            )
+    finally:
+        assert samples.read_bytes() == source_bytes
+
+    assert model_load_calls == []
 
 
 def test_validation_before_model_load(tmp_path: Path):
@@ -507,6 +561,93 @@ def test_raw_vllm_runtime_uses_pinned_adapter_and_cleans_up(
     assert report["versions"]["lm_eval"] == "0.4.12"
     assert report["versions"]["vllm"] == "0.test"
     assert lm.clean_calls == 1
+
+
+def test_raw_vllm_runtime_cleans_up_when_generation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    samples = tmp_path / "samples.jsonl"
+    _write_rows(samples, [ROW])
+    attempt = load_replay_attempt(samples, ROW["attempt_uid"])
+
+    utils_module = types.ModuleType("lm_eval.models.utils")
+    utils_module.maybe_truncate = lambda token_ids, **kwargs: (
+        token_ids,
+        kwargs["max_gen_toks"],
+    )
+    monkeypatch.setitem(sys.modules, "lm_eval", types.ModuleType("lm_eval"))
+    monkeypatch.setitem(
+        sys.modules, "lm_eval.models", types.ModuleType("lm_eval.models")
+    )
+    monkeypatch.setitem(sys.modules, "lm_eval.models.utils", utils_module)
+    vllm_module = types.ModuleType("vllm")
+    vllm_module.SamplingParams = lambda **kwargs: kwargs
+    monkeypatch.setitem(sys.modules, "vllm", vllm_module)
+
+    class FailingLm:
+        eot_token_id = 99
+        max_gen_toks = 4096
+        max_length = 65536
+        truncation_side = "left"
+
+        def __init__(self):
+            self.clean_calls = 0
+
+        def tok_decode(self, token_id):
+            return "<eos>"
+
+        def tok_encode(self, prompt):
+            return [10, 11]
+
+        def modify_gen_kwargs(self, kwargs, **defaults):
+            cap = kwargs.pop("max_gen_toks")
+            kwargs.pop("until")
+            kwargs.pop("do_sample")
+            return kwargs, ["<eos>"], cap
+
+        def _model_generate(self, **kwargs):
+            raise RuntimeError("generation failed")
+
+        def clean(self):
+            self.clean_calls += 1
+
+    lm = FailingLm()
+    generator = replay._RawVllmGenerator(
+        lm,
+        versions={"python": "test", "lm_eval": "0.4.12", "vllm": "test"},
+    )
+    monkeypatch.setattr(
+        replay,
+        "load_raw_vllm_generator",
+        lambda *args, **kwargs: generator,
+    )
+
+    with pytest.raises(RuntimeError, match="generation failed"):
+        replay.run_raw_vllm_replay(
+            attempt,
+            config_path=tmp_path / "eval.yaml",
+            model_path=tmp_path / "checkpoint",
+        )
+
+    assert lm.clean_calls == 1
+
+
+def test_raw_vllm_generator_falls_back_to_cleanup():
+    class CleanupOnlyLm:
+        def __init__(self):
+            self.cleanup_calls = 0
+
+        def cleanup(self):
+            self.cleanup_calls += 1
+
+    lm = CleanupOnlyLm()
+    generator = replay._RawVllmGenerator(lm, versions={})
+
+    generator.close()
+    generator.close()
+
+    assert lm.cleanup_calls == 1
 
 
 def test_cli_returns_nonzero_and_writes_no_report_for_invalid_source(tmp_path: Path):

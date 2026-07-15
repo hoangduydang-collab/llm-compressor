@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import math
 import platform
 from dataclasses import dataclass
 from pathlib import Path
@@ -229,9 +230,10 @@ def write_replay_report(path: Path, report: dict[str, Any]) -> None:
     """Atomically write one JSON replay sidecar."""
 
     path = Path(path)
+    payload = json.dumps(report, indent=2, allow_nan=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(f"{path}.tmp")
-    temporary.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    temporary.write_text(payload, encoding="utf-8")
     temporary.replace(path)
 
 
@@ -261,6 +263,8 @@ def _validate_runtime_config(cfg: Any) -> None:
 
 
 def _json_safe_scalar(value: Any) -> str | int | float | bool | None:
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return str(value)
@@ -394,6 +398,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if args.samples.resolve() == args.out.resolve():
+        raise ValueError("--samples and --out must resolve to different files")
     attempt = load_replay_attempt(args.samples, args.attempt_uid)
     report = run_raw_vllm_replay(
         attempt,

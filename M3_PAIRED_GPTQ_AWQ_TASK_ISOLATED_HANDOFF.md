@@ -2,12 +2,12 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: 2026-07-15-r4.3
+- Packet revision: 2026-07-15-r4.4
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Implementation base commit: `15831064`
+- Implementation base commit: `849b2071`
 - Branch: `duy-branch`
-- Retry authorization: one fresh run after the lm-eval task-group inspection fix
+- Retry authorization: one fresh run after the lm-eval TaskConfig adapter fix
 
 Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
 their GPQA/MMLU-Pro/GSM8K scores: r4 changes the reasoning harness to stock
@@ -36,7 +36,18 @@ object. In lm-eval 0.4.12, `mmlu_pro` is a group whose flat `tasks` map contains
 shared output type, task version, and metric/filter contract across every leaf,
 and uses a deterministic leaf only for representative-prompt stability. Preserve
 all three stopped evidence roots, but do not reuse them; this packet authorizes
-exactly one fresh r4.3 attempt.
+no additional r4.3 attempt.
+
+The r4.3 attempt at
+`results/m3-quality/20260715T064700Z-m3-paired-reasoning-r4` stopped before GPU
+allocation when the contract audit incorrectly reported that GPQA did not expose
+`exact_match,flexible-extract`. lm-eval's `TaskConfig` is both a dataclass and a
+`dict` subclass, but stores its values in dataclass attributes; the preflight
+adapter treated its empty underlying mapping as authoritative. Commit `849b2071`
+reads the native attributes first, restoring the installed metric/filter,
+dataset, and choice configuration fields. Preserve all four stopped evidence
+roots, but do not reuse them; this packet authorizes exactly one fresh r4.4
+attempt.
 
 ## Decision and fixed experiment
 
@@ -78,7 +89,7 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-git merge-base --is-ancestor 15831064 HEAD
+git merge-base --is-ancestor 849b2071 HEAD
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
 test -z "${SLURM_JOB_ID:-}"

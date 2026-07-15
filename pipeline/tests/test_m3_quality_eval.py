@@ -24,7 +24,9 @@ from pipeline.m3_quality_eval import (
     validate_smoke_gate,
 )
 from pipeline.m3_quality_preflight import (
+    _metric_filter_keys,
     _representative_task_view,
+    _task_config_value,
     build_reasoning_harness_contract,
     inspect_reasoning_task_records,
 )
@@ -473,6 +475,27 @@ def test_reasoning_inspection_handles_task_group_and_audits_all_leaves():
     assert record["task_version"] == "3.1"
     assert record["available_metric_filters"] == ["exact_match,custom-extract"]
     assert record["available_samples"] == 30
+
+
+def test_task_config_dict_subclass_reads_dataclass_fields():
+    class FakeTaskConfig(dict):
+        dataset_path = "Idavidrein/gpqa"
+        metric_list = [{"metric": "exact_match"}]
+        filter_list = [
+            {"name": "strict-match"},
+            {"name": "flexible-extract"},
+        ]
+
+    class FakeTask:
+        config = FakeTaskConfig()
+
+    task = FakeTask()
+
+    assert _task_config_value(task, "dataset_path") == "Idavidrein/gpqa"
+    assert _metric_filter_keys(task) == [
+        "exact_match,flexible-extract",
+        "exact_match,strict-match",
+    ]
 
 
 @pytest.mark.parametrize(

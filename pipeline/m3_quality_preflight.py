@@ -130,10 +130,16 @@ def build_reasoning_harness_contract(
 
 
 def _task_config_value(task, field: str):
-    config = getattr(task, "config", None) or getattr(task, "_config", None)
+    config = getattr(task, "config", None)
+    if config is None:
+        config = getattr(task, "_config", None)
+    if config is None:
+        return None
+    if hasattr(config, field):
+        return getattr(config, field)
     if isinstance(config, dict):
         return config.get(field)
-    return getattr(config, field, None) if config is not None else None
+    return None
 
 
 def _metric_filter_keys(task) -> list[str]:
@@ -202,7 +208,9 @@ def _representative_task_view(
         prompt = prompt[0]
     prompt_text = str(prompt)
     choice_formatter = getattr(task, "doc_to_choice", None)
-    task_config = getattr(task, "config", None) or getattr(task, "_config", None)
+    task_config = getattr(task, "config", None)
+    if task_config is None:
+        task_config = getattr(task, "_config", None)
     choice_is_configured = (
         task_config is None or _task_config_value(task, "doc_to_choice") is not None
     )

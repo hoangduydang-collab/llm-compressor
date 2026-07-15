@@ -1,0 +1,24 @@
+Map:   0%|          | 0/198 [00:00<?, ? examples/s]Map: 100%|██████████| 198/198 [00:00<00:00, 1303.40 examples/s]Map: 100%|██████████| 198/198 [00:00<00:00, 1116.71 examples/s]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 536, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 531, in main
+    run_preflight(args.matrix, args.run_root)
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 400, in run_preflight
+    task_records = inspect_reasoning_task_records(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 223, in inspect_reasoning_task_records
+    first = _representative_task_view(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_quality_preflight.py", line 193, in _representative_task_view
+    prompt = formatter(doc, num_fewshot, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/lm_eval/utils.py", line 575, in _wrapper
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/lm_eval/api/task.py", line 970, in fewshot_context
+    partial(chat_template, add_generation_prompt=not gen_prefix)
+TypeError: the first argument must be callable

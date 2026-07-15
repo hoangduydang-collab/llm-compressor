@@ -602,6 +602,30 @@ def test_smoke_gate_rejects_missing_or_looping_model():
     assert result["models"]["inhouse_gptq"]["passed"] is False
 
 
+def test_reasoning_r4_smoke_allows_one_empty_but_production_gate_stays_strict():
+    spec = load_matrix(
+        Path("pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml")
+    )
+    report = _passing_smoke_report(spec)
+    for evidence in report["models"].values():
+        evidence["tasks_scored"] = sum(len(shard.tasks) for shard in spec.shards)
+    report["models"]["inhouse_gptq"]["empty_count"] = 1
+
+    result = validate_smoke_gate(spec, report)
+
+    assert result["ready_for_production"] is True
+    gptq = result["models"]["inhouse_gptq"]
+    assert gptq["checks"]["empty_outputs"] is True
+    assert gptq["empty_output_count"] == 1
+    assert gptq["max_smoke_empty_outputs"] == 1
+    assert gptq["warnings"] == ["smoke observed 1 empty generation(s)"]
+    assert spec.gates.max_degeneration_failures == 0
+
+    report["models"]["inhouse_gptq"]["empty_count"] = 2
+    result = validate_smoke_gate(spec, report)
+    assert result["ready_for_production"] is False
+
+
 def _write_arm(
     root: Path,
     *,

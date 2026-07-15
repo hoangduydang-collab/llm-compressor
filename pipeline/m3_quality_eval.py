@@ -63,6 +63,7 @@ class GateThresholds:
     max_conditional_regression: float
     max_perplexity_increase: float | None
     max_degeneration_failures: int
+    max_smoke_empty_outputs: int = 0
 
 
 @dataclass(frozen=True)
@@ -224,6 +225,9 @@ def load_matrix(path: str | Path) -> MatrixSpec:
     probe_raw = raw.get("probe") or {}
     gates_raw = raw.get("gates") or {}
     scheduling_raw = raw.get("scheduling") or {}
+    max_smoke_empty_outputs = int(gates_raw.get("max_smoke_empty_outputs", 0))
+    if max_smoke_empty_outputs < 0:
+        raise ValueError("gates max_smoke_empty_outputs must be non-negative")
     max_parallel_arms = scheduling_raw.get("max_parallel_arms")
     if max_parallel_arms is not None:
         max_parallel_arms = int(max_parallel_arms)
@@ -265,6 +269,7 @@ def load_matrix(path: str | Path) -> MatrixSpec:
                 else None
             ),
             int(gates_raw["max_degeneration_failures"]),
+            max_smoke_empty_outputs,
         ),
     )
 
@@ -493,6 +498,7 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
                     "within_budget": False,
                     "reason": "missing positive smoke probe timing",
                 }
+        empty_count = int(evidence.get("empty_count", 0))
         checks = {
             "infrastructure": evidence.get("infrastructure_ok") is True,
             "artifacts": evidence.get("artifacts_valid") is True,
@@ -500,7 +506,7 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
             == sum(len(shard.tasks) for shard in spec.shards),
             "sample_manifest": bool(root_sample_sha)
             and evidence.get("sample_manifest_sha256") == root_sample_sha,
-            "empty_outputs": int(evidence.get("empty_count", 0)) == 0,
+            "empty_outputs": empty_count <= spec.gates.max_smoke_empty_outputs,
             "periodic_loops": int(evidence.get("periodic_loop_count", 0)) == 0,
             "distributed_world_size": int(evidence.get("distributed_world_size", 0))
             == model.tensor_parallel_size * model.pipeline_parallel_size,
@@ -510,6 +516,13 @@ def validate_smoke_gate(spec: MatrixSpec, report: dict[str, Any]) -> dict[str, A
         results[model.label] = {
             "passed": all(checks.values()),
             "checks": checks,
+            "empty_output_count": empty_count,
+            "max_smoke_empty_outputs": spec.gates.max_smoke_empty_outputs,
+            "warnings": (
+                [f"smoke observed {empty_count} empty generation(s)"]
+                if empty_count
+                else []
+            ),
             "distributed_world_size": evidence.get("distributed_world_size"),
             "probe_projection": projection,
         }

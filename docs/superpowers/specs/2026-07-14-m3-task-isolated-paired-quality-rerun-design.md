@@ -110,11 +110,19 @@ model definition:
   gates, and disabled distributional probe as the GPTQ/AWQ r4 matrix.
 
 The smoke profile launches one two-node BF16 arm and evaluates two examples
-from each of GPQA Diamond, MMLU-Pro, GSM8K, and AIME. Its purpose is only to
-validate the two-node Ray topology, BF16 model loading, vLLM generation,
-per-filter checkpointing, three-seed execution, generation health, and artifact
-completion. Smoke results are not quality evidence. A false smoke gate stops
-the packet without a production launch or automatic retry.
+each from GPQA Diamond, GSM8K, and AIME plus one example from every resolved
+MMLU-Pro subject leaf, all under the three configured seeds. Its purpose is
+only to validate the two-node Ray topology, BF16 model loading, vLLM
+generation, per-filter checkpointing, three-seed execution, generation health,
+and artifact completion. Smoke results are not quality evidence. A false smoke
+gate stops the packet without a production launch or automatic retry.
+
+Because this smoke is a setup check rather than a quality sample, it may carry
+at most one isolated empty generation per model as an explicit warning. It
+still requires every task/seed checkpoint, valid artifacts, the expected
+distributed world size, and zero periodic loops. The production quality gate
+is unchanged and remains fail-closed at zero degeneration failures; smoke
+tolerance must never be used to suppress or reinterpret full-run health data.
 
 After a passing smoke gate, production launches two BF16 arms concurrently:
 

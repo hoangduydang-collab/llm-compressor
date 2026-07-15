@@ -7,6 +7,7 @@ from pipeline.config import load_config
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "pipeline/configs/minimax_m3_distributed_smoke.yaml"
 LAUNCHER = ROOT / "pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh"
+CONVERSION_MAPPINGS = ROOT / "src/llmcompressor/modeling/moe/conversion_mappings.py"
 BASH = next(
     (
         path
@@ -79,3 +80,17 @@ def test_launcher_owns_top_level_srun_and_rejects_nested_slurm():
     assert "pipeline.m3_awq_representative" not in text
     assert "M3_AWQ_HOOK_TRACE" not in text
     assert "--run-probe" not in text
+
+
+def test_minimax_m3_linearizes_experts_while_loading():
+    text = CONVERSION_MAPPINGS.read_text(encoding="utf-8")
+
+    assert "MiniMaxM3VLExperts" in text
+    assert '"minimax_m3_vl": MiniMaxM3VLExperts' in text
+    assert '"minimax_m3_vl": (' in text
+    assert r"mlp\.experts\.(\d+)\.w1\." in text
+    assert r"mlp\.experts\.(\d+)\.w2\." in text
+    assert r"mlp\.experts\.(\d+)\.w3\." in text
+    assert r"mlp.experts.\1.gate_proj." in text
+    assert r"mlp.experts.\1.down_proj." in text
+    assert r"mlp.experts.\1.up_proj." in text

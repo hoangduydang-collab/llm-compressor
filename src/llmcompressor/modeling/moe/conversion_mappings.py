@@ -11,6 +11,9 @@ from transformers.core_model_loading import (
     WeightTransform,
 )
 from transformers.models.deepseek_v4.modeling_deepseek_v4 import DeepseekV4Experts
+from transformers.models.minimax_m3_vl.modeling_minimax_m3_vl import (
+    MiniMaxM3VLExperts,
+)
 from transformers.models.qwen2_moe.modeling_qwen2_moe import Qwen2MoeExperts
 from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeExperts
 
@@ -23,6 +26,7 @@ __all__ = [
 # TODO: in the future, we can potentially grep the source code for this
 ARCH_TO_EXPERTS_MODULE_CLS = {
     "deepseek_v4": DeepseekV4Experts,
+    "minimax_m3_vl": MiniMaxM3VLExperts,
     "qwen2_moe": Qwen2MoeExperts,
     "qwen3_moe": Qwen3MoeExperts,
 }
@@ -42,6 +46,23 @@ ARCH_TO_2D_MAPPINGS = {
             WeightRenaming(
                 source_patterns=r"^layers\.(\d+)\.mlp\.experts\.(\d+)\.w3\.",
                 target_patterns=r"layers.\1.mlp.experts.\2.up_proj.",
+            ),
+        ],
+    ),
+    "minimax_m3_vl": (
+        ["mlp.experts.gate_up_proj", "mlp.experts.down_proj"],
+        [
+            WeightRenaming(
+                source_patterns=r"mlp\.experts\.(\d+)\.w1\.",
+                target_patterns=r"mlp.experts.\1.gate_proj.",
+            ),
+            WeightRenaming(
+                source_patterns=r"mlp\.experts\.(\d+)\.w2\.",
+                target_patterns=r"mlp.experts.\1.down_proj.",
+            ),
+            WeightRenaming(
+                source_patterns=r"mlp\.experts\.(\d+)\.w3\.",
+                target_patterns=r"mlp.experts.\1.up_proj.",
             ),
         ],
     ),

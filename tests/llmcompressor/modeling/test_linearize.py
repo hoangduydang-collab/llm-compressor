@@ -7,6 +7,7 @@ from compressed_tensors.utils import patch_attr
 from safetensors import safe_open
 from transformers import AutoModelForCausalLM
 from transformers import initialization as init
+from transformers.core_model_loading import WeightConverter, WeightRenaming
 from transformers.models.afmoe.configuration_afmoe import AfmoeConfig
 from transformers.models.afmoe.modeling_afmoe import AfmoeExperts
 from transformers.models.deepseek_v3.configuration_deepseek_v3 import DeepseekV3Config
@@ -55,6 +56,9 @@ from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import Qwen3VLMoeTex
 from llmcompressor.modeling.moe.context import (
     moe_calibration_context,
 )
+from llmcompressor.modeling.moe.conversion_mappings import (
+    get_linearize_load_mappings,
+)
 from llmcompressor.modeling.moe.helpers import (
     FusedExpertsProtocol,
     MoEConfig,
@@ -66,6 +70,38 @@ from tests.testing_utils import requires_gpu
 NUM_TEST_TOKENS = 64
 MODEL_MSE = 1e-2
 MODULE_MSE = 1e-10
+
+
+def test_minimax_m3_load_mapping_keeps_experts_two_dimensional():
+    experts_cls, load_mappings, save_mappings = get_linearize_load_mappings(
+        "minimax_m3_vl"
+    )
+
+    assert experts_cls.__name__ == "MiniMaxM3VLExperts"
+    for mappings in (load_mappings, save_mappings):
+        assert not any(
+            isinstance(mapping, WeightConverter)
+            and any(
+                target in {"mlp.experts.gate_up_proj", "mlp.experts.down_proj"}
+                for target in mapping.target_patterns
+            )
+            for mapping in mappings
+        )
+
+    expert_renames = [
+        mapping
+        for mapping in load_mappings
+        if isinstance(mapping, WeightRenaming)
+        and any("mlp.experts" in target for target in mapping.target_patterns)
+    ]
+    expected_targets = {
+        r"mlp.experts.\1.gate_proj.",
+        r"mlp.experts.\1.down_proj.",
+        r"mlp.experts.\1.up_proj.",
+    }
+    assert expected_targets <= {
+        target for mapping in expert_renames for target in mapping.target_patterns
+    }
 
 
 @pytest.fixture

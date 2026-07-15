@@ -696,6 +696,84 @@ def _write_run_manifest(
     )
 
 
+def _write_scientific_run_contract(root: Path, **overrides) -> None:
+    contract = {
+        "schema_version": 1,
+        "lm_eval_version": "0.4.12",
+        "harness_contract_sha256": "harness",
+        "sample_manifest_sha256": "samples",
+        "eval_config_sha256": "eval",
+        "tokenizer_sha256": "tokenizer",
+        "chat_template_sha256": "chat",
+        "rendered_prompt_sha256": "prompt",
+        "generation_seeds": [42, 1234, 4158],
+        "expected_question_counts": {
+            "gpqa_diamond_cot_zeroshot": 100,
+            "mmlu_pro": 100,
+            "gsm8k_cot": 100,
+            "aime25": 30,
+        },
+        "resolved_tasks": {
+            "gpqa_diamond": "gpqa_diamond_cot_zeroshot",
+            "mmlu_pro": "mmlu_pro",
+            "gsm8k": "gsm8k_cot",
+            "aime_2025": "aime25",
+        },
+    }
+    contract.update(overrides)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "run_manifest.json").write_text(
+        json.dumps(contract), encoding="utf-8"
+    )
+
+
+def test_run_contract_gate_accepts_comparable_independent_roots(tmp_path):
+    from pipeline import m3_quality_eval as quality
+
+    reference = tmp_path / "gptq-awq"
+    candidate = tmp_path / "bf16"
+    _write_scientific_run_contract(reference)
+    _write_scientific_run_contract(candidate)
+
+    report = quality.compare_run_contracts(reference, candidate)
+
+    assert report["valid"] is True
+    assert report["mismatches"] == {}
+    assert report["matched_fields"] == list(quality.RUN_CONTRACT_FIELDS)
+
+
+def test_run_contract_gate_reports_mismatch_and_cli_fails(tmp_path):
+    from pipeline import m3_quality_eval as quality
+
+    reference = tmp_path / "gptq-awq"
+    candidate = tmp_path / "bf16"
+    report_path = tmp_path / "contract_gate.json"
+    _write_scientific_run_contract(reference)
+    _write_scientific_run_contract(candidate, generation_seeds=[42])
+
+    rc = quality.main(
+        [
+            "contract-gate",
+            "--reference-root",
+            str(reference),
+            "--candidate-root",
+            str(candidate),
+            "--out",
+            str(report_path),
+        ]
+    )
+
+    assert rc == 1
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["valid"] is False
+    assert report["mismatches"] == {
+        "generation_seeds": {
+            "reference": [42, 1234, 4158],
+            "candidate": [42],
+        }
+    }
+
+
 def test_merge_rejects_sample_manifest_mismatch(tmp_path):
     _write_run_manifest(tmp_path)
     _write_arm(

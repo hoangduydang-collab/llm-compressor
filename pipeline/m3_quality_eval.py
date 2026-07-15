@@ -124,6 +124,46 @@ def _read_jsonl(path: Path) -> list[dict]:
     ]
 
 
+RUN_CONTRACT_FIELDS = (
+    "lm_eval_version",
+    "harness_contract_sha256",
+    "sample_manifest_sha256",
+    "eval_config_sha256",
+    "tokenizer_sha256",
+    "chat_template_sha256",
+    "rendered_prompt_sha256",
+    "generation_seeds",
+    "expected_question_counts",
+    "resolved_tasks",
+)
+
+
+def compare_run_contracts(reference_root: Path, candidate_root: Path) -> dict:
+    """Compare only the scientific inputs that must match across run roots."""
+    reference_root = Path(reference_root)
+    candidate_root = Path(candidate_root)
+    reference = _read_json(reference_root / "run_manifest.json")
+    candidate = _read_json(candidate_root / "run_manifest.json")
+    matched_fields: list[str] = []
+    mismatches: dict[str, dict[str, Any]] = {}
+    for field in RUN_CONTRACT_FIELDS:
+        if reference.get(field) == candidate.get(field):
+            matched_fields.append(field)
+        else:
+            mismatches[field] = {
+                "reference": reference.get(field),
+                "candidate": candidate.get(field),
+            }
+    return {
+        "schema_version": 1,
+        "valid": not mismatches,
+        "reference_root": str(reference_root),
+        "candidate_root": str(candidate_root),
+        "matched_fields": matched_fields,
+        "mismatches": mismatches,
+    }
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -971,6 +1011,10 @@ def main(argv: list[str] | None = None) -> int:
     launch.add_argument("--profile", choices=("smoke", "production"), required=True)
     launch.add_argument("--smoke-gate", type=Path)
     launch.add_argument("--out", type=Path, required=True)
+    contract_gate = subparsers.add_parser("contract-gate")
+    contract_gate.add_argument("--reference-root", type=Path, required=True)
+    contract_gate.add_argument("--candidate-root", type=Path, required=True)
+    contract_gate.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "aggregate":
         spec = load_matrix(args.matrix)
@@ -991,6 +1035,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         _write_json(args.out, result)
         return 0
+    if args.command == "contract-gate":
+        result = compare_run_contracts(
+            args.reference_root,
+            args.candidate_root,
+        )
+        _write_json(args.out, result)
+        return 0 if result["valid"] else 1
     return 0
 
 

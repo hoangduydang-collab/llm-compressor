@@ -1,0 +1,362 @@
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:   0% Completed | 0/49 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:   2% Completed | 1/49 [00:00<00:27,  1.75it/s]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:   4% Completed | 2/49 [00:03<01:33,  1.99s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:   6% Completed | 3/49 [00:07<02:22,  3.11s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:   8% Completed | 4/49 [00:11<02:27,  3.27s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  10% Completed | 5/49 [00:15<02:30,  3.43s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  12% Completed | 6/49 [00:18<02:30,  3.50s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  14% Completed | 7/49 [00:22<02:33,  3.66s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  16% Completed | 8/49 [00:26<02:31,  3.70s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  18% Completed | 9/49 [00:30<02:29,  3.73s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  20% Completed | 10/49 [00:33<02:22,  3.65s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  22% Completed | 11/49 [00:37<02:19,  3.66s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  24% Completed | 12/49 [00:41<02:13,  3.60s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  27% Completed | 13/49 [00:44<02:07,  3.54s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  29% Completed | 14/49 [00:47<01:59,  3.42s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  31% Completed | 15/49 [00:50<01:53,  3.33s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  33% Completed | 16/49 [00:54<01:55,  3.49s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  35% Completed | 17/49 [00:57<01:50,  3.47s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  37% Completed | 18/49 [01:01<01:48,  3.51s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  39% Completed | 19/49 [01:05<01:47,  3.60s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  41% Completed | 20/49 [01:08<01:39,  3.44s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  43% Completed | 21/49 [01:12<01:37,  3.50s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  45% Completed | 22/49 [01:15<01:36,  3.58s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  47% Completed | 23/49 [01:19<01:31,  3.51s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  49% Completed | 24/49 [01:22<01:27,  3.48s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  51% Completed | 25/49 [01:26<01:23,  3.49s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  53% Completed | 26/49 [01:29<01:20,  3.51s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  55% Completed | 27/49 [01:33<01:16,  3.47s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  57% Completed | 28/49 [01:36<01:12,  3.47s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  59% Completed | 29/49 [01:39<01:06,  3.34s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  61% Completed | 30/49 [01:43<01:04,  3.39s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  63% Completed | 31/49 [01:46<01:03,  3.52s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  65% Completed | 32/49 [01:50<00:59,  3.53s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  67% Completed | 33/49 [01:53<00:55,  3.45s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  69% Completed | 34/49 [01:57<00:51,  3.46s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  71% Completed | 35/49 [02:00<00:49,  3.54s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  73% Completed | 36/49 [02:04<00:45,  3.48s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  76% Completed | 37/49 [02:07<00:41,  3.47s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  78% Completed | 38/49 [02:10<00:37,  3.41s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  80% Completed | 39/49 [02:14<00:34,  3.44s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  82% Completed | 40/49 [02:18<00:32,  3.60s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  84% Completed | 41/49 [02:22<00:29,  3.64s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  86% Completed | 42/49 [02:25<00:25,  3.60s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  88% Completed | 43/49 [02:29<00:21,  3.66s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  90% Completed | 44/49 [02:33<00:18,  3.72s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  92% Completed | 45/49 [02:37<00:14,  3.70s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  94% Completed | 46/49 [02:40<00:11,  3.68s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  96% Completed | 47/49 [02:44<00:07,  3.85s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards:  98% Completed | 48/49 [02:48<00:03,  3.75s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards: 100% Completed | 49/49 [02:48<00:00,  2.76s/it]
+(Worker_TP0_EP0 pid=2937128) Loading safetensors checkpoint shards: 100% Completed | 49/49 [02:48<00:00,  3.45s/it]
+(Worker_TP0_EP0 pid=2937128) 
+(Worker_TP3_EP3 pid=2937131) 2026-07-15 08:07:33,398 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=2937136) 2026-07-15 08:07:33,403 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=2937130) 2026-07-15 08:07:33,413 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=2937129) 2026-07-15 08:07:33,422 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=2937134) 2026-07-15 08:07:33,424 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=2937133) 2026-07-15 08:07:33,426 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=2937135) 2026-07-15 08:07:33,428 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=2937128) 2026-07-15 08:07:33,432 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP3_EP3 pid=2937131) 2026-07-15 08:07:34,336 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP2_EP2 pid=2937130) 2026-07-15 08:07:34,337 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=2937129) 2026-07-15 08:07:34,335 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=2937136) 2026-07-15 08:07:34,339 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=2937134) 2026-07-15 08:07:34,340 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=2937133) 2026-07-15 08:07:34,340 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=2937135) 2026-07-15 08:07:34,342 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=2937128) 2026-07-15 08:07:34,351 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 47.36it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][A
+Rendering prompts:  50%|█████     | 1/2 [00:00<00:00,  6.16it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 12.28it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A(Worker_TP0_EP0 pid=2937128) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=2937128)   return func(*args, **kwargs)
+
+Processed prompts:  50%|█████     | 1/2 [02:56<02:56, 176.92s/it, est. speed input: 2.24 toks/s, output: 1.45 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:58<00:00, 73.67s/it, est. speed input: 4.14 toks/s, output: 2.87 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [02:58<00:00, 73.67s/it, est. speed input: 4.14 toks/s, output: 2.87 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:58<00:00, 89.16s/it, est. speed input: 4.14 toks/s, output: 2.87 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:58<02:58, 178.48s/it]Running generate_until requests: 100%|██████████| 2/2 [02:58<00:00, 89.24s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 1121.47it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3157.17it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [02:49<02:49, 169.85s/it, est. speed input: 2.34 toks/s, output: 1.51 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:50<00:00, 70.33s/it, est. speed input: 4.33 toks/s, output: 3.00 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [02:50<00:00, 70.33s/it, est. speed input: 4.33 toks/s, output: 3.00 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:50<00:00, 85.25s/it, est. speed input: 4.33 toks/s, output: 3.00 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:50<02:50, 170.51s/it]Running generate_until requests: 100%|██████████| 2/2 [02:50<00:00, 85.25s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 1179.00it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3631.43it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [02:50<02:50, 170.50s/it, est. speed input: 2.33 toks/s, output: 1.50 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:51<00:00, 70.62s/it, est. speed input: 4.31 toks/s, output: 2.99 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [02:51<00:00, 70.62s/it, est. speed input: 4.31 toks/s, output: 2.99 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:51<00:00, 85.60s/it, est. speed input: 4.31 toks/s, output: 2.99 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:51<02:51, 171.21s/it]Running generate_until requests: 100%|██████████| 2/2 [02:51<00:00, 85.60s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of mmlu_pro_biology from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_business from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_chemistry from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_computer_science from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_economics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_engineering from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_health from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_history from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_law from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_math from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_other from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_philosophy from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_physics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_psychology from 5 to 5
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 357.81it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1018.78it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1115.21it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1142.86it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 449.36it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1144.73it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1182.49it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1167.68it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1090.28it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 457.74it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 707.42it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 660.42it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1172.25it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 502.85it/s]
+Running generate_until requests:   0%|          | 0/14 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/14 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 14/14 [00:00<00:00, 333.23it/s]
+
+Processed prompts:   0%|          | 0/14 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:   7%|▋         | 1/14 [00:44<09:36, 44.33s/it, est. speed input: 29.96 toks/s, output: 0.95 toks/s][A
+Processed prompts:  14%|█▍        | 2/14 [00:54<04:52, 24.35s/it, est. speed input: 49.38 toks/s, output: 1.83 toks/s][A
+Processed prompts:  21%|██▏       | 3/14 [00:56<02:32, 13.86s/it, est. speed input: 75.68 toks/s, output: 2.85 toks/s][A
+Processed prompts:  29%|██▊       | 4/14 [00:58<01:34,  9.46s/it, est. speed input: 92.23 toks/s, output: 3.81 toks/s][A
+Processed prompts:  36%|███▌      | 5/14 [01:13<01:41, 11.22s/it, est. speed input: 97.16 toks/s, output: 4.24 toks/s][A
+Processed prompts:  43%|████▎     | 6/14 [01:14<01:02,  7.87s/it, est. speed input: 120.30 toks/s, output: 5.34 toks/s][A
+Processed prompts:  50%|█████     | 7/14 [01:19<00:47,  6.81s/it, est. speed input: 127.60 toks/s, output: 6.23 toks/s][A
+Processed prompts:  57%|█████▋    | 8/14 [01:25<00:39,  6.54s/it, est. speed input: 133.71 toks/s, output: 7.02 toks/s][A
+Processed prompts:  64%|██████▍   | 9/14 [01:30<00:30,  6.16s/it, est. speed input: 142.78 toks/s, output: 7.84 toks/s][A
+Processed prompts:  71%|███████▏  | 10/14 [01:40<00:29,  7.40s/it, est. speed input: 139.49 toks/s, output: 8.30 toks/s][A
+Processed prompts:  79%|███████▊  | 11/14 [01:47<00:21,  7.20s/it, est. speed input: 145.97 toks/s, output: 9.06 toks/s][A
+Processed prompts:  86%|████████▌ | 12/14 [02:09<00:23, 11.63s/it, est. speed input: 135.02 toks/s, output: 8.85 toks/s][A
+Processed prompts:  93%|█████████▎| 13/14 [03:04<00:24, 24.91s/it, est. speed input: 106.39 toks/s, output: 7.57 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [03:05<00:00, 17.81s/it, est. speed input: 113.06 toks/s, output: 8.89 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [03:05<00:00, 17.81s/it, est. speed input: 113.06 toks/s, output: 8.89 toks/s][AProcessed prompts: 100%|██████████| 14/14 [03:05<00:00, 13.28s/it, est. speed input: 113.06 toks/s, output: 8.89 toks/s]
+Running generate_until requests:   7%|▋         | 1/14 [03:06<40:18, 186.01s/it]Running generate_until requests: 100%|██████████| 14/14 [03:06<00:00, 13.29s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of mmlu_pro_biology from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_business from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_chemistry from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_computer_science from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_economics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_engineering from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_health from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_history from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_law from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_math from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_other from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_philosophy from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_physics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_psychology from 5 to 5
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 424.44it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1061.31it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1129.02it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1138.52it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 450.08it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1175.20it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 995.33it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1148.81it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1186.84it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 462.74it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 699.05it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 659.27it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1168.66it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 506.62it/s]
+Running generate_until requests:   0%|          | 0/14 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/14 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 14/14 [00:00<00:00, 501.22it/s]
+
+Processed prompts:   0%|          | 0/14 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:   7%|▋         | 1/14 [00:32<07:08, 32.94s/it, est. speed input: 41.69 toks/s, output: 1.40 toks/s][A
+Processed prompts:  14%|█▍        | 2/14 [00:33<02:47, 13.95s/it, est. speed input: 106.54 toks/s, output: 2.83 toks/s][A
+Processed prompts:  21%|██▏       | 3/14 [00:36<01:37,  8.84s/it, est. speed input: 130.91 toks/s, output: 4.02 toks/s][A
+Processed prompts:  29%|██▊       | 4/14 [01:16<03:33, 21.36s/it, est. speed input: 78.55 toks/s, output: 3.35 toks/s] [A
+Processed prompts:  36%|███▌      | 5/14 [01:18<02:07, 14.13s/it, est. speed input: 100.98 toks/s, output: 4.76 toks/s][A
+Processed prompts:  43%|████▎     | 6/14 [02:07<03:29, 26.21s/it, est. speed input: 74.92 toks/s, output: 4.38 toks/s] [A
+Processed prompts:  50%|█████     | 7/14 [02:25<02:44, 23.55s/it, est. speed input: 74.74 toks/s, output: 5.31 toks/s][A
+Processed prompts:  57%|█████▋    | 8/14 [02:32<01:49, 18.17s/it, est. speed input: 78.84 toks/s, output: 6.55 toks/s][A
+Processed prompts:  64%|██████▍   | 9/14 [02:53<01:35, 19.05s/it, est. speed input: 79.46 toks/s, output: 7.24 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [02:53<00:00, 19.05s/it, est. speed input: 121.12 toks/s, output: 14.61 toks/s][AProcessed prompts: 100%|██████████| 14/14 [02:53<00:00, 12.40s/it, est. speed input: 121.12 toks/s, output: 14.61 toks/s]
+Running generate_until requests:   7%|▋         | 1/14 [02:53<37:37, 173.63s/it]Running generate_until requests: 100%|██████████| 14/14 [02:53<00:00, 12.40s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of mmlu_pro_biology from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_business from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_chemistry from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_computer_science from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_economics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_engineering from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_health from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_history from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_law from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_math from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_other from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_philosophy from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_physics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_psychology from 5 to 5
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 400.45it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1094.26it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 954.99it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1082.68it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 444.74it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1126.59it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1165.73it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1041.80it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1179.17it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 458.95it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 702.21it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 657.31it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 958.70it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 507.60it/s]
+Running generate_until requests:   0%|          | 0/14 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/14 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 14/14 [00:00<00:00, 2915.02it/s]
+
+Processed prompts:   0%|          | 0/14 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:   7%|▋         | 1/14 [00:23<05:07, 23.62s/it, est. speed input: 48.01 toks/s, output: 1.35 toks/s][A
+Processed prompts:  14%|█▍        | 2/14 [00:31<02:51, 14.32s/it, est. speed input: 73.57 toks/s, output: 2.42 toks/s][A
+Processed prompts:  21%|██▏       | 3/14 [00:38<01:58, 10.81s/it, est. speed input: 96.82 toks/s, output: 3.41 toks/s][A
+Processed prompts:  29%|██▊       | 4/14 [00:42<01:23,  8.37s/it, est. speed input: 129.79 toks/s, output: 4.52 toks/s][A
+Processed prompts:  36%|███▌      | 5/14 [00:49<01:09,  7.72s/it, est. speed input: 143.53 toks/s, output: 5.36 toks/s][A
+Processed prompts:  43%|████▎     | 6/14 [00:51<00:46,  5.76s/it, est. speed input: 181.14 toks/s, output: 6.64 toks/s][A
+Processed prompts:  50%|█████     | 7/14 [00:56<00:39,  5.66s/it, est. speed input: 186.34 toks/s, output: 7.44 toks/s][A
+Processed prompts:  57%|█████▋    | 8/14 [01:02<00:33,  5.57s/it, est. speed input: 188.35 toks/s, output: 8.25 toks/s][A
+Processed prompts:  64%|██████▍   | 9/14 [01:05<00:24,  4.86s/it, est. speed input: 204.60 toks/s, output: 9.29 toks/s][A
+Processed prompts:  71%|███████▏  | 10/14 [01:06<00:15,  3.79s/it, est. speed input: 223.40 toks/s, output: 10.55 toks/s][A
+Processed prompts:  79%|███████▊  | 11/14 [01:13<00:13,  4.65s/it, est. speed input: 221.44 toks/s, output: 11.06 toks/s][A
+Processed prompts:  86%|████████▌ | 12/14 [02:37<00:57, 28.85s/it, est. speed input: 114.26 toks/s, output: 6.63 toks/s] [A
+Processed prompts:  93%|█████████▎| 13/14 [02:53<00:24, 24.82s/it, est. speed input: 113.45 toks/s, output: 7.52 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [02:53<00:00, 24.82s/it, est. speed input: 121.47 toks/s, output: 9.00 toks/s][AProcessed prompts: 100%|██████████| 14/14 [02:53<00:00, 12.36s/it, est. speed input: 121.47 toks/s, output: 9.00 toks/s]
+Running generate_until requests:   7%|▋         | 1/14 [02:53<37:30, 173.10s/it]Running generate_until requests: 100%|██████████| 14/14 [02:53<00:00, 12.36s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of gsm8k_cot from 8 to 8
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 47.17it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 108.34it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [00:44<00:44, 44.12s/it, est. speed input: 21.74 toks/s, output: 1.43 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [00:59<00:00, 26.98s/it, est. speed input: 32.22 toks/s, output: 2.49 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [00:59<00:00, 26.98s/it, est. speed input: 32.22 toks/s, output: 2.49 toks/s][AProcessed prompts: 100%|██████████| 2/2 [00:59<00:00, 29.55s/it, est. speed input: 32.22 toks/s, output: 2.49 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [00:59<00:59, 59.12s/it]Running generate_until requests: 100%|██████████| 2/2 [00:59<00:00, 29.56s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of gsm8k_cot from 8 to 8
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 50.07it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1594.49it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [01:26<01:26, 86.95s/it, est. speed input: 10.87 toks/s, output: 1.51 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:50<00:00, 84.87s/it, est. speed input: 11.18 toks/s, output: 2.27 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:50<00:00, 84.87s/it, est. speed input: 11.18 toks/s, output: 2.27 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:50<00:00, 85.18s/it, est. speed input: 11.18 toks/s, output: 2.27 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:50<02:50, 170.36s/it]Running generate_until requests: 100%|██████████| 2/2 [02:50<00:00, 85.18s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of gsm8k_cot from 8 to 8
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 92.62it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3173.90it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [00:40<00:40, 40.34s/it, est. speed input: 23.77 toks/s, output: 1.51 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [00:49<00:00, 22.09s/it, est. speed input: 38.35 toks/s, output: 2.72 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [00:49<00:00, 22.09s/it, est. speed input: 38.35 toks/s, output: 2.72 toks/s][AProcessed prompts: 100%|██████████| 2/2 [00:49<00:00, 24.83s/it, est. speed input: 38.35 toks/s, output: 2.72 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [00:49<00:49, 49.65s/it]Running generate_until requests: 100%|██████████| 2/2 [00:49<00:00, 24.83s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 626.30it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1653.91it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [02:51<02:51, 171.84s/it, est. speed input: 1.69 toks/s, output: 1.49 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:53<00:00, 71.57s/it, est. speed input: 2.92 toks/s, output: 2.96 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [02:53<00:00, 71.57s/it, est. speed input: 2.92 toks/s, output: 2.96 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:53<00:00, 86.61s/it, est. speed input: 2.92 toks/s, output: 2.96 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:53<02:53, 173.23s/it]Running generate_until requests: 100%|██████████| 2/2 [02:53<00:00, 86.62s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 589.46it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1848.12it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [02:52<02:52, 172.05s/it, est. speed input: 1.69 toks/s, output: 1.49 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:52<00:00, 71.23s/it, est. speed input: 2.93 toks/s, output: 2.96 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [02:52<00:00, 71.23s/it, est. speed input: 2.93 toks/s, output: 2.96 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:52<00:00, 86.35s/it, est. speed input: 2.93 toks/s, output: 2.96 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:52<02:52, 172.71s/it]Running generate_until requests: 100%|██████████| 2/2 [02:52<00:00, 86.35s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 545.57it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 2488.46it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [02:51<02:51, 171.14s/it, est. speed input: 1.70 toks/s, output: 1.50 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:51<00:00, 70.86s/it, est. speed input: 2.95 toks/s, output: 2.98 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [02:51<00:00, 70.86s/it, est. speed input: 2.95 toks/s, output: 2.98 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:51<00:00, 85.90s/it, est. speed input: 2.95 toks/s, output: 2.98 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:51<02:51, 171.80s/it]Running generate_until requests: 100%|██████████| 2/2 [02:51<00:00, 85.90s/it] 
+[rank7]:[W715 08:43:49.295484197 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:46586, remote=[localhost]:37597): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fe7e417305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fe74dcb24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fe74dcb0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fe73049c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fe7b48b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fe7e561bac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fe7e56ad8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank7]:[W715 08:43:49.300596331 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 7] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank5]:[W715 08:43:49.298109443 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:46594, remote=[localhost]:37597): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fb442b7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fb3ac6b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fb3ac6b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fb38ee9c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fb4132b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fb44406bac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fb4440fd8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank5]:[W715 08:43:49.300670684 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 5] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank4]:[W715 08:43:49.336999987 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:46618, remote=[localhost]:37597): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f6dddf7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f6d47ab24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f6d47ab0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f6d2a29c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f6dae6b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f6ddf468ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f6ddf4fa8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank4]:[W715 08:43:49.339868637 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 4] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank2]:[W715 08:43:49.378013122 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:46634, remote=[localhost]:37597): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f9c9997305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f9c030b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f9c030b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f9be589c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f9c69cb0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f9c9ab88ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f9c9ac1a8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank2]:[W715 08:43:49.380669404 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+[rank3]:[W715 08:43:49.411681859 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:46572, remote=[localhost]:37597): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7fd8d6f7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7fd840ab24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7fd840ab0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7fd82329c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7fd8a76b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7fd8d8456ac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7fd8d84e88d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank3]:[W715 08:43:49.414038685 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

@@ -1,0 +1,268 @@
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards:  20% Completed | 1/5 [00:42<02:51, 42.89s/it]
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards:  40% Completed | 2/5 [01:30<02:17, 45.68s/it]
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards:  60% Completed | 3/5 [02:16<01:31, 45.92s/it]
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards:  80% Completed | 4/5 [03:02<00:46, 46.03s/it]
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards: 100% Completed | 5/5 [03:41<00:00, 43.46s/it]
+(Worker_TP0_EP0 pid=1742322) Loading safetensors checkpoint shards: 100% Completed | 5/5 [03:41<00:00, 44.37s/it]
+(Worker_TP0_EP0 pid=1742322) 
+(Worker_TP3_EP3 pid=1742325) 2026-07-15 08:08:46,893 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP7_EP7 pid=1742329) 2026-07-15 08:08:46,902 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP1_EP1 pid=1742323) 2026-07-15 08:08:46,904 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=1742324) 2026-07-15 08:08:46,898 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP5_EP5 pid=1742327) 2026-07-15 08:08:46,908 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP4_EP4 pid=1742326) 2026-07-15 08:08:46,909 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP0_EP0 pid=1742322) 2026-07-15 08:08:46,914 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP6_EP6 pid=1742328) 2026-07-15 08:08:46,914 - INFO - autotuner.py:622 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(Worker_TP2_EP2 pid=1742324) 2026-07-15 08:08:47,454 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP7_EP7 pid=1742329) 2026-07-15 08:08:47,456 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP3_EP3 pid=1742325) 2026-07-15 08:08:47,458 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP1_EP1 pid=1742323) 2026-07-15 08:08:47,469 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP5_EP5 pid=1742327) 2026-07-15 08:08:47,472 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP0_EP0 pid=1742322) 2026-07-15 08:08:47,472 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP4_EP4 pid=1742326) 2026-07-15 08:08:47,475 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(Worker_TP6_EP6 pid=1742328) 2026-07-15 08:08:47,481 - INFO - autotuner.py:641 - flashinfer.jit: [Autotuner]: Autotuning process ends
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 46.78it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 23.23it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A(Worker_TP0_EP0 pid=1742322) /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+(Worker_TP0_EP0 pid=1742322)   return func(*args, **kwargs)
+
+Processed prompts:  50%|█████     | 1/2 [03:13<03:13, 193.27s/it, est. speed input: 2.05 toks/s, output: 1.32 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:14<00:00, 80.40s/it, est. speed input: 3.79 toks/s, output: 2.63 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:14<00:00, 80.40s/it, est. speed input: 3.79 toks/s, output: 2.63 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:14<00:00, 97.33s/it, est. speed input: 3.79 toks/s, output: 2.63 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:14<03:14, 194.74s/it]Running generate_until requests: 100%|██████████| 2/2 [03:14<00:00, 97.37s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 1165.25it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3310.42it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [03:05<03:05, 185.88s/it, est. speed input: 2.14 toks/s, output: 1.38 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:06<00:00, 76.96s/it, est. speed input: 3.95 toks/s, output: 2.74 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:06<00:00, 76.96s/it, est. speed input: 3.95 toks/s, output: 2.74 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:06<00:00, 93.30s/it, est. speed input: 3.95 toks/s, output: 2.74 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:06<03:06, 186.60s/it]Running generate_until requests: 100%|██████████| 2/2 [03:06<00:00, 93.30s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 1149.44it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3342.07it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [03:05<03:05, 185.23s/it, est. speed input: 2.14 toks/s, output: 1.38 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:06<00:00, 77.07s/it, est. speed input: 3.96 toks/s, output: 2.74 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:06<00:00, 77.07s/it, est. speed input: 3.96 toks/s, output: 2.74 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:06<00:00, 93.29s/it, est. speed input: 3.96 toks/s, output: 2.74 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:06<03:06, 186.59s/it]Running generate_until requests: 100%|██████████| 2/2 [03:06<00:00, 93.29s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of mmlu_pro_biology from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_business from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_chemistry from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_computer_science from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_economics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_engineering from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_health from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_history from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_law from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_math from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_other from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_philosophy from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_physics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_psychology from 5 to 5
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 691.44it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1093.98it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1114.32it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1141.31it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 919.80it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 994.85it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1110.49it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1021.01it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1108.43it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 930.41it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1060.24it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1113.73it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1217.50it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 935.60it/s]
+Running generate_until requests:   0%|          | 0/14 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/14 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 14/14 [00:00<00:00, 236.29it/s]
+
+Processed prompts:   0%|          | 0/14 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:   7%|▋         | 1/14 [00:43<09:26, 43.61s/it, est. speed input: 31.48 toks/s, output: 1.33 toks/s][A
+Processed prompts:  14%|█▍        | 2/14 [00:47<04:00, 20.08s/it, est. speed input: 75.81 toks/s, output: 2.60 toks/s][A
+Processed prompts:  21%|██▏       | 3/14 [00:47<02:03, 11.23s/it, est. speed input: 99.32 toks/s, output: 3.90 toks/s][A
+Processed prompts:  29%|██▊       | 4/14 [00:53<01:31,  9.18s/it, est. speed input: 122.60 toks/s, output: 4.84 toks/s][A
+Processed prompts:  36%|███▌      | 5/14 [00:54<00:55,  6.13s/it, est. speed input: 151.74 toks/s, output: 6.14 toks/s][A
+Processed prompts:  43%|████▎     | 6/14 [00:55<00:34,  4.31s/it, est. speed input: 170.10 toks/s, output: 7.39 toks/s][A
+Processed prompts:  50%|█████     | 7/14 [01:00<00:31,  4.56s/it, est. speed input: 181.14 toks/s, output: 8.11 toks/s][A
+Processed prompts:  57%|█████▋    | 8/14 [01:28<01:12, 12.13s/it, est. speed input: 136.02 toks/s, output: 6.88 toks/s][A
+Processed prompts:  64%|██████▍   | 9/14 [02:47<02:44, 32.92s/it, est. speed input: 81.92 toks/s, output: 5.01 toks/s] [A
+Processed prompts:  71%|███████▏  | 10/14 [03:06<01:54, 28.67s/it, est. speed input: 82.95 toks/s, output: 5.87 toks/s][A
+Processed prompts:  79%|███████▊  | 11/14 [03:08<01:00, 20.33s/it, est. speed input: 90.53 toks/s, output: 7.18 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [03:08<00:00, 20.33s/it, est. speed input: 111.80 toks/s, output: 11.27 toks/s][AProcessed prompts: 100%|██████████| 14/14 [03:08<00:00, 13.43s/it, est. speed input: 111.80 toks/s, output: 11.27 toks/s]
+Running generate_until requests:   7%|▋         | 1/14 [03:08<40:45, 188.13s/it]Running generate_until requests: 100%|██████████| 14/14 [03:08<00:00, 13.44s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of mmlu_pro_biology from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_business from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_chemistry from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_computer_science from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_economics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_engineering from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_health from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_history from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_law from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_math from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_other from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_philosophy from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_physics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_psychology from 5 to 5
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 761.08it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1135.13it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1187.85it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1139.76it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 913.99it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1176.19it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1122.37it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1179.17it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1053.05it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1152.60it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1066.98it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1074.91it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1168.66it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 972.48it/s]
+Running generate_until requests:   0%|          | 0/14 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/14 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 14/14 [00:00<00:00, 210.02it/s]
+
+Processed prompts:   0%|          | 0/14 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:   7%|▋         | 1/14 [01:26<18:46, 86.69s/it, est. speed input: 21.41 toks/s, output: 1.34 toks/s][A
+Processed prompts:  14%|█▍        | 2/14 [02:03<11:29, 57.46s/it, est. speed input: 28.61 toks/s, output: 2.29 toks/s][A
+Processed prompts:  21%|██▏       | 3/14 [02:10<06:16, 34.23s/it, est. speed input: 37.70 toks/s, output: 3.52 toks/s][A
+Processed prompts:  29%|██▊       | 4/14 [02:11<03:33, 21.33s/it, est. speed input: 47.33 toks/s, output: 4.83 toks/s][A
+Processed prompts:  36%|███▌      | 5/14 [02:24<02:44, 18.25s/it, est. speed input: 50.92 toks/s, output: 5.75 toks/s][A
+Processed prompts:  43%|████▎     | 6/14 [02:55<03:00, 22.55s/it, est. speed input: 49.26 toks/s, output: 6.09 toks/s][A
+Processed prompts:  50%|█████     | 7/14 [03:00<01:57, 16.82s/it, est. speed input: 60.12 toks/s, output: 7.28 toks/s][A
+Processed prompts:  57%|█████▋    | 8/14 [03:09<01:25, 14.33s/it, est. speed input: 66.56 toks/s, output: 8.29 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [03:09<00:00, 14.33s/it, est. speed input: 110.94 toks/s, output: 16.39 toks/s][AProcessed prompts: 100%|██████████| 14/14 [03:09<00:00, 13.54s/it, est. speed input: 110.94 toks/s, output: 16.39 toks/s]
+Running generate_until requests:   7%|▋         | 1/14 [03:09<41:04, 189.60s/it]Running generate_until requests: 100%|██████████| 14/14 [03:09<00:00, 13.54s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of mmlu_pro_biology from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_business from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_chemistry from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_computer_science from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_economics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_engineering from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_health from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_history from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_law from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_math from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_other from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_philosophy from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_physics from 5 to 5
+Overwriting default num_fewshot of mmlu_pro_psychology from 5 to 5
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 971.58it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1611.95it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1560.38it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1548.86it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1253.53it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1579.78it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1146.30it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1677.72it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1494.76it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1605.17it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1540.89it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1518.03it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1693.98it/s]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00, 1325.63it/s]
+Running generate_until requests:   0%|          | 0/14 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/14 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 14/14 [00:00<00:00, 4270.87it/s]
+
+Processed prompts:   0%|          | 0/14 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:   7%|▋         | 1/14 [00:30<06:34, 30.35s/it, est. speed input: 45.24 toks/s, output: 1.32 toks/s][A
+Processed prompts:  14%|█▍        | 2/14 [00:34<03:01, 15.13s/it, est. speed input: 73.27 toks/s, output: 2.47 toks/s][A
+Processed prompts:  29%|██▊       | 4/14 [00:43<01:24,  8.43s/it, est. speed input: 134.83 toks/s, output: 4.39 toks/s][A
+Processed prompts:  36%|███▌      | 5/14 [00:47<01:03,  7.01s/it, est. speed input: 162.94 toks/s, output: 5.36 toks/s][A
+Processed prompts:  43%|████▎     | 6/14 [00:50<00:45,  5.75s/it, est. speed input: 186.96 toks/s, output: 6.38 toks/s][A
+Processed prompts:  50%|█████     | 7/14 [01:05<00:59,  8.48s/it, est. speed input: 161.99 toks/s, output: 6.28 toks/s][A
+Processed prompts:  57%|█████▋    | 8/14 [01:12<00:48,  8.06s/it, est. speed input: 167.30 toks/s, output: 7.00 toks/s][A
+Processed prompts:  64%|██████▍   | 9/14 [01:13<00:30,  6.03s/it, est. speed input: 182.24 toks/s, output: 8.22 toks/s][A
+Processed prompts:  71%|███████▏  | 10/14 [01:17<00:21,  5.50s/it, est. speed input: 192.09 toks/s, output: 9.12 toks/s][A
+Processed prompts:  79%|███████▊  | 11/14 [01:26<00:19,  6.52s/it, est. speed input: 191.26 toks/s, output: 9.53 toks/s][A
+Processed prompts:  86%|████████▌ | 12/14 [02:57<01:03, 31.87s/it, est. speed input: 100.66 toks/s, output: 6.03 toks/s][A
+Processed prompts:  93%|█████████▎| 13/14 [03:06<00:25, 25.08s/it, est. speed input: 105.09 toks/s, output: 7.10 toks/s][A
+Processed prompts: 100%|██████████| 14/14 [03:06<00:00, 25.08s/it, est. speed input: 112.52 toks/s, output: 8.47 toks/s][AProcessed prompts: 100%|██████████| 14/14 [03:06<00:00, 13.35s/it, est. speed input: 112.52 toks/s, output: 8.47 toks/s]
+Running generate_until requests:   7%|▋         | 1/14 [03:06<40:29, 186.86s/it]Running generate_until requests: 100%|██████████| 14/14 [03:06<00:00, 13.35s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of gsm8k_cot from 8 to 8
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 93.17it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3300.00it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [01:30<01:30, 90.92s/it, est. speed input: 10.39 toks/s, output: 1.35 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [01:40<00:00, 43.19s/it, est. speed input: 18.91 toks/s, output: 2.59 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [01:40<00:00, 43.19s/it, est. speed input: 18.91 toks/s, output: 2.59 toks/s][AProcessed prompts: 100%|██████████| 2/2 [01:40<00:00, 50.35s/it, est. speed input: 18.91 toks/s, output: 2.59 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [01:40<01:40, 100.69s/it]Running generate_until requests: 100%|██████████| 2/2 [01:40<00:00, 50.35s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of gsm8k_cot from 8 to 8
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 94.83it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 3118.44it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [01:38<01:38, 98.40s/it, est. speed input: 9.60 toks/s, output: 1.37 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:56<00:00, 86.50s/it, est. speed input: 10.78 toks/s, output: 2.15 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [02:56<00:00, 86.50s/it, est. speed input: 10.78 toks/s, output: 2.15 toks/s][AProcessed prompts: 100%|██████████| 2/2 [02:56<00:00, 88.28s/it, est. speed input: 10.78 toks/s, output: 2.15 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [02:56<02:56, 176.56s/it]Running generate_until requests: 100%|██████████| 2/2 [02:56<00:00, 88.28s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+Overwriting default num_fewshot of gsm8k_cot from 8 to 8
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 91.20it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 2215.11it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [00:46<00:46, 46.07s/it, est. speed input: 20.81 toks/s, output: 1.37 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [01:32<00:00, 46.21s/it, est. speed input: 20.61 toks/s, output: 2.05 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [01:32<00:00, 46.21s/it, est. speed input: 20.61 toks/s, output: 2.05 toks/s][AProcessed prompts: 100%|██████████| 2/2 [01:32<00:00, 46.19s/it, est. speed input: 20.61 toks/s, output: 2.05 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [01:32<01:32, 92.39s/it]Running generate_until requests: 100%|██████████| 2/2 [01:32<00:00, 46.19s/it]
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 42} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 574.40it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1840.41it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [03:07<03:07, 187.74s/it, est. speed input: 1.55 toks/s, output: 1.36 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:09<00:00, 78.20s/it, est. speed input: 2.67 toks/s, output: 2.71 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:09<00:00, 78.20s/it, est. speed input: 2.67 toks/s, output: 2.71 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:09<00:00, 94.63s/it, est. speed input: 2.67 toks/s, output: 2.71 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:09<03:09, 189.27s/it]Running generate_until requests: 100%|██████████| 2/2 [03:09<00:00, 94.63s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 1234} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 663.87it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 1789.38it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [03:06<03:06, 186.66s/it, est. speed input: 1.56 toks/s, output: 1.37 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:07<00:00, 77.25s/it, est. speed input: 2.70 toks/s, output: 2.73 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:07<00:00, 77.25s/it, est. speed input: 2.70 toks/s, output: 2.73 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:07<00:00, 93.66s/it, est. speed input: 2.70 toks/s, output: 2.73 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:07<03:07, 187.33s/it]Running generate_until requests: 100%|██████████| 2/2 [03:07<00:00, 93.66s/it] 
+generation_kwargs: {'temperature': 1.0, 'top_p': 0.95, 'do_sample': True, 'max_gen_toks': 256, 'seed': 4158} specified through cli, these settings will update set parameters in yaml tasks. Ensure 'do_sample=True' for non-greedy decoding!
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 615.54it/s]
+Running generate_until requests:   0%|          | 0/2 [00:00<?, ?it/s]
+Rendering prompts:   0%|          | 0/2 [00:00<?, ?it/s][ARendering prompts: 100%|██████████| 2/2 [00:00<00:00, 2053.51it/s]
+
+Processed prompts:   0%|          | 0/2 [00:00<?, ?it/s, est. speed input: 0.00 toks/s, output: 0.00 toks/s][A
+Processed prompts:  50%|█████     | 1/2 [03:07<03:07, 187.07s/it, est. speed input: 1.56 toks/s, output: 1.37 toks/s][A
+Processed prompts: 100%|██████████| 2/2 [03:07<00:00, 77.44s/it, est. speed input: 2.69 toks/s, output: 2.73 toks/s] [A
+Processed prompts: 100%|██████████| 2/2 [03:07<00:00, 77.44s/it, est. speed input: 2.69 toks/s, output: 2.73 toks/s][AProcessed prompts: 100%|██████████| 2/2 [03:07<00:00, 93.88s/it, est. speed input: 2.69 toks/s, output: 2.73 toks/s]
+Running generate_until requests:  50%|█████     | 1/2 [03:07<03:07, 187.77s/it]Running generate_until requests: 100%|██████████| 2/2 [03:07<00:00, 93.89s/it] 
+[rank6]:[W715 08:47:45.020166084 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=100, addr=[localhost]:52948, remote=[localhost]:60151): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /pytorch/torch/csrc/distributed/c10d/Utils.hpp:682 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x7f4761d7305d in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x6a914bd (0x7f46cb8b24bd in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #2: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x273 (0x7f46cb8b0413 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cpu.so)
+frame #3: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x4a5 (0x7f46ae09c8c5 in /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xdc253 (0x7f47324b0253 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x94ac3 (0x7f47631eaac3 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x1268d0 (0x7f476327c8d0 in /lib/x86_64-linux-gnu/libc.so.6)
+
+[rank6]:[W715 08:47:45.025569944 ProcessGroupNCCL.cpp:1826] [PG ID 0 PG GUID 0 Rank 6] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

@@ -1,0 +1,14 @@
+{
+  "model": "/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay",
+  "out_dir": "results/m3-quality/20260715T075800Z-m3-paired-reasoning-r4/models/inhouse_gptq/shards/smoke",
+  "static": {
+    "gate_passed": null,
+    "sample_counts": {
+      "gpqa_diamond_cot_zeroshot": 6,
+      "mmlu_pro": 42,
+      "gsm8k_cot": 6,
+      "aime25": 6
+    }
+  },
+  "agentic": null
+}

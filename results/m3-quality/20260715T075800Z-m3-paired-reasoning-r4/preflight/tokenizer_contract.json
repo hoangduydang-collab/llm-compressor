@@ -1,0 +1,24 @@
+{
+  "valid": true,
+  "reference": {
+    "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+    "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+    "rendered_prompt_sha256": "980ca6dd6dbf92692ab7968541cf8e7fb50e633e4b2f2c83ef09477a038bbb5f"
+  },
+  "models": {
+    "cyankiwi_awq": {
+      "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+      "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+      "rendered_prompt_sha256": "980ca6dd6dbf92692ab7968541cf8e7fb50e633e4b2f2c83ef09477a038bbb5f",
+      "matches_reference": true,
+      "mismatches": []
+    },
+    "inhouse_gptq": {
+      "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+      "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+      "rendered_prompt_sha256": "980ca6dd6dbf92692ab7968541cf8e7fb50e633e4b2f2c83ef09477a038bbb5f",
+      "matches_reference": true,
+      "mismatches": []
+    }
+  }
+}

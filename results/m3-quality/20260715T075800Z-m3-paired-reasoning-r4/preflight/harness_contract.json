@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "valid": true,
+  "lm_eval_version": "0.4.12",
+  "tasks": {
+    "gpqa_diamond": {
+      "canonical_name": "gpqa_diamond",
+      "installed_name": "gpqa_diamond_cot_zeroshot",
+      "leaf_tasks": [
+        "gpqa_diamond_cot_zeroshot"
+      ],
+      "representative_leaf": "gpqa_diamond_cot_zeroshot",
+      "output_type": "generate_until",
+      "task_version": "2.2",
+      "num_fewshot": 0,
+      "metric": "exact_match,flexible-extract",
+      "available_metric_filters": [
+        "exact_match,flexible-extract",
+        "exact_match,strict-match"
+      ],
+      "dataset_path": "Idavidrein/gpqa",
+      "dataset_name": "gpqa_diamond",
+      "representative_doc_id": 0,
+      "representative_prompt_sha256": "f313b74332243064e9c7709ee0634b19a8fade521cdee2bc54700b22fcde1dc4",
+      "repeat_prompt_sha256": "f313b74332243064e9c7709ee0634b19a8fade521cdee2bc54700b22fcde1dc4",
+      "displayed_choices": [
+        "10^-8 eV",
+        "10^-4 eV",
+        "10^-11 eV",
+        "10^-9 eV"
+      ],
+      "repeat_displayed_choices": [
+        "10^-8 eV",
+        "10^-4 eV",
+        "10^-11 eV",
+        "10^-9 eV"
+      ],
+      "correct_displayed_label": "(B)",
+      "repeat_correct_displayed_label": "(B)",
+      "available_samples": 198
+    },
+    "mmlu_pro": {
+      "canonical_name": "mmlu_pro",
+      "installed_name": "mmlu_pro",
+      "leaf_tasks": [
+        "mmlu_pro_biology",
+        "mmlu_pro_business",
+        "mmlu_pro_chemistry",
+        "mmlu_pro_computer_science",
+        "mmlu_pro_economics",
+        "mmlu_pro_engineering",
+        "mmlu_pro_health",
+        "mmlu_pro_history",
+        "mmlu_pro_law",
+        "mmlu_pro_math",
+        "mmlu_pro_other",
+        "mmlu_pro_philosophy",
+        "mmlu_pro_physics",
+        "mmlu_pro_psychology"
+      ],
+      "representative_leaf": "mmlu_pro_biology",
+      "output_type": "generate_until",
+      "task_version": "3.1",
+      "num_fewshot": 5,
+      "metric": "exact_match,custom-extract",
+      "available_metric_filters": [
+        "exact_match,custom-extract"
+      ],
+      "dataset_path": "TIGER-Lab/MMLU-Pro",
+      "dataset_name": "None",
+      "representative_doc_id": 0,
+      "representative_prompt_sha256": "ff2495d9b688cce23fdc5d20c2a16259d68415aa0b2f615f768024f92ae34cab",
+      "repeat_prompt_sha256": "ff2495d9b688cce23fdc5d20c2a16259d68415aa0b2f615f768024f92ae34cab",
+      "displayed_choices": null,
+      "repeat_displayed_choices": null,
+      "correct_displayed_label": "B",
+      "repeat_correct_displayed_label": "B",
+      "available_samples": 12032
+    },
+    "gsm8k": {
+      "canonical_name": "gsm8k",
+      "installed_name": "gsm8k_cot",
+      "leaf_tasks": [
+        "gsm8k_cot"
+      ],
+      "representative_leaf": "gsm8k_cot",
+      "output_type": "generate_until",
+      "task_version": "3.0",
+      "num_fewshot": 8,
+      "metric": "exact_match,strict-match",
+      "available_metric_filters": [
+        "exact_match,flexible-extract",
+        "exact_match,strict-match"
+      ],
+      "dataset_path": "openai/gsm8k",
+      "dataset_name": "main",
+      "representative_doc_id": 0,
+      "representative_prompt_sha256": "43d4601abfc733add590ed4c1909ac88229934eaec958335672c86a3bc4d7a40",
+      "repeat_prompt_sha256": "43d4601abfc733add590ed4c1909ac88229934eaec958335672c86a3bc4d7a40",
+      "displayed_choices": null,
+      "repeat_displayed_choices": null,
+      "correct_displayed_label": "18",
+      "repeat_correct_displayed_label": "18",
+      "available_samples": 1319
+    },
+    "aime_2025": {
+      "canonical_name": "aime_2025",
+      "installed_name": "aime25",
+      "leaf_tasks": [
+        "aime25"
+      ],
+      "representative_leaf": "aime25",
+      "output_type": "generate_until",
+      "task_version": "0.0",
+      "num_fewshot": 0,
+      "metric": "exact_match,none",
+      "available_metric_filters": [
+        "exact_match,none"
+      ],
+      "dataset_path": "math-ai/aime25",
+      "dataset_name": "None",
+      "representative_doc_id": 0,
+      "representative_prompt_sha256": "4252b8ce66e2ef200e64024a7e79e414122bbb14008bd34d1d1bf0fbe7aca764",
+      "repeat_prompt_sha256": "4252b8ce66e2ef200e64024a7e79e414122bbb14008bd34d1d1bf0fbe7aca764",
+      "displayed_choices": null,
+      "repeat_displayed_choices": null,
+      "correct_displayed_label": "70",
+      "repeat_correct_displayed_label": "70",
+      "available_samples": 30
+    }
+  },
+  "generation": {
+    "generation_seeds": [
+      42,
+      1234,
+      4158
+    ],
+    "gen_kwargs": {
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "do_sample": true,
+      "max_gen_toks": 16384
+    },
+    "sampling_backend_note": "vLLM samples because temperature>0; do_sample is recorded as the harness intent and is not passed to SamplingParams"
+  }
+}

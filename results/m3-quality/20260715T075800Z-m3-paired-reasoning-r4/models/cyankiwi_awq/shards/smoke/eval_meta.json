@@ -1,0 +1,19 @@
+{
+  "model_path": "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4",
+  "backend": "vllm",
+  "tasks": [
+    "gpqa_diamond_cot_zeroshot",
+    "mmlu_pro",
+    "gsm8k_cot",
+    "aime25"
+  ],
+  "completed_tasks": [
+    "aime25",
+    "gpqa_diamond_cot_zeroshot",
+    "gsm8k_cot",
+    "mmlu_pro"
+  ],
+  "pending_tasks": [],
+  "log_samples": true,
+  "checkpoint_after_each_task": true
+}

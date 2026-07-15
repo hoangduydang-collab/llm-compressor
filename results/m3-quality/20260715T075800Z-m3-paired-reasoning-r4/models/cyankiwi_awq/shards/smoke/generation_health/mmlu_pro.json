@@ -1,0 +1,25 @@
+{
+  "samples": 42,
+  "not_applicable_count": 0,
+  "missing_count": 0,
+  "empty_count": 0,
+  "answer_extraction_failure_count": 0,
+  "length_cap_hit_count": 0,
+  "periodic_loop_count": 0,
+  "nonfinite_metric_count": 0,
+  "reasoning_failure_count": 0,
+  "output_tokens": {
+    "count": 0,
+    "min": null,
+    "median": null,
+    "p95": null,
+    "max": null
+  },
+  "missing_rate": 0.0,
+  "empty_rate": 0.0,
+  "answer_extraction_failure_rate": 0.0,
+  "length_cap_hit_rate": 0.0,
+  "periodic_loop_rate": 0.0,
+  "nonfinite_metric_rate": 0.0,
+  "reasoning_failure_rate": 0.0
+}

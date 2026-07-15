@@ -1,0 +1,30 @@
+{
+  "gpqa_diamond_cot_zeroshot": {
+    "pass_at_1_seed_42": 0.0,
+    "pass_at_1_seed_1234": 0.0,
+    "pass_at_1_seed_4158": 0.0,
+    "mean_pass_at_1": 0.0,
+    "exact_match,flexible-extract": 0.0
+  },
+  "mmlu_pro": {
+    "pass_at_1_seed_42": 0.7142857142857143,
+    "pass_at_1_seed_1234": 0.5,
+    "pass_at_1_seed_4158": 0.8571428571428571,
+    "mean_pass_at_1": 0.6904761904761905,
+    "exact_match,custom-extract": 0.6904761904761905
+  },
+  "gsm8k_cot": {
+    "pass_at_1_seed_42": 0.5,
+    "pass_at_1_seed_1234": 0.5,
+    "pass_at_1_seed_4158": 0.0,
+    "mean_pass_at_1": 0.3333333333333333,
+    "exact_match,strict-match": 0.3333333333333333
+  },
+  "aime25": {
+    "pass_at_1_seed_42": 0.0,
+    "pass_at_1_seed_1234": 0.0,
+    "pass_at_1_seed_4158": 0.0,
+    "mean_pass_at_1": 0.0,
+    "exact_match,none": 0.0
+  }
+}

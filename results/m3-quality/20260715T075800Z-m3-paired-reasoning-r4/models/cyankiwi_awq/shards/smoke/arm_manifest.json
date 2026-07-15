@@ -1,0 +1,26 @@
+{
+  "run_id": "20260715T075800Z-m3-paired-reasoning-r4",
+  "git_commit": "b44c318c3a67da6956da74de5f88080b4cdda728",
+  "tokenizer_sha256": "8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51",
+  "chat_template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+  "harness_contract_sha256": "a51895c9fffd6d6d8bb684be5674aacb55f0178c2eda0851a60d5a6e6543db9e",
+  "schema_version": 1,
+  "model_label": "cyankiwi_awq",
+  "shard": "smoke",
+  "sample_manifest_sha256": "f3e3a18323e9a06e59881308ed4aa5214a1b000d878abe8fea1ec5b23ac7edc9",
+  "eval_config_sha256": "e104fa1c8a5936e3581ab070dd42a7bb8247943d2de37664ac7ee6a2ce4f0288",
+  "generation_seeds": [
+    42,
+    1234,
+    4158
+  ],
+  "selected_tasks": [
+    "gpqa_diamond_cot_zeroshot",
+    "mmlu_pro",
+    "gsm8k_cot",
+    "aime25"
+  ],
+  "slurm_job_id": "12932",
+  "slurm_step_id": "0",
+  "slurm_node_name": "gpu-h117"
+}

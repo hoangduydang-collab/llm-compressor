@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "tasks": {
+    "gpqa_diamond_cot_zeroshot": [
+      42,
+      1234,
+      4158
+    ],
+    "mmlu_pro": [
+      42,
+      1234,
+      4158
+    ],
+    "gsm8k_cot": [
+      42,
+      1234,
+      4158
+    ],
+    "aime25": [
+      42,
+      1234,
+      4158
+    ]
+  }
+}

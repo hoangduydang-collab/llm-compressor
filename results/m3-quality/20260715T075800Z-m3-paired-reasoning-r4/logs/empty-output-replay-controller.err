@@ -1,0 +1,87 @@
+(EngineCore pid=2987047) Process EngineCore:
+(EngineCore pid=2987047) Traceback (most recent call last):
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+(EngineCore pid=2987047)     self.run()
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 108, in run
+(EngineCore pid=2987047)     self._target(*self._args, **self._kwargs)
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1235, in run_engine_core
+(EngineCore pid=2987047)     raise e
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 1200, in run_engine_core
+(EngineCore pid=2987047)     engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+(EngineCore pid=2987047)                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=2987047)     return func(*args, **kwargs)
+(EngineCore pid=2987047)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 966, in __init__
+(EngineCore pid=2987047)     super().__init__(
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core.py", line 123, in __init__
+(EngineCore pid=2987047)     self.model_executor = executor_class(vllm_config)
+(EngineCore pid=2987047)                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 108, in __init__
+(EngineCore pid=2987047)     super().__init__(vllm_config)
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+(EngineCore pid=2987047)     return func(*args, **kwargs)
+(EngineCore pid=2987047)            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/abstract.py", line 109, in __init__
+(EngineCore pid=2987047)     self._init_executor()
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 201, in _init_executor
+(EngineCore pid=2987047)     self.workers = WorkerProc.wait_for_ready(unready_workers)
+(EngineCore pid=2987047)                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2987047)   File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/executor/multiproc_executor.py", line 762, in wait_for_ready
+(EngineCore pid=2987047)     raise e from None
+(EngineCore pid=2987047) Exception: WorkerProc initialization failed due to an exception in a background process. See stack trace for root cause.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_empty_output_replay.py", line 494, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_empty_output_replay.py", line 484, in main
+    report = run_raw_vllm_replay(
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_empty_output_replay.py", line 404, in run_raw_vllm_replay
+    generator = load_raw_vllm_generator(
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/m3_empty_output_replay.py", line 390, in load_raw_vllm_generator
+    lm = model_loader(cfg, str(model_path))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/projects/llm-compressor/pipeline/lmeval_runner.py", line 128, in _load_lm_model
+    return model_cls.create_from_arg_string(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/lm_eval/api/model.py", line 146, in create_from_arg_string
+    return cls(**args, **args2)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/lm_eval/models/vllm_causallms.py", line 146, in __init__
+    self.model = LLM(**self.model_args)  # type: ignore[invalid-argument-type]
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/entrypoints/llm.py", line 349, in __init__
+    self.llm_engine = LLMEngine.from_engine_args(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/llm_engine.py", line 179, in from_engine_args
+    return cls(
+           ^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/llm_engine.py", line 105, in __init__
+    self.engine_core = EngineCoreClient.make_client(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 103, in make_client
+    return SyncMPClient(vllm_config, executor_class, log_stats)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/tracing/otel.py", line 178, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 786, in __init__
+    super().__init__(
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 573, in __init__
+    with launch_core_engines(
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 1213, in launch_core_engines
+    wait_for_engine_startup(
+  File "/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm/v1/engine/utils.py", line 1272, in wait_for_engine_startup
+    raise RuntimeError(
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+/mnt/nfs/hoangduy/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+srun: error: gpu-h117: task 0: Exited with exit code 1
+srun: launch/slurm: _step_signal: Terminating StepId=12935.0

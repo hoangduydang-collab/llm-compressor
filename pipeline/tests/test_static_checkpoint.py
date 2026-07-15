@@ -125,6 +125,57 @@ def test_checkpoint_rejects_conflicting_duplicate_sample_uids(tmp_path: Path):
     assert not (tmp_path / "aggregate.json").exists()
 
 
+def test_checkpoint_selects_the_configured_lm_eval_filter(tmp_path: Path):
+    task = EvalTask(name="gpqa_diamond", metric="exact_match,flexible-extract")
+    shared = {
+        "doc_id": 7,
+        "doc": {"Question": "Q", "answer": "A"},
+        "target": "A",
+        "resps": [["The answer is A"]],
+    }
+    batch = {
+        "results": {
+            "gpqa_diamond": {
+                "exact_match,flexible-extract": 1.0,
+                "exact_match,strict-match": 0.0,
+            }
+        },
+        # lm-eval logs one row per filter pipeline for the same document.
+        "samples": {
+            "gpqa_diamond": [
+                {
+                    **shared,
+                    "filter": "strict-match",
+                    "filtered_resps": ["The answer is A"],
+                    "exact_match,strict-match": 0.0,
+                },
+                {
+                    **shared,
+                    "filter": "flexible-extract",
+                    "filtered_resps": ["A"],
+                    "exact_match,flexible-extract": 1.0,
+                },
+            ]
+        },
+    }
+
+    rows = checkpoint_task_result(
+        task=task,
+        generation_seed=42,
+        expected_generation_seeds=[42],
+        batch=batch,
+        aggregate={},
+        aggregate_path=tmp_path / "aggregate.json",
+        samples_dir=tmp_path / "samples",
+        log_samples=True,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["metric"] == "exact_match,flexible-extract"
+    assert rows[0]["extracted_answer"] == "A"
+    assert rows[0]["correct"] == 1
+
+
 def test_repeated_checkpoint_preserves_question_and_attempt_identity(tmp_path: Path):
     task = EvalTask(name="gpqa", metric="exact_match,flexible-extract")
     aggregate: dict[str, dict[str, float]] = {}

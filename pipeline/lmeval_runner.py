@@ -256,9 +256,8 @@ def evaluate_tasks(
                     kwargs["fewshot_as_multiturn"] = True
                 if ev.gen_kwargs:
                     gen_kwargs = dict(ev.gen_kwargs)
-                    # vLLM samples whenever temperature is positive; its native
-                    # SamplingParams does not accept the HF-only do_sample key.
-                    gen_kwargs.pop("do_sample", None)
+                    # Preserve do_sample so the task-level generation defaults
+                    # cannot silently turn a paper-grade sampling run greedy.
                     if generation_seed is not None:
                         gen_kwargs["seed"] = generation_seed
                     kwargs["gen_kwargs"] = gen_kwargs

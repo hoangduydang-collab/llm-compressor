@@ -357,7 +357,11 @@ def test_evaluate_tasks_runs_paired_generation_seeds_with_one_model(monkeypatch)
 
     cfg = PipelineConfig()
     cfg.eval.generation_seeds = [42, 1234, 4158]
-    cfg.eval.gen_kwargs = {"temperature": 1.0, "top_p": 0.95}
+    cfg.eval.gen_kwargs = {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "do_sample": True,
+    }
     tasks = [EvalTask(name="gpqa", limit=None), EvalTask(name="aime", limit=None)]
     calls = []
     completed = []
@@ -393,6 +397,7 @@ def test_evaluate_tasks_runs_paired_generation_seeds_with_one_model(monkeypatch)
         (call["tasks"][0], call["gen_kwargs"]["seed"]) for call in calls
     ] == expected
     assert completed == expected
+    assert all(call["gen_kwargs"]["do_sample"] is True for call in calls)
     assert all(call["random_seed"] == 42 for call in calls)
     assert all(call["fewshot_random_seed"] == 42 for call in calls)
 

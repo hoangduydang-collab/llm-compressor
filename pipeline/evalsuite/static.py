@@ -227,6 +227,38 @@ def _collect_task_samples(batch: dict, task_name: str) -> list[dict]:
     return merged
 
 
+def _select_task_filter_samples(samples: list[dict], task: EvalTask) -> list[dict]:
+    """Select the lm-eval filter pipeline named by the configured metric.
+
+    lm-eval logs one sample record per filter pipeline. Those records describe
+    the same model attempt and therefore intentionally share an attempt UID;
+    only the filter used by ``task.metric`` belongs in the checkpoint.
+    """
+    _, separator, expected_filter = task.metric.partition(",")
+    if not separator or not expected_filter:
+        return samples
+
+    filter_names = {
+        str(sample["filter"])
+        for sample in samples
+        if sample.get("filter") is not None
+    }
+    if not filter_names:
+        # Older/synthetic lm-eval sample rows do not identify their filter.
+        return samples
+
+    selected = [
+        sample for sample in samples if sample.get("filter") == expected_filter
+    ]
+    if not selected:
+        available = ", ".join(sorted(filter_names))
+        raise ValueError(
+            f"configured filter {expected_filter!r} missing from logged samples; "
+            f"available filters: {available}"
+        )
+    return selected
+
+
 def checkpoint_task_result(
     *,
     task: EvalTask,
@@ -248,7 +280,9 @@ def checkpoint_task_result(
     task_results = require_task_results_or_aggregate(batch, task)
     rows: list[dict] = []
     if log_samples:
-        raw = _collect_task_samples(batch, task.name)
+        raw = _select_task_filter_samples(
+            _collect_task_samples(batch, task.name), task
+        )
         if raw:
             rows = _deduplicate_sample_rows(
                 [_extract_sample_row(s, task, generation_seed) for s in raw]

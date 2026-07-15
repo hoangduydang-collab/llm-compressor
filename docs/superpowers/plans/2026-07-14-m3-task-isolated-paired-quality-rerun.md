@@ -59,7 +59,7 @@ lm-eval owns datasets, task loading, prompts, choice preprocessing, few-shot con
 - Create: `pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml`
 - Modify: `pipeline/config.py`
 - Modify: `pipeline/requirements.txt`
-- Test: `pipeline/tests/test_config.py`
+- Test: `pipeline/tests/test_lmeval_runner.py`
 - Test: `pipeline/tests/test_m3_quality_eval.py`
 
 **Interfaces:**
@@ -102,7 +102,7 @@ def test_r4_matrix_has_two_shards_four_production_arms_and_no_probe():
 Run:
 
 ```bash
-pytest -q pipeline/tests/test_config.py pipeline/tests/test_m3_quality_eval.py -k "generation_seeds or r4_matrix"
+pytest -q pipeline/tests/test_lmeval_runner.py pipeline/tests/test_m3_quality_eval.py -k "generation_seeds or r4_matrix"
 ```
 
 Expected: failure because `EvalConfig.generation_seeds`, `ProbeSpec.enabled`, and both r4 YAML files do not exist.
@@ -172,7 +172,7 @@ Keep the existing AWQ and GPTQ checkpoint paths unchanged.
 Run:
 
 ```bash
-pytest -q pipeline/tests/test_config.py pipeline/tests/test_m3_quality_eval.py -k "generation_seeds or r4_matrix"
+pytest -q pipeline/tests/test_lmeval_runner.py pipeline/tests/test_m3_quality_eval.py -k "generation_seeds or r4_matrix"
 ```
 
 Expected: PASS.
@@ -180,7 +180,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pipeline/config.py pipeline/requirements.txt pipeline/configs/eval_minimax_m3_reasoning_r4.yaml pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml pipeline/tests/test_config.py pipeline/tests/test_m3_quality_eval.py
+git add pipeline/config.py pipeline/requirements.txt pipeline/configs/eval_minimax_m3_reasoning_r4.yaml pipeline/configs/minimax_m3_paired_gptq_awq_reasoning_r4.yaml pipeline/tests/test_lmeval_runner.py pipeline/tests/test_m3_quality_eval.py
 git commit -m "feat(eval): configure M3 generated reasoning rerun"
 ```
 
@@ -752,7 +752,7 @@ git commit -m "feat(eval): launch and gate four-arm M3 reasoning run"
 Run:
 
 ```bash
-pytest -q pipeline/tests/test_config.py pipeline/tests/test_lmeval_runner.py pipeline/tests/test_static_checkpoint.py pipeline/tests/test_compare.py pipeline/tests/test_eval_health.py pipeline/tests/test_m3_quality_eval.py pipeline/tests/test_m3_quality_eval_runner.py pipeline/tests/test_m3_quality_evidence.py
+pytest -q pipeline/tests/test_lmeval_runner.py pipeline/tests/test_static_checkpoint.py pipeline/tests/test_compare.py pipeline/tests/test_eval_health.py pipeline/tests/test_m3_quality_eval.py pipeline/tests/test_m3_quality_eval_runner.py pipeline/tests/test_m3_quality_evidence.py
 ruff check pipeline/config.py pipeline/lmeval_runner.py pipeline/evalsuite/static.py pipeline/evalsuite/compare.py pipeline/evalsuite/health.py pipeline/m3_quality_eval.py pipeline/m3_quality_preflight.py pipeline/tests/test_lmeval_runner.py pipeline/tests/test_static_checkpoint.py pipeline/tests/test_compare.py pipeline/tests/test_eval_health.py pipeline/tests/test_m3_quality_eval.py pipeline/tests/test_m3_quality_eval_runner.py
 ruff format --check pipeline/config.py pipeline/lmeval_runner.py pipeline/evalsuite/static.py pipeline/evalsuite/compare.py pipeline/evalsuite/health.py pipeline/m3_quality_eval.py pipeline/m3_quality_preflight.py pipeline/tests/test_lmeval_runner.py pipeline/tests/test_static_checkpoint.py pipeline/tests/test_compare.py pipeline/tests/test_eval_health.py pipeline/tests/test_m3_quality_eval.py pipeline/tests/test_m3_quality_eval_runner.py
 bash -n pipeline/slurm/test_m3_quality_eval_arm.sh

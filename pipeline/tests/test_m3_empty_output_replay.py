@@ -20,15 +20,36 @@ from pipeline.m3_empty_output_replay import (
     run_controls,
 )
 
+EVIDENCE_PATH = (
+    Path(__file__).parents[2]
+    / "results/m3-quality/20260715T075800Z-m3-paired-reasoning-r4/models"
+    / "inhouse_gptq/shards/smoke/samples/mmlu_pro.jsonl"
+)
+PINNED_ATTEMPT_UID = (
+    "8e98c89a40db606e115a1d388e89a58518582d44f2f48dafcf389a1e1e146878"
+)
+PINNED_PROMPT_SHA256 = (
+    "006f5eef8c151c3e7418a047e8a171a33bad2d77fad989a8b7f1552648d60b93"
+)
+
+
+def _load_evidence_prompt() -> str:
+    rows = [json.loads(line) for line in EVIDENCE_PATH.read_text().splitlines()]
+    row = next(row for row in rows if row.get("attempt_uid") == PINNED_ATTEMPT_UID)
+    return row["generation_arguments"][0][0]
+
+
+PINNED_PROMPT = _load_evidence_prompt()
+
 ROW = {
-    "attempt_uid": "8e98c89a40db606e115a1d388e89a58518582d44f2f48dafcf389a1e1e146878",
+    "attempt_uid": PINNED_ATTEMPT_UID,
     "task": "mmlu_pro",
     "subtask": "mmlu_pro_economics",
     "doc_id": 45,
     "generation_seed": 1234,
     "response": "",
     "generation_arguments": [[
-        "rendered prompt",
+        PINNED_PROMPT,
         {
             "until": ["Question:"],
             "max_gen_toks": 256,
@@ -71,10 +92,31 @@ def test_load_replay_attempt_returns_exact_normalized_request(tmp_path: Path):
 
     attempt = load_replay_attempt(path, ROW["attempt_uid"])
 
-    assert attempt.prompt == "rendered prompt"
-    assert attempt.prompt_sha256 == hashlib.sha256(b"rendered prompt").hexdigest()
+    assert attempt.prompt == PINNED_PROMPT
+    assert attempt.prompt_sha256 == PINNED_PROMPT_SHA256
+    assert hashlib.sha256(PINNED_PROMPT.encode()).hexdigest() == PINNED_PROMPT_SHA256
     assert attempt.generation_kwargs["max_gen_toks"] == 256
     assert attempt.source_row == ROW
+
+
+def test_load_replay_attempt_rejects_unpinned_requested_uid(tmp_path: Path):
+    path = tmp_path / "attempts.jsonl"
+    row = copy.deepcopy(ROW)
+    row["attempt_uid"] = "not-the-pinned-attempt"
+    _write_rows(path, [row])
+
+    with pytest.raises(ValueError, match="pinned attempt UID"):
+        load_replay_attempt(path, row["attempt_uid"])
+
+
+def test_load_replay_attempt_rejects_rendered_prompt_drift(tmp_path: Path):
+    path = tmp_path / "attempts.jsonl"
+    row = copy.deepcopy(ROW)
+    row["generation_arguments"][0][0] += " drift"
+    _write_rows(path, [row])
+
+    with pytest.raises(ValueError, match="prompt SHA-256"):
+        load_replay_attempt(path, PINNED_ATTEMPT_UID)
 
 
 @pytest.mark.parametrize("matching_rows", [0, 2])
@@ -419,6 +461,150 @@ def test_cli_rejects_resolved_output_samples_alias_before_model_load(
     assert model_load_calls == []
 
 
+@pytest.mark.parametrize(
+    "relative_output",
+    [
+        "diagnostics/samples/replay.jsonl",
+        "diagnostics/aggregate.json",
+        "diagnostics/matrix.json",
+        "diagnostics/gates.json",
+        "diagnostics/manifest.json",
+        "diagnostics/generation-health.json",
+    ],
+)
+def test_cli_rejects_benchmark_artifact_targets_before_model_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    relative_output: str,
+):
+    run_root = tmp_path / "run"
+    samples = (
+        run_root
+        / "models/inhouse_gptq/shards/smoke/samples/mmlu_pro.jsonl"
+    )
+    samples.parent.mkdir(parents=True)
+    _write_rows(samples, [ROW])
+    replay_calls = []
+    monkeypatch.setattr(
+        replay,
+        "run_raw_vllm_replay",
+        lambda *args, **kwargs: replay_calls.append((args, kwargs)),
+    )
+
+    with pytest.raises(ValueError, match="diagnostic replay sidecar"):
+        replay.main(
+            [
+                "--config",
+                str(tmp_path / "eval.yaml"),
+                "--model",
+                str(tmp_path / "checkpoint"),
+                "--samples",
+                str(samples),
+                "--attempt-uid",
+                PINNED_ATTEMPT_UID,
+                "--out",
+                str(run_root / relative_output),
+            ]
+        )
+
+    assert replay_calls == []
+
+
+@pytest.mark.parametrize(
+    "relative_output",
+    [
+        "diagnostics/empty-output-replay.json",
+        "replays/empty-output-replay.json",
+    ],
+)
+def test_cli_permits_benchmark_diagnostic_sidecar_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    relative_output: str,
+):
+    run_root = tmp_path / "run"
+    samples = (
+        run_root
+        / "models/inhouse_gptq/shards/smoke/samples/mmlu_pro.jsonl"
+    )
+    samples.parent.mkdir(parents=True)
+    _write_rows(samples, [ROW])
+    replay_calls = []
+    monkeypatch.setattr(
+        replay,
+        "run_raw_vllm_replay",
+        lambda *args, **kwargs: replay_calls.append((args, kwargs))
+        or {"schema_version": 1},
+    )
+
+    assert replay.main(
+        [
+            "--config",
+            str(tmp_path / "eval.yaml"),
+            "--model",
+            str(tmp_path / "checkpoint"),
+            "--samples",
+            str(samples),
+            "--attempt-uid",
+            PINNED_ATTEMPT_UID,
+            "--out",
+            str(run_root / relative_output),
+        ]
+    ) == 0
+
+    assert len(replay_calls) == 1
+    assert json.loads((run_root / relative_output).read_text()) == {
+        "schema_version": 1
+    }
+
+
+def test_cli_rejects_symlink_alias_to_benchmark_artifact_before_model_load(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    run_root = tmp_path / "run"
+    samples = (
+        run_root
+        / "models/inhouse_gptq/shards/smoke/samples/mmlu_pro.jsonl"
+    )
+    samples.parent.mkdir(parents=True)
+    _write_rows(samples, [ROW])
+    aggregate = run_root / "aggregate.json"
+    aggregate.write_text('{"scientific": true}\n', encoding="utf-8")
+    diagnostics = run_root / "diagnostics"
+    diagnostics.mkdir()
+    alias = diagnostics / "empty-output-replay.json"
+    try:
+        alias.symlink_to(aggregate)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    replay_calls = []
+    monkeypatch.setattr(
+        replay,
+        "run_raw_vllm_replay",
+        lambda *args, **kwargs: replay_calls.append((args, kwargs)),
+    )
+
+    with pytest.raises(ValueError, match="diagnostic replay sidecar"):
+        replay.main(
+            [
+                "--config",
+                str(tmp_path / "eval.yaml"),
+                "--model",
+                str(tmp_path / "checkpoint"),
+                "--samples",
+                str(samples),
+                "--attempt-uid",
+                PINNED_ATTEMPT_UID,
+                "--out",
+                str(alias),
+            ]
+        )
+
+    assert replay_calls == []
+    assert aggregate.read_text(encoding="utf-8") == '{"scientific": true}\n'
+
+
 def test_validation_before_model_load(tmp_path: Path):
     config = tmp_path / "invalid.yaml"
     _write_runtime_config(config, backend="sglang")
@@ -478,7 +664,7 @@ def test_raw_vllm_runtime_uses_pinned_adapter_and_cleans_up(
 
     def maybe_truncate(token_ids, **kwargs):
         truncate_calls.append((token_ids, kwargs))
-        return token_ids, kwargs["max_gen_toks"]
+        return token_ids, kwargs["max_gen_toks"] - 1
 
     class SamplingParams:
         def __init__(self, **kwargs):
@@ -510,7 +696,7 @@ def test_raw_vllm_runtime_uses_pinned_adapter_and_cleans_up(
             return "<eos>"
 
         def tok_encode(self, prompt):
-            assert prompt == "rendered prompt"
+            assert prompt == PINNED_PROMPT
             return [10, 11]
 
         def modify_gen_kwargs(self, kwargs, **defaults):
@@ -554,10 +740,38 @@ def test_raw_vllm_runtime_uses_pinned_adapter_and_cleans_up(
 
     assert len(loader_calls) == 1
     assert [call[1]["max_gen_toks"] for call in truncate_calls] == [256, 16384]
-    assert [params["max_tokens"] for params in sampling_params] == [256, 16384]
+    assert [params["max_tokens"] for params in sampling_params] == [255, 16383]
     assert all(params["stop"] == ["<eos>"] for params in sampling_params)
     assert report["controls"][0]["token_ids"] == [1, 2, 3]
     assert report["controls"][0]["token_count"] == 3
+    effective_arguments = [
+        control["effective_generation_arguments"] for control in report["controls"]
+    ]
+    assert effective_arguments == [
+        {
+            "normalized_sampling_kwargs": {
+                "temperature": 1.0,
+                "top_p": 0.95,
+                "seed": 1234,
+            },
+            "original_stops": ["Question:"],
+            "effective_stops": ["Question:", "<eos>"],
+            "model_stops": ["<eos>"],
+            "effective_max_tokens": 255,
+        },
+        {
+            "normalized_sampling_kwargs": {
+                "temperature": 1.0,
+                "top_p": 0.95,
+                "seed": 1234,
+            },
+            "original_stops": ["Question:"],
+            "effective_stops": ["Question:", "<eos>"],
+            "model_stops": ["<eos>"],
+            "effective_max_tokens": 16383,
+        },
+    ]
+    json.dumps(report["controls"], allow_nan=False)
     assert report["versions"]["lm_eval"] == "0.4.12"
     assert report["versions"]["vllm"] == "0.test"
     assert lm.clean_calls == 1
@@ -677,5 +891,5 @@ def test_cli_returns_nonzero_and_writes_no_report_for_invalid_source(tmp_path: P
     )
 
     assert completed.returncode != 0
-    assert "expected exactly one row" in completed.stderr
+    assert "pinned attempt UID" in completed.stderr
     assert not output.exists()

@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 REPLAY_CAPS = (256, 16384)
+PINNED_ATTEMPT_UID = (
+    "8e98c89a40db606e115a1d388e89a58518582d44f2f48dafcf389a1e1e146878"
+)
+PINNED_PROMPT_SHA256 = (
+    "006f5eef8c151c3e7418a047e8a171a33bad2d77fad989a8b7f1552648d60b93"
+)
 EXPECTED_ATTEMPT = {
     "task": "mmlu_pro",
     "subtask": "mmlu_pro_economics",
@@ -65,6 +71,11 @@ def _same_typed_value(actual: Any, expected: Any) -> bool:
 def load_replay_attempt(path: Path, attempt_uid: str) -> ReplayAttempt:
     """Load and validate exactly one row matching the pinned replay request."""
 
+    if attempt_uid != PINNED_ATTEMPT_UID:
+        raise ValueError(
+            f"replay requires pinned attempt UID {PINNED_ATTEMPT_UID!r}"
+        )
+
     matches: list[dict[str, Any]] = []
     with Path(path).open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
@@ -104,11 +115,16 @@ def load_replay_attempt(path: Path, attempt_uid: str) -> ReplayAttempt:
         raise ValueError(
             "generation kwargs do not match the pinned r4.5 smoke settings"
         )
+    prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if prompt_sha256 != PINNED_PROMPT_SHA256:
+        raise ValueError(
+            "rendered prompt SHA-256 does not match the committed r4.5 evidence"
+        )
 
     return ReplayAttempt(
         attempt_uid=attempt_uid,
         prompt=prompt,
-        prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        prompt_sha256=prompt_sha256,
         generation_kwargs=generation_kwargs,
         source_row=row,
     )
@@ -270,6 +286,14 @@ def _json_safe_scalar(value: Any) -> str | int | float | bool | None:
     return str(value)
 
 
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_value(item) for item in value]
+    return _json_safe_scalar(value)
+
+
 class _RawVllmGenerator:
     """Small callable adapter around the pinned lm-eval VLLM generation path."""
 
@@ -313,6 +337,15 @@ class _RawVllmGenerator:
             "token_count": len(completion_token_ids),
             "finish_reason": _json_safe_scalar(completion.finish_reason),
             "stop_reason": _json_safe_scalar(completion.stop_reason),
+            "effective_generation_arguments": {
+                "normalized_sampling_kwargs": _json_safe_value(normalized),
+                "original_stops": _json_safe_value(
+                    attempt.generation_kwargs["until"]
+                ),
+                "effective_stops": _json_safe_value(until),
+                "model_stops": _json_safe_value(stop),
+                "effective_max_tokens": int(max_gen_toks),
+            },
         }
 
     def close(self) -> None:
@@ -396,10 +429,57 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _benchmark_run_root(samples: Path) -> Path | None:
+    resolved = samples.resolve()
+    for parent in resolved.parents:
+        if parent.name.casefold() == "models":
+            return parent.parent
+    return None
+
+
+def _validate_replay_output_path(samples: Path, output: Path) -> None:
+    resolved_samples = samples.resolve()
+    resolved_output = output.resolve()
+    if resolved_samples == resolved_output:
+        raise ValueError("--samples and --out must resolve to different files")
+
+    run_root = _benchmark_run_root(samples)
+    if run_root is None:
+        return
+    try:
+        relative = resolved_output.relative_to(run_root)
+    except ValueError as exc:
+        raise ValueError(
+            "--out must be a diagnostic replay sidecar under the benchmark "
+            "run's diagnostics/ or replays/ directory"
+        ) from exc
+
+    if not relative.parts or relative.parts[0].casefold() not in {
+        "diagnostics",
+        "replays",
+    }:
+        raise ValueError(
+            "--out must be a diagnostic replay sidecar under the benchmark "
+            "run's diagnostics/ or replays/ directory"
+        )
+
+    forbidden_parts = {part.casefold() for part in relative.parts}
+    stem = resolved_output.stem.casefold()
+    if (
+        "samples" in forbidden_parts
+        or stem in {"aggregate", "matrix", "gates", "samples"}
+        or "manifest" in stem
+        or "generation-health" in stem
+        or "generation_health" in stem
+    ):
+        raise ValueError(
+            "--out must be a diagnostic replay sidecar, not a benchmark artifact"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    if args.samples.resolve() == args.out.resolve():
-        raise ValueError("--samples and --out must resolve to different files")
+    _validate_replay_output_path(args.samples, args.out)
     attempt = load_replay_attempt(args.samples, args.attempt_uid)
     report = run_raw_vllm_replay(
         attempt,

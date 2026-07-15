@@ -2,12 +2,12 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: 2026-07-15-r4.1
+- Packet revision: 2026-07-15-r4.2
 - Planner owner: Codex planner
 - Intended executor: cluster executor
-- Implementation base commit: `3171dd8e`
+- Implementation base commit: `065ff302`
 - Branch: `duy-branch`
-- Retry authorization: one fresh run after the preflight chat-renderer fix
+- Retry authorization: one fresh run after the generated-task choice-inspection fix
 
 Revisions r1-r3 are historical and superseded by this r4 packet. Do not reuse
 their GPQA/MMLU-Pro/GSM8K scores: r4 changes the reasoning harness to stock
@@ -17,9 +17,16 @@ The first r4 attempt at
 `results/m3-quality/20260715T061300Z-m3-paired-reasoning-r4` stopped before GPU
 allocation because preflight passed a Jinja template string where lm-eval
 0.4.12 requires a callable chat renderer. Commit `3171dd8e` fixes that source
-error and adds a regression test. Preserve the stopped evidence, but do not
-reuse its incomplete run root; this packet authorizes exactly one fresh r4.1
-attempt.
+error and adds a regression test.
+
+The r4.1 attempt at
+`results/m3-quality/20260715T062000Z-m3-paired-reasoning-r4` also stopped before
+GPU allocation. For generated-answer tasks, lm-eval exposes a `doc_to_choice`
+method even though the task config intentionally leaves `doc_to_choice` unset;
+calling that method raises by design. Commit `065ff302` makes preflight inspect
+the processed GPQA document's `choices` field in that case and adds a regression
+test. Preserve both stopped evidence roots, but do not reuse either incomplete
+run root; this packet authorizes exactly one fresh r4.2 attempt.
 
 ## Decision and fixed experiment
 
@@ -61,7 +68,7 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-git merge-base --is-ancestor 3171dd8e HEAD
+git merge-base --is-ancestor 065ff302 HEAD
 source /mnt/nfs/hoangduy/venvs/quant/bin/activate
 export PYTHONPATH="$PWD/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
 test -z "${SLURM_JOB_ID:-}"

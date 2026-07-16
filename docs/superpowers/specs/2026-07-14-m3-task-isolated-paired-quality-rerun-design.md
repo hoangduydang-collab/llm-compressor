@@ -19,6 +19,11 @@ prove that the intervening diff contains only the canonical handoff and this
 specification. This base-versus-packet convention permits deterministic review
 without allowing later executable drift.
 
+Its return packaging is also fail-closed: it records missing/not-reached runtime
+metadata explicitly, verifies immutable r4.7 report identities, and caps the
+small Git evidence packet at 2 MiB per copied source artifact, 20 MiB total, and
+500 files while indexing every eligible artifact omitted by the aggregate cap.
+
 This r4 design supersedes the earlier task-isolation, greedy GPQA, `sbatch`,
 distributional-probe, and checkpoint-reuse designs in this file. Historical
 artifacts and reports remain immutable, but none of their reasoning scores are

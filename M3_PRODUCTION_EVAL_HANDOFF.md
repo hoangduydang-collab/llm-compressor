@@ -99,6 +99,7 @@ Run this block from one persistent login shell. Every later command uses the
 variables from this shell.
 
 ```bash
+set -euo pipefail
 cd /mnt/nfs/hoangduy/projects/llm-compressor
 git switch duy-branch
 git pull --ff-only
@@ -153,6 +154,7 @@ the return manifest. Do not clean or delete unrelated files.
 ## Fresh paths and collision gate
 
 ```bash
+set -euo pipefail
 PAIR_ROOT=results/m3-quality/20260715T075800Z-m3-paired-reasoning-r4
 BF16_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-bf16-tp16-qualification-r48"
 BF16_ROOT="results/m3-quality/$BF16_RUN_ID"
@@ -194,6 +196,7 @@ These commands create and validate only the fresh BF16 root; they do not
 allocate GPUs.
 
 ```bash
+set -euo pipefail
 BF16_MATRIX=pipeline/configs/minimax_m3_bf16_reasoning_r4.yaml
 python -m pipeline.m3_quality_preflight \
   --matrix "$BF16_MATRIX" --run-root "$BF16_ROOT"
@@ -240,11 +243,15 @@ passes. Both controllers are independent. Failure of either does not cancel the
 other, relaunch it, or affect paired production.
 
 ```bash
+set -euo pipefail
 REPLAY_SESSION="m3-gptq-r48-replay-$(date -u +%H%M%S)"
 BF16_SMOKE_SESSION="m3-bf16-r48-smoke-$(date -u +%H%M%S)"
 BF16_OUT="$BF16_ROOT/logs/smoke-controller-r48.out"
 BF16_ERR="$BF16_ROOT/logs/smoke-controller-r48.err"
 BF16_RC="$BF16_ROOT/smoke-controller-r48.rc"
+PACKET_START_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+REPLAY_PAYLOAD="cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD' && srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 --time=12:00:00 python -m pipeline.m3_empty_output_replay --config pipeline/configs/eval_minimax_m3_reasoning_r4.yaml --model /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay --samples '$PAIR_ROOT/models/inhouse_gptq/shards/smoke/samples/mmlu_pro.jsonl' --attempt-uid 8e98c89a40db606e115a1d388e89a58518582d44f2f48dafcf389a1e1e146878 --out '$REPLAY_JSON' >'$REPLAY_OUT' 2>'$REPLAY_ERR'; printf '%s\n' \$? >'$REPLAY_RC'"
+BF16_PAYLOAD="cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD' && M3_PLACEMENT_TIMEOUT_SECONDS=900 M3_MODEL_INIT_TIMEOUT_SECONDS=10800 TIME_LIMIT=12:00:00 bash pipeline/slurm/run_m3_quality_eval_srun.sh --profile smoke --matrix '$BF16_MATRIX' --run-root '$BF16_ROOT' >'$BF16_OUT' 2>'$BF16_ERR'; printf '%s\n' \$? >'$BF16_RC'"
 
 test -z "${SLURM_JOB_ID:-}"
 test ! -e "$BF16_OUT"
@@ -252,12 +259,21 @@ test ! -e "$BF16_ERR"
 test ! -e "$BF16_RC"
 ! tmux has-session -t "$REPLAY_SESSION" 2>/dev/null
 ! tmux has-session -t "$BF16_SMOKE_SESSION" 2>/dev/null
+printf '%s\n' "$REPLAY_PAYLOAD" >"$BF16_ROOT/replay-controller-command-r48.txt"
+printf '%s\n' "$BF16_PAYLOAD" >"$BF16_ROOT/bf16-controller-command-r48.txt"
+printf 'packet_start_utc=%s\nreplay_session=%s\nbf16_session=%s\n' \
+  "$PACKET_START_UTC" "$REPLAY_SESSION" "$BF16_SMOKE_SESSION" \
+  >"$BF16_ROOT/controller-metadata-r48.txt"
+python --version >"$BF16_ROOT/package-versions-r48.txt" 2>&1
+python -m pip show llmcompressor lm_eval vllm ray torch \
+  >>"$BF16_ROOT/package-versions-r48.txt" 2>&1
+nvidia-smi --query-gpu=driver_version --format=csv,noheader \
+  >"$BF16_ROOT/driver-versions-r48.txt" 2>&1 || \
+  printf 'not reached on login host\n' >"$BF16_ROOT/driver-versions-r48.txt"
+squeue -u "$USER" >"$BF16_ROOT/squeue-at-launch-r48.txt" 2>&1
 
-tmux new-session -d -s "$REPLAY_SESSION" \
-  "cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD' && srun --exclusive --nodes=1 --ntasks=1 --gpus-per-node=8 --kill-on-bad-exit=1 --time=12:00:00 python -m pipeline.m3_empty_output_replay --config pipeline/configs/eval_minimax_m3_reasoning_r4.yaml --model /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay --samples '$PAIR_ROOT/models/inhouse_gptq/shards/smoke/samples/mmlu_pro.jsonl' --attempt-uid 8e98c89a40db606e115a1d388e89a58518582d44f2f48dafcf389a1e1e146878 --out '$REPLAY_JSON' >'$REPLAY_OUT' 2>'$REPLAY_ERR'; printf '%s\n' \$? >'$REPLAY_RC'"
-
-tmux new-session -d -s "$BF16_SMOKE_SESSION" \
-  "cd '$PWD' && source /mnt/nfs/hoangduy/venvs/quant/bin/activate && export PYTHONPATH='$PWD' && M3_PLACEMENT_TIMEOUT_SECONDS=900 M3_MODEL_INIT_TIMEOUT_SECONDS=10800 TIME_LIMIT=12:00:00 bash pipeline/slurm/run_m3_quality_eval_srun.sh --profile smoke --matrix '$BF16_MATRIX' --run-root '$BF16_ROOT' >'$BF16_OUT' 2>'$BF16_ERR'; printf '%s\n' \$? >'$BF16_RC'"
+tmux new-session -d -s "$REPLAY_SESSION" "$REPLAY_PAYLOAD"
+tmux new-session -d -s "$BF16_SMOKE_SESSION" "$BF16_PAYLOAD"
 
 test $((1 + 2)) -eq 3
 test $((4 + 1 + 2)) -eq 7
@@ -303,6 +319,7 @@ Monitoring is observational and does not authorize cancellation, adaptation,
 or retry:
 
 ```bash
+set -euo pipefail
 tmux ls
 squeue -u "$USER"
 tail -n 100 "$REPLAY_OUT" "$REPLAY_ERR" "$BF16_OUT" "$BF16_ERR"
@@ -386,19 +403,19 @@ recorded as scientific/runtime evidence and does not make packaging fail or
 authorize a retry. Before running it, set `BOUNDARY_CLASSIFICATION` to one of
 the six authorized factual boundaries and set `LAST_SUCCESSFUL_STAGE`,
 `FIRST_FAILING_OPERATION`, and `BOUNDARY_EVIDENCE` to exact preserved facts. A
-successful qualification uses `evaluation` with no failing operation.
+successful qualification must use `BOUNDARY_CLASSIFICATION=evaluation` and the
+exact sentinel `FIRST_FAILING_OPERATION=none`; every non-success return must use
+a factual non-`none` operation. Set `DEVIATIONS=none` when there were no
+deviations, otherwise provide the exact deviation record.
 
 ```bash
+set -euo pipefail
 while tmux has-session -t "$REPLAY_SESSION" 2>/dev/null || tmux has-session -t "$BF16_SMOKE_SESSION" 2>/dev/null; do
   date -u +%Y-%m-%dT%H:%M:%SZ
   tmux ls 2>/dev/null || true
   squeue -u "$USER" || true
   sleep 60
 done
-
-EVIDENCE_DIR="evidence/m3-r48/$BF16_RUN_ID"
-test ! -e "$EVIDENCE_DIR"
-mkdir -p "$EVIDENCE_DIR"
 
 read_rc_or_missing() {
   if test -f "$1"; then
@@ -409,6 +426,26 @@ read_rc_or_missing() {
 }
 REPLAY_RC_VALUE="$(read_rc_or_missing "$REPLAY_RC")"
 BF16_RC_VALUE="$(read_rc_or_missing "$BF16_RC")"
+case "${BOUNDARY_CLASSIFICATION:-}" in
+  placement|"worker start"|"weight load"|"collective communication"|"request generation"|evaluation) ;;
+  *) echo "set BOUNDARY_CLASSIFICATION to one authorized factual boundary" >&2; exit 1 ;;
+esac
+test -n "${LAST_SUCCESSFUL_STAGE:-}"
+test -n "${FIRST_FAILING_OPERATION:-}"
+test -n "${BOUNDARY_EVIDENCE:-}"
+test -n "${DEVIATIONS:-}"
+if test "$REPLAY_RC_VALUE" = 0 && test "$BF16_RC_VALUE" = 0; then
+  test "$BOUNDARY_CLASSIFICATION" = evaluation
+  test "$FIRST_FAILING_OPERATION" = none
+else
+  test "$FIRST_FAILING_OPERATION" != none
+fi
+
+EVIDENCE_DIR="evidence/m3-r48/$BF16_RUN_ID"
+test ! -e "$EVIDENCE_DIR"
+mkdir -p "$EVIDENCE_DIR"
+
+PACKET_END_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf 'replay_rc=%s\nbf16_rc=%s\n' "$REPLAY_RC_VALUE" "$BF16_RC_VALUE" \
   | tee "$EVIDENCE_DIR/controller-return-codes.txt"
 git rev-parse HEAD >"$EVIDENCE_DIR/actual-git-commit.txt"
@@ -416,17 +453,32 @@ git rev-parse origin/duy-branch >"$EVIDENCE_DIR/origin-git-commit.txt"
 printf '%s\n' "$CODE_BASE" >"$EVIDENCE_DIR/code-base.txt"
 git status --short >"$EVIDENCE_DIR/git-status-before-packaging.txt"
 squeue -u "$USER" >"$EVIDENCE_DIR/squeue-final.txt" 2>&1 || true
+if ! sacct -u "$USER" --starttime "$PACKET_START_UTC" \
+  --format=JobIDRaw,JobName%40,State,ExitCode,NodeList,Elapsed,Start,End -P \
+  >"$EVIDENCE_DIR/sacct-final.txt" 2>&1; then
+  printf 'missing: scheduler accounting not reached or unavailable\n' \
+    >"$EVIDENCE_DIR/sacct-final.txt"
+fi
+printf 'packet_end_utc=%s\n' "$PACKET_END_UTC" \
+  >"$EVIDENCE_DIR/packet-end-r48.txt"
 
 python - "$BF16_ROOT" "$PAIR_ROOT" "$EVIDENCE_DIR" \
   "$REPLAY_JSON" "$REPLAY_OUT" "$REPLAY_ERR" "$REPLAY_RC" \
-  "$REPLAY_RC_VALUE" "$BF16_RC_VALUE" "$CODE_BASE" "$ACTUAL_COMMIT" <<'PY'
-import hashlib, json, shutil, sys
+  "$REPLAY_RC_VALUE" "$BF16_RC_VALUE" "$CODE_BASE" "$ACTUAL_COMMIT" \
+  "$PACKET_START_UTC" "$PACKET_END_UTC" "$REPLAY_SESSION" \
+  "$BF16_SMOKE_SESSION" "$DEVIATIONS" <<'PY'
+import hashlib, json, shutil, subprocess, sys
 from pathlib import Path
 
 (bf16_root, pair_root, evidence_dir, replay_json, replay_out, replay_err,
- replay_rc, replay_rc_value, bf16_rc_value, code_base, actual_commit) = sys.argv[1:]
+ replay_rc, replay_rc_value, bf16_rc_value, code_base, actual_commit,
+ packet_start, packet_end, replay_session, bf16_session, deviations) = sys.argv[1:]
 bf16_root, pair_root, evidence_dir = map(Path, (bf16_root, pair_root, evidence_dir))
 small_limit = 2 * 1024 * 1024
+aggregate_limit = 20 * 1024 * 1024
+file_limit = 500
+copy_aggregate_limit = 18 * 1024 * 1024
+copy_file_limit = 450
 records = []
 
 def record(path, logical_root):
@@ -449,37 +501,98 @@ for raw in map(Path, (replay_json, replay_out, replay_err, replay_rc)):
     if raw.is_file():
         record(raw, pair_root)
 
+copied_bytes = copied_files = 0
+for item in records:
+    source = Path(item["path"])
+    eligible = source.suffix in {
+        ".json", ".jsonl", ".log", ".out", ".err", ".rc", ".txt"
+    } and source.stat().st_size <= small_limit
+    if not eligible:
+        item["small_packet"] = "indexed_not_eligible"
+        continue
+    if copied_files + 1 > copy_file_limit or copied_bytes + source.stat().st_size > copy_aggregate_limit:
+        item["small_packet"] = "indexed_aggregate_cap"
+        continue
+    relative = Path("small-artifacts") / (
+        "bf16" if str(source).startswith(str(bf16_root.resolve())) else "replay"
+    ) / item["relative_path"]
+    target = evidence_dir / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        raise FileExistsError(target)
+    shutil.copy2(source, target)
+    item["small_packet"] = str(relative)
+    copied_files += 1
+    copied_bytes += source.stat().st_size
+
+r47 = []
+for relative in (
+    "M3_R4_7_GPTQ_REPLAY_STOPPED_REPORT.md",
+    "M3_R4_7_BF16_SMOKE_STOPPED_REPORT.md",
+):
+    path = Path(relative)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    r47.append({
+        "repo_relative_path": relative,
+        "absolute_path": str(path.resolve()),
+        "bytes": path.stat().st_size,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "git_blob": subprocess.check_output(
+            ["git", "rev-parse", f"HEAD:{relative}"], text=True
+        ).strip(),
+    })
+
+evidence_paths = {
+    "planned_topology": str((bf16_root / "smoke_launch_plan.json").resolve()),
+    "actual_topology": str((bf16_root / "ray_preflight").resolve()),
+    "gpu_monitors": str((bf16_root / "models/bf16/shards/smoke").resolve()),
+    "scheduler_snapshot": str((evidence_dir / "sacct-final.txt").resolve()),
+}
+def runtime_status(path):
+    path = Path(path)
+    return {
+        "path": str(path.resolve()),
+        "status": "available" if path.exists() else "missing/not reached",
+    }
+
+runtime_metadata = {
+    "replay_command": runtime_status(bf16_root / "replay-controller-command-r48.txt"),
+    "bf16_command": runtime_status(bf16_root / "bf16-controller-command-r48.txt"),
+    "controller_metadata": runtime_status(bf16_root / "controller-metadata-r48.txt"),
+    "package_versions": runtime_status(bf16_root / "package-versions-r48.txt"),
+    "driver_versions": runtime_status(bf16_root / "driver-versions-r48.txt"),
+    "scheduler_launch": runtime_status(bf16_root / "squeue-at-launch-r48.txt"),
+    "scheduler_final": runtime_status(evidence_dir / "sacct-final.txt"),
+    "planned_topology": runtime_status(bf16_root / "smoke_launch_plan.json"),
+    "actual_topology": runtime_status(bf16_root / "ray_preflight"),
+    "gpu_evidence": runtime_status(bf16_root / "models/bf16/shards/smoke"),
+}
 manifest = {
     "schema_version": 1,
     "packet_revision": "2026-07-16-r4.8",
     "code_base": code_base,
     "actual_git_commit": actual_commit,
+    "packet_start_utc": packet_start,
+    "packet_end_utc": packet_end,
+    "sessions": {"replay": replay_session, "bf16": bf16_session},
     "replay_controller_rc": replay_rc_value,
     "bf16_controller_rc": bf16_rc_value,
+    "deviations": deviations,
+    "planned_topology": {"replay": "1 node, 8 GPUs, TP8", "bf16": "2 nodes, 16 GPUs, TP16xPP1/Ray"},
+    "evidence_paths": evidence_paths,
+    "runtime_metadata": runtime_metadata,
+    "missing_runtime_metadata_sentinel": "missing/not reached",
     "bf16_root": str(bf16_root.resolve()),
     "paired_root": str(pair_root.resolve()),
-    "immutable_r47_reports": [
-        "M3_R4_7_GPTQ_REPLAY_STOPPED_REPORT.md",
-        "M3_R4_7_BF16_SMOKE_STOPPED_REPORT.md",
-    ],
+    "immutable_r47_reports": r47,
+    "small_packet_limits": {"per_file_bytes": small_limit, "aggregate_bytes": aggregate_limit, "file_count": file_limit, "copy_reservation_bytes": copy_aggregate_limit, "copy_reservation_files": copy_file_limit},
+    "small_packet_actual": {"bytes": copied_bytes, "files": copied_files},
     "artifacts": records,
 }
 (evidence_dir / "evidence-manifest.json").write_text(
     json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
 )
-
-for item in records:
-    source = Path(item["path"])
-    if source.stat().st_size <= small_limit and source.suffix in {
-        ".json", ".jsonl", ".log", ".out", ".err", ".rc", ".txt"
-    }:
-        relative = Path("small-artifacts") / (
-            "bf16" if str(source).startswith(str(bf16_root.resolve())) else "replay"
-        ) / item["relative_path"]
-        target = evidence_dir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.exists():
-            shutil.copy2(source, target)
 
 report = [
     "# MiniMax-M3 r4.8 correction evidence",
@@ -487,10 +600,14 @@ report = [
     "- State: `RETURNED_FOR_ANALYSIS`",
     f"- Code base: `{code_base}`",
     f"- Actual Git commit: `{actual_commit}`",
+    f"- Start/end UTC: `{packet_start}` / `{packet_end}`",
+    f"- Sessions: replay `{replay_session}`; BF16 `{bf16_session}`",
     f"- Replay controller rc: `{replay_rc_value}`",
     f"- BF16 controller rc: `{bf16_rc_value}`",
     f"- BF16 durable root: `{bf16_root.resolve()}`",
     f"- Artifact records: {len(records)}",
+    f"- Small packet: {copied_files} files / {copied_bytes} bytes",
+    f"- Deviations: {deviations}",
     "- Retry: none",
     "- Strategic interpretation: none; returned to planner",
     "",
@@ -502,13 +619,6 @@ report = [
 )
 PY
 
-case "${BOUNDARY_CLASSIFICATION:-}" in
-  placement|"worker start"|"weight load"|"collective communication"|"request generation"|evaluation) ;;
-  *) echo "set BOUNDARY_CLASSIFICATION to one authorized factual boundary" >&2; exit 1 ;;
-esac
-test -n "${LAST_SUCCESSFUL_STAGE:-}"
-test -n "${FIRST_FAILING_OPERATION:-}"
-test -n "${BOUNDARY_EVIDENCE:-}"
 printf '\n- Factual boundary: `%s`\n- Last successful stage: %s\n- First failing operation: %s\n- Boundary evidence: `%s`\n' \
   "$BOUNDARY_CLASSIFICATION" "$LAST_SUCCESSFUL_STAGE" \
   "$FIRST_FAILING_OPERATION" "$BOUNDARY_EVIDENCE" \
@@ -524,6 +634,10 @@ for path in sorted(p for p in root.rglob("*") if p.is_file()):
         continue
     lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(root)}")
 (root / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+files = [p for p in root.rglob("*") if p.is_file()]
+total = sum(p.stat().st_size for p in files)
+if len(files) > 500 or total > 20 * 1024 * 1024:
+    raise SystemExit(f"small evidence packet exceeds bound: files={len(files)} bytes={total}")
 PY
 
 git add -- "$EVIDENCE_DIR"

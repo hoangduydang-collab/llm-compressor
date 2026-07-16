@@ -7,10 +7,11 @@
 **Scope:** MiniMax-M3 paired GPTQ-versus-AWQ reasoning evaluation plus a
 comparable BF16 companion baseline
 
-**Status:** r4.7 paired production remains active; replay repair and BF16 TP16
-qualification are awaiting implementation
+**Status:** r4.7 paired production remains active; the repaired exact replay and
+BF16 TP16 qualification are authorized by the canonical r4.8 packet in
+`M3_PRODUCTION_EVAL_HANDOFF.md`
 
-**Workflow state:** `PLANNER_ANALYSIS`
+**Workflow state:** `READY_FOR_EXECUTOR`
 
 This r4 design supersedes the earlier task-isolation, greedy GPQA, `sbatch`,
 distributional-probe, and checkpoint-reuse designs in this file. Historical

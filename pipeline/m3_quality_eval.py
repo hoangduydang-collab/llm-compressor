@@ -120,7 +120,7 @@ def _read_json(path: Path) -> dict:
 def _read_jsonl(path: Path) -> list[dict]:
     return [
         json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
+        for line in path.read_text(encoding="utf-8").split("\n")
         if line.strip()
     ]
 

@@ -223,6 +223,61 @@ def test_repeated_checkpoint_preserves_question_and_attempt_identity(tmp_path: P
     assert progress["tasks"]["gpqa"] == [42, 1234, 4158]
 
 
+def test_repeated_checkpoint_survives_unicode_line_separators(tmp_path: Path):
+    """Regression: generated text carrying U+2028/U+2029/U+0085 must not break
+    the per-seed sample re-read.
+
+    Samples are written with ``json.dumps(ensure_ascii=False) + "\\n"``, which
+    emits these Unicode line-break characters literally (they are legal inside
+    JSON strings). A re-read that split on ``str.splitlines()`` shredded a single
+    record into fragments and raised ``JSONDecodeError: Unterminated string``
+    when the next seed's checkpoint merged the existing file. The read must split
+    on the literal ``"\\n"`` terminator only.
+    """
+    task = EvalTask(name="gpqa", metric="exact_match,flexible-extract")
+    # U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR, U+0085 NEL — all split by
+    # str.splitlines() but never by str.split("\n").
+    poisoned = "Step 1.\u2028Step 2.\u2029Done.\u0085Answer: A"
+    aggregate: dict[str, dict[str, float]] = {}
+    for seed, correct in ((42, 1), (1234, 0)):
+        batch = {
+            "results": {"gpqa": {"exact_match,flexible-extract": correct}},
+            "samples": {
+                "gpqa": [
+                    {
+                        "doc_id": 7,
+                        "doc": {"Question": "Q", "answer": "A"},
+                        "arguments": [["Q\nAnswer:", {"max_gen_toks": 16384}]],
+                        "target": "A",
+                        "resps": [[poisoned]],
+                        "filtered_resps": ["A"],
+                        "exact_match,flexible-extract": correct,
+                    }
+                ]
+            },
+        }
+        # Before the fix, the seed-1234 call raised JSONDecodeError here while
+        # re-reading the seed-42 sample file.
+        checkpoint_task_result(
+            task=task,
+            generation_seed=seed,
+            expected_generation_seeds=[42, 1234, 4158],
+            batch=batch,
+            aggregate=aggregate,
+            aggregate_path=tmp_path / "aggregate.json",
+            samples_dir=tmp_path / "samples",
+            progress_path=tmp_path / "seed_progress.json",
+            log_samples=True,
+        )
+
+    raw = (tmp_path / "samples/gpqa.jsonl").read_text(encoding="utf-8")
+    rows = [json.loads(line) for line in raw.split("\n") if line.strip()]
+    assert {row["generation_seed"] for row in rows} == {42, 1234}
+    assert any("\u2028" in json.dumps(row, ensure_ascii=False) for row in rows)
+    progress = json.loads((tmp_path / "seed_progress.json").read_text())
+    assert progress["tasks"]["gpqa"] == [42, 1234]
+
+
 def test_repeated_checkpoint_rejects_unexpected_seed(tmp_path: Path):
     task = EvalTask(name="gpqa", metric="exact_match,flexible-extract")
     with pytest.raises(ValueError, match="unexpected generation seed"):

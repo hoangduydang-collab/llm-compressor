@@ -291,7 +291,7 @@ def checkpoint_task_result(
             if generation_seed is not None and sample_path.is_file():
                 existing = [
                     json.loads(line)
-                    for line in sample_path.read_text(encoding="utf-8").splitlines()
+                    for line in sample_path.read_text(encoding="utf-8").split("\n")
                     if line.strip()
                 ]
                 rows = _deduplicate_sample_rows(existing + rows)

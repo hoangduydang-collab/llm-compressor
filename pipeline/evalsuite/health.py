@@ -120,7 +120,7 @@ def enrich_samples_file(
     path = Path(path)
     rows = [
         json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
+        for line in path.read_text(encoding="utf-8").split("\n")
         if line.strip()
     ]
     enriched = enrich_generation_rows(

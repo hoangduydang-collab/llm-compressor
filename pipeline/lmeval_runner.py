@@ -25,6 +25,14 @@ def _thinking_model_arg_parts(ev) -> list[str]:
 
 def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
     s = cfg.serve
+    runtime_kwargs: dict[str, object] = {}
+    if s.enable_expert_parallel:
+        runtime_kwargs["enable_expert_parallel"] = True
+    if s.block_size is not None:
+        runtime_kwargs["block_size"] = s.block_size
+    if s.kv_cache_dtype is not None:
+        runtime_kwargs["kv_cache_dtype"] = s.kv_cache_dtype
+    runtime_kwargs.update(s.vllm_kwargs)
     return _arg_parts(
         [
             f"pretrained={model_path}",
@@ -35,7 +43,7 @@ def vllm_model_args(cfg: PipelineConfig, model_path: str) -> str:
             f"enforce_eager={s.enforce_eager}",
             f"disable_custom_all_reduce={s.disable_custom_all_reduce}",
             "dtype=auto",
-            *(f"{key}={value}" for key, value in s.vllm_kwargs.items()),
+            *(f"{key}={value}" for key, value in runtime_kwargs.items()),
             *_thinking_model_arg_parts(cfg.eval),
         ]
     )

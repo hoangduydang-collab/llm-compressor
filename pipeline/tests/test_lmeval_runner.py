@@ -172,6 +172,40 @@ def test_vllm_model_args_forwards_typed_vllm_kwargs():
     assert "kv_cache_dtype=fp8" in args
 
 
+def test_vllm_model_args_forwards_typed_serve_runtime_envelope():
+    cfg = PipelineConfig()
+    cfg.serve.enable_expert_parallel = True
+    cfg.serve.block_size = 128
+    cfg.serve.kv_cache_dtype = "fp8"
+
+    args = vllm_model_args(cfg, "/models/minimax-m3")
+
+    assert "enable_expert_parallel=True" in args
+    assert "block_size=128" in args
+    assert "kv_cache_dtype=fp8" in args
+
+
+def test_vllm_model_args_explicit_kwargs_override_typed_envelope_once():
+    cfg = PipelineConfig()
+    cfg.serve.enable_expert_parallel = True
+    cfg.serve.block_size = 128
+    cfg.serve.kv_cache_dtype = "fp8"
+    cfg.serve.vllm_kwargs = {
+        "enable_expert_parallel": False,
+        "block_size": 64,
+        "kv_cache_dtype": "auto",
+    }
+
+    args = vllm_model_args(cfg, "/models/minimax-m3")
+
+    assert args.count("enable_expert_parallel=") == 1
+    assert args.count("block_size=") == 1
+    assert args.count("kv_cache_dtype=") == 1
+    assert "enable_expert_parallel=False" in args
+    assert "block_size=64" in args
+    assert "kv_cache_dtype=auto" in args
+
+
 def test_prepare_vllm_runtime_reuses_minimax_runtime(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(

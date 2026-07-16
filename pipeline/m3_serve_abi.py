@@ -60,11 +60,133 @@ def _matches(pattern: str, module: str) -> bool:
     return module == pattern or module.endswith(f".{pattern}")
 
 
+# ModelOpt / block-scale checkpoints (e.g. quant_method "mxfp8", "nvfp4",
+# "modelopt*") do not pack weights: a quantized Linear keeps a low-bit
+# ``.weight`` plus a ``.weight_scale_inv`` (MXFP8 microscale) or ``.weight_scale``
+# (NVFP4) tensor, and the un-quantized modules are listed under ``ignored_layers``
+# / ``exclude_modules`` in Transformers namespace. The compressed-tensors path
+# below keys off ``.weight_packed`` + ``ignore`` + ``config_groups`` and would
+# read every ModelOpt weight as "plain", so we dispatch that format separately.
+_MODELOPT_METHODS = {
+    "mxfp8",
+    "nvfp4",
+    "modelopt",
+    "modelopt_fp4",
+    "modelopt_mxfp8",
+    "modelopt_mixed",
+    "fp8",
+}
+_MODELOPT_SCALE_SUFFIXES = (".weight_scale_inv", ".weight_scale")
+
+
+def _detect_format(quant: dict[str, Any], keys: list[str]) -> str:
+    """Classify the on-disk quantization format from config + tensor names."""
+    if any(key.endswith(".weight_packed") for key in keys) or quant.get("config_groups"):
+        return "compressed-tensors"
+    method = str(quant.get("quant_method") or "").lower()
+    if (
+        method in _MODELOPT_METHODS
+        or quant.get("ignored_layers") is not None
+        or quant.get("exclude_modules") is not None
+        or any(key.endswith(".weight_scale_inv") for key in keys)
+    ):
+        return "modelopt-scale"
+    return "compressed-tensors"
+
+
+def _matches_modelopt(pattern: str, module: str) -> bool:
+    """ModelOpt ignore semantics: exact, subtree prefix, or bare-leaf suffix."""
+    if pattern.startswith("re:"):
+        try:
+            return re.match(pattern[3:], module) is not None
+        except re.error:
+            return False
+    return (
+        module == pattern
+        or module.startswith(f"{pattern}.")
+        or module.endswith(f".{pattern}")
+    )
+
+
+def _analyze_modelopt(quant: dict[str, Any], keys: list[str]) -> dict[str, Any]:
+    """Serving-ABI report for ModelOpt block-scale checkpoints (mxfp8/nvfp4)."""
+    ignore = list(quant.get("ignored_layers") or quant.get("exclude_modules") or [])
+    quantized = {
+        key[: -len(suffix)]
+        for key in keys
+        for suffix in _MODELOPT_SCALE_SUFFIXES
+        if key.endswith(suffix)
+    }
+    weight_modules = {
+        key[: -len(".weight")] for key in keys if key.endswith(".weight")
+    }
+    plain = weight_modules - quantized
+    plain_quantizable = {
+        name for name in plain if classify_module(name) in _PLAIN_QUANTIZABLE
+    }
+
+    errors: list[dict[str, Any]] = []
+    for pattern in ignore:
+        if pattern.startswith("re:"):
+            try:
+                re.compile(pattern[3:])
+            except re.error as error:
+                errors.append(
+                    {"code": "invalid_ignore_regex", "pattern": pattern, "error": str(error)}
+                )
+    for name in sorted(plain_quantizable):
+        if not any(_matches_modelopt(pattern, name) for pattern in ignore):
+            errors.append(
+                {
+                    "code": "plain_runtime_module_not_ignored",
+                    "module": name,
+                    "component": classify_module(name),
+                }
+            )
+    for name in sorted(quantized):
+        matched = [pattern for pattern in ignore if _matches_modelopt(pattern, name)]
+        if matched:
+            errors.append(
+                {"code": "quantized_module_is_ignored", "module": name, "patterns": matched}
+            )
+
+    all_named = quantized | plain
+    return {
+        "schema_version": 1,
+        "valid": not errors,
+        "format": quant.get("quant_method") or quant.get("format"),
+        "inventory": {
+            "quantized_modules": len(quantized),
+            "plain_modules": len(plain),
+            "plain_quantizable_modules": len(plain_quantizable),
+            "runtime_modules_checked": len(quantized | plain_quantizable),
+        },
+        "components": {
+            component: {
+                "quantized": sum(
+                    classify_module(name) == component for name in quantized
+                ),
+                "plain": sum(classify_module(name) == component for name in plain),
+                "plain_unignored": sum(
+                    classify_module(name) == component
+                    and not any(_matches_modelopt(pattern, name) for pattern in ignore)
+                    for name in plain_quantizable
+                ),
+            }
+            for component in sorted({classify_module(name) for name in all_named})
+        },
+        "patterns": [],
+        "errors": errors,
+    }
+
+
 def analyze_serving_abi(config: dict[str, Any], weight_keys: Iterable[str]) -> dict[str, Any]:
     """Return a JSON-serializable, GPU-free serving contract report."""
     quant = config.get("quantization_config") or {}
-    ignore = list(quant.get("ignore") or [])
     keys = list(weight_keys)
+    if _detect_format(quant, keys) == "modelopt-scale":
+        return _analyze_modelopt(quant, keys)
+    ignore = list(quant.get("ignore") or [])
     quantized = {
         name
         for key in keys

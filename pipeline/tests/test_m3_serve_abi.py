@@ -1,6 +1,6 @@
 """CPU-only tests for the MiniMax-M3 Transformers-to-vLLM ABI gate."""
 
-from pipeline.m3_serve_abi import analyze_serving_abi
+from pipeline.m3_serve_abi import _detect_format, analyze_serving_abi
 
 
 def _keys():
@@ -98,3 +98,84 @@ def test_invalid_ignore_regex_and_missing_linear_target_are_fatal():
     codes = {error["code"] for error in report["errors"]}
     assert "invalid_ignore_regex" in codes
     assert "quantization_group_does_not_target_linear" in codes
+
+
+# --- ModelOpt block-scale (mxfp8/nvfp4) path -------------------------------
+
+def _modelopt_keys():
+    """Mirror MiniMaxAI/MiniMax-M3-MXFP8: quantized Linear = .weight +
+    .weight_scale_inv; router gate / lm_head / vision stay plain (.weight only).
+    """
+    d = "language_model.model.layers.3"
+    return [
+        # quantized routed expert + dense + attention (weight + block scale)
+        f"{d}.block_sparse_moe.experts.0.w1.weight",
+        f"{d}.block_sparse_moe.experts.0.w1.weight_scale_inv",
+        f"{d}.self_attn.q_proj.weight",
+        f"{d}.self_attn.q_proj.weight_scale_inv",
+        # intentionally-plain quantizable modules (must be in ignored_layers)
+        f"{d}.block_sparse_moe.gate.weight",
+        "language_model.lm_head.weight",
+        "vision_tower.vision_model.encoder.layers.0.mlp.fc1.weight",
+        # genuinely-unquantizable (norm) — never flagged
+        f"{d}.input_layernorm.weight",
+    ]
+
+
+def _modelopt_config(*ignore):
+    return {"quantization_config": {"quant_method": "mxfp8", "ignored_layers": list(ignore)}}
+
+
+def test_detect_format_routes_modelopt_and_compressed_tensors():
+    assert _detect_format({"quant_method": "mxfp8"}, ["x.weight_scale_inv"]) == "modelopt-scale"
+    assert _detect_format({"ignored_layers": ["lm_head"]}, ["x.weight"]) == "modelopt-scale"
+    assert (
+        _detect_format({"config_groups": {"g": {}}}, ["x.weight_packed"])
+        == "compressed-tensors"
+    )
+
+
+def test_modelopt_valid_when_all_quantizable_covered():
+    # bare-leaf suffix (lm_head), exact router path, and subtree prefix (vision_tower)
+    report = analyze_serving_abi(
+        _modelopt_config(
+            "lm_head",
+            "language_model.model.layers.3.block_sparse_moe.gate",
+            "vision_tower",
+        ),
+        _modelopt_keys(),
+    )
+    assert report["valid"] is True
+    assert report["format"] == "mxfp8"
+    assert report["inventory"]["quantized_modules"] == 2
+    # gate + lm_head + vision fc1 are plain-but-quantizable, all ignored; norm excluded
+    assert report["inventory"]["plain_quantizable_modules"] == 3
+
+
+def test_modelopt_flags_uncovered_plain_quantizable_module():
+    # drop the vision_tower ignore -> vision fc1 is a plain quantizable gap
+    report = analyze_serving_abi(
+        _modelopt_config(
+            "lm_head",
+            "language_model.model.layers.3.block_sparse_moe.gate",
+        ),
+        _modelopt_keys(),
+    )
+    assert report["valid"] is False
+    flagged = {e["module"] for e in report["errors"] if e["code"] == "plain_runtime_module_not_ignored"}
+    assert "vision_tower.vision_model.encoder.layers.0.mlp.fc1" in flagged
+
+
+def test_modelopt_flags_quantized_module_that_is_ignored():
+    # ignoring a module that actually carries a block scale is a contradiction
+    report = analyze_serving_abi(
+        _modelopt_config(
+            "lm_head",
+            "language_model.model.layers.3.block_sparse_moe.gate",
+            "vision_tower",
+            "re:.*self_attn[.]q_proj$",
+        ),
+        _modelopt_keys(),
+    )
+    assert report["valid"] is False
+    assert any(e["code"] == "quantized_module_is_ignored" for e in report["errors"])

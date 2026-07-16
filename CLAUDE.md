@@ -1,5 +1,13 @@
 # Working principles for this repo
 
+## Project goals
+
+The long-term goals and their status live in `PROJECT_GOALS.md` (read it to share
+the north star). In short: (1) fast parallel AWQ/GPTQ quantization (4–8h target);
+(2) a complete eval pipeline comparing our in-house quant vs. other quants vs. the
+unquantized baseline; (3) a working AWQ model; (4) generalize to any quant method;
+(5) generalize the ABI / pre-quant static gates to any model family.
+
 ## Prime directive (applies to everything)
 
 **Never waste effort on something likely already done by others. Always prioritize

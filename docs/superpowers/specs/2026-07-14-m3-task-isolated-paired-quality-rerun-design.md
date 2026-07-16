@@ -13,6 +13,12 @@ BF16 TP16 qualification are authorized by the canonical r4.8 packet in
 
 **Workflow state:** `READY_FOR_EXECUTOR`
 
+The r4.8 packet pins the last reviewed executable/configuration commit as its
+code base, then requires the executor to run the exact remote branch tip and
+prove that the intervening diff contains only the canonical handoff and this
+specification. This base-versus-packet convention permits deterministic review
+without allowing later executable drift.
+
 This r4 design supersedes the earlier task-isolation, greedy GPQA, `sbatch`,
 distributional-probe, and checkpoint-reuse designs in this file. Historical
 artifacts and reports remain immutable, but none of their reasoning scores are

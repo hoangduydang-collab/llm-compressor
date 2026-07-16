@@ -5,7 +5,7 @@
 - Packet revision: `2026-07-16-r4.8`
 - Planner owner: Codex planner
 - Intended executor: any authorized cluster executor
-- Base Git commit: `340a43f9817d5232cb016142c3d0655d192a47ad`
+- Base Git commit: `a395312ea60f643b626eed1a5731187752eb5f50`
 - Required branch: `duy-branch`
 - Decision question: Can the repaired exact GPTQ replay initialize under the proven smoke serving envelope, and can BF16 TP16xPP1/Ray initialize and complete the fixed r4 smoke grid with enough evidence to classify the first runtime boundary?
 
@@ -86,7 +86,9 @@ Required inputs:
 Tracked changes are blocking. The existing paired root, r4.7 replay files, and
 r4.7 BF16 root are protected and must not be written, deleted, renamed, or
 rehashed into replacement files. The only permitted new artifacts are the four
-fresh r4.8 replay paths under the paired root and one fresh r4.8 BF16 root.
+fresh r4.8 replay paths under the paired root, one fresh r4.8 BF16 root, and the
+small return packet under `evidence/m3-r48/$BF16_RUN_ID` created only after both
+controllers end.
 Unrelated untracked files outside those exact paths are record-and-proceed only
 when they do not shadow a tracked path, any required input, or either fresh
 output path; enumerate them in the return. Any collision is a stop condition.
@@ -100,7 +102,25 @@ variables from this shell.
 cd /mnt/nfs/hoangduy/projects/llm-compressor
 git switch duy-branch
 git pull --ff-only
-git merge-base --is-ancestor 340a43f9817d5232cb016142c3d0655d192a47ad HEAD
+CODE_BASE=a395312ea60f643b626eed1a5731187752eb5f50
+ACTUAL_COMMIT="$(git rev-parse HEAD)"
+ORIGIN_COMMIT="$(git rev-parse origin/duy-branch)"
+test "$ACTUAL_COMMIT" = "$ORIGIN_COMMIT"
+git merge-base --is-ancestor "$CODE_BASE" "$ACTUAL_COMMIT"
+python - "$CODE_BASE" "$ACTUAL_COMMIT" <<'PY'
+import subprocess, sys
+code_base, actual = sys.argv[1:]
+allowed = [
+    "M3_PRODUCTION_EVAL_HANDOFF.md",
+    "docs/superpowers/specs/2026-07-14-m3-task-isolated-paired-quality-rerun-design.md",
+]
+changed = subprocess.check_output(
+    ["git", "diff", "--name-only", f"{code_base}..{actual}"], text=True
+).splitlines()
+assert changed == allowed, {"expected": allowed, "actual": changed}
+PY
+printf 'code_base=%s\nactual_commit=%s\norigin_commit=%s\n' \
+  "$CODE_BASE" "$ACTUAL_COMMIT" "$ORIGIN_COMMIT"
 git diff --quiet
 git diff --cached --quiet
 git status --short
@@ -118,10 +138,17 @@ python -m pytest -q \
   pipeline/tests/test_m3_quality_evidence.py
 ```
 
-Stop before allocation if revision verification, the clean tracked-workspace
-checks, environment activation, outside-allocation assertion, package checks,
-or any CPU test fails. Record `git rev-parse HEAD` as the actual executed
-commit. Do not clean or delete unrelated files.
+`Base Git commit` deliberately means the last reviewed commit that changes
+executable code or configuration. The active packet/spec documentation commit
+is later, so the executor must run the exact `origin/duy-branch` tip after pull
+and prove that the complete `CODE_BASE..ACTUAL_COMMIT` diff contains exactly the
+two allowed documentation files above. This rejects arbitrary executable drift
+while allowing the packet to name a deterministic executable base.
+
+Stop before allocation if revision/origin equality, the allowed-diff gate, the
+clean tracked-workspace checks, environment activation, outside-allocation
+assertion, package checks, or any CPU test fails. Preserve `ACTUAL_COMMIT` for
+the return manifest. Do not clean or delete unrelated files.
 
 ## Fresh paths and collision gate
 
@@ -350,6 +377,172 @@ The BF16 return must include or index:
 - the entire fresh `$BF16_ROOT`, including preflight manifests, resolved tasks,
   sample manifests, launch plan, raw outputs, logs, reports, package versions,
   sizes, and hashes.
+
+## Completion detection and return packaging
+
+Run this block after both launches. It waits only for the two named detached
+controllers, then packages whatever evidence exists. A missing or nonzero rc is
+recorded as scientific/runtime evidence and does not make packaging fail or
+authorize a retry. Before running it, set `BOUNDARY_CLASSIFICATION` to one of
+the six authorized factual boundaries and set `LAST_SUCCESSFUL_STAGE`,
+`FIRST_FAILING_OPERATION`, and `BOUNDARY_EVIDENCE` to exact preserved facts. A
+successful qualification uses `evaluation` with no failing operation.
+
+```bash
+while tmux has-session -t "$REPLAY_SESSION" 2>/dev/null || tmux has-session -t "$BF16_SMOKE_SESSION" 2>/dev/null; do
+  date -u +%Y-%m-%dT%H:%M:%SZ
+  tmux ls 2>/dev/null || true
+  squeue -u "$USER" || true
+  sleep 60
+done
+
+EVIDENCE_DIR="evidence/m3-r48/$BF16_RUN_ID"
+test ! -e "$EVIDENCE_DIR"
+mkdir -p "$EVIDENCE_DIR"
+
+read_rc_or_missing() {
+  if test -f "$1"; then
+    tr -d '[:space:]' <"$1"
+  else
+    printf 'missing'
+  fi
+}
+REPLAY_RC_VALUE="$(read_rc_or_missing "$REPLAY_RC")"
+BF16_RC_VALUE="$(read_rc_or_missing "$BF16_RC")"
+printf 'replay_rc=%s\nbf16_rc=%s\n' "$REPLAY_RC_VALUE" "$BF16_RC_VALUE" \
+  | tee "$EVIDENCE_DIR/controller-return-codes.txt"
+git rev-parse HEAD >"$EVIDENCE_DIR/actual-git-commit.txt"
+git rev-parse origin/duy-branch >"$EVIDENCE_DIR/origin-git-commit.txt"
+printf '%s\n' "$CODE_BASE" >"$EVIDENCE_DIR/code-base.txt"
+git status --short >"$EVIDENCE_DIR/git-status-before-packaging.txt"
+squeue -u "$USER" >"$EVIDENCE_DIR/squeue-final.txt" 2>&1 || true
+
+python - "$BF16_ROOT" "$PAIR_ROOT" "$EVIDENCE_DIR" \
+  "$REPLAY_JSON" "$REPLAY_OUT" "$REPLAY_ERR" "$REPLAY_RC" \
+  "$REPLAY_RC_VALUE" "$BF16_RC_VALUE" "$CODE_BASE" "$ACTUAL_COMMIT" <<'PY'
+import hashlib, json, shutil, sys
+from pathlib import Path
+
+(bf16_root, pair_root, evidence_dir, replay_json, replay_out, replay_err,
+ replay_rc, replay_rc_value, bf16_rc_value, code_base, actual_commit) = sys.argv[1:]
+bf16_root, pair_root, evidence_dir = map(Path, (bf16_root, pair_root, evidence_dir))
+small_limit = 2 * 1024 * 1024
+records = []
+
+def record(path, logical_root):
+    if not path.is_file():
+        return
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    records.append({
+        "path": str(path.resolve()),
+        "relative_path": str(path.relative_to(logical_root)),
+        "bytes": path.stat().st_size,
+        "sha256": digest.hexdigest(),
+    })
+
+for path in sorted(bf16_root.rglob("*")):
+    record(path, bf16_root)
+for raw in map(Path, (replay_json, replay_out, replay_err, replay_rc)):
+    if raw.is_file():
+        record(raw, pair_root)
+
+manifest = {
+    "schema_version": 1,
+    "packet_revision": "2026-07-16-r4.8",
+    "code_base": code_base,
+    "actual_git_commit": actual_commit,
+    "replay_controller_rc": replay_rc_value,
+    "bf16_controller_rc": bf16_rc_value,
+    "bf16_root": str(bf16_root.resolve()),
+    "paired_root": str(pair_root.resolve()),
+    "immutable_r47_reports": [
+        "M3_R4_7_GPTQ_REPLAY_STOPPED_REPORT.md",
+        "M3_R4_7_BF16_SMOKE_STOPPED_REPORT.md",
+    ],
+    "artifacts": records,
+}
+(evidence_dir / "evidence-manifest.json").write_text(
+    json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+)
+
+for item in records:
+    source = Path(item["path"])
+    if source.stat().st_size <= small_limit and source.suffix in {
+        ".json", ".jsonl", ".log", ".out", ".err", ".rc", ".txt"
+    }:
+        relative = Path("small-artifacts") / (
+            "bf16" if str(source).startswith(str(bf16_root.resolve())) else "replay"
+        ) / item["relative_path"]
+        target = evidence_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            shutil.copy2(source, target)
+
+report = [
+    "# MiniMax-M3 r4.8 correction evidence",
+    "",
+    "- State: `RETURNED_FOR_ANALYSIS`",
+    f"- Code base: `{code_base}`",
+    f"- Actual Git commit: `{actual_commit}`",
+    f"- Replay controller rc: `{replay_rc_value}`",
+    f"- BF16 controller rc: `{bf16_rc_value}`",
+    f"- BF16 durable root: `{bf16_root.resolve()}`",
+    f"- Artifact records: {len(records)}",
+    "- Retry: none",
+    "- Strategic interpretation: none; returned to planner",
+    "",
+    "Nonzero or missing controller return codes are preserved evidence, not a",
+    "packaging failure and not authorization to retry, patch, or change topology.",
+]
+(evidence_dir / "evidence-report.md").write_text(
+    "\n".join(report) + "\n", encoding="utf-8"
+)
+PY
+
+case "${BOUNDARY_CLASSIFICATION:-}" in
+  placement|"worker start"|"weight load"|"collective communication"|"request generation"|evaluation) ;;
+  *) echo "set BOUNDARY_CLASSIFICATION to one authorized factual boundary" >&2; exit 1 ;;
+esac
+test -n "${LAST_SUCCESSFUL_STAGE:-}"
+test -n "${FIRST_FAILING_OPERATION:-}"
+test -n "${BOUNDARY_EVIDENCE:-}"
+printf '\n- Factual boundary: `%s`\n- Last successful stage: %s\n- First failing operation: %s\n- Boundary evidence: `%s`\n' \
+  "$BOUNDARY_CLASSIFICATION" "$LAST_SUCCESSFUL_STAGE" \
+  "$FIRST_FAILING_OPERATION" "$BOUNDARY_EVIDENCE" \
+  >>"$EVIDENCE_DIR/evidence-report.md"
+
+python - "$EVIDENCE_DIR" <<'PY'
+import hashlib, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+lines = []
+for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    if path.name == "SHA256SUMS":
+        continue
+    lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(root)}")
+(root / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+
+git add -- "$EVIDENCE_DIR"
+git diff --cached --quiet && {
+  echo "no small evidence files were staged" >&2
+  exit 1
+}
+git commit -m "evidence(m3): return r4.8 recovery qualification"
+git push origin duy-branch
+git status --short
+```
+
+The command rejects any classification outside the six authorized factual
+boundaries. The manifest records an absolute path, byte size, and SHA-256 for every file in
+the durable fresh BF16 root and every available fresh replay artifact. Files at
+most 2 MiB with raw-log or structured-evidence suffixes are copied into the
+small Git packet; large files remain in their immutable durable roots and are
+indexed rather than committed. This is evidence classification only, not
+diagnosis or authorization to continue.
 
 Classify the factual first boundary as exactly one of: `placement`,
 `worker start`, `weight load`, `collective communication`, `request generation`,

@@ -10,8 +10,8 @@ models:
     path: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
     kind: bf16
     nodes: 2
-    tensor_parallel_size: 8
-    pipeline_parallel_size: 2
+    tensor_parallel_size: 16
+    pipeline_parallel_size: 1
     distributed_executor_backend: ray
 
 shards:

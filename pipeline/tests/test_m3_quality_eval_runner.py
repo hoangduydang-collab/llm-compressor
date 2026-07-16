@@ -213,7 +213,7 @@ def test_r4_dry_run_emits_four_top_level_srun_arms(tmp_path, request):
     assert "total_nodes=4" in result.stdout
 
 
-def test_bf16_reasoning_r4_matrix_uses_two_tp8_pp2_ray_arms(tmp_path):
+def test_bf16_reasoning_r4_smoke_dry_run_uses_tp16_pp1_ray(tmp_path, request):
     spec = load_matrix(BF16_REASONING_R4_MATRIX)
     model = spec.models[0]
 
@@ -221,21 +221,49 @@ def test_bf16_reasoning_r4_matrix_uses_two_tp8_pp2_ray_arms(tmp_path):
     assert model.label == "bf16"
     assert model.kind == "bf16"
     assert model.nodes == 2
-    assert model.tensor_parallel_size == 8
-    assert model.pipeline_parallel_size == 2
+    assert model.tensor_parallel_size == 16
+    assert model.pipeline_parallel_size == 1
     assert model.distributed_executor_backend == "ray"
     assert spec.scheduling.max_parallel_arms == 2
     assert spec.scheduling.arm_time_limit == "24:00:00"
 
-    smoke = build_launch_plan(spec, profile="smoke")
+    run_root = _workspace_tmp(tmp_path, request)
+    result = _run(
+        "--profile",
+        "smoke",
+        "--matrix",
+        str(BF16_REASONING_R4_MATRIX),
+        "--run-root",
+        _bash_path(run_root),
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stderr
+    smoke = json.loads((run_root / "smoke_launch_plan.json").read_text())
     assert len(smoke["arms"]) == 1
     assert smoke["total_nodes"] == 2
-    assert smoke["arms"][0]["tasks"] == [
+    arm = smoke["arms"][0]
+    assert smoke["profile"] == "smoke"
+    assert arm["nodes"] == 2
+    assert arm["tensor_parallel_size"] == 16
+    assert arm["pipeline_parallel_size"] == 1
+    assert arm["distributed_executor_backend"] == "ray"
+    assert arm["tasks"] == [
         "gpqa_diamond",
         "mmlu_pro",
         "gsm8k",
         "aime_2025",
     ]
+    commands = [
+        line
+        for line in result.stdout.splitlines()
+        if "test_m3_quality_eval_arm.sh" in line
+    ]
+    assert len(commands) == 1
+    assert "--nodes=2" in commands[0]
+    assert "--tensor-parallel-size 16" in commands[0]
+    assert "--pipeline-parallel-size 1" in commands[0]
+    assert "--distributed-executor-backend ray" in commands[0]
+    assert "sbatch" not in result.stdout
 
     gate = tmp_path / "smoke_gate.json"
     gate.write_text(json.dumps({"ready_for_production": True}), encoding="utf-8")
@@ -247,8 +275,8 @@ def test_bf16_reasoning_r4_matrix_uses_two_tp8_pp2_ray_arms(tmp_path):
         "reasoning_suite",
     ]
     assert all(arm["nodes"] == 2 for arm in production["arms"])
-    assert all(arm["tensor_parallel_size"] == 8 for arm in production["arms"])
-    assert all(arm["pipeline_parallel_size"] == 2 for arm in production["arms"])
+    assert all(arm["tensor_parallel_size"] == 16 for arm in production["arms"])
+    assert all(arm["pipeline_parallel_size"] == 1 for arm in production["arms"])
     assert all(
         arm["distributed_executor_backend"] == "ray"
         for arm in production["arms"]

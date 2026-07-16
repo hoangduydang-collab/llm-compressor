@@ -45,6 +45,15 @@ BF16_REASONING_R4_MATRIX = Path(
 )
 
 
+def test_bf16_reasoning_r4_matrix_uses_tp16_pp1_ray():
+    model = load_matrix(BF16_REASONING_R4_MATRIX).models[0]
+
+    assert model.nodes == 2
+    assert model.tensor_parallel_size == 16
+    assert model.pipeline_parallel_size == 1
+    assert model.distributed_executor_backend == "ray"
+
+
 def test_default_matrix_has_three_active_models_and_autoround_deferred():
     spec = load_matrix(MATRIX)
 

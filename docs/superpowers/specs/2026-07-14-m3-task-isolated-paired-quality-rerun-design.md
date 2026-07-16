@@ -2,19 +2,66 @@
 
 **Date:** 2026-07-14
 
-**Revision:** r4.7, approved 2026-07-15
+**Revision:** r4.8, design approved in principle 2026-07-16
 
 **Scope:** MiniMax-M3 paired GPTQ-versus-AWQ reasoning evaluation plus a
 comparable BF16 companion baseline
 
-**Status:** r4.7 evaluation, BF16 companion, and empty-output diagnostic approved
+**Status:** r4.7 paired production remains active; replay repair and BF16 TP16
+qualification are awaiting implementation
 
-**Workflow state:** `READY_FOR_EXECUTOR`
+**Workflow state:** `PLANNER_ANALYSIS`
 
 This r4 design supersedes the earlier task-isolation, greedy GPQA, `sbatch`,
 distributional-probe, and checkpoint-reuse designs in this file. Historical
 artifacts and reports remain immutable, but none of their reasoning scores are
 inputs to the r4 verdict.
+
+## r4.8 correction after partial Wave A evidence
+
+The r4.7 partial return established two independent planner-contract defects.
+Neither is a model-quality result, and the still-running paired GPTQ/AWQ
+production arms remain untouched.
+
+First, the exact GPTQ replay loaded the same overlay and TP8 topology as the
+successful smoke but did not reproduce its complete serving envelope. The
+standalone config stored `enable_expert_parallel`, `block_size=128`, and
+`kv_cache_dtype=fp8` in typed `serve` fields, while `vllm_model_args()` forwarded
+only `serve.vllm_kwargs`. The quality-arm wrapper had injected the three values
+into `serve.vllm_kwargs`, so smoke used expert parallelism but replay silently
+did not. Without expert parallelism, vLLM tensor-partitioned each 3072-wide MoE
+intermediate across TP8 into 384 columns; the selected CUTLASS W4A8 path requires
+that value to be divisible by 256 and rejected model initialization. The repair
+extends the existing shared lm-eval argument builder to forward the typed serve
+fields. An explicitly supplied `serve.vllm_kwargs` value remains the higher
+precedence escape hatch, so existing topology overrides keep working.
+
+Second, BF16 TP8xPP2/Ray is not supported by the installed vLLM MiniMax-M3
+implementation because the model does not implement vLLM's `SupportsPP`
+interface. The failure occurs during configuration validation before weights or
+requests are loaded. No local or executor-side `SupportsPP` patch is authorized.
+The replacement follows vLLM's existing multi-node alternative: TP16xPP1 over
+the same two-node Ray cluster. This topology is not assumed working. A prior
+attempt reached a healthy 16-GPU Ray cluster and connected the vLLM engine but
+was manually cancelled after roughly 33 minutes without worker/placement
+evidence. r4.8 therefore authorizes only a bounded TP16 qualification smoke,
+not BF16 production.
+
+The r4.8 decision question is: can the exact GPTQ replay initialize under the
+proven smoke serving envelope, and can BF16 TP16xPP1/Ray initialize and complete
+the fixed r4 smoke grid with sufficient evidence to distinguish placement,
+weight-loading, collective-communication, and evaluation failures?
+
+The alternatives are explicitly rejected for this packet: abandoning BF16
+would lose the desired baseline, while implementing MiniMax pipeline
+parallelism locally would duplicate risky upstream model-runtime work. BF16
+production remains unauthorized until the planner reviews a passing TP16 smoke.
+
+This design builds on the installed lm-eval/vLLM adapter and vLLM's documented
+multi-node TP alternative rather than creating another serving path. Relevant
+upstream references are vLLM's
+[parallelism guide](https://github.com/vllm-project/vllm/blob/main/docs/serving/parallelism_scaling.md)
+and [distributed troubleshooting guide](https://docs.vllm.ai/en/latest/serving/distributed_troubleshooting/).
 
 ## Decision and motivation
 
@@ -59,8 +106,9 @@ still apply. It does not create a second general evaluation framework.
   macro and gates.
 - Rerunning either failed distributional probe.
 - Reporting majority vote, pass@3, or best-of-three accuracy.
-- Changing the model checkpoints, serving topology, tokenizer, chat template,
-  or maximum output length.
+- Changing the model checkpoints, paired GPTQ/AWQ serving topology, tokenizer,
+  chat template, or maximum output length. The BF16 topology correction is the
+  explicit r4.8 exception.
 - Adding automatic retries or letting the executor change prompts, seeds,
   sample IDs, thresholds, or task grouping at runtime.
 
@@ -94,7 +142,7 @@ variants, and unparseable outputs. Local modifications are limited to adapting
 lm-eval outputs to repository interfaces; no GPQA prompt or extractor is
 reimplemented locally.
 
-## BF16 companion baseline
+## BF16 companion baseline and r4.8 qualification
 
 The BF16 baseline is a separate run which reuses the r4 reasoning harness. It
 must not modify, share a writable run root with, or relaunch the active GPTQ and
@@ -102,20 +150,33 @@ AWQ jobs. A committed BF16-only matrix supplies the executor with one fixed
 model definition:
 
 - checkpoint: `/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3`;
-- two exclusive 8xH100 nodes per arm;
-- tensor parallel size 8 and pipeline parallel size 2;
+- two exclusive 8xH100 nodes for the qualification arm;
+- tensor parallel size 16 and pipeline parallel size 1;
 - Ray distributed executor;
 - the existing `eval_minimax_m3_reasoning_r4.yaml` configuration;
 - the same task aliases, two task shards, sampling seed, production limits,
   gates, and disabled distributional probe as the GPTQ/AWQ r4 matrix.
 
-The smoke profile launches one two-node BF16 arm and evaluates two examples
-each from GPQA Diamond, GSM8K, and AIME plus one example from every resolved
-MMLU-Pro subject leaf, all under the three configured seeds. Its purpose is
-only to validate the two-node Ray topology, BF16 model loading, vLLM
+The smoke profile launches one two-node BF16 TP16xPP1/Ray arm and evaluates two
+examples each from GPQA Diamond, GSM8K, and AIME plus one example from every
+resolved MMLU-Pro subject leaf, all under the three configured seeds. Its
+purpose is
+only to validate Ray placement across all 16 GPUs, BF16 model loading, vLLM
 generation, per-filter checkpointing, three-seed execution, generation health,
 and artifact completion. Smoke results are not quality evidence. A false smoke
-gate stops the packet without a production launch or automatic retry.
+gate stops the packet without a production launch or automatic retry. The
+top-level allocation may run for up to 12 hours; placement must become ready
+within 15 minutes, and model initialization is allowed up to three hours before
+being classified as stalled. These are evidence boundaries, not automatic
+topology changes.
+
+The controller must retain the existing Ray topology records and placement
+monitor, plus rank-local Ray logs, periodic GPU memory/utilization snapshots,
+and the first/last model-loading progress markers. If placement remains pending,
+the return identifies the requested bundles and Ray node resources. If workers
+start but do not load, it returns worker logs and NFS/load progress. If workers
+load but collectives or generation fail, it returns the first NCCL/vLLM error.
+The executor does not diagnose or retry another topology.
 
 Because this smoke is a setup check rather than a quality sample, it may carry
 at most one isolated empty generation per model as an explicit warning. It
@@ -123,14 +184,16 @@ still requires every task/seed checkpoint, valid artifacts, the expected
 distributed world size, and zero periodic loops. Smoke tolerance must never be
 used to suppress or reinterpret full-run health data.
 
-After a passing smoke gate, production launches two BF16 arms concurrently:
+The following production layout is retained as a future design target only and
+is **not authorized by r4.8**. After the planner separately approves a passing
+TP16 qualification, a later packet may launch two BF16 arms concurrently:
 
 1. `gpqa`: GPQA Diamond, 100 questions and all three seeds;
 2. `reasoning_suite`: MMLU-Pro 100, then GSM8K 100, then all 30 AIME 2025
    questions, with one model load retained across the three tasks.
 
-Each production arm uses two nodes and has a 24-hour limit, so the maximum
-concurrent allocation is four 8xH100 nodes. The launcher remains top-level
+Each future production arm would use two nodes and have a 24-hour limit, so the
+maximum concurrent allocation is four 8xH100 nodes. The launcher remains top-level
 `srun` only. Task/seed checkpoints are atomic and resumable only within the
 same BF16 run and unchanged contract; a retry still requires planner approval.
 
@@ -298,14 +361,13 @@ ceiling. The two suite arms load their model once and checkpoint after every
 task and generation seed. GPQA receives separate nodes because its repeated
 long reasoning generations would otherwise delay every other task.
 
-The combined packet may use at most eight nodes:
+The r4.8 correction packet may use at most seven nodes:
 
-1. Wave A starts paired production (four nodes), the exact GPTQ replay (one
-   node), and BF16 smoke (two nodes) concurrently: seven nodes total.
-2. Wave B starts BF16 production only after both the replay and BF16 smoke have
-   ended. If paired production is still active, the two four-node production
-   runs overlap at exactly eight nodes.
-3. No other packet-owned allocation starts while eight nodes are active.
+1. Existing paired production may continue on four nodes.
+2. The repaired exact GPTQ replay uses one node and the BF16 qualification uses
+   two nodes. They may overlap paired production: seven nodes total.
+3. There is no Wave B and no BF16 production authorization in r4.8.
+4. No failed correction arm is retried without a new planner decision.
 
 The cluster does not provide `sbatch`. The execution packet and durable planner
 guidance must use top-level `srun` only. No worker may start a nested allocation,
@@ -407,18 +469,22 @@ Automated CPU tests must establish that:
   the specified task order and 24-hour ceiling;
 - generated commands contain no `sbatch` or nested `srun` allocation;
 - IFEval and distributional probes are absent from the r4 reasoning verdict.
-- the BF16-only matrix emits one two-node TP8xPP2/Ray smoke arm and two
-  two-node TP8xPP2/Ray production arms without launching GPTQ or AWQ;
-- BF16 production is refused when any harness or production-manifest hash
-  differs from the active GPTQ/AWQ run.
+- the BF16-only matrix emits one two-node TP16xPP1/Ray smoke arm without
+  launching GPTQ or AWQ;
+- the r4.8 handoff contains no executable BF16 production command, and a future
+  production packet remains refused when any harness or production-manifest
+  hash differs from the active GPTQ/AWQ run;
 - the production score gate remains valid with one complete empty response,
   scores that response as incorrect, and emits a separate health advisory;
 - replay postprocessing helpers identify whether raw text becomes empty at the
   thinking-marker or task-stop stage without importing vLLM in CPU tests;
 - the diagnostic command selects exactly the saved model/task/doc/seed attempt,
   runs only the 256- and 16,384-token controls, and refuses contract drift;
-- dry-run scheduling contains seven nodes in Wave A and never exceeds eight
-  nodes when BF16 and paired production overlap.
+- the shared lm-eval vLLM argument builder forwards typed expert-parallel,
+  block-size, and KV-cache settings when no explicit `vllm_kwargs` override is
+  present, and the replay model arguments match the successful smoke envelope;
+- dry-run scheduling contains at most seven correction/paired nodes and no
+  executable BF16 production arm.
 
 Shell scripts must pass syntax checks, focused Python tests must pass, and the
 dry-run output must show all resolved task, model, sampling, and resource values
@@ -435,15 +501,16 @@ before the executor is authorized to launch GPU work.
 - Results include auditable processed responses, raw replay evidence,
   parse/health diagnostics, per-seed pass@1, aggregate pass@1, paired deltas,
   grouped-bootstrap intervals, and question-level win/tie/loss.
-- Execution uses no more than eight concurrent 8xH100 nodes, uses `srun` only,
+- Execution uses no more than seven concurrent 8xH100 nodes, uses `srun` only,
   and preserves completed task/seed evidence when another arm fails.
 - A completed empty model response remains an incorrect paired attempt and a
   health advisory; it does not invalidate or discard the other results.
 - The exact GPTQ replay returns raw and postprocessed evidence for both approved
   token caps without changing any evaluation artifact or scientific contract.
-- The BF16 smoke passes on TP8xPP2/Ray before its quick evaluation starts, and
-  its returned GPQA/MMLU-Pro/GSM8K/AIME attempt grid matches the GPTQ/AWQ
-  manifest and three-seed contract exactly.
+- The BF16 qualification either passes on TP16xPP1/Ray with a complete
+  GPQA/MMLU-Pro/GSM8K/AIME smoke grid matching the GPTQ/AWQ manifest and
+  three-seed contract, or returns enough placement/worker/GPU/load evidence to
+  classify the first failed boundary. It never promotes itself to production.
 - The report labels the result as a paired 100-question quantization study and
   does not present it as an exact reproduction of a public MiniMax-M3 score or
   as BF16 quality recovery.

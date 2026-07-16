@@ -306,7 +306,10 @@ class _RawVllmGenerator:
         from lm_eval.models.utils import maybe_truncate
         from vllm import SamplingParams
 
-        eos = self.lm.tok_decode(self.lm.eot_token_id)
+        # Mirror lm-eval's VLLM.generate_until: it derives the eos string via
+        # self.tokenizer.decode(self.eot_token_id). The pinned VLLM wrapper has no
+        # tok_decode method, so use the tokenizer directly.
+        eos = self.lm.tokenizer.decode(self.lm.eot_token_id)
         kwargs = dict(attempt.generation_kwargs)
         kwargs["max_gen_toks"] = cap
         normalized, until, max_gen_toks = self.lm.modify_gen_kwargs(

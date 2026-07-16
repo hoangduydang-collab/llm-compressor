@@ -20,6 +20,17 @@ from pipeline.m3_empty_output_replay import (
     run_controls,
 )
 
+class _EosTokenizer:
+    """Fake of the lm-eval VLLM wrapper's `.tokenizer`: decode(eot_id) -> eos."""
+
+    def __init__(self, expected_id: int):
+        self._expected_id = expected_id
+
+    def decode(self, token_id):
+        assert token_id == self._expected_id
+        return "<eos>"
+
+
 EVIDENCE_PATH = (
     Path(__file__).parents[2]
     / "results/m3-quality/20260715T075800Z-m3-paired-reasoning-r4/models"
@@ -277,6 +288,72 @@ def test_run_controls_uses_fixed_cap_order_and_reports_postprocessing(
     assert [
         control["postprocessing"]["after_task_stops"] for control in controls
     ] == ["answer 256", "answer 16384"]
+
+
+def test_raw_vllm_generator_uses_tokenizer_decode_not_tok_decode(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Regression: the raw generator must derive eos via lm.tokenizer.decode,
+    mirroring lm-eval's VLLM.generate_until. The pinned VLLM wrapper has no
+    tok_decode method, so the earlier tok_decode call raised AttributeError on
+    GPU after the model had already loaded. Guard it with a fake lm that (like
+    the real wrapper) exposes tokenizer.decode but no tok_decode.
+    """
+    fake_vllm = types.ModuleType("vllm")
+
+    class _SamplingParams:
+        def __init__(self, max_tokens, stop, **kwargs):
+            self.max_tokens = max_tokens
+            self.stop = stop
+            self.kwargs = kwargs
+
+    fake_vllm.SamplingParams = _SamplingParams
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    class _Out:
+        token_ids = [10, 11]
+        text = "answer"
+        finish_reason = "stop"
+        stop_reason = 2
+
+    class _Req:
+        outputs = [_Out()]
+
+    class _FakeLM:
+        # Deliberately no `tok_decode`; a regression to it would AttributeError.
+        tokenizer = _EosTokenizer(7)
+        eot_token_id = 7
+        max_gen_toks = 256
+        max_length = 4096
+        truncation_side = "left"
+
+        def modify_gen_kwargs(self, kwargs, *, eos, default_max_gen_toks):
+            return ({"temperature": 0.0}, [eos], kwargs["max_gen_toks"])
+
+        def tok_encode(self, prompt):
+            return [1, 2, 3]
+
+        def _model_generate(self, *, requests, generate, sampling_params):
+            assert generate is True
+            assert sampling_params[0].stop == ["<eos>"]
+            return [_Req()]
+
+    generator = replay._RawVllmGenerator(_FakeLM(), versions={})
+    attempt = replay.ReplayAttempt(
+        attempt_uid="x",
+        prompt="p",
+        prompt_sha256="s",
+        generation_kwargs={"until": ["<eos>"]},
+        source_row={},
+    )
+
+    result = generator(attempt, 256)
+
+    assert result["raw_text"] == "answer"
+    assert result["token_ids"] == [10, 11]
+    assert result["token_count"] == 2
+    assert result["finish_reason"] == "stop"
+    assert result["effective_generation_arguments"]["effective_max_tokens"] == 256
 
 
 def test_classify_controls_identifies_thinking_only_at_smoke_cap():
@@ -691,9 +768,8 @@ def test_raw_vllm_runtime_uses_pinned_adapter_and_cleans_up(
             self.generate_calls = []
             self.clean_calls = 0
 
-        def tok_decode(self, token_id):
-            assert token_id == 99
-            return "<eos>"
+        # Real lm-eval VLLM wrapper exposes tokenizer.decode, not tok_decode.
+        tokenizer = _EosTokenizer(99)
 
         def tok_encode(self, prompt):
             assert prompt == PINNED_PROMPT
@@ -805,11 +881,10 @@ def test_raw_vllm_runtime_cleans_up_when_generation_fails(
         max_length = 65536
         truncation_side = "left"
 
+        tokenizer = _EosTokenizer(99)
+
         def __init__(self):
             self.clean_calls = 0
-
-        def tok_decode(self, token_id):
-            return "<eos>"
 
         def tok_encode(self, prompt):
             return [10, 11]

@@ -1,0 +1,68 @@
+schema_version: 1
+name: minimax-m3-mxfp8-reasoning-r4
+# Standalone eval arm for MiniMaxAI/MiniMax-M3-MXFP8, added as a THIRD quantized
+# comparator alongside the paired inhouse-GPTQ vs cyankiwi-AWQ run and the BF16
+# baseline. Uniform ModelOpt MXFP8 (quant_method: "mxfp8", weight_block_size
+# [1,32], dynamic activations); vLLM routes it to ModelOptMxFp8Config and serves
+# it on 8xH100 (sm_90) weight-only via the Marlin W8A16 fallback -- FlashInfer/
+# TRTLLM/DeepGEMM self-reject on Hopper (Blackwell family(100)), Marlin needs
+# only sm_75+. Same VL architecture (MiniMaxM3SparseForConditionalGeneration) and
+# same MiniMax-M3 base as the other arms.
+#
+# Run in its OWN run-root and prove comparability with `m3_quality_eval
+# contract-gate --reference-root <paired reasoning_r4 root> --candidate-root
+# <this root>` before trusting cross-arm deltas (identical to how the BF16 arm
+# was qualified). eval_config / shards / task_aliases / sampling / gates are
+# byte-for-byte the reasoning_r4 harness so the harness+sample contract hashes
+# match cyankiwi_awq / inhouse_gptq / bf16.
+backend: vllm
+baseline_label: mxfp8
+model_source: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
+eval_config: pipeline/configs/eval_minimax_m3_reasoning_r4.yaml
+
+models:
+  - label: mxfp8
+    path: /mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3-MXFP8
+    kind: mxfp8-w8a16
+    nodes: 1
+    tensor_parallel_size: 8
+    pipeline_parallel_size: 1
+    distributed_executor_backend: mp
+
+shards:
+  - name: gpqa
+    tasks: [gpqa_diamond]
+    distributional_probe: false
+  - name: reasoning_suite
+    tasks: [mmlu_pro, gsm8k, aime_2025]
+    distributional_probe: false
+
+task_aliases:
+  gpqa_diamond: [gpqa_diamond_cot_zeroshot]
+  mmlu_pro: [mmlu_pro]
+  gsm8k: [gsm8k_cot]
+  aime_2025: [aime25, aime_2025]
+
+sampling:
+  seed: 42
+  mmlu_pro_samples: 100
+  production_samples_per_task: 100
+
+scheduling:
+  max_parallel_arms: 2
+  arm_time_limit: "12:00:00"
+
+probe:
+  enabled: false
+  total_tokens: 8192
+  top_k: 20
+  max_overhead_seconds: 900
+
+gates:
+  # Match the paired run's setup-only smoke policy.
+  max_smoke_empty_outputs: 1
+  max_task_drop: 0.02
+  min_macro_recovery: 0.98
+  max_conditional_regression: 0.05
+  max_perplexity_increase: null
+  max_degeneration_failures: 0

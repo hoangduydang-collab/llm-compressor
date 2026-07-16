@@ -358,6 +358,27 @@ def test_multinode_arm_captures_vllm_placement_during_startup():
     assert "placement_monitor_pid" in arm
 
 
+def test_arm_cleanup_reaps_managed_jobs_and_keeps_ray_archives_exclusive():
+    arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+
+    assert arm.count("set -m") >= 4
+    assert arm.count("set +m") >= 4
+    assert 'kill -TERM -- "-$pid"' in arm
+    assert "cleanup_done" in arm
+    assert "local status=$?" in arm
+    assert 'return "$status"' in arm
+    for pid in (
+        "placement_monitor_pid",
+        "gpu_monitor_pid",
+        "placement_watchdog_pid",
+        "init_watchdog_pid",
+    ):
+        assert f'stop_managed_job "${pid}"' in arm
+    assert 'rm -f "$archive" "$archive.missing"' in arm
+    assert 'rm -f "$archive" || true' in arm
+    assert 'if ((nodes > 1)) && [[ "$placement_timeout"' in arm
+
+
 def test_smoke_evidence_counts_tp_times_pp_workers():
     arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
     assert '"$TP" "$PP" "$rc"' in arm

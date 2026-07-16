@@ -17,13 +17,58 @@ done
 : "${MODEL_SOURCE:=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3}"
 ARM="$RUN_ROOT/models/$LABEL/shards/$SHARD"; mkdir -p "$ARM"
 rank=${SLURM_PROCID:-0}; nodes=${SLURM_NTASKS:-1}
+placement_monitor_pid=""
+gpu_monitor_pid=""
+placement_watchdog_pid=""
+init_watchdog_pid=""
+ray_cleanup_enabled=0
+cleanup_done=0
+stop_managed_job() {
+  local pid=${1:-}
+  [[ -n "$pid" ]] || return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+cleanup_arm() {
+  ((cleanup_done == 0)) || return 0
+  cleanup_done=1
+  trap '' HUP INT TERM
+  stop_managed_job "$placement_monitor_pid"
+  stop_managed_job "$gpu_monitor_pid"
+  stop_managed_job "$placement_watchdog_pid"
+  stop_managed_job "$init_watchdog_pid"
+  if ((ray_cleanup_enabled)); then
+    touch "$ARM/ray_runtime/driver-done" || true
+    ray_logs="/tmp/ray/session_latest/logs"
+    archive="$ARM/ray_runtime/ray-logs-rank-$rank.tar.gz"
+    rm -f "$archive" "$archive.missing" || true
+    if [[ -d "$ray_logs" ]]; then
+      if ! tar -czf "$archive" -C "$ray_logs" .; then
+        rm -f "$archive" || true
+        touch "$archive.missing" || true
+      fi
+    else
+      touch "$archive.missing" || true
+    fi
+    ray stop --force >/dev/null 2>&1 || true
+  fi
+}
+on_exit() {
+  local status=$?
+  cleanup_arm
+  return "$status"
+}
+trap on_exit EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if ((nodes > 1)); then
-  placement_monitor_pid=""
-  gpu_monitor_pid=""
   python -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["ready"] else 1)' \
     "$RUN_ROOT/ray_preflight/gate.json"
   source pipeline/slurm/test_m3_ray_topology.sh \
     --out "$ARM/ray_runtime" --keep-alive
+  ray_cleanup_enabled=1
+  set -m
   (
     while [[ ! -f "$ARM/ray_runtime/driver-done" ]]; do
       echo "timestamp=$(date -Is)"
@@ -33,34 +78,16 @@ if ((nodes > 1)); then
     done
   ) >"$ARM/ray_runtime/gpu-monitor-rank-$rank.log" 2>&1 &
   gpu_monitor_pid=$!
-  cleanup_ray() {
-    if [[ -n "$placement_monitor_pid" ]]; then
-      kill "$placement_monitor_pid" 2>/dev/null || true
-      wait "$placement_monitor_pid" 2>/dev/null || true
-    fi
-    if [[ -n "$gpu_monitor_pid" ]]; then
-      kill "$gpu_monitor_pid" 2>/dev/null || true
-      wait "$gpu_monitor_pid" 2>/dev/null || true
-    fi
-    touch "$ARM/ray_runtime/driver-done" || true
-    ray_logs="/tmp/ray/session_latest/logs"
-    archive="$ARM/ray_runtime/ray-logs-rank-$rank.tar.gz"
-    if [[ -d "$ray_logs" ]]; then
-      tar -czf "$archive" -C "$ray_logs" . || touch "$archive.missing" || true
-    else
-      touch "$archive.missing" || true
-    fi
-    ray stop --force >/dev/null 2>&1 || true
-  }
+  set +m
   if ((rank != 0)); then
     for _ in $(seq 1 86400); do
       [[ -f "$ARM/ray_runtime/driver-done" ]] && break
       sleep 1
     done
-    cleanup_ray
+    cleanup_arm
     exit 0
   fi
-  trap cleanup_ray EXIT
+  set -m
   (
     while [[ ! -f "$ARM/ray_runtime/driver-done" ]]; do
       echo "timestamp=$(date -Is)"
@@ -69,6 +96,7 @@ if ((nodes > 1)); then
     done
   ) >"$ARM/ray_runtime/placement-monitor.log" 2>&1 &
   placement_monitor_pid=$!
+  set +m
 fi
 if ((rank != 0)); then exit 0; fi
 export M3_MODEL_READY_FILE="$ARM/model-ready.json"
@@ -118,8 +146,8 @@ if ((rc == 0)); then
     eval_pid=$!
     placement_timeout=${M3_PLACEMENT_TIMEOUT_SECONDS:-0}
     init_timeout=${M3_MODEL_INIT_TIMEOUT_SECONDS:-0}
-    placement_watchdog_pid=""
-    if [[ "$placement_timeout" =~ ^[1-9][0-9]*$ ]]; then
+    if ((nodes > 1)) && [[ "$placement_timeout" =~ ^[1-9][0-9]*$ ]]; then
+      set -m
       (
         sleep "$placement_timeout"
         if kill -0 "$eval_pid" 2>/dev/null; then
@@ -134,9 +162,10 @@ if ((rc == 0)); then
         fi
       ) &
       placement_watchdog_pid=$!
+      set +m
     fi
-    init_watchdog_pid=""
     if [[ "$init_timeout" =~ ^[1-9][0-9]*$ ]]; then
+      set -m
       (
         sleep "$init_timeout"
         if kill -0 "$eval_pid" 2>/dev/null \
@@ -147,17 +176,14 @@ if ((rc == 0)); then
         fi
       ) &
       init_watchdog_pid=$!
+      set +m
     fi
     wait "$eval_pid"
     rc=$?
-    if [[ -n "$placement_watchdog_pid" ]]; then
-      kill "$placement_watchdog_pid" 2>/dev/null || true
-      wait "$placement_watchdog_pid" 2>/dev/null || true
-    fi
-    if [[ -n "$init_watchdog_pid" ]]; then
-      kill "$init_watchdog_pid" 2>/dev/null || true
-      wait "$init_watchdog_pid" 2>/dev/null || true
-    fi
+    stop_managed_job "$placement_watchdog_pid"
+    placement_watchdog_pid=""
+    stop_managed_job "$init_watchdog_pid"
+    init_watchdog_pid=""
   else
     printf '{}\n' >"$ARM/aggregate.json"
   fi

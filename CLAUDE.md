@@ -82,6 +82,13 @@ packets, evidence returns, retries, deviations, and stop conditions.
 Task-specific handoffs supply the experiment details; they do not override the
 general protocol unless they explicitly name and justify an exception.
 
+**Full-stack agent configuration:** when a single agent holds both roles *and*
+has direct cluster access, it follows `FULL_STACK_AGENT_PROTOCOL.md` instead. That
+companion doc collapses the cross-agent handoff ceremony but keeps every
+discipline (design sign-off before cluster spend, scientific integrity,
+fail-closed gates, honest raw evidence, `srun`-only, Git durability). Revert to
+the two-agent base protocol if the task is ever split across separate agents.
+
 ## Handoffs
 
 Cross-session/agent state lives in the repo (a fresh agent does not see prior

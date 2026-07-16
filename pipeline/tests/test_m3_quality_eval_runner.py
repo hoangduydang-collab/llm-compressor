@@ -293,6 +293,17 @@ def test_runner_scripts_are_valid_bash():
         result = subprocess.run(["bash", "-n", str(script)], capture_output=True)
         assert result.returncode == 0, result.stderr.decode()
 
+    arm_script = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()
+    assert "gpu-monitor-rank-$rank.log" in arm_script
+    assert "nvidia-smi --query-gpu=" in arm_script
+    assert "ray-logs-rank-$rank.tar.gz" in arm_script
+    assert "session_latest/logs" in arm_script
+    assert "placement-monitor.log" in arm_script
+    assert "M3_PLACEMENT_TIMEOUT_SECONDS" in arm_script
+    assert "placement-timeout.json" in arm_script
+    assert "M3_MODEL_INIT_TIMEOUT_SECONDS" in arm_script
+    assert "model-init-timeout.json" in arm_script
+
 
 def test_bf16_arm_requires_ray_gate_before_eval():
     arm = Path("pipeline/slurm/test_m3_quality_eval_arm.sh").read_text()

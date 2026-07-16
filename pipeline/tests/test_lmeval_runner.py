@@ -4,13 +4,14 @@ import json
 import os
 import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 from pipeline._env import apply_lm_eval_sglang_compat, apply_sglang_compat_env
 from pipeline.config import EvalTask, PipelineConfig, ServeConfig, load_config
 from pipeline.lmeval_runner import (
+    _load_lm_model,
     _prepare_vllm_runtime,
     model_args,
     per_task_limit,
@@ -18,6 +19,39 @@ from pipeline.lmeval_runner import (
     sglang_model_args,
     vllm_model_args,
 )
+
+
+def test_load_lm_model_writes_ready_marker_only_after_constructor(
+    monkeypatch, tmp_path
+):
+    ready = tmp_path / "model-ready.json"
+    constructor_observations = []
+
+    class FakeModel:
+        @classmethod
+        def create_from_arg_string(cls, *_args, **_kwargs):
+            constructor_observations.append(ready.exists())
+            return object()
+
+    monkeypatch.setenv("M3_MODEL_READY_FILE", str(ready))
+    monkeypatch.setattr(
+        "pipeline.lmeval_runner._prepare_vllm_runtime", lambda *_: {}
+    )
+    lm_eval = ModuleType("lm_eval")
+    lm_eval.__path__ = []
+    api = ModuleType("lm_eval.api")
+    api.__path__ = []
+    registry = ModuleType("lm_eval.api.registry")
+    registry.get_model = lambda _: FakeModel
+    monkeypatch.setitem(sys.modules, "lm_eval", lm_eval)
+    monkeypatch.setitem(sys.modules, "lm_eval.models", ModuleType("lm_eval.models"))
+    monkeypatch.setitem(sys.modules, "lm_eval.api", api)
+    monkeypatch.setitem(sys.modules, "lm_eval.api.registry", registry)
+
+    _load_lm_model(PipelineConfig(), "/models/minimax-m3")
+
+    assert constructor_observations == [False]
+    assert json.loads(ready.read_text())["status"] == "ready"
 
 
 def test_m3_reasoning_r4_config_pins_generation_contract():

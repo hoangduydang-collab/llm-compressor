@@ -19,16 +19,37 @@ ARM="$RUN_ROOT/models/$LABEL/shards/$SHARD"; mkdir -p "$ARM"
 rank=${SLURM_PROCID:-0}; nodes=${SLURM_NTASKS:-1}
 if ((nodes > 1)); then
   placement_monitor_pid=""
+  gpu_monitor_pid=""
   python -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["ready"] else 1)' \
     "$RUN_ROOT/ray_preflight/gate.json"
   source pipeline/slurm/test_m3_ray_topology.sh \
     --out "$ARM/ray_runtime" --keep-alive
+  (
+    while [[ ! -f "$ARM/ray_runtime/driver-done" ]]; do
+      echo "timestamp=$(date -Is)"
+      nvidia-smi --query-gpu=index,uuid,memory.used,memory.total,utilization.gpu \
+        --format=csv,noheader,nounits || true
+      sleep 60
+    done
+  ) >"$ARM/ray_runtime/gpu-monitor-rank-$rank.log" 2>&1 &
+  gpu_monitor_pid=$!
   cleanup_ray() {
     if [[ -n "$placement_monitor_pid" ]]; then
       kill "$placement_monitor_pid" 2>/dev/null || true
       wait "$placement_monitor_pid" 2>/dev/null || true
     fi
-    touch "$ARM/ray_runtime/driver-done"
+    if [[ -n "$gpu_monitor_pid" ]]; then
+      kill "$gpu_monitor_pid" 2>/dev/null || true
+      wait "$gpu_monitor_pid" 2>/dev/null || true
+    fi
+    touch "$ARM/ray_runtime/driver-done" || true
+    ray_logs="/tmp/ray/session_latest/logs"
+    archive="$ARM/ray_runtime/ray-logs-rank-$rank.tar.gz"
+    if [[ -d "$ray_logs" ]]; then
+      tar -czf "$archive" -C "$ray_logs" . || touch "$archive.missing" || true
+    else
+      touch "$archive.missing" || true
+    fi
     ray stop --force >/dev/null 2>&1 || true
   }
   if ((rank != 0)); then
@@ -50,6 +71,10 @@ if ((nodes > 1)); then
   placement_monitor_pid=$!
 fi
 if ((rank != 0)); then exit 0; fi
+export M3_MODEL_READY_FILE="$ARM/model-ready.json"
+rm -f "$M3_MODEL_READY_FILE" \
+  "$ARM/placement-timeout.json" \
+  "$ARM/model-init-timeout.json"
 python - "$ARM/arm_manifest.json" "$RUN_ROOT" "$LABEL" "$SHARD" "$SAMPLES_MANIFEST" "$EVAL_CONFIG" "$TASKS" <<'PYMAN'
 import hashlib,json,os,subprocess,sys
 out,root,label,shard,samples,config,tasks=sys.argv[1:]
@@ -89,8 +114,50 @@ if [[ "$PROFILE" == smoke && "$RUN_PROBE" == 1 ]]; then
 fi
 if ((rc == 0)); then
   if [[ -n "$TASKS" ]]; then
-    "${eval_cmd[@]}"
+    "${eval_cmd[@]}" &
+    eval_pid=$!
+    placement_timeout=${M3_PLACEMENT_TIMEOUT_SECONDS:-0}
+    init_timeout=${M3_MODEL_INIT_TIMEOUT_SECONDS:-0}
+    placement_watchdog_pid=""
+    if [[ "$placement_timeout" =~ ^[1-9][0-9]*$ ]]; then
+      (
+        sleep "$placement_timeout"
+        if kill -0 "$eval_pid" 2>/dev/null; then
+          placement_deadline="$ARM/ray_runtime/placement-at-deadline.log"
+          timeout 10s ray list placement-groups --detail \
+            >"$placement_deadline" 2>&1 || true
+          if ! grep -q "CREATED" "$placement_deadline"; then
+            printf '{"status":"stalled","timeout_seconds":%s}\n' \
+              "$placement_timeout" >"$ARM/placement-timeout.json"
+            kill -TERM "$eval_pid" 2>/dev/null || true
+          fi
+        fi
+      ) &
+      placement_watchdog_pid=$!
+    fi
+    init_watchdog_pid=""
+    if [[ "$init_timeout" =~ ^[1-9][0-9]*$ ]]; then
+      (
+        sleep "$init_timeout"
+        if kill -0 "$eval_pid" 2>/dev/null \
+           && [[ ! -f "$M3_MODEL_READY_FILE" ]]; then
+          printf '{"status":"stalled","timeout_seconds":%s}\n' \
+            "$init_timeout" >"$ARM/model-init-timeout.json"
+          kill -TERM "$eval_pid" 2>/dev/null || true
+        fi
+      ) &
+      init_watchdog_pid=$!
+    fi
+    wait "$eval_pid"
     rc=$?
+    if [[ -n "$placement_watchdog_pid" ]]; then
+      kill "$placement_watchdog_pid" 2>/dev/null || true
+      wait "$placement_watchdog_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$init_watchdog_pid" ]]; then
+      kill "$init_watchdog_pid" 2>/dev/null || true
+      wait "$init_watchdog_pid" 2>/dev/null || true
+    fi
   else
     printf '{}\n' >"$ARM/aggregate.json"
   fi

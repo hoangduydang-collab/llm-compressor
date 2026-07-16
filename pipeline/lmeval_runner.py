@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Callable
+from pathlib import Path
 
 from pipeline.config import EvalTask, PipelineConfig
 
@@ -115,8 +118,6 @@ def per_task_limit(
 
 def _prepare_vllm_runtime(model_path: str, model_source: str) -> dict:
     """Apply the same MiniMax runtime preparation used by the fidelity probe."""
-    from pathlib import Path
-
     from pipeline.m3_distributional_probe import _prepare_minimax_runtime
 
     return _prepare_minimax_runtime(Path(model_path), model_source)
@@ -133,10 +134,18 @@ def _load_lm_model(cfg: PipelineConfig, model_path: str):
 
     model_cls = get_model(cfg.eval.backend)
     batch_size = cfg.eval.lm_eval_batch_size
-    return model_cls.create_from_arg_string(
+    lm = model_cls.create_from_arg_string(
         model_args(cfg, model_path),
         {"batch_size": batch_size},
     )
+    ready_file = os.environ.get("M3_MODEL_READY_FILE")
+    if ready_file:
+        ready = Path(ready_file)
+        ready.parent.mkdir(parents=True, exist_ok=True)
+        temp = ready.with_suffix(ready.suffix + ".tmp")
+        temp.write_text(json.dumps({"status": "ready"}) + "\n")
+        temp.replace(ready)
+    return lm
 
 
 def _merge_eval_results(merged: dict, batch: dict) -> None:

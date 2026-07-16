@@ -35,7 +35,7 @@ sampling:
 
 scheduling:
   max_parallel_arms: 2
-  arm_time_limit: "24:00:00"
+  arm_time_limit: "12:00:00"
 
 probe:
   enabled: false

@@ -89,12 +89,32 @@ def test_launcher_uses_configurable_post_linearization_memory_floors():
         'MIN_MEM_AVAILABLE_BYTES="${MIN_MEM_AVAILABLE_BYTES:-1200000000000}"'
         in text
     )
-    assert (
-        'MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-128000000000}"'
-        in text
-    )
+    # r6 lesson: the distributed CPU offload keeps one full model copy in
+    # /dev/shm, so the gate defaults to the checkpoint's exact size (+5%), not
+    # a fixed IPC floor. The old 128 GB default let AWQ launch on a node with
+    # only 213 GB free and die mid-load.
+    assert 'MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-auto}"' in text
+    assert "128000000000" not in text
     assert "900000000000" not in text
-    assert "shm_available < MIN_SHM_AVAILABLE_BYTES" in text
+    assert "model.safetensors.index.json" in text
+    assert '"metadata"]["total_size"]' in text
+    assert "total * 105 // 100" in text
+    assert "shm_available < min_shm_bytes" in text
+
+
+def test_launcher_reclaims_orphaned_torch_shm_before_capacity_gate():
+    """r6 lesson: ranks hard-killed mid-run leak /dev/shm/torch_* files (852 GB
+    on gpu-h101 after the r5 GPTQ crash), starving the next arm's model load.
+    On an exclusively held node, any $USER-owned torch_* segment not mapped by
+    a live process is leakage and must be reclaimed before the capacity gate.
+    """
+    text = LAUNCHER.read_text(encoding="utf-8")
+
+    assert "/dev/shm/torch_" in text
+    assert "/proc/[0-9]*/maps" in text
+    assert '[[ -e "$stale_file" && -O "$stale_file" ]]' in text
+    assert "stale_shm_files_removed=" in text
+    assert "min_shm_available_bytes_required=" in text
 
 
 def test_minimax_m3_linearizes_experts_while_loading():

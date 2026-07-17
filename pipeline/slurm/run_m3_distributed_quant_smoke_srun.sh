@@ -17,10 +17,13 @@ TIME_LIMIT="${TIME_LIMIT:-24:00:00}"
 SAMPLE_INTERVAL="${SAMPLE_INTERVAL:-60}"
 DRY_RUN="${DRY_RUN:-0}"
 MIN_MEM_AVAILABLE_BYTES="${MIN_MEM_AVAILABLE_BYTES:-1200000000000}"
-# The load-time MiniMax mapping now avoids the r4 shared-memory duplication.
-# Keep a conservative floor for runtime IPC without requiring the obsolete
-# 900 GB linearization headroom.
-MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-128000000000}"
+# r6 lesson: the distributed CPU offload (`DistributedCPUCache`) keeps ONE full
+# shared model copy in /dev/shm (`_share_filename_cpu_`), so the real /dev/shm
+# requirement is the whole checkpoint (~869 GB for MiniMax-M3), not an IPC
+# floor. "auto" sizes the gate from the checkpoint's safetensors index
+# (total_size + 5% headroom); the r6 128 GB floor let AWQ launch on a node with
+# only 213 GB free and die mid-load.
+MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-auto}"
 
 worker_main() {
   local method="${1:?worker requires gptq or awq}"
@@ -41,7 +44,41 @@ worker_main() {
   export HF_PARALLEL_LOADING_WORKERS="${HF_PARALLEL_LOADING_WORKERS:-16}"
   mkdir -p "$method_root" "$method_logs" "$offload_dir"
 
+  # Reclaim orphaned torch shared-memory segments before the capacity gate.
+  # Ranks hard-killed mid-run leak their /dev/shm/torch_* files (torch's shm
+  # manager cannot clean up after SIGKILL); the r5 GPTQ crash left 852 GB on
+  # gpu-h101, which starved the next arm's model load. We hold this node
+  # exclusively, so any $USER-owned torch_* file not mapped by a live process
+  # is such leakage.
+  local mapped_shm stale_removed=0 stale_file
+  mapped_shm="$(awk '$6 ~ /^\/dev\/shm\/torch_/ {print $6}' /proc/[0-9]*/maps 2>/dev/null | sort -u || true)"
+  for stale_file in /dev/shm/torch_*; do
+    [[ -e "$stale_file" && -O "$stale_file" ]] || continue
+    grep -qxF "$stale_file" <<<"$mapped_shm" && continue
+    rm -f -- "$stale_file" 2>/dev/null && stale_removed=$((stale_removed + 1)) || true
+  done
+
+  # Resolve the /dev/shm requirement: the checkpoint's exact byte size + 5%.
+  local min_shm_bytes="$MIN_SHM_AVAILABLE_BYTES"
+  if [[ "$min_shm_bytes" == auto ]]; then
+    local index_json="$MODEL_ID/model.safetensors.index.json"
+    if [[ ! -f "$index_json" ]]; then
+      echo "ERROR: MIN_SHM_AVAILABLE_BYTES=auto requires $index_json; set an explicit byte value" >&2
+      return 3
+    fi
+    min_shm_bytes="$(python - "$index_json" <<'PY'
+import json
+import sys
+
+total = json.load(open(sys.argv[1]))["metadata"]["total_size"]
+print(total * 105 // 100)
+PY
+)"
+  fi
+
   {
+    echo "stale_shm_files_removed=$stale_removed"
+    echo "min_shm_available_bytes_required=$min_shm_bytes"
     grep -E 'MemTotal|MemAvailable|Shmem|SwapTotal|SwapFree' /proc/meminfo
     df -B1 /dev/shm
     nvidia-smi --query-gpu=index,uuid,memory.used,memory.total \
@@ -63,8 +100,8 @@ PY
     echo "ERROR: MemAvailable below ${MIN_MEM_AVAILABLE_BYTES} bytes: ${mem_available_kb} KiB" >&2
     return 3
   fi
-  if (( shm_available < MIN_SHM_AVAILABLE_BYTES )); then
-    echo "ERROR: /dev/shm available space below ${MIN_SHM_AVAILABLE_BYTES} bytes: ${shm_available} bytes" >&2
+  if (( shm_available < min_shm_bytes )); then
+    echo "ERROR: /dev/shm available space below ${min_shm_bytes} bytes: ${shm_available} bytes" >&2
     return 3
   fi
 

@@ -1114,3 +1114,38 @@ min_shm_available_bytes_required=912615581875, ~1.07 TB free). Contract
 otherwise identical to r7. Timing note for interpretation: r8 wall-clock is
 measured with full-CPU steps, unlike the 1-core-bound single-process history;
 the >2x comparison must state this configuration change explicitly.
+
+## r9-save outcome and first AWQ apply-correctness audit (2026-07-17)
+
+r9-save (RUN_ID 20260717T063948Z-m3-ddp-quant-smoke-r9-save, EVIDENCE_ONLY=0,
+layers 3/31/59, jobs 12985 gpu-h103 / 12986 gpu-h108) completed rc=0 for both
+methods in 71 min wall including checkpoint save. Each method saved a 766 GB
+checkpoint (3 quantized layers, remainder BF16) under
+results root .../{gptq,awq}/MiniMax-M3-{method}-W4AFP8/*/checkpoint.
+
+Verification evidence (all under the r9-save results root):
+
+1. `pipeline/verify_quant_checkpoint.py` — PASS on both checkpoints: exactly
+   3 sparse layers quantized, 1152 quantized Linears each (128 experts x 3
+   projections x 3 layers, exact count match), all ignore rules respected
+   (routers, shared experts, attention, lm_head, vision tower, dense 0-2),
+   intermediate_size 3072 = 12 x 256 (EP serving width OK).
+2. `pipeline/m3_checkpoint_scale_audit.py` (fixed in e84769c8 to resolve
+   HF-format separate shared-expert gate_proj; the fused-only suffix table had
+   never successfully run against these checkpoints) — layers 3/31/59,
+   candidates vs BF16 base, output checkpoint_scale_audit.json:
+   - reference (cyankiwi AWQ, known-good): norm weights changed
+     (rel 0.04-3.6), router/shared compensation identity error 0.002-0.004.
+   - our r9 AWQ: norm weights changed (rel 0.46-0.89 on all 3 layers),
+     compensation error 0.0025-0.0041 — same signature as the reference.
+     The compensation identity is the offset-RMSNorm-aware (1+w) form; the
+     historical M3 AWQ bug would have produced large errors here.
+   - our r9 GPTQ (negative control): norm unchanged (0.000), scale = 1.0,
+     confirming the audit does not trivially pass.
+
+Conclusion: **distributed AWQ genuinely applies smoothing on MiniMax-M3.** The
+full-calibration distributed AWQ run (20260717T064357Z-m3-ddp-awq-full-r1, job
+12987) uses the identical code path and was allowed to continue. Serving smoke
+decision: do NOT serve the 766 GB r9 checkpoint (needs 2-node TP16 for marginal
+info); run verify + scale audit + single-node TP8 serving smoke on the full
+AWQ checkpoint when it lands.

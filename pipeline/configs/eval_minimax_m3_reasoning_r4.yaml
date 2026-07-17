@@ -14,6 +14,13 @@ serve:
   gpu_memory_utilization: 0.85
   enforce_eager: true
   disable_custom_all_reduce: true
+  vllm_kwargs:
+    # BF16 production r50: mid-generation _ALLGATHER_BASE hit torch's default
+    # 600s NCCL PG timeout and killed the reasoning_suite arm (one rank stalled
+    # >10 min, cause unproven — NFS-slow lazy JIT under cluster contention is
+    # the lead suspect). Ride out transient stalls instead of dying; a hard
+    # hang still fails, just at 1h. Non-semantic: no effect on generation.
+    distributed_timeout_seconds: 3600
 
 eval:
   enabled: true

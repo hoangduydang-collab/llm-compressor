@@ -33,6 +33,7 @@ to configure via environment variables or direct function calls.
     logger.info("This is an info message")
 """
 
+import itertools
 import os
 import sys
 from dataclasses import dataclass
@@ -41,11 +42,47 @@ from typing import Any, Dict, Optional
 import torch.distributed as dist
 from loguru import logger
 
-__all__ = ["LoggerConfig", "configure_logger", "logger", "configure_distributed_logger"]
+__all__ = [
+    "LoggerConfig",
+    "configure_logger",
+    "logger",
+    "configure_distributed_logger",
+    "add_external_sink",
+    "remove_external_sink",
+]
 
 
 # used by `support_log_once``
 _logged_once = set()
+
+# External sinks that must survive `configure_logger()`'s `logger.remove()`
+# reset (e.g. an evidence capture sink installed by a caller before `oneshot`).
+# `configure_distributed_logger()` runs inside `oneshot` on distributed runs and
+# would otherwise silently drop them: public id -> (add args, add kwargs).
+_external_sinks: Dict[int, tuple] = {}
+_external_sink_ids: Dict[int, int] = {}
+_external_sink_counter = itertools.count(1)
+
+
+def add_external_sink(*args: Any, **kwargs: Any) -> int:
+    """Add a loguru sink that is re-installed whenever `configure_logger` resets
+    logging. Returns a stable public id for `remove_external_sink`."""
+    public_id = next(_external_sink_counter)
+    _external_sinks[public_id] = (args, kwargs)
+    _external_sink_ids[public_id] = logger.add(*args, **kwargs)
+    return public_id
+
+
+def remove_external_sink(public_id: int) -> None:
+    """Remove a sink added by `add_external_sink` (idempotent)."""
+    _external_sinks.pop(public_id, None)
+    sink_id = _external_sink_ids.pop(public_id, None)
+    if sink_id is not None:
+        try:
+            logger.remove(sink_id)
+        except ValueError:
+            # already removed by a logger reset that we did not re-install after
+            pass
 
 
 @dataclass
@@ -123,6 +160,12 @@ def configure_logger(logger_config: LoggerConfig = LOGGER_CONFIG):
             serialize=True,
             filter=support_log_once,
         )
+
+    # re-install external sinks dropped by the `logger.remove()` reset above
+    # (e.g. the distributed reconfigure inside `oneshot` must not silently
+    # disconnect a caller's evidence capture sink)
+    for public_id, (args, kwargs) in _external_sinks.items():
+        _external_sink_ids[public_id] = logger.add(*args, **kwargs)
 
     # set global value for later calls
     global LOGGER_CONFIG

@@ -46,8 +46,17 @@ def capture_quant_metrics(path):
     Adds an extra sink (does not disturb existing console logging) and removes
     it on exit. The sink level is DEBUG so the AWQ line passes the level gate,
     but the content filter keeps the file to just the metric records.
+
+    The sink is registered through llm-compressor's external-sink registry so it
+    survives ``configure_logger()`` resets: on distributed runs ``oneshot`` calls
+    ``configure_distributed_logger()`` internally, whose ``logger.remove()``
+    would otherwise silently disconnect this sink and leave the evidence file
+    empty (observed in the r6 distributed smoke: native GPTQ METRIC records on
+    stdout, zero records captured).
     """
     from loguru import logger as _loguru
+
+    from llmcompressor.logger import add_external_sink, remove_external_sink
 
     path = Path(path)
     try:
@@ -55,7 +64,7 @@ def capture_quant_metrics(path):
     except ValueError:
         _loguru.level("METRIC", no=38)
 
-    sink_id = _loguru.add(
+    sink_id = add_external_sink(
         str(path),
         level="DEBUG",
         serialize=True,
@@ -64,12 +73,8 @@ def capture_quant_metrics(path):
     try:
         yield path
     finally:
-        try:
-            _loguru.remove(sink_id)
-        except ValueError:
-            # llm-compressor may replace/remove Loguru handlers internally.
-            # Cleanup of this passive evidence sink must therefore be idempotent.
-            pass
+        # idempotent: survives llm-compressor replacing/removing handlers
+        remove_external_sink(sink_id)
 
 
 def _iter_messages(path: Path):

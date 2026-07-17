@@ -8,7 +8,6 @@ Run: pytest pipeline/tests/test_metrics.py
 """
 
 import json
-import sys
 from types import SimpleNamespace
 
 from pipeline.metrics import (
@@ -64,21 +63,44 @@ AWQ_DATA = {
 AWQ_MESSAGE = "AWQ per-mapping error metrics: " + repr(AWQ_DATA)
 
 
-def test_capture_cleanup_tolerates_sink_removed_by_library(monkeypatch, tmp_path):
-    class FakeLogger:
-        def level(self, *_args, **_kwargs):
-            return None
-
-        def add(self, *_args, **_kwargs):
-            return 2
-
-        def remove(self, sink_id):
-            raise ValueError(f"There is no existing handler with id {sink_id}")
-
-    monkeypatch.setitem(sys.modules, "loguru", SimpleNamespace(logger=FakeLogger()))
+def test_capture_cleanup_tolerates_sink_removed_by_library(tmp_path):
+    from loguru import logger
 
     with capture_quant_metrics(tmp_path / "quant_metrics.jsonl"):
-        pass
+        # library wipes every handler (including ours) without re-installing;
+        # exiting the context must stay silent instead of raising ValueError
+        logger.remove()
+
+
+def test_capture_survives_llmcompressor_logger_reset(tmp_path):
+    """Distributed-run regression (r6): `oneshot` calls
+    `configure_distributed_logger()` internally, whose `logger.remove()` reset
+    used to disconnect the capture sink AFTER it was installed, leaving
+    `quant_metrics.rank-*.jsonl` empty while native METRIC records went to
+    stdout. The external-sink registry must re-install the sink on reset.
+    """
+    from llmcompressor.logger import configure_logger, logger
+
+    path = tmp_path / "quant_metrics.jsonl"
+    with capture_quant_metrics(path):
+        configure_logger()  # the reset that oneshot performs mid-capture
+        logger.log("METRIC", "time 0.23s")
+        logger.info(
+            "Quantizing model.language_model.layers.3.mlp.experts.0.gate_proj "
+            "using 8 samples"
+        )
+    lines = [
+        json.loads(line)["record"]["message"]
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert "time 0.23s" in lines
+    assert any(message.startswith("Quantizing") for message in lines)
+
+    # the sink must also be gone after the context exits, even after a reset
+    logger.log("METRIC", "after-exit record")
+    lines_after = path.read_text(encoding="utf-8").splitlines()
+    assert not any("after-exit record" in line for line in lines_after)
 
 
 def _write_jsonl(path, records):

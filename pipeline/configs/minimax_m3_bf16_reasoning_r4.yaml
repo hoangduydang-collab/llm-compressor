@@ -35,7 +35,10 @@ sampling:
 
 scheduling:
   max_parallel_arms: 2
-  arm_time_limit: "12:00:00"
+  # 24h: MXFP8's gpqa/aime arms overran the original 12h and needed an
+  # in-place resume (see 67404835, which went to 48h for the slow Marlin
+  # path). BF16 TP16 is faster but pays 2-node TP overhead; give headroom.
+  arm_time_limit: "24:00:00"
 
 probe:
   enabled: false

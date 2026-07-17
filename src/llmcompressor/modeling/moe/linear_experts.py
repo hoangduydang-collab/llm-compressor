@@ -3,6 +3,7 @@ from typing import Any, Callable, ClassVar
 
 import torch
 from compressed_tensors.offload import get_cache_init_kwargs, offload_module
+from loguru import logger
 from transformers import (
     PreTrainedConfig,
 )
@@ -168,6 +169,9 @@ class LinearExperts2D(torch.nn.ModuleList):
     has_bias: ClassVar[bool]
     has_gate: ClassVar[bool]
     _apply_gate: ClassVar[Callable[[torch.Tensor], torch.Tensor]]
+    # Source experts class the dynamic subclass was derived from; used to harvest
+    # config-derived `_apply_gate` scalars at `__init__` time (load-time path).
+    _source_experts_cls: ClassVar[type[torch.nn.Module] | None] = None
 
     num_experts: int
     intermediate_size: int
@@ -201,6 +205,7 @@ class LinearExperts2D(torch.nn.ModuleList):
         experts_cls_args["_apply_gate"] = getattr(
             experts_cls, "_apply_gate", _default_apply_gate
         )
+        experts_cls_args["_source_experts_cls"] = experts_cls
 
         # reuse existing classes to avoid creating excessive types
         linear_experts_cls = type("LinearExperts2D", (cls,), experts_cls_args)
@@ -233,7 +238,9 @@ class LinearExperts2D(torch.nn.ModuleList):
         # disposable `init_empty_weights` model used by the pre-quantization gate) must
         # stay meta-only. Key the guard off the exact `offload_device` that
         # `offload_module` would reject; CPU, CUDA, and disk offload are unchanged.
-        if torch.device(offload_kwargs["offload_device"]).type != "meta":
+        # NOTE: compare as string -- `offload_device` may be CT's "disk" backend,
+        # which `torch.device(...)` cannot parse.
+        if str(offload_kwargs["offload_device"]) != "meta":
             for module in self.modules():
                 offload_module(module, **offload_kwargs)
 
@@ -265,6 +272,33 @@ class LinearExperts2D(torch.nn.ModuleList):
         self.act_fn = act_fn
         self.alpha = moe_config.alpha
         self.limit = moe_config.limit
+
+        # The reused `_apply_gate` method may read model-specific config-derived
+        # scalars off `self` (e.g. MiniMax-M3's `swiglu_limit` / `swiglu_alpha`).
+        # The post-load path (`from_experts_module`) copies them from the real
+        # source module, but the load-time path (`register_patch_mapping`)
+        # constructs this class directly with no source module in existence, so
+        # harvest them here from a weightless meta instantiation of the source
+        # experts class. Without this, calibration fails with an AttributeError
+        # inside `_apply_gate`.
+        self._harvest_source_gate_scalars(config)
+
+    def _harvest_source_gate_scalars(self, config: PreTrainedConfig) -> None:
+        source_cls = type(self)._source_experts_cls
+        if source_cls is None:
+            return
+        try:
+            with torch.device("meta"):
+                source = source_cls(config)
+        except Exception as error:
+            logger.warning(
+                f"Could not instantiate {source_cls.__name__} on the meta device "
+                f"to carry over `_apply_gate` scalars: {error}. If the reused "
+                "`_apply_gate` reads config-derived attributes, calibration may "
+                "fail with an AttributeError."
+            )
+            return
+        _carry_over_gate_scalars(self, source)
 
     def forward(
         self,

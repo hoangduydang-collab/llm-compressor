@@ -142,3 +142,59 @@ def test_linear_experts_2d_with_hooks():
     # Clean up hooks
     for hook in hooks:
         hook.remove()
+
+
+@torch.no_grad()
+def test_linear_experts_2d_init_carries_source_gate_scalars():
+    """Load-time-path regression (distributed r6): when Transformers constructs
+    the dynamic `LinearExperts2D` directly via `register_patch_mapping` during
+    `from_pretrained`, only `__init__` runs — `from_experts_module` (and its
+    `_carry_over_gate_scalars`) is never called. The reused MiniMax-M3
+    `_apply_gate` reads `swiglu_limit` / `swiglu_alpha` off `self`, so `__init__`
+    must harvest those scalars itself (from a weightless meta instantiation of
+    the source experts class) or calibration dies with an AttributeError.
+    """
+    from transformers.models.minimax_m3_vl.configuration_minimax_m3_vl import (
+        MiniMaxM3VLTextConfig,
+    )
+    from transformers.models.minimax_m3_vl.modeling_minimax_m3_vl import (
+        MiniMaxM3VLExperts,
+    )
+
+    config = MiniMaxM3VLTextConfig(
+        hidden_size=16,
+        intermediate_size=32,
+        num_local_experts=4,
+        num_experts_per_tok=2,
+    )
+    linear_experts_cls = LinearExperts2D.get_linear_experts_cls(MiniMaxM3VLExperts)
+
+    # construct exactly like the load-time patch mapping does: __init__ only
+    linear_experts = linear_experts_cls(config)
+
+    assert linear_experts.swiglu_limit == config.swiglu_limit
+    assert linear_experts.swiglu_alpha == config.swiglu_alpha
+
+    for expert in linear_experts:
+        if isinstance(expert, torch.nn.Module) and hasattr(expert, "up_proj"):
+            init.normal_(expert.up_proj.weight, mean=0.0, std=0.02)
+            init.normal_(expert.gate_proj.weight, mean=0.0, std=0.02)
+            init.normal_(expert.down_proj.weight, mean=0.0, std=0.02)
+
+    num_tokens = 8
+    hidden_states = torch.randn(num_tokens, config.hidden_size)
+    top_k_index = torch.randint(
+        0, config.num_local_experts, size=(num_tokens, config.num_experts_per_tok)
+    )
+    top_k_weights = torch.randn(num_tokens, config.num_experts_per_tok)
+
+    # r6 raised AttributeError('swiglu_limit') inside the reused `_apply_gate`,
+    # both with and without the calibrate-all-experts context
+    output = linear_experts(hidden_states, top_k_index, top_k_weights)
+    with moe_calibration_context():
+        calib_output = linear_experts(hidden_states, top_k_index, top_k_weights)
+
+    assert output.shape == hidden_states.shape
+    assert calib_output.shape == hidden_states.shape
+    assert not torch.isnan(output).any()
+    assert not torch.isnan(calib_output).any()

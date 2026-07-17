@@ -1,5 +1,5 @@
 {
-  "ready_for_production": false,
+  "ready_for_production": true,
   "missing_models": [],
   "unexpected_models": [],
   "models": {
@@ -14,20 +14,28 @@
         "periodic_loops": true,
         "distributed_world_size": true
       },
+      "empty_output_count": 0,
+      "max_smoke_empty_outputs": 1,
+      "warnings": [],
       "distributed_world_size": 8,
       "probe_projection": null
     },
     "inhouse_gptq": {
-      "passed": false,
+      "passed": true,
       "checks": {
         "infrastructure": true,
         "artifacts": true,
         "all_tasks_scored": true,
         "sample_manifest": true,
-        "empty_outputs": false,
+        "empty_outputs": true,
         "periodic_loops": true,
         "distributed_world_size": true
       },
+      "empty_output_count": 1,
+      "max_smoke_empty_outputs": 1,
+      "warnings": [
+        "smoke observed 1 empty generation(s)"
+      ],
       "distributed_world_size": 8,
       "probe_projection": null
     }

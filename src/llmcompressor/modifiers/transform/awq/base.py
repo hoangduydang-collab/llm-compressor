@@ -743,7 +743,11 @@ class AWQModifier(Modifier):
             )
 
         err_reduction = best_error / initial_error if initial_error > 0 else 1.0
-        logger.debug(
+        # INFO (not DEBUG) so distributed/long calibration runs emit a per-mapping
+        # progress heartbeat on the console; the DEBUG per-layer lines were the
+        # only mid-run signal and were suppressed at the default INFO level,
+        # leaving multi-hour MoE runs with no observable progress until finalize.
+        logger.info(
             f"AWQ grid search for {mapping.smooth_name}: "
             f"initial error = {initial_error:.3e}, "
             f"best error = {best_error:.3e}, "
@@ -875,7 +879,7 @@ class AWQModifier(Modifier):
         max_reduction = max(reductions)
         sorted_reductions = sorted(reductions)
         median_reduction = sorted_reductions[len(sorted_reductions) // 2]
-        logger.debug(
+        logger.info(
             f"Error reduction statistics: "
             f"avg={avg_reduction:.4f}, median={median_reduction:.4f}, "
             f"min={min_reduction:.4f}, max={max_reduction:.4f}"

@@ -725,3 +725,32 @@ monitor/watchdog probes in `test_m3_quality_eval_arm.sh` with
 launcher tests mirroring `test_m3_distributed_quant_smoke.py`'s
 `--cpus-per-task` assertions. The quant-smoke launcher already carries the
 inline fix (commit 70e5836d).
+
+## r49 outcome and r50 authorization (2026-07-17)
+
+r49 (SLURM_CPUS_PER_TASK=192 + RAY_enable_worker_prestart=0) confirmed the
+CPU-starvation fix: the engine passed the historical hang point in ~5 s
+("Connected to Ray cluster" -> "Creating a new placement group"), all 16
+RayWorkerProc actors spawned across both nodes, and the arm FAILED FAST
+(rc=1 at +2.5 min instead of hanging for hours) at the next-deeper layer:
+16-rank NCCL init raised "remote process exited or there was a network error"
+(`pynccl ncclCommInitRank`, `.../20260717T054606Z-.../logs/smoke-bf16-smoke.*`).
+
+Isolation probes (2 nodes x 1 GPU, plain torch.distributed, no vLLM/Ray):
+1. `MASTER_ADDR=<hostname>` fails BEFORE NCCL: TCPStore connect to
+   `gpu-h104:29511` times out — node hostnames are not reachable cross-node.
+   Node networks: `intranet` 10.2.4.x/24 (routable; what Ray uses), `storage`
+   10.3.4.x/24, and 8 IB rails (`ibp*`) carrying only IPv6 link-local
+   addresses.
+2. With `NCCL_SOCKET_IFNAME=intranet` (+ intranet IP as MASTER_ADDR): 2-node
+   allreduce SUCCEEDS over **NET/IB with GPUDirect RDMA** (12 mlx5 devices
+   visible, OOB over intranet). The fabric is healthy; only NCCL's default
+   out-of-band interface selection (which prefers the unroutable ib*/storage
+   interfaces) is wrong for this cluster.
+
+r50 = r49 controller + `NCCL_SOCKET_IFNAME=intranet` and
+`GLOO_SOCKET_IFNAME=intranet` (gloo defaults to hostname resolution, which
+does not resolve here). Controller:
+`/mnt/nfs/hoangduy/claude/config/jobs/9e08e54d/tmp/bf16_relaunch_controller_r50.sh`.
+These two exports belong in the baked-in launcher fix alongside
+`--cpus-per-task` once the hot scripts go cold.

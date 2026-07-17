@@ -36,6 +36,10 @@ CPUS_PER_TASK="${CPUS_PER_TASK:-192}"
 # results/logs/offload trees are already method-scoped, so the arms share
 # nothing but the read-only checkpoint and calibration dataset cache).
 PARALLEL_METHODS="${PARALLEL_METHODS:-1}"
+# 1 (default): metrics/evidence only, no checkpoint. 0: save the quantized
+# checkpoint so pipeline/m3_checkpoint_scale_audit.py and
+# pipeline/verify_quant_checkpoint.py can run against it.
+EVIDENCE_ONLY="${EVIDENCE_ONLY:-1}"
 
 worker_main() {
   local method="${1:?worker requires gptq or awq}"
@@ -138,12 +142,17 @@ PY
 
   local command=(
     torchrun --nproc_per_node=8 -m pipeline.run
-    --config "$CONFIG" --stage quantize --evidence-only
+    --config "$CONFIG" --stage quantize
     --set "quantization.method=$method"
     --set "model.id=$MODEL_ID"
     --set "model.offload_folder=$offload_dir"
     --set "output_dir=$method_root"
   )
+  # EVIDENCE_ONLY=1 (default) skips the checkpoint save; set 0 to save the
+  # quantized checkpoint (needed by the scale audit / verify tooling).
+  if [[ "${EVIDENCE_ONLY:-1}" == 1 || "${EVIDENCE_ONLY:-1}" == true ]]; then
+    command+=(--evidence-only)
+  fi
   printf '%q ' "${command[@]}" >"$method_logs/command.txt"
   printf '\n' >>"$method_logs/command.txt"
 
@@ -195,12 +204,15 @@ for method in gptq awq; do
     SAMPLE_INTERVAL="$SAMPLE_INTERVAL"
     MIN_MEM_AVAILABLE_BYTES="$MIN_MEM_AVAILABLE_BYTES"
     MIN_SHM_AVAILABLE_BYTES="$MIN_SHM_AVAILABLE_BYTES"
+    EVIDENCE_ONLY="$EVIDENCE_ONLY"
     bash "$SCRIPT_DIR/run_m3_distributed_quant_smoke_srun.sh" --worker "$method"
   )
   if [[ "$DRY_RUN" == 1 || "$DRY_RUN" == true ]]; then
     printf '%q ' "${command[@]}"
     printf '\n'
-    printf 'worker: torchrun --nproc_per_node=8 -m pipeline.run --config %q --stage quantize --evidence-only --set quantization.method=%q\n' "$CONFIG" "$method"
+    evidence_flag=""
+    [[ "$EVIDENCE_ONLY" == 1 || "$EVIDENCE_ONLY" == true ]] && evidence_flag=" --evidence-only"
+    printf 'worker: torchrun --nproc_per_node=8 -m pipeline.run --config %q --stage quantize%s --set quantization.method=%q\n' "$CONFIG" "$evidence_flag" "$method"
     continue
   fi
 

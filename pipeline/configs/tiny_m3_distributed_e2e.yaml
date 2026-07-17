@@ -1,0 +1,56 @@
+# Tiny-model rehearsal of minimax_m3_distributed_smoke.yaml.
+#
+# Identical quantization/calibration semantics to the production distributed
+# smoke -- same recipe, ignore patterns (the (?:3|31|59) restriction resolves to
+# layer 3 on the 4-layer tiny model), sample count, sequence length, sequential
+# targets -- against the miniature checkpoint built by
+# `python -m pipeline.make_tiny_minimax_m3`. Run on 2 local GPUs before any
+# cluster launch of the real smoke; see that module's docstring for the exact
+# torchrun commands. Override model.id / model.offload_folder / output_dir with
+# --set at launch.
+name: tiny_m3_distributed_e2e
+
+model:
+  id: /tmp/tiny-m3  # --set model.id=<dir written by make_tiny_minimax_m3>
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 1000000000000
+  offload_folder: /tmp/tiny-m3-offload
+
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"
+    - "re:.*block_sparse_moe[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*block_sparse_moe[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*language_model[.]layers[.](?!(?:3|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 8
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /tmp/tiny-m3-out

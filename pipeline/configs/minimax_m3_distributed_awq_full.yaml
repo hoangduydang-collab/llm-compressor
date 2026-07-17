@@ -1,0 +1,58 @@
+# Full-calibration native DDP AWQ quantization for MiniMax-M3.
+#
+# The distributed smoke config (minimax_m3_distributed_smoke.yaml) with the
+# 3-layer negative-lookahead restriction removed and the production
+# full-calibration parameters restored (512 samples x 2048 seq, matching the
+# single-process artifacts under artifacts/MiniMax-M3-awq-W4AFP8). Data-parallel
+# AWQ splits the 512 samples across the 8 ranks (64/rank), which also keeps the
+# per-rank parent-input cache far below the VMA regime that killed the
+# single-process full-calib run (see BUGS_AND_FIXES.md, fixed 2026-07-08).
+# Launch through run_m3_distributed_quant_smoke_srun.sh worker mode with
+# EVIDENCE_ONLY=0 so the checkpoint is saved for the scale audit and serving.
+name: minimax_m3_distributed_awq_full
+
+model:
+  id: MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
+  device_map: auto_offload
+  # Native DDP requires CPU-only placement. Leaving this unset lets Accelerate
+  # spread every rank across all visible GPUs instead of CT's shared offload.
+  max_memory:
+    cpu: 1000000000000
+  offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-awq-full
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"
+    - "re:.*block_sparse_moe[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*block_sparse_moe[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 512
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/nfs/hoangduy/results/m3-distributed-awq-full

@@ -40,6 +40,11 @@ def _component_suffixes(layer: int, component: str) -> tuple[str, ...]:
         "shared_gate_up": (
             "mlp.shared_experts.gate_up_proj.weight",
             "block_sparse_moe.shared_experts.gate_up_proj.weight",
+            # HF-format checkpoints (raw M3, cyankiwi AWQ, our distributed
+            # saves) keep gate/up separate; gate_proj sees the same smoothed
+            # input, so it is an equivalent witness for the compensation.
+            "mlp.shared_experts.gate_proj.weight",
+            "block_sparse_moe.shared_experts.gate_proj.weight",
         ),
     }
     if component not in tails:

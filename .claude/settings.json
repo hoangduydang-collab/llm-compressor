@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(squeue)",
+      "Bash(squeue *)",
+      "Bash(sinfo)",
+      "Bash(sinfo *)",
+      "Bash(sacct *)",
+      "Bash(scontrol show *)",
+      "Bash(tmux ls)",
+      "Bash(tmux ls *)",
+      "Bash(tmux list-sessions *)",
+      "Bash(tmux list-panes *)",
+      "Bash(tmux has-session *)",
+      "Bash(tmux capture-pane *)",
+      "Bash(nvidia-smi)",
+      "Bash(nvidia-smi *)"
+    ]
+  }
+}

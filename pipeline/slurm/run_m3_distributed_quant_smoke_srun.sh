@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Native llm-compressor DDP smoke: GPTQ then AWQ, one 8xH100 node at a time.
+# Native llm-compressor DDP smoke: GPTQ and AWQ, one 8xH100 node per method
+# (both methods launch in parallel on separate nodes by default;
+# PARALLEL_METHODS=0 restores the sequential single-node-at-a-time behavior).
 
 set -euo pipefail
 
@@ -24,6 +26,16 @@ MIN_MEM_AVAILABLE_BYTES="${MIN_MEM_AVAILABLE_BYTES:-1200000000000}"
 # (total_size + 5% headroom); the r6 128 GB floor let AWQ launch on a node with
 # only 213 GB free and die mid-load.
 MIN_SHM_AVAILABLE_BYTES="${MIN_SHM_AVAILABLE_BYTES:-auto}"
+# r7 lesson: without an explicit --cpus-per-task, Slurm 21.08 binds the whole
+# step task to ONE physical core (Cpus_allowed_list "0,96") even though the
+# exclusive job owns all 192 CPUs -- the 8-rank torchrun worker (dataloading,
+# shm dispatch memcpy, NCCL progress threads) then serializes onto 2 hardware
+# threads. r7's model-dispatch phase alone projected ~1h45m under that binding.
+CPUS_PER_TASK="${CPUS_PER_TASK:-192}"
+# Launch GPTQ and AWQ concurrently on separate exclusive nodes (each method's
+# results/logs/offload trees are already method-scoped, so the arms share
+# nothing but the read-only checkpoint and calibration dataset cache).
+PARALLEL_METHODS="${PARALLEL_METHODS:-1}"
 
 worker_main() {
   local method="${1:?worker requires gptq or awq}"
@@ -171,9 +183,11 @@ if [[ -n "${SLURM_JOB_ID:-}" ]]; then
 fi
 
 overall=0
+declare -A method_pids=()
 for method in gptq awq; do
   command=(
     srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8
+    --cpus-per-task="$CPUS_PER_TASK"
     --time="$TIME_LIMIT" --kill-on-bad-exit=1
     env RUN_ID="$RUN_ID" RESULT_ROOT="$RESULT_ROOT" LOG_ROOT="$LOG_ROOT"
     OFFLOAD_ROOT="$OFFLOAD_ROOT" MODEL_ID="$MODEL_ID" CONFIG="$CONFIG"
@@ -190,8 +204,23 @@ for method in gptq awq; do
     continue
   fi
 
+  if [[ "$PARALLEL_METHODS" == 1 || "$PARALLEL_METHODS" == true ]]; then
+    mkdir -p "$LOG_ROOT/$method"
+    "${command[@]}" >"$LOG_ROOT/$method/controller-launch.log" 2>&1 &
+    method_pids[$method]=$!
+    echo "method=$method launched in parallel pid=${method_pids[$method]}"
+  else
+    rc=0
+    "${command[@]}" || rc=$?
+    echo "method=$method rc=$rc logs=$LOG_ROOT/$method results=$RESULT_ROOT/$method"
+    [[ "$rc" -eq 0 ]] || overall=1
+  fi
+done
+
+for method in gptq awq; do
+  [[ -n "${method_pids[$method]:-}" ]] || continue
   rc=0
-  "${command[@]}" || rc=$?
+  wait "${method_pids[$method]}" || rc=$?
   echo "method=$method rc=$rc logs=$LOG_ROOT/$method results=$RESULT_ROOT/$method"
   [[ "$rc" -eq 0 ]] || overall=1
 done

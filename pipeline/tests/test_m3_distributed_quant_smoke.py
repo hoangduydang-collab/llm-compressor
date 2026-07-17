@@ -41,7 +41,7 @@ def test_smoke_config_reuses_production_recipe_with_three_layers_only():
     assert cfg.eval.enabled is False
 
 
-def test_dry_run_uses_two_sequential_srun_torchrun_smokes(tmp_path):
+def test_dry_run_uses_two_full_cpu_srun_torchrun_smokes(tmp_path):
     env = {
         **os.environ,
         "DRY_RUN": "1",
@@ -55,12 +55,26 @@ def test_dry_run_uses_two_sequential_srun_torchrun_smokes(tmp_path):
     )
 
     assert output.count("srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8") == 2
+    # r7 lesson: without --cpus-per-task, Slurm 21.08 binds each step task to a
+    # single physical core despite the exclusive 192-CPU allocation.
+    assert output.count("--cpus-per-task=192") == 2
     assert output.count("torchrun --nproc_per_node=8 -m pipeline.run") == 2
     assert output.count("--evidence-only") == 2
     assert output.index("quantization.method=gptq") < output.index(
         "quantization.method=awq"
     )
     assert "sbatch" not in output
+
+
+def test_launcher_runs_methods_in_parallel_on_separate_nodes_by_default():
+    text = LAUNCHER.read_text(encoding="utf-8")
+
+    assert 'PARALLEL_METHODS="${PARALLEL_METHODS:-1}"' in text
+    assert 'CPUS_PER_TASK="${CPUS_PER_TASK:-192}"' in text
+    # each method's srun is backgrounded and awaited so both arms hold their
+    # own exclusive node concurrently
+    assert 'method_pids[$method]=$!' in text
+    assert 'wait "${method_pids[$method]}"' in text
 
 
 def test_launcher_owns_top_level_srun_and_rejects_nested_slurm():

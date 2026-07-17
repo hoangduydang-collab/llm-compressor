@@ -1076,3 +1076,41 @@ rehearsal above. Launch commands are the r6 block with `r6` -> `r7` in the run
 ID and the required-ancestor check updated to the commit carrying these fixes.
 Success gates unchanged from the r6 "Success gates and expected artifacts"
 section, including nonempty per-rank native metrics.
+
+## Planner analysis and r8 authorization (2026-07-17)
+
+### r7 stopped: the launcher starved every run of CPUs
+
+`scontrol show step` on the running r7 GPTQ arm (job 12971) showed the step
+allocated **CPUs=1** while the exclusive job owned 192. The launcher's `srun`
+passed no `--cpus-per-task`, and Slurm 21.08 then binds the whole step task to
+one physical core (`Cpus_allowed_list: 0,96`, verified by probe on an idle
+node). Every r2-r7 arm — and the torchrun 8-rank worker inside it — ran on 2
+hardware threads. r7's model-dispatch phase alone was projecting ~1h45m at
+~5 it/s over 30882 modules with all eight ranks serialized on one core. r7 was
+therefore killed 30 minutes in (no quantization evidence lost; it was still
+dispatching) and its ~197 GB of leaked `/dev/shm/torch_*` files were reclaimed
+by a targeted cleanup step on gpu-h108.
+
+The same missing `--cpus-per-task` in `run_m3_quality_eval_srun.sh` is the
+root cause of the BF16 TP16/Ray engine-init hangs (r48/r48b) — see
+`M3_PRODUCTION_EVAL_HANDOFF.md` for that packet's fix and evidence.
+
+### r8 launcher changes (committed)
+
+1. `--cpus-per-task="${CPUS_PER_TASK:-192}"` on the worker srun.
+2. GPTQ and AWQ now launch **in parallel on separate exclusive nodes**
+   (`PARALLEL_METHODS=0` restores sequential). Each method's result/log/offload
+   trees were already method-scoped; the arms share only the read-only
+   checkpoint and dataset cache.
+3. Probe evidence: baseline step = `Cpus_allowed_list 0,96` (2 HTs); with the
+   fix = 188 CPUs. r8 steps verified live at `CPUs=192`.
+
+### r8 launch (2026-07-17T05:37Z, running)
+
+RUN_ID `20260717T053706Z-m3-ddp-quant-smoke-r8`; GPTQ on gpu-h108, AWQ on
+gpu-h103, concurrent; both preflights passed (stale_shm_files_removed=0,
+min_shm_available_bytes_required=912615581875, ~1.07 TB free). Contract
+otherwise identical to r7. Timing note for interpretation: r8 wall-clock is
+measured with full-CPU steps, unlike the 1-core-bound single-process history;
+the >2x comparison must state this configuration change explicitly.

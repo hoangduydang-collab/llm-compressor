@@ -46,6 +46,14 @@ _TOKENIZER_FILES = (
     "special_tokens_map.json",
     "added_tokens.json",
     "chat_template.jinja",
+    "vocab.json",
+    "merges.txt",
+    # processor files: not needed to quantize, but vLLM refuses to serve the
+    # VL architecture without a loadable image processor
+    "preprocessor_config.json",
+    "processing_minimax.py",
+    "image_processor.py",
+    "video_processor.py",
 )
 
 

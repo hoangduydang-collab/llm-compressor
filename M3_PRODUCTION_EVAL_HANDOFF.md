@@ -669,3 +669,59 @@ Return in `RETURNED_FOR_ANALYSIS`, commit and push the complete evidence packet,
 and stop. Do not retry, patch, fall back, launch paired work, or launch BF16
 production. Only the planner may interpret the evidence and authorize a later
 packet.
+
+## Planner analysis and BF16 r49 authorization (2026-07-17)
+
+### Root cause of the BF16 TP16/Ray engine-init hangs (r48, r48b, 20260712)
+
+All three BF16 multi-node attempts died the same way: the vLLM EngineCore's
+last log line was `Connected to Ray cluster.`, no placement group was ever
+created, and all 16 GPUs sat at 0% until the arm was killed. The r48b
+diagnostics (`.../20260716T081818Z-.../diagnostics/`) show the Ray cluster
+itself was healthy: both nodes registered, 16/16 GPUs available, zero pending
+demands.
+
+The cause is the launcher's srun steps, not Ray or the model: with no
+`--cpus-per-task`, Slurm 21.08 binds each step task to ONE physical core
+(`Cpus_allowed_list: 0,96`; `SLURM_CPUS_ON_NODE=2` in the r48b rank logs,
+verified again by a probe job). The entire per-node stack — GCS, raylet,
+dashboard agents, the vLLM driver, EngineCore — shared 2 hardware threads, and
+when the first driver connected, the raylet prestarted 192 idle Python workers
+(raylet.out, 08:21:00-08:21:13) into that same 2-thread cgroup. The driver's
+CoreWorker construction starves and never completes.
+
+Causal loop closed locally on an idle 8xH100 host (2026-07-17):
+- pinned to HTs {0,96} (the exact cluster mask): vLLM ray-backend engine init
+  froze at `Connected to Ray cluster.` for 300+ s — the cluster signature;
+- unpinned on the same host seconds later: the same init passed that point in
+  ~4 s, created the placement group, spawned both RayWorkerProc actors,
+  initialized NCCL, and proceeded to model load.
+
+### The r49 fix (env-only, no launcher edits while other runs execute them)
+
+`run_m3_quality_eval_srun.sh` and `test_m3_quality_eval_arm.sh` are being
+executed by in-flight production arms (MXFP8 resume, jobs 12969/12970) and a
+bash script must not be rewritten under a running reader, so r49 applies the
+fix through the environment, which the launcher's sruns inherit:
+
+- `SLURM_CPUS_PER_TASK=192` — Slurm 21.08 srun reads this input variable as
+  `--cpus-per-task` (probe-verified: step went from 2 HTs to 188 CPUs);
+- `RAY_enable_worker_prestart=0` — belt-and-braces: stops the raylet's
+  192-worker prestart storm on first driver connect (flag present in the
+  installed Ray 2.56 core).
+
+Controller: `/mnt/nfs/hoangduy/claude/config/jobs/9e08e54d/tmp/bf16_relaunch_controller_r49.sh`
+(r48b controller + the two exports; placement watchdog stays disabled because
+its `ray list` probe needs `ray[default]` and false-kills healthy arms; the 3h
+model-init watchdog is the backstop; TIME_LIMIT 12h).
+
+### Follow-up once the hot scripts go cold (required, tracked)
+
+When the MXFP8 resume and r8 quant smoke controllers exit, bake
+`--cpus-per-task="${CPUS_PER_TASK:-192}"` into both sruns of
+`run_m3_quality_eval_srun.sh`, replace the broken `ray list` placement
+monitor/watchdog probes in `test_m3_quality_eval_arm.sh` with
+`ray.util.placement_group_table()` (works without `ray[default]`), and add
+launcher tests mirroring `test_m3_distributed_quant_smoke.py`'s
+`--cpus-per-task` assertions. The quant-smoke launcher already carries the
+inline fix (commit 70e5836d).

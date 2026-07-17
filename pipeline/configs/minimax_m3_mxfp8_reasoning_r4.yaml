@@ -50,7 +50,12 @@ sampling:
 
 scheduling:
   max_parallel_arms: 2
-  arm_time_limit: "12:00:00"
+  # MXFP8 serves weight-only via the Marlin dequant path on Hopper, which is
+  # markedly slower than the native-format arms (~28 tok/s on GPQA, single-digit
+  # tok/s on the long AIME reasoning tail). The first production pass was
+  # SIGTERM'd at a 12h cap mid-generation; give the resume ample headroom (the
+  # partition walltime is uncapped) so GPQA seed 4158 + AIME25 x3 finish.
+  arm_time_limit: "48:00:00"
 
 probe:
   enabled: false

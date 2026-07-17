@@ -2,11 +2,12 @@
 
 - Protocol version: 1
 - State: `READY_FOR_EXECUTOR`
-- Packet revision: `2026-07-15-r6`
-- Planner owner: Codex planner
-- Intended executor: cluster executor
-- Required fix commit: `4fb77f13`
-- Executor evidence: `M3_R4_4_AND_DDP_R5_FAILURE_EVIDENCE.md`
+- Packet revision: `2026-07-17-r7`
+- Planner owner: full-stack agent (Claude)
+- Intended executor: full-stack agent (Claude)
+- Required fix commit: see **r7 authorization** at the end of this file
+- Executor evidence: `M3_R4_4_AND_DDP_R5_FAILURE_EVIDENCE.md` (r5) and the
+  **r6 evidence** section at the end of this file
 - Decision question: Can native eight-rank llm-compressor GPTQ and AWQ process
   representative MiniMax-M3 layers with correct data sharding, shared model
   memory, complete evidence, and enough quantization-time improvement to justify
@@ -987,3 +988,91 @@ contract, commit and push the small artifacts, set this packet to
 `RETURNED_FOR_ANALYSIS`, and stop. If either method fails, preserve its first
 rank-local Python exception before secondary distributed errors. No r6 retry,
 threshold override, or runtime patch is authorized.
+
+## Executor evidence: 2026-07-15 r6
+
+- Protocol state: `RETURNED_FOR_ANALYSIS`
+- Packet revision executed: `2026-07-15-r6`
+- Expected ancestor: `4fb77f13`; actual commit `b44c318c`
+- Run ID: `20260715T080000Z-m3-ddp-quant-smoke-r6`
+- Log root: `/mnt/nfs/hoangduy/logs/m3-distributed-quant-smoke/20260715T080000Z-m3-ddp-quant-smoke-r6`
+- Controller rc `1`; GPTQ job `12933` node `gpu-h123` elapsed `2:17:50` rc `1`;
+  AWQ job `12934` node `gpu-h101` elapsed `3:42:09` rc `1`.
+
+### GPTQ first failure
+
+Model load through the r5 load-time expert mapping succeeded (no post-load
+linearization, no shared-memory exhaustion). All eight ranks entered the
+calibration forward and failed at the first sparse-MoE layer with
+`AttributeError: 'LinearExperts2D' object has no attribute 'swiglu_limit'`
+inside the reused MiniMax `_apply_gate`. Cause: the load-time construction path
+(`register_patch_mapping` -> `__init__` only) never runs
+`_carry_over_gate_scalars`, which only executes in the post-load
+`from_experts_module` path that commit `b907eaf4` intentionally bypassed. The
+r5 "Loguru cleanup" failure was this same underlying exception masked by the
+then-broken cleanup.
+
+Memory hypothesis validated: peak GPTQ host RSS was 852 GB — one shared model
+copy, not a per-rank multiple.
+
+### AWQ first failure
+
+`RuntimeError: unable to allocate shared memory` in
+`DistributedCPUCache.offload` (`_share_filename_cpu_`) during model load.
+Node `gpu-h101` started at 80% `/dev/shm` used (852 GB leaked by the crashed
+r5 GPTQ run on the same node); the load grew Shmem 826 GB -> 1,033 GB and hit
+the ~1 TB tmpfs ceiling. Not an AWQ-algorithm failure. The r6 preflight's
+128 GB IPC floor was wrong: the distributed CPU offload keeps the whole
+~869 GB checkpoint in `/dev/shm`.
+
+## Planner analysis and r7 GPTQ/AWQ authorization
+
+Fixes landed and locally verified (all on `duy-branch`; see the commit
+containing this section):
+
+1. `src/llmcompressor/modeling/moe/linear_experts.py` — dynamic
+   `LinearExperts2D` subclasses record their source experts class and
+   `__init__` harvests the source's config-derived `_apply_gate` scalars from a
+   weightless meta instantiation, so the load-time path carries
+   `swiglu_limit`/`swiglu_alpha`. Also fixed the `from_experts_module`
+   meta-guard to tolerate CT's `"disk"` offload device (pre-existing failure of
+   `test_linearize_offload::test_linearize_moe_model`).
+2. `pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh` — each arm's worker
+   now (a) reclaims orphaned `$USER`-owned `/dev/shm/torch_*` files not mapped
+   by any live process before the capacity gate, and (b) sizes the `/dev/shm`
+   requirement from the checkpoint index (`total_size` + 5%, ~913 GB for
+   MiniMax-M3) instead of the obsolete 128 GB floor. `MIN_SHM_AVAILABLE_BYTES`
+   env still overrides.
+3. `src/llmcompressor/logger.py` + `pipeline/metrics.py` — `oneshot` calls
+   `configure_distributed_logger()` on distributed runs, whose
+   `logger.remove()` reset silently disconnected the `capture_quant_metrics`
+   sink, leaving every `quant_metrics.rank-*.jsonl` EMPTY (this would have
+   failed the r6/r7 native-work gates even on an otherwise clean run). External
+   sinks now survive `configure_logger` resets via a registry.
+
+### Tiny end-to-end rehearsal (new, mandatory before future launches)
+
+`python -m pipeline.make_tiny_minimax_m3` builds a miniature random-weight
+MiniMax-M3 VL checkpoint (4 layers, dense 0-2 / sparse+indexer 3, 8 per-expert
+2D keys, real tokenizer) and
+`pipeline/configs/tiny_m3_distributed_e2e.yaml` mirrors the smoke config.
+Two-rank `torchrun` runs of `pipeline.run --evidence-only` for BOTH methods
+must exit 0 with nonempty per-rank metrics before any cluster launch (exact
+commands in the module docstring). On 2026-07-17 this rehearsal passed for
+GPTQ and AWQ on two local H100s: completion markers written, disjoint
+partitions (0,4)/(4,8) with distinct sample hashes, native work records on
+every rank resolving exactly to layer 3 (GPTQ 12+12 records with module-parallel
+bin-packing observed across ranks; AWQ 9+9 records). The AWQ recipe path —
+never previously reached on any r-run — is therefore validated end-to-end,
+including MiniMax AWQ mapping resolution against the sparse-attention indexer
+modules.
+
+### r7 launch
+
+Same contract as r6 (one fresh run ID, GPTQ then AWQ sequentially, one
+exclusive 8xH100 node per arm, `torchrun --nproc_per_node=8`, evidence-only,
+24 h/arm, layers 3/31/59, 8 samples, seq 512). Preflight adds the tiny
+rehearsal above. Launch commands are the r6 block with `r6` -> `r7` in the run
+ID and the required-ancestor check updated to the commit carrying these fixes.
+Success gates unchanged from the r6 "Success gates and expected artifacts"
+section, including nonempty per-rank native metrics.

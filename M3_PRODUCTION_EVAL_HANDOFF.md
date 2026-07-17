@@ -754,3 +754,44 @@ does not resolve here). Controller:
 `/mnt/nfs/hoangduy/claude/config/jobs/9e08e54d/tmp/bf16_relaunch_controller_r50.sh`.
 These two exports belong in the baked-in launcher fix alongside
 `--cpus-per-task` once the hot scripts go cold.
+
+## r50 outcome, production Wave B, and two relaunch defects (2026-07-17)
+
+r50 smoke PASSED all 7 gates (`ready_for_production=true`, world_size=16,
+0 empty outputs, 28.5 min wall) — the CPU-binding + NCCL-interface fixes are
+confirmed end-to-end. Production Wave B launched on the qualified run root
+`results/m3-quality/20260717T062057Z-m3-bf16-tp16-qualification-r50`
+(2 arms x 2 nodes, TP16/Ray, 24 h arm limit).
+
+Incident log for the reasoning_suite arm (gpqa arm healthy throughout):
+
+1. **Job 12989 died mid-generation** (84/100 prompts, ~170 tok/s healthy
+   before): one rank stopped entering TP16 allgather #995 and torch's default
+   600 s NCCL PG timeout killed the engine. Root cause unproven (flight
+   recorder dumped to node-local /tmp). Mitigation:
+   `serve.vllm_kwargs.distributed_timeout_seconds: 3600` in
+   `pipeline/configs/eval_minimax_m3_reasoning_r4.yaml` (commit b56dacf6) —
+   the only injection point that avoids editing the hot arm script. If it
+   recurs the run now stalls observably instead of dying; export
+   `TORCH_NCCL_DEBUG_INFO_TEMP_FILE` to NFS and py-spy the stuck rank.
+2. **Relaunch v1 (job 12992) failed in 46 s**: passed matrix ALIASES
+   (`gsm8k,aime_2025`) to `--tasks`; the arm script needs RESOLVED names
+   (`gsm8k_cot,aime25`) as recorded in `production_launch_plan.json`.
+3. **Relaunch v2 (job 12993) failed after 45 min**: NEW arm-script defect.
+   `test_m3_quality_eval_arm.sh` cleanup touches
+   `$ARM/ray_runtime/driver-done` and nothing ever removes it (every other
+   sentinel is job-suffixed). On any rerun in the same arm dir, rank 1's
+   keep-alive loop sees the stale sentinel immediately, runs `cleanup_arm`
+   -> `ray stop --force`, and the worker node leaves the Ray cluster seconds
+   after the topology gate passes; the engine then waits 1800 s for a 16-GPU
+   placement group that can never form. Diagnostic signature: gate.json says
+   16 GPUs, engine says 8; both `gpu-monitor-rank-*.log` files are 0 bytes.
+4. **Relaunch v3 (job 12995)**: `rm -f .../ray_runtime/driver-done` before
+   `srun` (controller
+   `/mnt/nfs/hoangduy/claude/config/jobs/9e08e54d/tmp/bf16_reasoning_arm_relaunch.sh`);
+   placement group formed instantly with 16 GPUs. Running.
+
+Deferred launcher fixes once the hot scripts go cold (with `--cpus-per-task`
+and the SOCKET_IFNAME exports above): job-suffix the `driver-done` sentinel
+in `test_m3_quality_eval_arm.sh` (or `rm -f` it at arm start), and repair the
+broken `ray list` placement monitor.

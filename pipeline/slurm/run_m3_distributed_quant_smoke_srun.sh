@@ -95,6 +95,10 @@ PY
   {
     echo "stale_shm_files_removed=$stale_removed"
     echo "min_shm_available_bytes_required=$min_shm_bytes"
+    # Per-process VMA ceiling; the shared-CPU offload cache makes one mmap per
+    # tensor in every rank, so this bounds how much of the model may go to shm
+    # (fail-closed gate lives in pipeline/quantize.py, which knows the config).
+    echo "vm_max_map_count=$(cat /proc/sys/vm/max_map_count)"
     grep -E 'MemTotal|MemAvailable|Shmem|SwapTotal|SwapFree' /proc/meminfo
     df -B1 /dev/shm
     nvidia-smi --query-gpu=index,uuid,memory.used,memory.total \

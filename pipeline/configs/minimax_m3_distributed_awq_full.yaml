@@ -17,10 +17,19 @@ model:
   auto_class: AutoModelForImageTextToText
   dtype: bfloat16
   device_map: auto_offload
-  # Native DDP requires CPU-only placement. Leaving this unset lets Accelerate
-  # spread every rank across all visible GPUs instead of CT's shared offload.
+  # Native DDP requires CPU-only placement (auto_offload keeps GPUs out of the
+  # load-time device map). The cpu budget below is deliberately SMALL so the
+  # bulk of the weights overflow to compressed-tensors' DistributedDiskCache
+  # instead of the shared-/dev/shm cache: DistributedCPUCache creates one shm
+  # segment (= one mmap VMA in every rank) per tensor, and M3's 23,416 index
+  # tensors linearize into ~63k module-tree tensors — above the kernel's
+  # default vm.max_map_count of 65530 once CUDA/allocator maps are added. That
+  # killed run 20260717T064357Z-m3-ddp-awq-full-r1 (rank-0 ENOMEM at 63,122
+  # segments; see BUGS_AND_FIXES.md "DDP weights-side VMA exhaustion").
+  # Disk offload reads layers straight from the checkpoint safetensors (page
+  # cache keeps them warm) and only writes updated tensors to offload_folder.
   max_memory:
-    cpu: 1000000000000
+    cpu: 32000000000
   offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-awq-full
 
 quantization:

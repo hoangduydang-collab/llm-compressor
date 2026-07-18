@@ -5,6 +5,8 @@ Produces a vLLM-servable ``pack-quantized`` compressed-tensors checkpoint in
 """
 
 import json
+import os
+import shutil
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -188,6 +190,116 @@ def _persist_calibration_partition(
     return path
 
 
+# VMA headroom reserved for everything that is NOT a shared-weights segment:
+# CUDA contexts, glibc/allocator arenas, loaded libraries, and the per-layer
+# calibration activation cache (each >128KiB cpu tensor is its own mmap).
+_VMA_GUARD_SLACK = 24_000
+
+# The offloaded module tree holds MORE tensors than the checkpoint index:
+# load_context linearizes fused MoE expert tensors into per-expert quantizable
+# Linears. Empirical anchor: M3's 23,416-entry index produced 63,122 shm
+# segments in run 20260717T064357Z-m3-ddp-awq-full-r1 (2.70x). Round up to 3x
+# so the estimate stays conservative for this model family.
+_VMA_LINEARIZATION_FACTOR = 3.0
+
+
+def estimate_shared_offload_segments(
+    index_json: Path,
+    cpu_budget_bytes: float,
+    expansion_factor: float = _VMA_LINEARIZATION_FACTOR,
+) -> tuple[int, int, int]:
+    """Estimate the per-process VMA demand of distributed shared-CPU offload.
+
+    ``DistributedCPUCache`` creates one ``/dev/shm`` segment per offloaded
+    tensor and every rank mmaps all of them, so the plan's VMA demand is the
+    number of module-tree tensors that fit in the cpu budget (accelerate fills
+    devices sequentially, so the fitting fraction approximates the count).
+    ``expansion_factor`` scales the checkpoint-index tensor count up to the
+    post-linearization module tree (see ``_VMA_LINEARIZATION_FACTOR``).
+
+    :return: (planned shm segments, total checkpoint tensors, total bytes)
+    """
+    data = json.loads(index_json.read_text())
+    n_tensors = len(data["weight_map"])
+    total_bytes = int(data["metadata"]["total_size"])
+    n_offloaded = int(n_tensors * expansion_factor)
+    if cpu_budget_bytes >= total_bytes:
+        planned = n_offloaded
+    else:
+        planned = int(n_offloaded * (cpu_budget_bytes / total_bytes))
+    return planned, n_tensors, total_bytes
+
+
+def assert_vma_budget_for_shared_offload(
+    cfg: PipelineConfig,
+    dist_ctx: DistributedContext,
+    *,
+    _max_map_count: int | None = None,
+    _shm_total_bytes: float | None = None,
+) -> None:
+    """Fail-closed gate: refuse a distributed shared-CPU offload plan whose
+    per-tensor shm segment count would approach ``vm.max_map_count``.
+
+    Run 20260717T064357Z-m3-ddp-awq-full-r1 died at 63,122 shm segments
+    against the default 65,530 VMA cap (rank-0 ENOMEM before calibration,
+    3h NCCL broadcast timeout, no checkpoint). Weights-side sibling of the
+    pin_memory VMA incident in BUGS_AND_FIXES.md. Cap ``model.max_memory.cpu``
+    so weights overflow to disk offload, or raise the sysctl, to pass.
+    Set M3_SKIP_VMA_GUARD=1 to bypass explicitly.
+    """
+    if not dist_ctx.enabled:
+        return
+    if os.environ.get("M3_SKIP_VMA_GUARD") == "1":
+        print("[pipeline] M3_SKIP_VMA_GUARD=1: skipping VMA budget gate")
+        return
+    # getattr: contract tests drive run_quantize with minimal cfg stand-ins
+    if getattr(cfg.model, "device_map", None) != "auto_offload":
+        return
+    index_json = Path(cfg.model.id) / "model.safetensors.index.json"
+    if not index_json.is_file():
+        print(
+            "[pipeline] VMA gate: no local safetensors index at "
+            f"{index_json}; cannot estimate segment count, skipping"
+        )
+        return
+
+    # Mirror compressed-tensors load.py: an explicit max_memory.cpu wins;
+    # otherwise auto_offload budgets the whole of /dev/shm in distributed mode.
+    max_memory = cfg.model.max_memory or {}
+    if "cpu" in max_memory:
+        budget = float(max_memory["cpu"])
+    elif _shm_total_bytes is not None:
+        budget = _shm_total_bytes
+    else:
+        budget = float(shutil.disk_usage("/dev/shm").total)
+
+    if _max_map_count is not None:
+        limit = _max_map_count
+    else:
+        limit = int(Path("/proc/sys/vm/max_map_count").read_text())
+
+    planned, n_tensors, total_bytes = estimate_shared_offload_segments(
+        index_json, budget
+    )
+    if planned + _VMA_GUARD_SLACK > limit:
+        raise RuntimeError(
+            "Distributed shared-CPU offload plan exceeds the VMA budget: "
+            f"~{planned} shm segments (of {n_tensors} checkpoint tensors, "
+            f"{total_bytes / 1e9:.0f} GB) + {_VMA_GUARD_SLACK} slack > "
+            f"vm.max_map_count={limit}. Every rank mmaps every shared "
+            "segment, so this plan fails with ENOMEM mid-load and wastes the "
+            "allocation (see BUGS_AND_FIXES.md, DDP weights-side VMA "
+            "exhaustion, 2026-07-17). Remedies: cap model.max_memory.cpu "
+            "(e.g. 32e9) so weights overflow to disk offload, or have a node "
+            "admin raise vm.max_map_count (>=1048576). "
+            "Set M3_SKIP_VMA_GUARD=1 to bypass."
+        )
+    print(
+        f"[pipeline] VMA gate OK: ~{planned} planned shm segments + "
+        f"{_VMA_GUARD_SLACK} slack <= vm.max_map_count={limit}"
+    )
+
+
 def run_quantize(
     cfg: PipelineConfig,
     run_dir: Path,
@@ -206,6 +318,7 @@ def run_quantize(
     dist_ctx = dist_ctx or DistributedContext()
     evidence_paths = _evidence_paths(run_dir, dist_ctx)
 
+    assert_vma_budget_for_shared_offload(cfg, dist_ctx)
     model, tokenizer = _load_model_and_tokenizer(cfg)
     # Capture load/environment provenance BEFORE calibration: where the loaded
     # modeling code comes from (installed transformers vs trust_remote_code) and

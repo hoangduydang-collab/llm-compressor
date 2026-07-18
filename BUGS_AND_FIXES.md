@@ -638,6 +638,65 @@ grep -E 'pin_memory|CUDA error: out of memory|\(5/61\): Calibrating' \
 - Checkpoint: `artifacts/MiniMax-M3-awq-W4AFP8/20260708-093642/checkpoint`
 - Config patches on save: vision `img_token_compression_config` restored; `hidden_act` forced `swigluoai`; recipe `ignore` patterns persisted
 
+## MiniMax-M3 DDP full-calib AWQ: weights-side VMA exhaustion (2026-07-17)
+
+**Symptom:** Distributed full-calibration AWQ (`minimax_m3_distributed_awq_full.yaml`,
+8-rank torchrun, run `20260717T064357Z-m3-ddp-awq-full-r1`, job 12987 on h97) dies with
+no checkpoint after 3h40m. Rank 0 logs the compressed-tensors remediation warning
+(`CPU offloading ran out of host RAM or mmap descriptors`) at the 40-minute mark, right
+after model load, during AWQ `on_initialize`'s 355 offset-norm conversions. Ranks 1–7
+then sit in a NCCL `BROADCAST` (NumelIn=3, the offload handle exchange) for exactly the
+3h PG timeout with GPUs at 100% (NCCL spin-wait, not work), the rank-1 watchdog dies
+with `MemoryError: <EMPTY MESSAGE>` → SIGABRT, torchrun SIGTERMs the rest.
+`quant_metrics.*.jsonl` all 0 bytes — calibration never started.
+
+**Not a capacity problem:** at failure MemAvailable = 1168 GB and `/dev/shm` held
+805 GB of 1082 GB (277 GB headroom).
+
+**Root cause (weights-side sibling of the `pin_memory` VMA incident above):**
+`DistributedCPUCache.offload()` creates **one `/dev/shm` file per tensor**
+(`_share_filename_cpu_`) and every rank mmaps all of them. The dead run left
+**63,122 `torch_*` segments** on h97 (post-mortem census) against the kernel default
+`vm.max_map_count = 65530` (verified identical on h97 and h103). Note the checkpoint
+index has only 23,416 tensors — MoE linearization expands the offloaded module tree
+~2.7×, which is why the VMA gate estimates with a 3× factor. 63k weight maps +
+CUDA/allocator/library maps ≈ the cap; rank 0 (source rank, most maps) hit ENOMEM
+first on the +355 norm-conversion offloads. The r9 smoke passed the same load on h103
+with a few hundred maps to spare — luck at the cliff edge, not a safer node; a full
+run's calibration activation cache (each >128 KiB cpu tensor is its own mmap) would
+have pushed it over even if load had survived. Matches the well-documented failure
+class: [pytorch#60626](https://github.com/pytorch/pytorch/issues/60626) (file-backed
+shared tensors vs `max_map_count`); Red Hat
+[max_map_count](https://access.redhat.com/solutions/99913).
+
+**Fix applied (2026-07-17):** stop putting the bulk of the weights in per-tensor shm
+segments; use compressed-tensors' first-class disk offload instead (upstream-supported
+for DDP since [llm-compressor v0.10](https://github.com/vllm-project/llm-compressor/releases/tag/0.10.0)):
+
+1. `minimax_m3_distributed_awq_full.yaml`: `model.max_memory.cpu` 1e12 → **32e9**, so
+   `device_map=auto_offload` overflows the weights to `DistributedDiskCache` (reads
+   layers straight from the checkpoint safetensors via page cache; writes only updated
+   tensors to `offload_folder`). VMA demand drops from ~63k to ~1k.
+2. Fail-closed gate `assert_vma_budget_for_shared_offload` in `pipeline/quantize.py`:
+   before load, in distributed `auto_offload` mode, estimates planned shm segments from
+   the checkpoint index vs `/proc/sys/vm/max_map_count` and refuses doomed plans before
+   GPU spend (`M3_SKIP_VMA_GUARD=1` to bypass).
+3. Node preflight (`run_m3_distributed_quant_smoke_srun.sh`) records
+   `vm_max_map_count` as evidence.
+
+**Cleanup:** the dead run's 63,122 stale shm files (801 GB) were removed from h97 on
+2026-07-17 (the launcher preflight also removes unmapped `torch_*` files on the next
+run).
+
+**Fleet-level alternative (admin request, parallel track):** raise
+`vm.max_map_count` to ≥ 1048576 in `/etc/sysctl.d/` on the H100 nodes (standard
+practice for map-hungry workloads; no performance downside per Red Hat). That restores
+the faster all-shm mode with ~16× headroom; until then the disk-offload config is the
+safe default.
+
+**Removal criteria:** none for the gate (cheap, correct); the 32e9 cpu budget can be
+raised back toward shm-resident once nodes run with a raised `max_map_count`.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

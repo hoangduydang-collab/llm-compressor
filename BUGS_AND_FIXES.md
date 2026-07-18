@@ -906,6 +906,16 @@ log). Quant venv swapped to 5.14.1 + hotfix via
 `assert_transformers_offloaded_save_healthy()`; smoke r14 re-gates the save
 path under 5.14.1 before the full 512-sample calibration.
 
+**Smoke r14 (2026-07-18, job 13016-adjacent, run
+`20260718T150509Z-m3-ddp-quant-smoke-r14-tf514`): PASSED.** First save through
+transformers 5.14.1's native per-shard revert + the weight_map hotfix (shims
+correctly self-disabled; gate printed "healthy" on all 8 ranks). 17 shards /
+821.8 GB in ~12.5 min — same throughput as r13's shimmed path. Serving ABI
+gate: `valid: true`, 0 errors, 1152 quantized routed-expert Linears (exact
+match with r13). Full-calibration AWQ relaunched immediately after as
+`20260718T160612Z-m3-ddp-awq-full-r2-tf514` (job 13016; prior full r1 of
+2026-07-17 predated the VMA + save fixes and failed).
+
 **Cross-goal conflict check (2026-07-18, per PROJECT_GOALS.md):**
 
 - *Goal 1 (fast parallel quant)* — direct target; covered above. The r-series

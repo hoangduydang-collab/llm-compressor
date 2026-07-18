@@ -225,7 +225,9 @@ def test_bf16_reasoning_r4_smoke_dry_run_uses_tp16_pp1_ray(tmp_path, request):
     assert model.pipeline_parallel_size == 1
     assert model.distributed_executor_backend == "ray"
     assert spec.scheduling.max_parallel_arms == 2
-    assert spec.scheduling.arm_time_limit == "12:00:00"
+    # raised 12h -> 24h for Wave B production (reasoning arm long-tail
+    # generations at TP16; the successful r50 run used 24h)
+    assert spec.scheduling.arm_time_limit == "24:00:00"
 
     run_root = _workspace_tmp(tmp_path, request)
     result = _run(

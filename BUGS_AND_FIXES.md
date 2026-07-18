@@ -719,6 +719,42 @@ correct because smoothed data is identical across ranks. The patch self-disables
 upstream defines `update_offload` on `DistributedDiskCache` — drop it then. Worth
 filing upstream.
 
+### Follow-on: offloaded-save tie detection crashes on buffers (smoke r11, 2026-07-18)
+
+Smoke r11 (`20260718T052330Z-m3-ddp-quant-smoke-r11-diskoffload`, job 13008) got past
+r10's race — patch installed, VMA gate OK, calibrate + smooth + `Compressing model`
+(144/144 per rank, 25 s) all clean, quant metrics captured — then produced a
+**3-hour false "slow save"**: stdout/err silent from 05:55:31, rank 0 at 0 % GPU,
+ranks 1–7 pinned at 100 %, zero shards, until the NCCL watchdog killed everything at
+08:55:36 (BROADCAST SeqNum=108879, `Timeout(ms)=10800000`).
+
+**Root cause (upstream transformers 5.12.1, fixed on upstream main):** with disk
+offload, `save_pretrained`'s state dict holds **meta tensors** (that is by design —
+data lives in the disk-cache index). `remove_tied_weights_from_state_dict`
+(`modeling_utils.py:474`) resolves each meta entry with `model.get_parameter(name)`,
+which **raises `AttributeError` for registered buffers** — first hit: M3's router
+buffer `e_score_correction_bias`. Rank 0 crashed ~1 s into the save; the exception
+unwound into a blocking PG teardown while ranks 1–7 waited in the collective-save
+BROADCAST, so the whole job hung the full 3 h watchdog window doing nothing
+(`MemAvailable` flat at ~1974 GB throughout — the proof no gather was running).
+r9-save never hit this because shm offload yields real CPU tensors, not meta.
+
+**Fixes applied (2026-07-18):**
+- `_tied_weights_meta_buffer_compat` (`pipeline/quantize.py`): backports upstream
+  main's own fix (`get_parameter` → `get_parameter_or_buffer` semantics) as an
+  instance-scoped shadow during `save_pretrained`; self-disables once the installed
+  transformers carries the fix. Repro test pins the 5.12.1 failure mode.
+- `_save_heartbeat` + `prewarm_offload_page_cache` (`pipeline/quantize.py`): 60 s
+  save-phase progress lines (shards/GB written + `/proc/self/io` read-back GB) and a
+  16-thread page-cache prefetch of the offload files. A heartbeat showing "0 GB read"
+  would have exposed r11's dead rank in minutes instead of hours.
+- `_DISTRIBUTED_TIMEOUT` 3 h → 8 h (`pipeline/distributed.py`): the save-phase
+  collective wait must survive a genuinely long serial gather on the full model.
+
+**Diagnostic lesson:** "rank 0 at 0 % GPU during save" is consistent with BOTH the
+documented healthy save pattern AND a crashed-then-hung rank. Distinguish them with
+`MemAvailable`/page-cache trend and file mtimes, not GPU utilization.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

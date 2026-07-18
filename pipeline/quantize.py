@@ -86,6 +86,72 @@ def _save_heartbeat(ckpt: Path, interval: float = 60.0):
         thread.join(timeout=5)
 
 
+_PREWARM_CHUNK_BYTES = 32 * 1024 * 1024
+
+
+def _prewarm_read_file(path: Path) -> int:
+    """Sequentially read ``path`` (through symlinks) to pull it into page cache."""
+    read = 0
+    try:
+        with open(path, "rb") as fh:
+            while chunk := fh.read(_PREWARM_CHUNK_BYTES):
+                read += len(chunk)
+    except OSError:
+        pass  # deleted/broken entry; the save path decides what actually matters
+    return read
+
+
+def prewarm_offload_page_cache(
+    offload_dir: Path, max_threads: int = 16
+) -> threading.Thread | None:
+    """Prefetch every disk-offload file into the OS page cache, in background.
+
+    The offloaded ``save_pretrained`` gather is a single thread doing on-demand
+    per-tensor NFS reads (transformers modeling_utils TODO: safetensors holds
+    the GIL, so it cannot parallelize) — observed 2h+ on r11 (2026-07-18).
+    Parallel sequential prefetch runs at aggregate NFS streaming speed instead,
+    and the model (~900 GB) fits in the node's page cache (2 TB RAM), so the
+    serial gather then reads from RAM. Read-only: no correctness risk.
+
+    Returns the started controller thread (daemon), or None when disabled via
+    ``M3_SAVE_PREWARM=0`` or when ``offload_dir`` has no files.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if os.environ.get("M3_SAVE_PREWARM", "1") == "0":
+        return None
+    try:
+        # resolve symlinks (disk cache links unmodified tensors to base shards)
+        files = sorted(
+            {p.resolve() for p in Path(offload_dir).iterdir() if not p.is_dir()}
+        )
+    except OSError:
+        files = []
+    if not files:
+        return None
+
+    def _run() -> None:
+        started = time.monotonic()
+        with ThreadPoolExecutor(max_workers=max_threads) as pool:
+            total = sum(pool.map(_prewarm_read_file, files))
+        elapsed = max(time.monotonic() - started, 1e-6)
+        print(
+            f"[pipeline] save-prewarm done: {len(files)} files, "
+            f"{total / 1e9:.1f} GB in {elapsed:.0f}s "
+            f"({total / 1e9 / elapsed:.2f} GB/s)",
+            flush=True,
+        )
+
+    print(
+        f"[pipeline] save-prewarm: prefetching {len(files)} offload files "
+        f"into page cache with {max_threads} threads (M3_SAVE_PREWARM=0 disables)",
+        flush=True,
+    )
+    controller = threading.Thread(target=_run, name="save-prewarm", daemon=True)
+    controller.start()
+    return controller
+
+
 @contextmanager
 def _minimax_meta_rank_config_compat(pretrained_model_cls):
     """Keep compressed-tensors' meta-rank tie setting out of M3 model kwargs.
@@ -478,6 +544,9 @@ def run_quantize(
         if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
             save_kwargs["quantization_format"] = "pack-quantized"
         if dist_ctx.is_source or not dist_ctx.enabled:
+            if cfg.model.offload_folder is not None:
+                # overlaps with the gather: prefetched files hit page cache
+                prewarm_offload_page_cache(Path(cfg.model.offload_folder))
             print(
                 f"[pipeline] saving checkpoint to {ckpt} — with disk offload the "
                 "first shard can take 1h+ (offloaded weights read back first); "

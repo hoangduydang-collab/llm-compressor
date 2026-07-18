@@ -13,7 +13,12 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-_DISTRIBUTED_TIMEOUT = timedelta(hours=3)
+# 8h: the disk-offload checkpoint save (r11, 2026-07-18) parks ranks 1..7 in a
+# single collective while rank 0 serially gathers ~900 GB from NFS and writes
+# ~766 GB of shards (transformers modeling_utils has a TODO acknowledging the
+# save loop cannot be parallelized: safetensors holds the GIL). The old 3h
+# timeout would watchdog-kill an otherwise-successful full-model save.
+_DISTRIBUTED_TIMEOUT = timedelta(hours=8)
 
 
 @dataclass

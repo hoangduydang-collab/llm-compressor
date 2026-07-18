@@ -86,7 +86,9 @@ def test_distributed_init_allows_slow_source_model_load(monkeypatch):
             "rank": 0,
             "world_size": 8,
             "device_id": "cuda:0",
-            "timeout": timedelta(hours=3),
+            # 8h: disk-offload saves park non-source ranks in one collective
+            # for the whole serial NFS gather+write (r11, 2026-07-18)
+            "timeout": timedelta(hours=8),
         }
     ]
     assert barriers == [True]

@@ -847,6 +847,65 @@ mid-flight. Evidence (all verified, not inferred):
 Estimated effort: ~1-2h local (venv bump, granite rename, gate 4 pin tests,
 setup.py pin, commit) + one smoke-gate cluster run.
 
+**Executed 2026-07-18** (user-approved, after smoke r13 passed on 5.12.1+shims):
+target 5.14.1 (= PyPI latest, released 2026-07-16). Local changes:
+- `granitemoe.py`: guarded import (5.14 renamed/fused the experts class);
+  `from_experts_module` fails fast with `NotImplementedError` on the fused
+  layout until granite linearization is ported (outside M3 scope).
+- Crash-pin tests made version-adaptive via the same `fixed_upstream` source
+  checks the shims use (`test_tied_weights_meta_buffer_compat`,
+  `test_deferred_weight_conversion` assert `deferred is (not fixed)`).
+- `tests/llmcompressor/modeling/test_linearize.py`: 5.14 removed the
+  `*NaiveMoe` fixture classes (deepseek_v3, glm4_moe, glm4_moe_lite,
+  glm_moe_dsa) and `GraniteMoeParallelExperts`; imports guarded and the
+  affected params/tests skip with explicit reasons until ported. Note:
+  `test_linearize_moe[DeepseekV4…]` and `[HYV3…]` already failed on clean HEAD
+  under 5.12.1 (pre-existing, GPU-marked; not part of the standard suite).
+- `setup.py` release pin bumped to `<=5.14.1`.
+Both shims verified self-disabling; r13's smoke checkpoint passed the serving
+ABI gate (valid, 0 errors, 1152 quantized routed-expert Linears) — which also
+exercised the rebuilt safetensors index end to end.
+
+**NEW upstream bug found during the upgrade (caught by our repro test, zero GPU
+spent):** 5.14's own per-shard-revert fix ships a broken bookkeeping line in
+`save_pretrained` (5.14.1 `modeling_utils.py:3675`, still present on upstream
+main as of 2026-07-18):
+
+```python
+weight_map.update({k: os.path.basename(shard_file)} for k in shard_state_dict.keys())
+```
+
+`dict.update` over a generator of 1-element dicts raises
+`ValueError: dictionary update sequence element #0 has length 1`, which the
+surrounding broad `except Exception` re-raises as the misleading "unlucky
+sharding" RuntimeError. The branch runs for **every sharded + offloaded +
+original-format save** — exactly the M3 production path — so stock 5.14.1
+crashes at the end of shard 1. A naive upgrade would have burned another
+smoke run discovering this on cluster.
+
+**Resolution:** one-line venv hotfix (dict comprehension instead of the
+generator, marked `# llm-compressor hotfix`), plus a fail-closed preflight —
+`assert_transformers_offloaded_save_healthy()` in `pipeline/quantize.py`,
+wired next to the VMA gate — that classifies the installed save path as
+`shimmed` (pre-5.14: our save shims own it) / `healthy` (5.14 + hotfix) /
+`broken` (5.14 stock → refuse to start). This catches a venv rebuild that
+silently drops the hotfix. With the hotfix, the previously-failing
+`test_linearize_offload` tests also pass — they were the same bug.
+Recommend filing the one-liner upstream (huggingface/transformers; bug is in
+the #47018 follow-up code).
+
+**Final validation (2026-07-18):** standard suite (pipeline/tests +
+test_save_coordination + test_compress_tensor_utils) green in both venvs with
+the version-adaptive tests: 5.12.1 quant venv **575 passed**; hotfixed 5.14.1
+trial venv **574 passed, 1 skipped** (the skip is the shim-restoration test,
+skipif'd where upstream is fixed). One earlier trial-run failure did not
+reproduce across a full rerun (transient; name lost to an output filter —
+lesson: never pipe a suite's only output through `tail`/`grep`, keep the full
+log). Quant venv swapped to 5.14.1 + hotfix via
+`upgrade_quant_venv_tf5141.sh` after r13 completed, gated by
+`assert_transformers_offloaded_save_healthy()`; smoke r14 re-gates the save
+path under 5.14.1 before the full 512-sample calibration.
+
 **Cross-goal conflict check (2026-07-18, per PROJECT_GOALS.md):**
 
 - *Goal 1 (fast parallel quant)* — direct target; covered above. The r-series

@@ -4,12 +4,20 @@ buffers (M3 router e_score_correction_bias) and killed the r11 disk-offload
 save (2026-07-18). Upstream main fixed the branch to get_parameter_or_buffer;
 the shim backports that until we upgrade."""
 
+import inspect
+
 import pytest
 import torch
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_utils import remove_tied_weights_from_state_dict
 
 from pipeline.quantize import _tied_weights_meta_buffer_compat
+
+# same self-disable condition the shim uses: transformers >=5.13.1 resolves
+# buffers via get_parameter_or_buffer and the crash (plus the shim) disappears
+_FIXED_UPSTREAM = "get_parameter_or_buffer" in inspect.getsource(
+    remove_tied_weights_from_state_dict
+)
 
 
 class _TinyConfig(PretrainedConfig):
@@ -38,10 +46,10 @@ def test_offloaded_buffer_crashes_without_shim_and_saves_with_it():
     model = _TinyModel(_TinyConfig())
     state_dict = _meta_state_dict(model)
 
-    # the r11 failure mode, pinned: if this stops raising, the shim's source
-    # check should also report fixed_upstream and the shim becomes a no-op
-    with pytest.raises(AttributeError, match="e_score_correction_bias"):
-        remove_tied_weights_from_state_dict(state_dict, model)
+    # the r11 failure mode, pinned; disappears once upstream resolves buffers
+    if not _FIXED_UPSTREAM:
+        with pytest.raises(AttributeError, match="e_score_correction_bias"):
+            remove_tied_weights_from_state_dict(state_dict, model)
 
     with _tied_weights_meta_buffer_compat(model):
         cleaned = remove_tied_weights_from_state_dict(state_dict, model)
@@ -49,6 +57,10 @@ def test_offloaded_buffer_crashes_without_shim_and_saves_with_it():
     assert "linear.weight" in cleaned
 
 
+@pytest.mark.skipif(
+    _FIXED_UPSTREAM,
+    reason="transformers resolves buffers upstream; the shim is inert by design",
+)
 def test_shim_restores_original_get_parameter():
     model = _TinyModel(_TinyConfig())
 

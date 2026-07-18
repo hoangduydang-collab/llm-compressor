@@ -7,6 +7,7 @@ Upstream main reverts per shard after materialization;
 ``_deferred_weight_conversion_compat`` backports that.
 """
 
+import inspect
 import json
 
 import pytest
@@ -18,6 +19,13 @@ from transformers.core_model_loading import Concatenate, WeightConverter, Weight
 from pipeline.quantize import (
     _deferred_weight_conversion_compat,
     rebuild_safetensors_index,
+)
+
+# same self-disable condition the shim uses: once the installed transformers
+# reverts per shard (>=5.14), the early-revert crash no longer exists and the
+# shim must be a passthrough
+_FIXED_UPSTREAM = "revert_weight_conversion(model_to_save, shard_state_dict)" in (
+    inspect.getsource(PreTrainedModel.save_pretrained)
 )
 
 
@@ -117,15 +125,16 @@ def test_offloaded_save_crashes_without_shim_and_matches_baseline_with_it(tmp_pa
 
     # the r12 failure mode, pinned: early revert renames/splits meta entries,
     # then load_offloaded_parameter cannot resolve them on the runtime tree.
-    # If this stops raising, the shim's source check should also report
-    # fixed_upstream and the shim becomes a no-op.
-    with pytest.raises(Exception):
-        model.save_pretrained(str(tmp_path / "broken"))
+    # Once upstream reverts per shard, the crash disappears and the shim must
+    # report itself inert instead.
+    if not _FIXED_UPSTREAM:
+        with pytest.raises(Exception):
+            model.save_pretrained(str(tmp_path / "broken"))
 
     ckpt = tmp_path / "shimmed"
     with _deferred_weight_conversion_compat(model) as deferral:
         model.save_pretrained(str(ckpt))
-    assert deferral["deferred"] is True
+    assert deferral["deferred"] is (not _FIXED_UPSTREAM)
 
     saved = _saved_tensors(ckpt)
     assert set(saved) == _CHECKPOINT_NAMES
@@ -143,8 +152,9 @@ def test_offloaded_sharded_save_index_rebuilt(tmp_path):
     with _deferred_weight_conversion_compat(model) as deferral:
         # tiny shard size (bytes) forces one tensor per shard -> index written
         model.save_pretrained(str(ckpt), max_shard_size=100)
-    assert deferral["deferred"] is True
+    assert deferral["deferred"] is (not _FIXED_UPSTREAM)
 
+    # under fixed upstream the rebuild is an idempotent no-op on a correct index
     n = rebuild_safetensors_index(ckpt)
     index = json.loads((ckpt / "model.safetensors.index.json").read_text())
     saved = _saved_tensors(ckpt)

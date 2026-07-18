@@ -1,7 +1,20 @@
 import torch
 from compressed_tensors.offload import get_cache_init_kwargs, offload_module
 from transformers.models.granitemoe.configuration_granitemoe import GraniteMoeConfig
-from transformers.models.granitemoe.modeling_granitemoe import GraniteMoeParallelExperts
+
+try:
+    from transformers.models.granitemoe.modeling_granitemoe import (
+        GraniteMoeParallelExperts,
+    )
+except ImportError:
+    # transformers 5.14 replaced GraniteMoeParallelExperts (per-projection
+    # 3D ``.weight [E, out, in]``) with GraniteMoeExperts (fused
+    # ``gate_up_proj``/``down_proj``). Importing the new class keeps this
+    # module importable; ``from_experts_module`` fails fast below until the
+    # fused layout is ported (granite is outside the current M3 scope).
+    from transformers.models.granitemoe.modeling_granitemoe import (
+        GraniteMoeExperts as GraniteMoeParallelExperts,
+    )
 
 from llmcompressor.modeling.moe.context import get_calibrate_all_experts_flag
 from llmcompressor.modeling.moe.linear_experts import LinearExperts2D
@@ -19,6 +32,13 @@ class GraniteMoeLinearExperts(LinearExperts2D):
     def from_experts_module(
         cls, experts: "GraniteMoeParallelExperts", config: GraniteMoeConfig
     ):
+        if not hasattr(experts, "weight"):
+            raise NotImplementedError(
+                "GraniteMoe linearization supports the pre-5.14 "
+                "GraniteMoeParallelExperts layout; transformers>=5.14 fused "
+                f"{type(experts).__name__} (gate_up_proj/down_proj) is not "
+                "ported yet"
+            )
         assert experts.num_experts == config.num_local_experts
 
         with skip_weights_initialize():

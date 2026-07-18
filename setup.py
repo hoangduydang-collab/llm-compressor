@@ -123,7 +123,10 @@ setup(
         ("tqdm>=4.66.3,<=4.68.2" if BUILD_TYPE == "release" else "tqdm>=4.66.3"),
         ("torch>=2.10.0,<=2.12.0" if BUILD_TYPE == "release" else "torch>=2.10.0"),
         (
-            "transformers>=5.9.0,<=5.12.1"
+            # 5.14.0+ carries the offloaded-save fixes we previously shimmed
+            # (tie detection on buffers; per-shard weight-format revert) —
+            # see BUGS_AND_FIXES.md r11/r12 post-mortems.
+            "transformers>=5.9.0,<=5.14.1"
             if BUILD_TYPE == "release"
             else "transformers>=5.9.0"
         ),

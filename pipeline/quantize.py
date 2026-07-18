@@ -539,6 +539,57 @@ def estimate_shared_offload_segments(
     return planned, n_tensors, total_bytes
 
 
+def _offloaded_save_health(save_pretrained_source: str) -> str:
+    """Classify the installed save_pretrained for offloaded sharded saves.
+
+    - ``"shimmed"``: pre-5.14, no per-shard revert — our save shims
+      (`_tied_weights_meta_buffer_compat`, `_deferred_weight_conversion_compat`)
+      own the path (proven by smoke r13).
+    - ``"healthy"``: per-shard revert present and the sharded weight-map
+      bookkeeping is sane.
+    - ``"broken"``: per-shard revert present but the weight-map update is the
+      generator-of-dicts form shipped in 5.14.0/5.14.1 (and upstream main as
+      of 2026-07-18): ``weight_map.update({k: basename} for k in ...)`` feeds
+      ``dict.update`` 1-element dicts → ValueError, masked by the broad
+      except as the "unlucky sharding" RuntimeError — every sharded offloaded
+      original-format save crashes at the end of shard 1.
+    """
+    if "revert_weight_conversion(model_to_save, shard_state_dict)" not in (
+        save_pretrained_source
+    ):
+        return "shimmed"
+    if "} for k in shard_state_dict.keys()" in save_pretrained_source:
+        return "broken"
+    return "healthy"
+
+
+def assert_transformers_offloaded_save_healthy() -> None:
+    """Fail-closed gate: refuse to start a run whose offloaded save is
+    known-broken, instead of crashing hours later at the end of shard 1.
+
+    transformers 5.14.x needs a one-line venv hotfix to its sharded
+    weight-map update (see BUGS_AND_FIXES.md, "Transformers 5.14.1 upgrade");
+    this gate catches a venv rebuild that silently dropped the hotfix.
+    """
+    import inspect
+
+    from transformers import modeling_utils as mu
+
+    health = _offloaded_save_health(
+        inspect.getsource(mu.PreTrainedModel.save_pretrained)
+    )
+    if health == "broken":
+        raise RuntimeError(
+            "transformers save_pretrained carries the per-shard weight-format "
+            "revert, but its sharded weight_map update is the known-broken "
+            "generator-of-dicts form — every sharded offloaded save crashes "
+            "after shard 1. Re-apply the one-line hotfix to "
+            f"{mu.__file__} (see BUGS_AND_FIXES.md 'Transformers 5.14.1 "
+            "upgrade') or install transformers<=5.12.1 (save shims cover it)."
+        )
+    print(f"[pipeline] offloaded-save gate OK: transformers path is {health}")
+
+
 def assert_vma_budget_for_shared_offload(
     cfg: PipelineConfig,
     dist_ctx: DistributedContext,
@@ -627,6 +678,7 @@ def run_quantize(
     dist_ctx = dist_ctx or DistributedContext()
     evidence_paths = _evidence_paths(run_dir, dist_ctx)
 
+    assert_transformers_offloaded_save_healthy()
     assert_vma_budget_for_shared_offload(cfg, dist_ctx)
     if dist_ctx.enabled and install_distributed_disk_update_offload_patch():
         print(

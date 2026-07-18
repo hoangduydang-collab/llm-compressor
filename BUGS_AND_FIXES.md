@@ -847,6 +847,44 @@ mid-flight. Evidence (all verified, not inferred):
 Estimated effort: ~1-2h local (venv bump, granite rename, gate 4 pin tests,
 setup.py pin, commit) + one smoke-gate cluster run.
 
+**Cross-goal conflict check (2026-07-18, per PROJECT_GOALS.md):**
+
+- *Goal 1 (fast parallel quant)* — direct target; covered above. The r-series
+  save-path validation history is on 5.12.1, so the upgrade resets that gate:
+  one extra smoke run, which is already the standard gate for any save change.
+- *Goal 2 (eval pipeline)* — **no invalidation of existing evidence.** All eval
+  arms execute in the `serve` venv (vLLM 0.24 + transformers 5.12.1) and
+  `sglang-eval` (5.8.1), which the quant-venv upgrade does not touch; completed
+  results (BF16, MXFP8, paired r4, GPTQ replay) are immutable files. Two real
+  interactions, both bounded:
+  1. **Provenance confound for paired method claims**: a future in-house AWQ
+     checkpoint quantized under 5.14.1 vs the existing in-house GPTQ checkpoint
+     (2026-07-12, 5.12.1-era) differ in quant-time forward numerics (per-head
+     indexer, corrected router contract). Method-vs-method claims should either
+     requantize the GPTQ arm under the same version (one 4–8h distributed run —
+     exactly what goal 1 makes cheap) or scope claims as
+     checkpoint-vs-checkpoint with recorded provenance (the harness contract
+     already mandates recording). Effort: bookkeeping now, optional one quant
+     run later.
+  2. **Serving compat of 5.14-written checkpoints under serve-venv 5.12.1**:
+     verified low-risk — the M3 config-class diff 5.12.1→5.14.1 is a class
+     constant only (`base_model_ep_plan`, never serialized to config.json);
+     `PretrainedConfig` tolerates unknown keys; the audit tools
+     (`verify_quant_checkpoint.py`, `m3_checkpoint_scale_audit.py`) read shards
+     via `safe_open` with no transformers dependency. Residual risk is covered
+     by the TP8 serving smoke already in the post-quant gate chain. Effort: 0.
+  New checkpoints' tokenizer/chat-template hashes may differ under 5.14
+  serialization — the fail-closed harness records and verifies hashes per run,
+  so this is expected drift, not a conflict.
+- *Goal 3 (working AWQ)* — same path as goal 1; finish the current 5.12.1+shims
+  smoke first, then upgrade.
+- *Goals 4/5 (generalization)* — net positive: 5.14 carries the corrected
+  EP/router contracts and both save fixes upstream, shrinking our shim surface;
+  the granite rename fix is goal-4 surface anyway.
+- **Do not upgrade the `serve` venv as part of this** — vLLM 0.24 pins a
+  compressed-tensors prerelease and its transformers floor is 5.5.3; nothing in
+  the quant-venv upgrade requires touching it.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

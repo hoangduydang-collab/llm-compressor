@@ -86,6 +86,48 @@ def _save_heartbeat(ckpt: Path, interval: float = 60.0):
         thread.join(timeout=5)
 
 
+@contextmanager
+def _tied_weights_meta_buffer_compat(model):
+    """Backport transformers' get_parameter_or_buffer fix for offloaded saves.
+
+    With disk offload the state dict holds meta tensors, and transformers
+    5.12.1's ``remove_tied_weights_from_state_dict`` resolves each meta entry
+    via ``model.get_parameter(name)`` — which raises AttributeError for
+    registered buffers (M3's router ``e_score_correction_bias``), killing the
+    save before the first shard (smoke r11, 2026-07-18; ranks then hang in the
+    save-wait collective until the PG watchdog fires). Upstream main already
+    fixed the branch to call ``model.get_parameter_or_buffer(name)``; shadow
+    the instance method with that helper for the duration of the save. No-op
+    once the installed transformers carries the fix.
+    """
+    import inspect
+
+    from transformers.modeling_utils import remove_tied_weights_from_state_dict
+
+    fixed_upstream = "get_parameter_or_buffer" in inspect.getsource(
+        remove_tied_weights_from_state_dict
+    )
+    if fixed_upstream or not hasattr(model, "get_parameter_or_buffer"):
+        yield
+        return
+
+    # bypass the instance shadow: get_parameter_or_buffer itself calls
+    # self.get_parameter, which would recurse into the shim
+    cls_get_parameter = type(model).get_parameter
+
+    def _get_parameter_or_buffer(name: str):
+        try:
+            return cls_get_parameter(model, name)
+        except AttributeError:
+            return model.get_buffer(name)
+
+    model.get_parameter = _get_parameter_or_buffer
+    try:
+        yield
+    finally:
+        model.__dict__.pop("get_parameter", None)
+
+
 _PREWARM_CHUNK_BYTES = 32 * 1024 * 1024
 
 
@@ -553,12 +595,13 @@ def run_quantize(
                 "heartbeat below every 60s",
                 flush=True,
             )
-            with _save_heartbeat(ckpt):
+            with _tied_weights_meta_buffer_compat(model), _save_heartbeat(ckpt):
                 model.save_pretrained(str(ckpt), **save_kwargs)
         else:
             # Non-source ranks hold meta tensors and mostly wait in collectives;
             # a heartbeat there would be 8x duplicate noise.
-            model.save_pretrained(str(ckpt), **save_kwargs)
+            with _tied_weights_meta_buffer_compat(model):
+                model.save_pretrained(str(ckpt), **save_kwargs)
         dist_ctx.barrier()
 
         if dist_ctx.is_source:

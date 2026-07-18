@@ -8,7 +8,7 @@ import torch
 import torch.distributed as dist
 from compressed_tensors import ModelCompressor, SparsityCompressionConfig
 from compressed_tensors.config import CompressionFormat
-from compressed_tensors.distributed import is_source_process
+from compressed_tensors.distributed import get_source_rank, is_source_process
 from compressed_tensors.offload import from_accelerate, to_accelerate
 from compressed_tensors.utils import deprecated
 from loguru import logger
@@ -83,21 +83,24 @@ def modify_save_pretrained(model: PreTrainedModel):
             # convert to accelerate offloaded for optimal saving with transformers
             to_accelerate(model)
 
-            with suspend_distributed_timeout():
+            with coordinate_collective_save() as outcome:
                 if is_source_process():
-                    # save model structure
-                    original_save_fn.__get__(model, model_class)(
-                        save_directory, **kwargs
-                    )
+                    try:
+                        # save model structure
+                        original_save_fn.__get__(model, model_class)(
+                            save_directory, **kwargs
+                        )
 
-                    # update config to reflect quantization
-                    compressor.update_config(save_directory)
+                        # update config to reflect quantization
+                        compressor.update_config(save_directory)
 
-                    # update existing recipe
-                    update_and_save_recipe(model.name_or_path, save_directory)
+                        # update existing recipe
+                        update_and_save_recipe(model.name_or_path, save_directory)
 
-                    # copy python files from cache dir to save_path if any
-                    copy_python_files_from_model_cache(model, save_directory)
+                        # copy python files from cache dir to save_path if any
+                        copy_python_files_from_model_cache(model, save_directory)
+                    except BaseException as e:  # noqa: BLE001 — must reach peers
+                        outcome["error"] = e
 
             # convert back from accelerate to restore model to original form
             from_accelerate(model)
@@ -204,6 +207,64 @@ def update_and_save_recipe(model_stub: str, save_directory: str):
 
     recipe_path = os.path.join(save_directory, RECIPE_FILE_NAME)
     recipe.yaml(file_path=recipe_path, existing_recipe_path=existing_recipe)
+
+
+# Upper bound for how long non-source ranks wait for the source rank's save.
+# Must exceed the slowest expected offloaded save (multi-hour NFS gathers for
+# ~900GB models); the previous hardcoded 3h was hit by legitimate saves.
+_SAVE_WAIT_TIMEOUT = datetime.timedelta(hours=9)
+
+
+@contextmanager
+def coordinate_collective_save(timeout: datetime.timedelta = _SAVE_WAIT_TIMEOUT):
+    """Coordinate a source-rank save across ranks, propagating failure.
+
+    Yields a mutable dict; the source rank records a save exception under
+    ``outcome["error"]`` instead of raising past the context. After the body,
+    the source broadcasts its outcome over a dedicated long-timeout gloo group
+    (CPU wait — no GPU busy-spin) and every rank then either proceeds or raises
+    together.
+
+    Why: with a bare barrier wait, a source-rank save crash lets non-source
+    ranks march into the next collective (``from_accelerate``'s broadcast)
+    that the crashed source never joins. The job then hangs silently until the
+    NCCL watchdog or walltime, and the real traceback is lost to the eventual
+    SIGKILL (smoke r11 + r12, 2026-07-18). With this coordination a source
+    failure surfaces on all ranks within seconds.
+
+    If the source dies without raising (SIGKILL/segfault), the gloo broadcast
+    still bounds the wait at ``timeout``.
+    """
+    outcome: dict = {"error": None}
+
+    if not dist.is_initialized():
+        yield outcome
+        if outcome["error"] is not None:
+            raise outcome["error"]
+        return
+
+    suspend_group = dist.new_group(backend="gloo", timeout=timeout)
+    dist.barrier()
+    try:
+        yield outcome
+    except BaseException as e:  # noqa: BLE001 — peers must learn of any failure
+        outcome["error"] = e
+
+    if is_source_process():
+        err = outcome["error"]
+        obj = [None if err is None else f"{type(err).__name__}: {err}"]
+    else:
+        obj = [None]
+    dist.broadcast_object_list(obj, src=get_source_rank(), group=suspend_group)
+    dist.barrier(group=suspend_group)
+    dist.destroy_process_group(suspend_group)
+
+    if outcome["error"] is not None:
+        raise outcome["error"]
+    if obj[0] is not None:
+        raise RuntimeError(
+            f"source-rank save_pretrained failed, aborting on all ranks: {obj[0]}"
+        )
 
 
 @contextmanager

@@ -128,6 +128,113 @@ def _tied_weights_meta_buffer_compat(model):
         model.__dict__.pop("get_parameter", None)
 
 
+@contextmanager
+def _deferred_weight_conversion_compat(model):
+    """Backport transformers main's per-shard weight-format revert for offloaded saves.
+
+    transformers 5.12.1 reverts weight-name conversions on the whole state dict
+    before the shard loop (modeling_utils.py:3511). With disk offload the state
+    dict holds meta tensors, so after that revert every offloaded entry carries
+    its checkpoint-format name (e.g. M3's ``language_model.model.*.block_sparse_moe``)
+    while ``load_offloaded_parameter`` resolves names against the runtime module
+    tree (``model.language_model.*.mlp``) — the first offloaded tensor raises and
+    the save dies seconds into "Writing model shards" (smoke r12, 2026-07-18).
+    ``WeightConverter`` entries are worse: reverting on meta chunks/concats into
+    brand-new meta tensors that nothing can materialize from disk.
+
+    Upstream main fixed this by skipping the early revert when offloaded and
+    reverting each shard *after* its tensors are loaded back (modeling_utils.py
+    ~3649-3676 on main). This shim backports that behavior without copying the
+    400-line save method:
+
+    - ``revert_weight_conversion(model, state_dict)`` becomes a passthrough when
+      the dict contains meta tensors (records ``deferred=True``);
+    - ``safe_save_file(shard, ...)`` then applies the real revert to each fully
+      materialized shard right before writing.
+
+    The index that ``save_pretrained`` writes still maps runtime names, so when
+    ``deferred`` is set the caller must run :func:`rebuild_safetensors_index`
+    afterwards. Yields a dict whose ``"deferred"`` key reports whether the
+    passthrough triggered. Self-disables once the installed transformers does
+    per-shard reverts.
+    """
+    import inspect
+
+    from transformers import modeling_utils as mu
+
+    state = {"deferred": False}
+    fixed_upstream = "revert_weight_conversion(model_to_save, shard_state_dict)" in (
+        inspect.getsource(mu.PreTrainedModel.save_pretrained)
+    )
+    if fixed_upstream:
+        yield state
+        return
+
+    orig_revert = mu.revert_weight_conversion
+    orig_save_file = mu.safe_save_file
+
+    def _revert_or_defer(model_to_save, state_dict):
+        if model_to_save is model and any(
+            t.device.type == "meta" for t in state_dict.values()
+        ):
+            state["deferred"] = True
+            return state_dict
+        return orig_revert(model_to_save, state_dict)
+
+    def _save_file_reverted(tensors, filename, metadata=None):
+        if state["deferred"]:
+            # every tensor in the shard is materialized by now; renames and
+            # converter chunk/concat ops operate on real data as upstream does
+            tensors = orig_revert(model, tensors)
+        return orig_save_file(tensors, filename, metadata=metadata)
+
+    mu.revert_weight_conversion = _revert_or_defer
+    mu.safe_save_file = _save_file_reverted
+    try:
+        yield state
+    finally:
+        mu.revert_weight_conversion = orig_revert
+        mu.safe_save_file = orig_save_file
+
+
+def rebuild_safetensors_index(ckpt: Path) -> int:
+    """Rewrite ``model.safetensors.index.json`` from the actual shard headers.
+
+    Needed after a save under :func:`_deferred_weight_conversion_compat`: the
+    per-shard revert renames/splits tensors after ``save_pretrained`` computed
+    its weight map, so the written index maps runtime names that no longer
+    exist in the shards. Non-index metadata (e.g. ``total_parameters``) is
+    preserved; ``total_size`` is recomputed from the headers.
+
+    Returns the number of tensors indexed (0 when the checkpoint is unsharded
+    and has no index file).
+    """
+    index_path = ckpt / "model.safetensors.index.json"
+    if not index_path.exists():
+        return 0
+
+    import struct
+
+    weight_map: dict[str, str] = {}
+    total_size = 0
+    for shard in sorted(ckpt.glob("model-*.safetensors")):
+        with open(shard, "rb") as fh:
+            header_len = struct.unpack("<Q", fh.read(8))[0]
+            header = json.loads(fh.read(header_len))
+        for name, info in header.items():
+            if name == "__metadata__":
+                continue
+            weight_map[name] = shard.name
+            start, end = info["data_offsets"]
+            total_size += end - start
+
+    index = json.loads(index_path.read_text())
+    index.setdefault("metadata", {})["total_size"] = total_size
+    index["weight_map"] = weight_map
+    index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
+    return len(weight_map)
+
+
 _PREWARM_CHUNK_BYTES = 32 * 1024 * 1024
 
 
@@ -595,12 +702,26 @@ def run_quantize(
                 "heartbeat below every 60s",
                 flush=True,
             )
-            with _tied_weights_meta_buffer_compat(model), _save_heartbeat(ckpt):
+            with (
+                _tied_weights_meta_buffer_compat(model),
+                _deferred_weight_conversion_compat(model) as deferral,
+                _save_heartbeat(ckpt),
+            ):
                 model.save_pretrained(str(ckpt), **save_kwargs)
+            if deferral["deferred"]:
+                n_indexed = rebuild_safetensors_index(ckpt)
+                print(
+                    "[pipeline] offloaded save deferred weight-format revert to "
+                    f"per-shard; rebuilt safetensors index ({n_indexed} tensors)",
+                    flush=True,
+                )
         else:
             # Non-source ranks hold meta tensors and mostly wait in collectives;
             # a heartbeat there would be 8x duplicate noise.
-            with _tied_weights_meta_buffer_compat(model):
+            with (
+                _tied_weights_meta_buffer_compat(model),
+                _deferred_weight_conversion_compat(model),
+            ):
                 model.save_pretrained(str(ckpt), **save_kwargs)
         dist_ctx.barrier()
 

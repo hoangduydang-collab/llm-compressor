@@ -190,6 +190,42 @@ def _persist_calibration_partition(
     return path
 
 
+def install_distributed_disk_update_offload_patch() -> bool:
+    """Make ``DistributedDiskCache.update_offload`` distributed-safe.
+
+    Upstream compressed-tensors (0.17.2a20260707, and main as of 2026-07-18)
+    overrides ``offload``/``__delitem__`` with source-rank gating but inherits
+    ``DiskCache.update_offload`` unchanged, so during AWQ smoothing every rank
+    concurrently ``os.unlink``s and rewrites the SAME shared index file --
+    a race that killed smoke r10 with ``FileNotFoundError`` on the shared
+    ``ct_disk_cache_*.safetensors`` (and silently corrupts when it doesn't
+    crash). All ranks compute identical smoothed data (activation stats are
+    synchronized), so gate the write to the source rank and barrier, mirroring
+    ``DistributedDiskCache.offload``. The file path is unchanged by the
+    rewrite, so non-source index entries stay valid.
+
+    :return: True if the patch was installed, False if upstream already
+        defines a distributed ``update_offload`` (drop this patch then).
+    """
+    import torch.distributed as dist
+    from compressed_tensors.distributed import is_source_process
+    from compressed_tensors.offload.cache.disk import DiskCache
+    from compressed_tensors.offload.cache.dist_disk import DistributedDiskCache
+
+    if "update_offload" in vars(DistributedDiskCache):
+        return False
+
+    def update_offload(self, offloaded, data):
+        if is_source_process():
+            DiskCache.update_offload(self, offloaded, data)
+        if dist.is_available() and dist.is_initialized():
+            # writers-before-readers: no rank may onload until the write lands
+            dist.barrier()
+
+    DistributedDiskCache.update_offload = update_offload
+    return True
+
+
 # VMA headroom reserved for everything that is NOT a shared-weights segment:
 # CUDA contexts, glibc/allocator arenas, loaded libraries, and the per-layer
 # calibration activation cache (each >128KiB cpu tensor is its own mmap).
@@ -319,6 +355,11 @@ def run_quantize(
     evidence_paths = _evidence_paths(run_dir, dist_ctx)
 
     assert_vma_budget_for_shared_offload(cfg, dist_ctx)
+    if dist_ctx.enabled and install_distributed_disk_update_offload_patch():
+        print(
+            "[pipeline] patched DistributedDiskCache.update_offload "
+            "(source-rank write + barrier; see BUGS_AND_FIXES.md)"
+        )
     model, tokenizer = _load_model_and_tokenizer(cfg)
     # Capture load/environment provenance BEFORE calibration: where the loaded
     # modeling code comes from (installed transformers vs trust_remote_code) and

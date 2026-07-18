@@ -697,6 +697,28 @@ safe default.
 **Removal criteria:** none for the gate (cheap, correct); the 32e9 cpu budget can be
 raised back toward shm-resident once nodes run with a raised `max_map_count`.
 
+### Follow-on: `DistributedDiskCache.update_offload` write race (smoke r10, 2026-07-18)
+
+The disk-offload smoke (`20260718T044923Z-m3-ddp-quant-smoke-r10-diskoffload`) validated
+the VMA fix — gate OK on all ranks, dispatch 30,882 modules in 40 s (vs ~23 min to shm),
+Shmem flat at ~55 GB, grid search ran with synchronized stats (identical errors on all
+ranks) — then died in `_apply_smoothing` → `update_offload_parameter` with
+`FileNotFoundError` on a shared `ct_disk_cache_*.safetensors`.
+
+**Root cause (upstream bug, unfixed as of compressed-tensors 0.17.2a20260707 and main
+2026-07-18):** `DistributedDiskCache` overrides `offload`/`__delitem__` with source-rank
+gating but inherits the non-distributed `DiskCache.update_offload`, so every rank
+concurrently `os.unlink`s the shared symlink and rewrites the same file. Racy crash at
+best; silent concurrent-write corruption at worst.
+
+**Fix applied (2026-07-18):** runtime patch
+`install_distributed_disk_update_offload_patch` in `pipeline/quantize.py` (installed for
+distributed runs before load): source rank performs `DiskCache.update_offload`, all
+ranks barrier (writers-before-readers). Mirrors upstream's own `offload()` sync design;
+correct because smoothed data is identical across ranks. The patch self-disables once
+upstream defines `update_offload` on `DistributedDiskCache` — drop it then. Worth
+filing upstream.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

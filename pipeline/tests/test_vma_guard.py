@@ -118,3 +118,46 @@ def test_slack_leaves_room_for_calibration_vmas():
     run's non-shm VMA overhead was ~2.4k (65530 - 63122) at the moment of
     death and still growing, so anything under ~10k would repeat the incident."""
     assert _VMA_GUARD_SLACK >= 10_000
+
+
+def test_disk_update_offload_patch_installs_and_is_idempotent():
+    """The r10 smoke race: DistributedDiskCache must not inherit the
+    non-distributed DiskCache.update_offload (every rank unlinks/rewrites the
+    same shared file). The patch gates writes to the source rank."""
+    from compressed_tensors.offload.cache.dist_disk import DistributedDiskCache
+
+    from pipeline.quantize import install_distributed_disk_update_offload_patch
+
+    installed_before = "update_offload" in vars(DistributedDiskCache)
+    first = install_distributed_disk_update_offload_patch()
+    # first call installs unless upstream (or an earlier import) already did
+    assert first == (not installed_before)
+    assert "update_offload" in vars(DistributedDiskCache)
+    # idempotent: second call must be a no-op
+    assert install_distributed_disk_update_offload_patch() is False
+
+
+def test_disk_update_offload_patch_writes_on_source_rank(tmp_path):
+    """Non-distributed context counts as source: the patched method must
+    delegate to DiskCache.update_offload and rewrite the file in place."""
+    import torch
+    from compressed_tensors.offload.cache.disk import DiskCache
+    from compressed_tensors.offload.cache.dist_disk import DistributedDiskCache
+    from safetensors.torch import save_file
+
+    from pipeline.quantize import install_distributed_disk_update_offload_patch
+
+    install_distributed_disk_update_offload_patch()
+    cache = DistributedDiskCache(
+        onload_device=torch.device("cpu"), offload_dir=str(tmp_path)
+    )
+    offloaded = torch.empty(4, device="meta")
+    file_path = str(tmp_path / f"{DiskCache._ct_file_prefix}_test.safetensors")
+    save_file({"weight": torch.zeros(4)}, file_path)
+    cache.index[offloaded] = {
+        "safetensors_file": file_path,
+        "weight_name": "weight",
+        "dtype": "float32",
+    }
+    cache.update_offload(offloaded, torch.ones(4))
+    assert torch.equal(cache.onload(offloaded), torch.ones(4))

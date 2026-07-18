@@ -7,6 +7,8 @@ Produces a vLLM-servable ``pack-quantized`` compressed-tensors checkpoint in
 import json
 import os
 import shutil
+import threading
+import time
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -26,6 +28,62 @@ from pipeline.vl_artifacts import ensure_vl_processor_artifacts
 # Schemes whose weights are INT-packed and need explicit pack-quantized on save
 # for vLLM to pick the right loader/kernel.
 _PACK_QUANTIZED_SCHEMES = {"W4AFP8", "W4A8", "W4A16", "W4A16_ASYM"}
+
+
+def _process_read_bytes() -> int:
+    """Cumulative bytes this process has read (``/proc/self/io``), 0 if unavailable."""
+    try:
+        for line in Path("/proc/self/io").read_text().splitlines():
+            if line.startswith("read_bytes:"):
+                return int(line.split(":", 1)[1])
+    except OSError:
+        pass
+    return 0
+
+
+@contextmanager
+def _save_heartbeat(ckpt: Path, interval: float = 60.0):
+    """Log liveness/progress lines while ``save_pretrained`` runs.
+
+    The disk-offload save has a long silent phase (r11, 2026-07-18): rank 0
+    reads every offloaded weight back through the disk-cache index before the
+    first shard is written, with zero output for 1h+ — indistinguishable from
+    a hang in the logs. This thread prints, every ``interval`` seconds, the
+    shard count/bytes written so far plus the process's cumulative read bytes
+    so the read-back phase itself is visibly progressing.
+    """
+    stop = threading.Event()
+    start = time.monotonic()
+    read0 = _process_read_bytes()
+
+    def _beat() -> None:
+        last_written = 0
+        while not stop.wait(interval):
+            written = 0
+            shards = 0
+            try:
+                for f in ckpt.glob("*.safetensors"):
+                    shards += 1
+                    written += f.stat().st_size
+            except OSError:
+                pass  # shard replaced mid-scan; next tick recounts
+            read_gb = (_process_read_bytes() - read0) / 1e9
+            rate_mb = (written - last_written) / interval / 1e6
+            print(
+                f"[pipeline] save-heartbeat +{time.monotonic() - start:.0f}s: "
+                f"{shards} shards / {written / 1e9:.1f} GB written "
+                f"({rate_mb:.0f} MB/s), {read_gb:.1f} GB read back",
+                flush=True,
+            )
+            last_written = written
+
+    thread = threading.Thread(target=_beat, name="save-heartbeat", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=5)
 
 
 @contextmanager
@@ -419,7 +477,19 @@ def run_quantize(
         save_kwargs: dict = {"save_compressed": True}
         if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
             save_kwargs["quantization_format"] = "pack-quantized"
-        model.save_pretrained(str(ckpt), **save_kwargs)
+        if dist_ctx.is_source or not dist_ctx.enabled:
+            print(
+                f"[pipeline] saving checkpoint to {ckpt} — with disk offload the "
+                "first shard can take 1h+ (offloaded weights read back first); "
+                "heartbeat below every 60s",
+                flush=True,
+            )
+            with _save_heartbeat(ckpt):
+                model.save_pretrained(str(ckpt), **save_kwargs)
+        else:
+            # Non-source ranks hold meta tensors and mostly wait in collectives;
+            # a heartbeat there would be 8x duplicate noise.
+            model.save_pretrained(str(ckpt), **save_kwargs)
         dist_ctx.barrier()
 
         if dist_ctx.is_source:

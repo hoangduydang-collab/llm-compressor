@@ -811,6 +811,42 @@ the job is a zombie*, not that the save is slow. Don't wait for the watchdog: th
 traceback will not appear (SIGKILL), and the failure choreography above explains
 every observable.
 
+### Transformers 5.14.1 upgrade assessment (2026-07-18, after r12)
+
+Evaluated replacing the two save shims with an upgrade. Verdict: **feasible, low
+effort, recommended as a follow-up after the current smoke-gated run** — not
+mid-flight. Evidence (all verified, not inferred):
+
+- Installed 5.12.1 is **stock PyPI** (every file matches the wheel RECORD hashes;
+  `conversion_mapping.py` byte-identical to the upstream v5.12.1 tag). M3-VL
+  support is genuinely upstream, not a local patch.
+- Target must be **5.14.x**: tie-detection fix shipped in v5.13.1, but the
+  per-shard revert fix (upstream PR #47018 — exactly the r12 bug) only in v5.14.0.
+- M3-critical surface stable: `minimax_m3_vl` conversion-mapping entry is
+  **identical** 5.12.1 → 5.14.1; `MiniMaxM3VLExperts` intact, so
+  `modeling/moe/conversion_mappings.py` linearization is unaffected.
+- Full 572-test suite in a trial venv (`/mnt/nfs/hoangduy/venvs/quant-tf514-trial`,
+  transformers==5.14.1): **567 pass**; all 5 failures understood — 4 are the
+  crash-pin tests that assert the 5.12.1 bugs exist (gate with the same
+  `fixed_upstream` source check the shims use), 1 is
+  `GraniteMoeParallelExperts` → `GraniteMoeExperts` rename
+  (`src/llmcompressor/modeling/moe/granitemoe.py:4`, one line, not on the M3 path).
+- Both shims (`_tied_weights_meta_buffer_compat`,
+  `_deferred_weight_conversion_compat`) verified to **self-disable** under 5.14.1.
+- No dependency blockers: vllm 0.24.0 needs only `transformers>=5.5.3`;
+  compressed-tensors `>=4.45.0`; serve/eval venvs are separate. The
+  `<=5.12.1` cap in `setup.py` is upstream llm-compressor's release pin (their
+  dev builds accept `>=5.9.0`) — bump ours.
+- **Real cost is revalidation, not code**: M3 forward numerics changed
+  (v5.13.0 "EP router contract corrected"; sparse-attention indexer moved from
+  per-query to per-head block selection in `modeling_minimax_m3_vl.py`).
+  Calibration statistics will shift, so pre/post-upgrade checkpoints are not
+  comparable — rerun the disk-offload smoke + scale audit after upgrading
+  (~2-3h GPU), same gate as any save-path change.
+
+Estimated effort: ~1-2h local (venv bump, granite rename, gate 4 pin tests,
+setup.py pin, commit) + one smoke-gate cluster run.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

@@ -12,10 +12,15 @@ model:
   auto_class: AutoModelForImageTextToText
   dtype: bfloat16
   device_map: auto_offload
-  # Native DDP requires CPU-only placement. Leaving this unset lets Accelerate
-  # spread every rank across all visible GPUs instead of CT's shared offload.
+  # Native DDP requires CPU-only placement (auto_offload keeps GPUs out of the
+  # load-time device map). Small cpu budget -> weights overflow to
+  # DistributedDiskCache, mirroring minimax_m3_distributed_awq_full.yaml: the
+  # per-tensor shm cache needs ~63k mmaps/rank on M3, over the default
+  # vm.max_map_count=65530 (see BUGS_AND_FIXES.md, DDP weights-side VMA
+  # exhaustion, 2026-07-17). Keep the smoke on the same offload path as
+  # production so it actually rehearses it.
   max_memory:
-    cpu: 1000000000000
+    cpu: 32000000000
   offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-smoke
 
 quantization:

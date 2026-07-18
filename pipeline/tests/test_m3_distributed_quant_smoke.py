@@ -29,7 +29,10 @@ def test_smoke_config_reuses_production_recipe_with_three_layers_only():
 
     assert cfg.model.id == "MiniMaxAI/MiniMax-M3"
     assert cfg.model.device_map == "auto_offload"
-    assert cfg.model.max_memory == {"cpu": 1_000_000_000_000}
+    # 32e9 mirrors production disk-offload (VMA fix, BUGS_AND_FIXES.md
+    # 2026-07-17): weights overflow to DistributedDiskCache instead of
+    # per-tensor shm segments that exceed vm.max_map_count.
+    assert cfg.model.max_memory == {"cpu": 32_000_000_000}
     assert cfg.quantization.method == "gptq"
     assert cfg.quantization.scheme == "W4AFP8"
     assert LAYER_EXCLUSION in cfg.quantization.ignore

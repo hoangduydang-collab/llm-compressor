@@ -755,6 +755,62 @@ r9-save never hit this because shm offload yields real CPU tensors, not meta.
 documented healthy save pattern AND a crashed-then-hung rank. Distinguish them with
 `MemAvailable`/page-cache trend and file mtimes, not GPU utilization.
 
+### Follow-on: offloaded-save revert renames meta tensors before materialization (smoke r12, 2026-07-18)
+
+Smoke r12 (`20260718T093241Z-m3-ddp-quant-smoke-r12-diskoffload`, job 13013) proved the
+r11 tie-detection fix (save got past `remove_tied_weights_from_state_dict`, computed the
+17-shard split, printed `Writing model shards 0/17`, prewarm streamed 898 GB at
+11.3 GB/s) — then froze ~90 s into the save with the exact r11 zombie signature:
+one heartbeat, zero shards, `MemAvailable` dead flat, rank 0 at 0 % GPU, ranks 1–7
+NCCL-spinning at 100 %. Killed after 3 h (traceback lost to SIGKILL, as predicted).
+
+**Root cause (upstream transformers 5.12.1, fixed on upstream main):**
+`save_pretrained` runs `revert_weight_conversion` on the **whole state dict before the
+shard loop** (`modeling_utils.py:3511`). With disk offload the entries are meta, so
+after the revert every offloaded tensor carries its **checkpoint-format name**
+(M3: `language_model.model.*.block_sparse_moe.*`) while
+`load_offloaded_parameter` (`integrations/accelerate.py:516`) resolves names against
+the **runtime module tree** (`model.language_model.*.mlp.*`) → the first offloaded
+tensor raises and the save dies seconds in. `WeightConverter` entries (M3 dense-layer
+`mlp.gate_up_proj` split, shared experts) are worse: reverting on meta chunk/concats
+into brand-new meta tensors nothing can materialize. Upstream main fixed it by
+skipping the early revert when offloaded and reverting **per shard after
+materialization** (`modeling_utils.py` ~3649–3676 on main). r9's shm save never hit
+this: real CPU tensors never take the `load_offloaded_parameter` branch.
+
+**Why 3 h of silence instead of a traceback (r11 + r12 shared mechanism):** rank 0's
+exception exits `suspend_distributed_timeout` (all ranks clear its barriers), then
+ranks 1–7 proceed into `from_accelerate`'s `broadcast_object_list([device_map,
+offload_dir])` — the parked `BROADCAST NumelIn=2` from r11's watchdog dump — which the
+unwinding rank 0 never joins. Rank 0 blocks in PG teardown, the traceback only flushes
+if the process dies by signal-able means; SIGKILL (walltime/scancel escalation) eats it.
+
+**Fixes applied (2026-07-18):**
+- `_deferred_weight_conversion_compat` (`pipeline/quantize.py`): backports upstream's
+  per-shard revert — `revert_weight_conversion` becomes a passthrough when the dict
+  holds meta tensors; `safe_save_file` applies the real revert to each fully
+  materialized shard. `rebuild_safetensors_index` then rewrites
+  `model.safetensors.index.json` from the actual shard headers (the index
+  `save_pretrained` wrote maps pre-revert runtime names). Self-disables once the
+  installed transformers does per-shard reverts. Repro test pins the failure with a
+  real accelerate-offloaded tiny model (rename + converter split), and verifies the
+  shimmed save is byte-identical to the non-offloaded baseline.
+- `coordinate_collective_save` (`src/llmcompressor/.../compressed_tensors_utils.py`):
+  replaces the bare `suspend_distributed_timeout` wait in `save_pretrained_wrapper`.
+  The source rank catches its save exception and broadcasts the outcome over a
+  dedicated gloo group (CPU wait, no GPU spin) before anyone proceeds; on failure all
+  ranks raise within seconds with the real error. Also raises the save-wait ceiling
+  3 h → 9 h (`_SAVE_WAIT_TIMEOUT`) — the old hardcoded 3 h gloo timeout would have
+  killed any legitimate >3 h full-calib save regardless of the 8 h PG timeout.
+  2-rank gloo test proves failure propagation.
+
+**Diagnostic lesson:** a silent save-phase heartbeat is itself a signal — the
+heartbeat context exits when `save_pretrained` raises, so "heartbeat stopped, no
+shards, flat memory, non-source GPUs spinning" means *the save already crashed and
+the job is a zombie*, not that the save is slow. Don't wait for the watchdog: the
+traceback will not appear (SIGKILL), and the failure choreography above explains
+every observable.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

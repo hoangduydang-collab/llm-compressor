@@ -8,6 +8,7 @@ from compressed_tensors.distributed import (
 )
 from compressed_tensors.offload import get_execution_device
 from compressed_tensors.quantization.utils import is_module_quantized
+from compressed_tensors.utils import update_offload_parameter
 
 from llmcompressor.core import Event, State
 from llmcompressor.modifiers import Modifier
@@ -121,7 +122,9 @@ class QuantizationModifier(Modifier, QuantizationMixin):
         module_list: list[torch.nn.Module],
         module_to_rank: dict[torch.nn.Module, int],
     ):
+        rank = dist.get_rank()
         pending_comms = []
+        received = []
         for module in module_list:
             if get_execution_device(module) != torch.device("cpu"):
                 for qparam_name in _WEIGHT_Q_PARAMS:
@@ -133,5 +136,15 @@ class QuantizationModifier(Modifier, QuantizationMixin):
                                 async_op=True,
                             )
                         )
+                        if module_to_rank[module] != rank:
+                            received.append((module, qparam_name, qparam))
 
         wait_for_comms(pending_comms)
+
+        # With dict/disk offload, ``getattr`` mints a fresh onload tensor each
+        # call: the broadcast above fills a temporary that save_pretrained
+        # never sees. Write the received values back through the offload
+        # cache, else non-owner ranks (including the saving rank) keep
+        # uninitialized qparams for every module they did not observe.
+        for module, qparam_name, qparam in received:
+            update_offload_parameter(module, qparam_name, qparam)

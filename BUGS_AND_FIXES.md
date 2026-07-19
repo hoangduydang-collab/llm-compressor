@@ -1047,6 +1047,95 @@ re-export verified (5 shards, 65,664 routed keys renamed) at
 `PATH=/mnt/nfs/hoangduy/venvs/quant/bin:$PATH` or the case dies rc=127
 after chat succeeds.
 
+## Distributed qparam broadcast lost under disk offload (full r3 post-mortem, 2026-07-19)
+
+**Symptom:** full r3 (`20260719T040748Z-m3-ddp-awq-full-r3-foldfix`) passed
+every gate then live — offloaded-save, smooth-fold, serving ABI (21,888
+modules) — and its portable re-export served TP8 with graphs captured and
+HTTP 200, but chat returned 64 NUL characters (` …`, NaN logits →
+argmax token 0). `pipeline.verify_quant_checkpoint --check-tensors` found
+**non-finite `weight_scale` in 18/20 sampled modules**, and the bad tensors
+are uninitialized junk (±2.8e38 near-bf16-max rows, NaN/inf) with
+`weight_packed` frozen at constant `0x88888888` (weights quantized against
+garbage scales). The same-stack A/B — in-house GPTQ portable
+(single-process-era quant) through the identical harness — answered "The
+capital of France is **Paris**.", clearing the serve stack entirely.
+
+**Bisection:** r9 (pure CPU placement) PASSES the tensor check; r2, r15, r3
+(disk offload) all FAIL with the same 18/20 pattern. 18/20 ≈ 7/8 = the
+fraction of modules each rank does NOT own in the 8-rank distributed
+calibration.
+
+**Root cause (same class as the offset-norm fold loss, different site):**
+in `QuantizationModifier._broadcast_qparam_onloads`
+(`src/llmcompressor/modifiers/quantization/quantization/base.py`) each rank
+observes weight qparams only for its greedy-binned module subset, then
+`dist.broadcast` shares them. With dict/disk offload,
+`getattr(module, qparam_name)` mints a FRESH onload tensor per call, so the
+broadcast fills a temporary that `save_pretrained` never sees — non-owner
+ranks (including the saving rank 0) keep uninitialized bytes for ~7/8 of
+modules. GPTQ's `_broadcast_quantized_params`
+(`src/llmcompressor/modifiers/gptq/base.py`) has the identical pattern (and
+also broadcasts the quantized `weight` itself). r9 passed because
+non-offloaded params alias real storage, so in-place broadcast persists.
+
+**Fixes:**
+1. Both broadcast sites now write received values back through
+   `update_offload_parameter` (owner rank skipped — it already persisted via
+   `update_qparams`/`compress_module_list`).
+2. Regression tests
+   `tests/llmcompressor/modifiers/quantization/test_qparam_broadcast_offload.py`
+   (fake `dist.broadcast` fills the onload temp; disk copy must reflect it;
+   verified to fail on the old code) + an owner-rank no-rewrite guard.
+3. **Fail-closed post-save gate** `assert_quant_checkpoint_verified` in
+   `pipeline/quantize.py` (after the smooth-fold gate, source rank, post
+   barrier): runs `verify_quant_checkpoint.verify(ckpt, check_tensors=True)`
+   — structure plus sampled scale/packed finiteness. Non-owner corruption
+   hits ~87.5% of modules, so a 20-module sample cannot miss it. ABI,
+   smooth-fold and save-health gates all passed on r3 because none of them
+   read quantized tensors; this closes that gap.
+
+**Why the smoke gates missed it:** r15's smooth-fold audit reads only BF16
+norm/router/shared tensors — those were correct (the fold fix works). The
+scale corruption lives in the quantized expert tensors no existing gate
+sampled.
+
+**Disposition:** r2, r3 (raw + `checkpoint-vllm-w123` portable), r13, r14,
+r15 checkpoints all carry garbage scales — none may be served or evaluated.
+The GPTQ portable artifact predates the distributed pipeline and is clean
+(fresh serving smoke PASS on the current stack, 2026-07-19). Rerun: smoke
+r16 with the fix, then full r4. Note distributed GPTQ runs under disk
+offload were equally affected in principle — any such checkpoint must pass
+the new gate before use.
+
+**Gate-chain upgrade (2026-07-19):** two additions close the "no gate reads
+the quantized tensors" blind spot at different costs:
+
+1. **Smoke + full, in-line (CPU, ~1 min): dequant-vs-base value gate.**
+   `verify_quant_checkpoint --dequant-base <base>` (wired into
+   `assert_quant_checkpoint_verified`) dequantizes sampled packed modules
+   and requires them to match base weights up to a fitted per-input-column
+   scale (absorbs AWQ smoothing; ≈1.0 for GPTQ) with residual ≤ 0.25.
+   Calibrated: consistent W4 (r9) resid 0.09–0.12, scales 0.7–1.4;
+   garbage-scale checkpoints (r15/r3) NaN. Catches garbage scales, corrupt
+   packed values, and lost transforms — both July-19 bugs would have failed
+   a 45-min smoke here. A 2-node TP16 serve of the ~820 GB smoke checkpoint
+   was considered and rejected: unvalidated topology (BF16 TP16 ray worked,
+   quantized cross-node never tested) would confound checkpoint bugs with
+   serve bugs, exactly the ambiguity gates exist to avoid.
+2. **Full runs only (+~40 min GPU): serve + chat probe.** The 225 GB full
+   checkpoint fits the proven 1-node TP8 envelope, so the r4 chain ends
+   with portable re-export → HTTP serve (matrix harness, production case) →
+   France-prompt probe (must contain "Paris"; NUL/repetition/empty fails
+   the chain). This is the end-to-end wiring check (expert aliasing, swiglu
+   clamp, loader) that CPU gates cannot see. Catastrophic-failure detector,
+   not a quality measurement — real quality comparison remains the goal-2
+   eval pipeline.
+
+Smoke checkpoints (~820 GB each) are deleted at the end of a PASSING smoke
+chain (evidence/logs kept); broken smoke checkpoints r13/r14/r15 were
+deleted 2026-07-19 (~2.4 TB reclaimed, NFS was at 95%).
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

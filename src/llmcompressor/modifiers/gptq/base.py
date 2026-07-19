@@ -362,21 +362,33 @@ class GPTQModifier(Modifier, QuantizationMixin):
         wait_for_comms(pending_comms)
 
     def _broadcast_quantized_params(self, module_list, module_to_rank):
+        rank = dist.get_rank()
         pending_comms = []
+        received = []
         for module in module_list:
             src_rank = module_to_rank[module]
 
             # Get parameters from module
             for attr in _GPTQ_Q_PARAMS:
-                if getattr(module, attr, None) is not None:
+                if (param := getattr(module, attr, None)) is not None:
                     pending_comms.append(
                         dist.broadcast(
-                            as_broadcastable(getattr(module, attr)),
+                            as_broadcastable(param),
                             src=src_rank,
                             async_op=True,
                         )
                     )
+                    if src_rank != rank:
+                        received.append((module, attr, param))
         wait_for_comms(pending_comms)
+
+        # With dict/disk offload, ``getattr`` mints a fresh onload tensor each
+        # call: the broadcast above fills a temporary that save_pretrained
+        # never sees. Write the received values back through the offload
+        # cache, else non-owner ranks (including the saving rank) keep
+        # uninitialized weights/qparams for every module they did not compress.
+        for module, attr, param in received:
+            update_offload_parameter(module, attr, param)
 
     def on_finalize(self, state: State, **kwargs) -> bool:
         """

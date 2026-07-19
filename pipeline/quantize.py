@@ -642,6 +642,39 @@ def assert_smooth_fold_consistency(
     )
 
 
+def assert_quant_checkpoint_verified(ckpt: Path, base: Path | None = None) -> None:
+    """Fail-closed post-save gate: structural + sampled tensor verification.
+
+    Runs ``pipeline.verify_quant_checkpoint.verify(ckpt, check_tensors=True,
+    dequant_base=base)``: structure (ignore shapes, swiglu scalars, expert
+    layout), sampled finiteness of ``weight_scale`` / ``weight_packed``, and —
+    when ``base`` is given — value-level dequant-vs-base agreement (fitted
+    per-column smoothing scale, W4-error residual). The full-calibration AWQ
+    run r3 (2026-07-19) saved uninitialized weight scales for ~7/8 of
+    quantized modules — the distributed qparam broadcast filled a temporary
+    onload the disk OffloadCache never persisted — and every earlier gate
+    (ABI, smooth-fold, save-health) passed because none of them read the
+    quantized tensors. Non-owner corruption hits ~87.5% of modules, so a
+    20-module sample cannot miss it; the dequant check additionally catches
+    any transform the saved tensors cannot explain (garbage packed values,
+    wrong scales that happen to be finite, lost per-column multiplies).
+    """
+    from pipeline.verify_quant_checkpoint import verify
+
+    dequant_base = base if base is not None and Path(base).is_dir() else None
+    if base is not None and dequant_base is None:
+        print(f"[pipeline] dequant check skipped (base not a local dir): {base}")
+    rc = verify(Path(ckpt), check_tensors=True, dequant_base=dequant_base)
+    if rc != 0:
+        raise RuntimeError(
+            "quant checkpoint verification gate FAILED (see [FAIL] lines "
+            "above) — do not serve or evaluate this checkpoint; see "
+            "BUGS_AND_FIXES.md 'distributed qparam broadcast lost under "
+            "disk offload'"
+        )
+    print("[pipeline] quant-verify gate OK: structure + sampled tensors healthy")
+
+
 def assert_vma_budget_for_shared_offload(
     cfg: PipelineConfig,
     dist_ctx: DistributedContext,
@@ -864,6 +897,7 @@ def run_quantize(
                 if part.strip()
             ]
             assert_smooth_fold_consistency(ckpt, Path(cfg.model.id), gate_layers)
+            assert_quant_checkpoint_verified(ckpt, Path(cfg.model.id))
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.

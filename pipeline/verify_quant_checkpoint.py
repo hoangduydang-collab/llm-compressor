@@ -112,7 +112,7 @@ def _ok(msg: str) -> None:
     print(f"  [ok]   {msg}")
 
 
-def verify(ckpt: Path, check_tensors: bool) -> int:
+def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -298,7 +298,107 @@ def verify(ckpt: Path, check_tensors: bool) -> int:
         print("\n== sampled tensor checks (finiteness + scale shape) ==")
         _check_tensors(ckpt, keys, gsize, errors, warnings)
 
+    # ---- 7. optional dequant-vs-base value check ----------------------------
+    if dequant_base is not None:
+        print("\n== sampled dequant-vs-base checks ==")
+        _check_dequant(ckpt, Path(dequant_base), keys, errors, warnings)
+
     return _summary(errors, warnings)
+
+
+# Candidate checkpoints use transformers projection names; some base exports
+# (and all vLLM-portable re-exports) use w1/w2/w3 for routed experts.
+_ROUTED_ALIASES = {".gate_proj.": ".w1.", ".down_proj.": ".w2.", ".up_proj.": ".w3."}
+
+# Thresholds calibrated on known checkpoints (2026-07-19): consistent AWQ W4
+# g128 (r9) fits base with residual 0.09-0.12 and per-column smoothing scales
+# 0.7-1.4; garbage-scale checkpoints (r15/r3) are NaN / O(1). GPTQ (no
+# smoothing) fits with scale ~1.0.
+_DEQUANT_MAX_RESID = 0.25
+_DEQUANT_SCALE_RANGE = (0.2, 5.0)
+
+
+def _check_dequant(ckpt, base, keys, errors, warnings):
+    """Dequantize sampled packed modules and require them to match the base
+    weights up to a fitted per-input-column scale (absorbs AWQ smoothing; ~1.0
+    for GPTQ) within W4 quantization error. Catches garbage scales, corrupted
+    packed weights, and any transform the saved tensors cannot explain —
+    value-level coverage the finiteness check alone does not give."""
+    import torch
+    from safetensors import safe_open
+
+    try:
+        from compressed_tensors.compressors.pack_quantized.base import (
+            unpack_from_int32,
+        )
+    except ImportError as err:
+        warnings.append(f"dequant check skipped (no unpacker): {err}")
+        return
+
+    idx_path = ckpt / "model.safetensors.index.json"
+    weight_map = json.loads(idx_path.read_text())["weight_map"]
+    base_map = json.loads(
+        (base / "model.safetensors.index.json").read_text()
+    )["weight_map"]
+
+    sample_scales = [k for k in keys if k.endswith(f".{_SCALE}")]
+    sample = sample_scales[:: max(1, len(sample_scales) // 20)][:20]
+    opened: dict[tuple, object] = {}
+
+    def _get(root, wmap, k):
+        shard = (root, wmap[k])
+        if shard not in opened:
+            opened[shard] = safe_open(str(root / wmap[k]), framework="pt")
+        return opened[shard].get_tensor(k)
+
+    def _base_key(pref):
+        cand = f"{pref}.weight"
+        if cand in base_map:
+            return cand
+        for tf_name, alias in _ROUTED_ALIASES.items():
+            if tf_name.strip(".") == pref.rsplit(".", 1)[-1]:
+                aliased = pref.rsplit(".", 1)[0] + alias + "weight"
+                if aliased in base_map:
+                    return aliased
+        return None
+
+    checked = 0
+    for sk in sample:
+        pref = sk[: -len(f".{_SCALE}")]
+        bk = _base_key(pref)
+        pk, shpk = f"{pref}.{_PACKED}", f"{pref}.{_SHAPE}"
+        if bk is None or pk not in weight_map or shpk not in weight_map:
+            continue
+        scale = _get(ckpt, weight_map, sk).float()
+        shape = torch.Size(_get(ckpt, weight_map, shpk).tolist())
+        q = unpack_from_int32(_get(ckpt, weight_map, pk), 4, shape).float()
+        gsize_mod = shape[1] // scale.shape[1]
+        w = q * scale.repeat_interleave(gsize_mod, dim=1)
+        base_w = _get(base, base_map, bk).float()
+        if base_w.shape != w.shape:
+            warnings.append(f"{pref}: base shape {tuple(base_w.shape)} != "
+                            f"dequant {tuple(w.shape)}; skipped")
+            continue
+        checked += 1
+        if not torch.isfinite(w).all():
+            _fail(f"non-finite dequantized weight in {pref}", errors)
+            continue
+        num = (w * base_w).sum(dim=0)
+        den = (base_w * base_w).sum(dim=0).clamp_min(1e-12)
+        col_scale = num / den
+        resid = ((w - base_w * col_scale).norm() / base_w.norm()).item()
+        lo, hi = col_scale.min().item(), col_scale.max().item()
+        if resid > _DEQUANT_MAX_RESID:
+            _fail(f"dequant mismatch in {pref}: resid={resid:.3f} "
+                  f"(max {_DEQUANT_MAX_RESID})", errors)
+        elif not (_DEQUANT_SCALE_RANGE[0] <= lo and hi <= _DEQUANT_SCALE_RANGE[1]):
+            _fail(f"implausible column scales in {pref}: "
+                  f"[{lo:.3f}, {hi:.3f}]", errors)
+    if checked and not any("dequant" in e or "column scales" in e for e in errors):
+        _ok(f"sampled {checked} modules: dequantized weights match base "
+            f"(resid <= {_DEQUANT_MAX_RESID}, scales sane)")
+    elif not checked:
+        warnings.append("dequant check matched no modules (name mismatch?)")
 
 
 def _check_tensors(ckpt, keys, gsize, errors, warnings):
@@ -361,11 +461,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ckpt", required=True, type=Path, help="checkpoint dir")
     ap.add_argument("--check-tensors", action="store_true",
                     help="also open shards and validate sampled scales/weights")
+    ap.add_argument("--dequant-base", type=Path, default=None,
+                    help="base checkpoint dir: dequantize sampled modules and "
+                         "require value-level agreement (fitted per-column "
+                         "smoothing scale, W4-error residual)")
     args = ap.parse_args(argv)
     if not (args.ckpt / "config.json").exists():
         print(f"error: {args.ckpt}/config.json not found")
         return 2
-    return verify(args.ckpt, args.check_tensors)
+    return verify(args.ckpt, args.check_tensors, args.dequant_base)
 
 
 if __name__ == "__main__":

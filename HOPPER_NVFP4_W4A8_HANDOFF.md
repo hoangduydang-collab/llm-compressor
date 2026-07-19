@@ -1,11 +1,11 @@
 # Execution packet: Hopper NVFP4 W4A8 Humming proof probe
 
 - Protocol version: 1
-- State: PLANNER_ANALYSIS
+- State: READY_FOR_EXECUTOR
 - Packet revision: 2026-07-19-r1
 - Planner owner: Codex planner
 - Intended executor: any cluster executor
-- Base Git commit: `TO_BE_REPLACED_AFTER_IMPLEMENTATION_COMMIT`
+- Base Git commit: `8e0456a16b8ceb02513ac059f2595d35d80db6a7`
 - Decision question: Does the patched Humming A8/E2M1/g16 specialization
   compile on SM90 and satisfy exact K16 scale isolation, numerical,
   packed-memory, and WGMMA instruction gates?
@@ -92,16 +92,20 @@ cd "$REPO"
 git fetch origin
 git checkout duy-branch
 git pull --ff-only origin duy-branch
-EXPECTED=TO_BE_REPLACED_AFTER_IMPLEMENTATION_COMMIT
-ACTUAL="$(git rev-parse HEAD)"
-printf 'expected=%s\nactual=%s\n' "$EXPECTED" "$ACTUAL"
-test "$ACTUAL" = "$EXPECTED"
+EXPECTED_BASE=8e0456a16b8ceb02513ac059f2595d35d80db6a7
+ACTUAL_HEAD="$(git rev-parse HEAD)"
+git merge-base --is-ancestor "$EXPECTED_BASE" "$ACTUAL_HEAD"
+CHANGED_AFTER_BASE="$(git diff --name-only "$EXPECTED_BASE".."$ACTUAL_HEAD")"
+printf 'expected_base=%s\nactual_head=%s\nchanges_after_base=%s\n' \
+  "$EXPECTED_BASE" "$ACTUAL_HEAD" "$CHANGED_AFTER_BASE"
+test "$CHANGED_AFTER_BASE" = "HOPPER_NVFP4_W4A8_HANDOFF.md"
 git status --porcelain=v1 --untracked-files=all
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 ```
 
-Expected: expected and actual full SHAs are identical; status is empty. Stop
-before environment mutation if either condition fails.
+Expected: the exact implementation base is an ancestor, the only packet
+activation change after it is this handoff, and status is empty. Record the
+actual packet HEAD. Stop before environment mutation if any condition fails.
 
 ### Preflight
 

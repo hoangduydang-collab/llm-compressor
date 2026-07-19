@@ -1027,6 +1027,26 @@ checkpoint; TP8 HTTP serving smoke launched next
 `async_baseline_1` production-envelope case via the cudagraph matrix
 harness).
 
+**Serving-smoke lesson (2026-07-19): raw checkpoints must be re-exported
+before vLLM serving.** The first r3 smoke served the RAW checkpoint and
+reproduced the classic `"arringarring…"` collapse (server healthy, graphs
+captured 51/51, HTTP 200) — because raw transformers exports name routed
+experts `gate_proj/down_proj/up_proj` while the vLLM M3 loader expects
+`w1/w2/w3`, so all 21,888 quantized expert tensors silently miss at load
+(the 2026-07-09 wiring class, NOT quant quality; calibration data cannot fix
+it). The serve-ABI gate passes raw checkpoints **by design** — its
+`transformers_alias` treats `w1↔gate_proj` as equivalent because the rename
+is the prepare step's job (`python -m pipeline.reexport_minimax_m3_vllm SRC
+DST`, header-only rename + byte-identical payloads, ~6 min for 225 GB, no
+re-quant — same transform that produced
+`artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123`). r3 portable
+re-export verified (5 shards, 65,664 routed keys renamed) at
+`…/20260719-040810/checkpoint-vllm-w123`; smoke relaunched against it
+(`20260719T130731Z`). Also: the matrix harness classifier calls bare
+`python` — srun controllers must export
+`PATH=/mnt/nfs/hoangduy/venvs/quant/bin:$PATH` or the case dies rc=127
+after chat succeeds.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

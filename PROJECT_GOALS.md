@@ -6,7 +6,7 @@ handoffs (`*_HANDOFF.md`, `*_PLAN.md`) carry the current work; this file carries
 *why*. Keep the status markers current; do not delete a goal when it completes —
 mark it `DONE` with a pointer to the evidence.
 
-Last reviewed: 2026-07-16.
+Last reviewed: 2026-07-19.
 
 ## Long-term goals
 
@@ -33,6 +33,19 @@ Last reviewed: 2026-07-16.
    Generalize the serving-ABI gate and the pre-quantization static gate so they
    apply to any model family, not just MiniMax-M3.
 
+6. **Packed NVFP4 W4A8 fallback on Hopper** — *Planned: benchmark-gated.*
+   Enable officially released NVFP4 checkpoints to run on H100/H200 with packed
+   four-bit weights in GPU memory, dynamic FP8 activations, in-kernel E2M1-to-FP8
+   conversion and scaling, FP8 Tensor Core multiplication, FP32 accumulation,
+   and BF16 output. Build on the existing vLLM NVFP4/Marlin loaders and NVIDIA
+   CUTLASS SM90 mixed-input WGMMA machinery rather than writing a kernel from
+   scratch. First compare a dense proof of concept against upstream NVFP4 W4A16
+   Marlin and load-expanded W8A8; proceed to MoE production work only if the
+   dense path passes correctness and target-workload throughput gates. See
+   `docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md`.
+
 ## Current session focus
 
 **Goals 1 and 2.** Everything else is context, not the immediate objective.
+Goal 6 is an approved future project, but it remains benchmark-gated and does
+not displace the current session focus.

@@ -1002,6 +1002,18 @@ save-path gates only (no quality claims). The full r2 checkpoint must not be
 served or evaluated; rerun full calibration after the fix (smoke r15 first —
 standard gate for any calibration-path change).
 
+**Validation (2026-07-19):** smoke r15
+(`20260719T032045Z-m3-ddp-quant-smoke-r15-foldfix`) PASSED end to end with the
+fix: controller/torchrun rc=0, in-line `smooth-fold gate OK` on layers
+3/31/59, and the independent scale audit shows the consistent folded
+signature — router/shared compensation relative-L2 2.5e-3–4.1e-3 with
+norm-implied scale means 0.77–0.91 (vs exactly 1.0 and 0.09–0.27 for broken
+r2; matches r9's ≈3e-3 reference). Serving-ABI gate valid, 1,152 quantized
+modules. Full calibration relaunched as r3
+(`20260719T040748Z-m3-ddp-awq-full-r3-foldfix`, slurm 13027, 8×H100); the
+smooth-fold gate now runs in-line after every save, so a recurrence fails the
+run instead of producing another silently broken checkpoint.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

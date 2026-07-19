@@ -590,6 +590,58 @@ def assert_transformers_offloaded_save_healthy() -> None:
     print(f"[pipeline] offloaded-save gate OK: transformers path is {health}")
 
 
+def assert_smooth_fold_consistency(
+    ckpt: Path,
+    base: Path,
+    layers: list[int],
+    threshold: float = 0.02,
+) -> None:
+    """Fail-closed post-save gate: a smoothing fold applied to balance layers
+    (router / shared experts) must be matched by the inverse fold in the norm.
+
+    The full-calibration AWQ run r2 (2026-07-18) saved a checkpoint whose
+    routers carried the per-channel smoothing multiply while the offset norm
+    kept base values — ``CalibrationOffsetNorm.restore`` wrote via raw
+    ``.data`` assignment, which the disk OffloadCache never persisted. The
+    static serving-ABI gate cannot see numerics; this gate re-derives the
+    norm-implied scale from the saved checkpoint and requires it to explain
+    the router and shared-expert weight changes.
+
+    Reference magnitudes (relative L2, layers 3/31/59): consistent AWQ fold
+    (r9) ≈ 3e-3; no smoothing (GPTQ) ≈ 2e-3; lost norm fold (r2) 0.09–0.27.
+
+    Skips (with a printed reason) when the checkpoint does not expose
+    M3-style norm/router tensor names.
+    """
+    from pipeline.m3_checkpoint_scale_audit import audit_checkpoint
+
+    try:
+        report = audit_checkpoint(Path(base), Path(ckpt), layers)
+    except (ValueError, KeyError, FileNotFoundError) as err:
+        print(f"[pipeline] smooth-fold gate skipped (names not resolvable): {err}")
+        return
+
+    failures = []
+    for layer, record in report["layers"].items():
+        for component in ("router_compensation", "shared_gate_up_compensation"):
+            err = record[component]["relative_l2_error"]
+            if err > threshold:
+                failures.append(f"layer {layer} {component}: rel_l2={err:.3e}")
+    if failures:
+        raise RuntimeError(
+            "smooth-fold consistency gate FAILED — balance-layer weights moved "
+            "in ways the saved norm cannot explain (lost or partial smoothing "
+            "fold; checkpoint numerics are inconsistent):\n  "
+            + "\n  ".join(failures)
+            + f"\n  threshold={threshold} (consistent fold ≈ 3e-3; see "
+            "BUGS_AND_FIXES.md 'AWQ smoothing fold lost under disk offload')"
+        )
+    print(
+        "[pipeline] smooth-fold gate OK: norm-implied scale explains balance "
+        f"layers on layers {sorted(int(k) for k in report['layers'])}"
+    )
+
+
 def assert_vma_budget_for_shared_offload(
     cfg: PipelineConfig,
     dist_ctx: DistributedContext,
@@ -802,6 +854,16 @@ def run_quantize(
             versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
             print(f"[pipeline] saved checkpoint to {ckpt}")
         dist_ctx.barrier()
+
+        # After the barrier so a gate failure on the source rank cannot strand
+        # other ranks in a collective (the r11/r12 zombie choreography).
+        if dist_ctx.is_source or not dist_ctx.enabled:
+            gate_layers = [
+                int(part)
+                for part in os.environ.get("M3_DIAGNOSTIC_LAYERS", "3,31,59").split(",")
+                if part.strip()
+            ]
+            assert_smooth_fold_consistency(ckpt, Path(cfg.model.id), gate_layers)
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.

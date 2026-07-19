@@ -21,6 +21,7 @@ from abc import ABC, abstractmethod
 
 import torch
 from compressed_tensors.registry import RegistryMixin, standardize_lookup_name
+from compressed_tensors.utils import update_offload_parameter
 from loguru import logger
 from transformers import PreTrainedModel
 
@@ -90,7 +91,13 @@ class CalibrationOffsetNorm(NormCalibrationModule):
         return output.type_as(x)
 
     def restore(self, original: torch.nn.Module) -> torch.nn.Module:
-        original.weight.data = (self.weight.data.float() - 1.0).to(self._orig_dtype)
+        # Write through the offload cache: with disk/dict-backed offload the
+        # cache (not the module parameter) is what save_pretrained reads, so a
+        # raw ``original.weight.data = ...`` assignment silently loses the
+        # smoothing fold (norm stays at base values while AWQ balance layers
+        # keep their multiplied scales — an inconsistent checkpoint).
+        restored = (self.weight.data.float() - 1.0).to(self._orig_dtype)
+        update_offload_parameter(original, "weight", restored)
         return original
 
 

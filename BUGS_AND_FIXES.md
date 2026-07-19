@@ -954,6 +954,54 @@ match with r13). Full-calibration AWQ relaunched immediately after as
   compressed-tensors prerelease and its transformers floor is 5.5.3; nothing in
   the quant-venv upgrade requires touching it.
 
+## AWQ smoothing fold lost under disk offload (full r2 post-mortem, 2026-07-19)
+
+**Symptom:** the first full-calibration AWQ run with disk offload
+(`20260718T160612Z-m3-ddp-awq-full-r2-tf514`, ~6.8h calibration, 5 shards /
+240.9 GB, controller rc=0, serving-ABI gate valid with 21,888 quantized
+Linears) failed the checkpoint scale audit: on layers 3/31/59 the router and
+shared-expert weights carry a per-input-channel smoothing multiply (verified
+rank-1 column fit, residual ≈ 2e-3, scale range 0.75–1.34) while the
+post-attention norms are **byte-identical to base** — norm-implied scale
+exactly 1.0, router relative-L2 0.09–0.27. The checkpoint is numerically
+inconsistent: expert inputs are effectively scaled twice. r13 (5.12.1+shims)
+and r14 (5.14.1 native) smoke checkpoints show byte-identical signatures, so
+the transformers upgrade is exonerated; r9 (2026-07-17, CPU placement, no
+disk offload) shows the consistent folded signature (norm delta 0.46–0.89,
+compensation residual ≈ 3e-3). The regression entered with disk offload
+(r10+, `max_memory cpu=32GB` + `offload_folder`).
+
+**Root cause:** `CalibrationOffsetNorm.restore`
+(`src/llmcompressor/modeling/offset_norm.py`) wrote the folded norm back with
+a raw `original.weight.data = ...` assignment. With compressed-tensors
+offload, `module._parameters` is an `OffloadCache`: attribute reads onload a
+fresh tensor from offloaded storage, so raw `.data` writes mutate a temporary
+view and never reach the disk copy that `save_pretrained` reads. The AWQ
+balance path writes via `update_offload_parameter` (cache write-through),
+which is why the router/expert multiplies persisted while the norm divide
+vanished — precisely the inconsistent half-fold.
+
+**Fixes:**
+1. `CalibrationOffsetNorm.restore` now writes through
+   `update_offload_parameter` (one-line mechanism change).
+2. Regression tests `tests/llmcompressor/modeling/test_offset_norm_offload.py`:
+   fold must survive a disk-offloaded norm end to end (verified to fail on the
+   old code), plus an environment pin that raw `.data` writes do not persist
+   (if that ever changes upstream, restore can be simplified).
+3. **Fail-closed post-save gate** `assert_smooth_fold_consistency` in
+   `pipeline/quantize.py`, wired on the source rank after the post-save
+   barrier (so a gate failure cannot strand other ranks in a collective): it
+   re-derives the norm-implied scale from the saved checkpoint and requires it
+   to explain the router and shared-expert changes (threshold 0.02 vs ≈3e-3
+   for a consistent fold and 0.09–0.27 for the bug). Validated to pass on r9
+   and fail on r2. The static serving-ABI gate cannot catch numerics drift —
+   this closes that gap for smoothing folds.
+
+**Disposition of affected checkpoints:** r13/r14 smoke checkpoints were
+save-path gates only (no quality claims). The full r2 checkpoint must not be
+served or evaluated; rerun full calibration after the fix (smoke r15 first —
+standard gate for any calibration-path change).
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

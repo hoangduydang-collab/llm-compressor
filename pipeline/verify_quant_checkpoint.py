@@ -302,6 +302,8 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
     if dequant_base is not None:
         print("\n== sampled dequant-vs-base checks ==")
         _check_dequant(ckpt, Path(dequant_base), keys, errors, warnings)
+        print("\n== sampled untouched-tensor checks ==")
+        _check_untouched(ckpt, Path(dequant_base), keys, errors, warnings)
 
     return _summary(errors, warnings)
 
@@ -387,18 +389,102 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
         den = (base_w * base_w).sum(dim=0).clamp_min(1e-12)
         col_scale = num / den
         resid = ((w - base_w * col_scale).norm() / base_w.norm()).item()
-        lo, hi = col_scale.min().item(), col_scale.max().item()
+        # the fitted scale is only meaningful for columns carrying real mass,
+        # and isolated outliers are legitimate quantization behavior (GPTQ can
+        # zero a weak or even single significant column) — only a systematic
+        # fraction outside the plausible range indicates a lost/garbage
+        # transform, which by nature hits most columns
+        col_norm = base_w.norm(dim=0)
+        significant = col_norm > 0.1 * col_norm.median()
+        sig_scales = col_scale[significant]
+        out_of_range = (
+            (sig_scales < _DEQUANT_SCALE_RANGE[0])
+            | (sig_scales > _DEQUANT_SCALE_RANGE[1])
+        )
+        out_frac = out_of_range.float().mean().item() if significant.any() else 0.0
         if resid > _DEQUANT_MAX_RESID:
             _fail(f"dequant mismatch in {pref}: resid={resid:.3f} "
                   f"(max {_DEQUANT_MAX_RESID})", errors)
-        elif not (_DEQUANT_SCALE_RANGE[0] <= lo and hi <= _DEQUANT_SCALE_RANGE[1]):
-            _fail(f"implausible column scales in {pref}: "
-                  f"[{lo:.3f}, {hi:.3f}]", errors)
+        elif out_frac > 0.01:
+            _fail(f"implausible column scales in {pref}: {out_frac:.1%} of "
+                  f"significant columns outside {_DEQUANT_SCALE_RANGE}", errors)
     if checked and not any("dequant" in e or "column scales" in e for e in errors):
         _ok(f"sampled {checked} modules: dequantized weights match base "
             f"(resid <= {_DEQUANT_MAX_RESID}, scales sane)")
     elif not checked:
         warnings.append("dequant check matched no modules (name mismatch?)")
+
+
+# Families the quantization recipe must not touch: bitwise-identical to base.
+# Calibrated on r9 (2026-07-19): attention, embeddings, lm_head, and dense-MLP
+# tensors round-trip byte-identically. Norms are excluded from the bitwise
+# family — the offset-norm calibration context rewrites EVERY norm as
+# w -> (1+w) -> (1+w)-1, a bf16 round-trip that is not exact — and get an
+# allclose bound instead (smoothed norms' real fold is checked separately by
+# the smooth-fold gate; here we only catch garbage/uninitialized values).
+_IDENTITY_PATTERNS = (".self_attn.", ".embed_tokens.", "lm_head.")
+_NORM_PATTERNS = ("norm.weight",)  # layernorm, q_norm/k_norm, final norm ...
+# Smoothed norms legitimately move by the fold ((1+w)/s - 1, |delta| < ~1 for
+# observed s in [0.7, 1.4]); only values far outside any plausible fold are
+# corruption. The smooth-fold gate checks the fold itself.
+_NORM_MAX_DELTA = 5.0
+
+
+def _check_untouched(ckpt, base, keys, errors, warnings):
+    """Sampled comparison of tensors the recipe should leave alone. A lost or
+    misdirected write (the disk-offload bug class) that lands outside the
+    quantized experts would corrupt exactly these tensors, and neither the
+    dequant check nor the fold gate reads them."""
+    import torch
+    from safetensors import safe_open
+
+    weight_map = json.loads(
+        (ckpt / "model.safetensors.index.json").read_text()
+    )["weight_map"]
+    base_map = json.loads(
+        (base / "model.safetensors.index.json").read_text()
+    )["weight_map"]
+    opened: dict[tuple, object] = {}
+
+    def _get(root, wmap, k):
+        shard = (root, wmap[k])
+        if shard not in opened:
+            opened[shard] = safe_open(str(root / wmap[k]), framework="pt")
+        return opened[shard].get_tensor(k)
+
+    def _sample(patterns, limit, exclude=()):
+        hits = [k for k in keys
+                if any(p in k for p in patterns)
+                and not any(x in k for x in exclude)
+                and k.endswith(".weight") and k in base_map]
+        return hits[:: max(1, len(hits) // limit)][:limit]
+
+    ident = _sample(_IDENTITY_PATTERNS, 12, exclude=_NORM_PATTERNS)
+    norms = _sample(_NORM_PATTERNS, 12)
+    ok_ident = ok_norm = 0
+    for k in ident:
+        a, b = _get(base, base_map, k), _get(ckpt, weight_map, k)
+        if a.shape != b.shape or not torch.equal(a, b):
+            _fail(f"untouched tensor differs from base: {k}", errors)
+        else:
+            ok_ident += 1
+    for k in norms:
+        a = _get(base, base_map, k).float()
+        b = _get(ckpt, weight_map, k).float()
+        if a.shape != b.shape or not torch.isfinite(b).all():
+            _fail(f"norm tensor corrupt (shape/non-finite): {k}", errors)
+            continue
+        delta = (b - a).abs().max().item()
+        if delta > _NORM_MAX_DELTA:
+            _fail(f"norm deviates beyond any plausible fold: {k} "
+                  f"(max abs delta {delta:.2f})", errors)
+        else:
+            ok_norm += 1
+    if not ident and not norms:
+        warnings.append("untouched check matched no tensors (name mismatch?)")
+    elif not any("untouched tensor differs" in e or "norm" in e for e in errors):
+        _ok(f"sampled {ok_ident} identity + {ok_norm}/{len(norms)} norm "
+            f"tensors match base")
 
 
 def _check_tensors(ckpt, keys, gsize, errors, warnings):

@@ -1014,6 +1014,19 @@ modules. Full calibration relaunched as r3
 smooth-fold gate now runs in-line after every save, so a recurrence fails the
 run instead of producing another silently broken checkpoint.
 
+**Full r3 PASSED (2026-07-19):** ~8h wall clock end to end, controller and
+torchrun rc=0, 5 shards / 225 GB. In-line gates: offloaded-save OK,
+`smooth-fold gate OK` on layers 3/31/59. Independent 5-layer audit (3, 15,
+31, 45, 59) shows the consistent folded signature everywhere:
+router/shared compensation relative-L2 2.3e-3–4.1e-3, norm-implied scale
+means 0.73–0.91 (audit JSON at the run root:
+`scale_audit_r3_vs_base.json`). Serving-ABI gate valid with all 21,888
+quantized Linears. r3 replaces quarantined r2 as the in-house full AWQ
+checkpoint; TP8 HTTP serving smoke launched next
+(`20260719T121905Z-m3-awq-full-r3-serve-smoke`, single
+`async_baseline_1` production-envelope case via the cudagraph matrix
+harness).
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

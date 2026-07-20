@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Goal 2 field note: the temporary paired-fidelity evaluation pipeline comparing in-house GPTQ, external AWQ, official MXFP8, and the BF16 baseline for MiniMax-M3, with a fully reproducible harness setup.">
+  <title>Goal 2 · Temporary Evaluation Pipeline · Field Note</title>
+  <style>
+    :root{
+      --paper:#f1ecdf;--paper-light:#faf7ef;--ink:#17201d;--muted:#62665f;--rule:#b9b19f;
+      --oxide:#b3482d;--oxide-dark:#78311f;--verified:#2f6a53;--verified-light:#dce9df;
+      --amber:#d59b35;--blueprint:#183a47;
+      --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+      --mono:"Cascadia Mono","IBM Plex Mono",Consolas,monospace;
+      --sans:"Aptos Narrow","Arial Narrow",sans-serif;--reading:800px;
+    }
+    *{box-sizing:border-box;}html{scroll-behavior:smooth;}
+    body{margin:0;overflow-x:hidden;color:var(--ink);
+      background:linear-gradient(90deg,transparent 49.8%,rgba(56,50,39,.025) 50%,transparent 50.2%),
+        repeating-linear-gradient(0deg,rgba(60,54,44,.018) 0,rgba(60,54,44,.018) 1px,transparent 1px,transparent 5px),var(--paper);
+      font-family:var(--serif);font-size:18px;line-height:1.68;text-rendering:optimizeLegibility;}
+    a{color:var(--oxide-dark);text-decoration-thickness:1px;text-underline-offset:.18em;}
+    a:hover{color:var(--oxide);}
+    code{font:.85em/1.3 var(--mono);background:rgba(23,32,29,.07);padding:.08em .3em;border-radius:2px;overflow-wrap:anywhere;}
+    strong{font-weight:750;}
+    .nav{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;padding:10px clamp(18px,4vw,64px);
+      background:var(--ink);color:var(--paper-light);font:700 11px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;}
+    .nav a{color:#c9d4cf;text-decoration:none;} .nav a:hover{color:#fff;} .nav a.here{color:#99d1b7;} .nav .sep{color:#5a6b64;}
+    header.hero{position:relative;overflow:hidden;padding:clamp(48px,7vw,92px) clamp(22px,7vw,96px) 52px;border-bottom:1px solid var(--ink);}
+    header.hero::after{content:"02";position:absolute;right:1vw;bottom:-9vw;color:rgba(179,72,45,.08);
+      font:900 clamp(200px,28vw,420px)/.75 var(--sans);letter-spacing:-.06em;pointer-events:none;}
+    .kicker{margin:0 0 22px;color:var(--oxide);font:800 12px/1.2 var(--mono);letter-spacing:.16em;text-transform:uppercase;}
+    h1{max-width:980px;margin:0;font:750 clamp(40px,6vw,84px)/.94 var(--serif);letter-spacing:-.045em;}
+    h1 em{color:var(--oxide);font-weight:500;}
+    .deck{position:relative;z-index:1;max-width:720px;margin:32px 0 0;padding-left:22px;border-left:6px solid var(--ink);font-size:clamp(19px,2vw,24px);line-height:1.4;}
+    .hero-meta{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px;margin-top:38px;font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    .stamp{padding:9px 11px;border:1px solid var(--ink);background:rgba(250,247,239,.56);}
+    .status{display:inline-block;white-space:nowrap;padding:6px 9px;font:800 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .status.working{color:#fff;background:var(--verified);}
+    .status.hold{color:#fff;background:var(--oxide);}
+    .status.planned{color:var(--ink);background:#e7c36d;}
+    main{max-width:1120px;margin:0 auto;padding:64px clamp(20px,4vw,54px) 100px;}
+    section{scroll-margin-top:28px;margin:0 0 76px;}
+    h2{margin:0 0 24px;font:720 clamp(28px,4vw,48px)/1.03 var(--serif);letter-spacing:-.03em;}
+    h2 .number{display:block;margin-bottom:11px;color:var(--oxide);font:800 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;}
+    h3{margin:40px 0 13px;font:720 24px/1.15 var(--serif);}
+    h4{margin:26px 0 8px;font:800 12px/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--oxide-dark);}
+    p{margin:0 0 1.2em;max-width:var(--reading);}
+    ul,ol{max-width:var(--reading);} li{margin:0 0 .5em;}
+    .lead{font-size:22px;line-height:1.5;}
+    .dropcap::first-letter{float:left;margin:.08em .12em 0 0;color:var(--oxide);font:760 4em/.72 var(--serif);}
+    .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:30px 0;max-width:var(--reading);}
+    .legend .m{padding:16px 18px;border:1px solid var(--ink);background:rgba(250,247,239,.7);}
+    .legend .m b{display:block;font:800 13px/1.2 var(--mono);color:var(--oxide-dark);letter-spacing:.03em;}
+    .legend .m span{display:block;margin-top:6px;font-size:14.5px;line-height:1.4;color:var(--muted);}
+    .table-scroll{overflow-x:auto;margin:28px 0;border-top:6px solid var(--ink);}
+    table{width:100%;border-collapse:collapse;background:rgba(250,247,239,.56);font-size:14.5px;line-height:1.45;}
+    caption{padding:13px 0;color:var(--muted);font:700 11px/1.3 var(--mono);text-align:left;letter-spacing:.08em;text-transform:uppercase;}
+    th,td{padding:12px 13px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top;}
+    th{color:var(--muted);font:800 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+    td:first-child{font-weight:700;}
+    .best{background:rgba(47,106,83,.14);font-weight:750;}
+    .worst{color:var(--oxide-dark);}
+    .callout{margin:32px 0;padding:24px 26px;border:1px solid var(--rule);border-top:7px solid var(--verified);background:var(--verified-light);max-width:var(--reading);}
+    .callout.warning{border-top-color:var(--oxide);background:#f1dfd6;}
+    .callout.blue{border-top-color:var(--blueprint);background:#dde6ea;}
+    .callout h3{margin:0 0 9px;font-size:21px;}
+    .callout p:last-child{margin-bottom:0;}
+    .chip{display:inline-flex;align-items:center;gap:6px;margin:2px 3px 2px 0;padding:5px 8px;border-radius:999px;font:750 10px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;}
+    .chip.obs{color:#fff;background:var(--oxide-dark);} .chip.up{color:#fff;background:var(--verified);}
+    pre{margin:20px 0;padding:20px 22px;overflow-x:auto;background:var(--ink);color:#e7ede9;border-left:5px solid var(--oxide);
+      font:13px/1.55 var(--mono);border-radius:2px;max-width:var(--reading);}
+    pre .c{color:#8fa39c;} pre .k{color:#e6bf68;}
+    .roadmap{margin:30px 0 0;padding:0;list-style:none;counter-reset:road;max-width:var(--reading);}
+    .roadmap li{counter-increment:road;display:grid;grid-template-columns:48px 1fr;gap:16px;padding:20px 0;border-top:1px solid var(--rule);margin:0;}
+    .roadmap li::before{content:counter(road,decimal-leading-zero);color:var(--oxide);font:800 24px/1 var(--mono);}
+    .src{margin:8px 0 0;font:600 12.5px/1.5 var(--mono);color:var(--muted);max-width:var(--reading);}
+    .src code{background:rgba(23,32,29,.05);}
+    .hashbox{margin:18px 0;padding:16px 18px;background:rgba(24,58,71,.06);border:1px dashed var(--blueprint);font:600 11.5px/1.7 var(--mono);overflow-x:auto;max-width:var(--reading);}
+    .hashbox span{color:var(--muted);}
+    .ledger{columns:2;column-gap:40px;margin:0;padding:0;list-style:none;max-width:none;}
+    .ledger li{break-inside:avoid;margin:0 0 11px;padding:0 0 11px;border-bottom:1px solid var(--rule);font:600 13px/1.45 var(--mono);}
+    .ledger .t{display:block;margin-bottom:4px;color:var(--muted);font-size:9px;letter-spacing:.1em;text-transform:uppercase;}
+    footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
+    footer strong{color:#fff;}
+    @media (max-width:620px){
+      body{font-size:16px;}h1{font-size:36px;}.deck{margin-left:0;}
+      .ledger{columns:1;}th,td{min-width:110px;}header.hero{padding:40px 22px 36px;}
+    }
+    @media print{body{background:#fff;}.nav{display:none;}pre{color:#111;background:#f4f4f4;}a{color:#111;}}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a href="../automatic-quantization-pipeline-progress.html">← Program overview</a>
+    <span class="sep">|</span>
+    <a href="goal-1-fast-parallel-quantization.html">Goal 1</a>
+    <span class="sep">·</span>
+    <a class="here">Goal 2 · Temporary evaluation pipeline</a>
+    <span class="sep">·</span>
+    <a href="goal-6-hopper-packed-nvfp4-w4a8.html">Goal 6</a>
+  </nav>
+
+  <header class="hero">
+    <p class="kicker">Goal 02 / engineering field note · <span class="status working">Work in progress</span></p>
+    <h1>The <em>temporary</em> evaluation pipeline</h1>
+    <p class="deck">A stopgap harness that answers one question well: does our quantized checkpoint hold up against other quants and against BF16 — on identical prompts, identical samples, identical decoding — while a fuller official pipeline is built later.</p>
+    <div class="hero-meta">
+      <span class="stamp">4 checkpoints compared</span>
+      <span class="stamp">lm-eval-harness 0.4.12 · vLLM</span>
+      <span class="stamp">Paired fidelity, not leaderboard scores</span>
+    </div>
+  </header>
+
+  <main>
+    <article>
+
+      <section id="motivation">
+        <h2><span class="number">01 / Motivation</span>Fidelity, measured the same way every time</h2>
+        <p class="lead dropcap">Vendor evaluations use long completions, stochastic multi-trial sampling, and private harnesses. Reproducing a headline score is slow and noisy — and it is not the question we actually need answered.</p>
+        <p>The question this pipeline answers is <strong>paired quantization fidelity</strong>: how does our in-house checkpoint compare to alternatives when <em>every</em> checkpoint receives the same prompt rendering, the same exact examples, the same decoding settings, and the same scoring implementation? That is done with EleutherAI's <code>lm-evaluation-harness</code> on its vLLM backend. Model quality is explicitly the <strong>first deliverable</strong>.</p>
+        <p>It is deliberately minimal — a stopgap. Whole categories of evaluation are documented as <strong>deferred</strong>: vendor headline-score reproduction, an SGLang backend, serving throughput / latency / TTFT / memory sweeps, multimodal benchmarks (MMMU-Pro, Video-MME), and agentic benchmarks (SWE-bench, Terminal-Bench, tau2). Those belong to a later, fuller pipeline; this one exists to make trustworthy <em>model-to-model</em> decisions now.</p>
+        <div class="callout blue">
+          <h3>What &ldquo;temporary&rdquo; means precisely</h3>
+          <p>The repository does not use the word &ldquo;temporary,&rdquo; and does not promise a specific future &ldquo;official pipeline.&rdquo; What it <em>does</em> state is that quality comparison is the first deliverable and that the scope above is deferred. Read this page's &ldquo;temporary&rdquo; framing as: an interim paired-fidelity harness with a deliberately narrow, documented scope — not a claim of a scheduled replacement.</p>
+        </div>
+        <p class="src">Sources: <code>PROJECT_GOALS.md</code> (goal 2); <code>docs/superpowers/specs/2026-07-12-minimax-m3-vllm-quality-evaluation-design.md</code> (purpose, rationale, deferred scope).</p>
+      </section>
+
+      <section id="models">
+        <h2><span class="number">02 / The field</span>Four checkpoints under test</h2>
+        <div class="legend">
+          <div class="m"><b>inhouse_gptq</b><span>Our in-house GPTQ, W4A8 (W4AFP8). The ABI-overlay-repaired checkpoint under <code>artifacts/m3-awq-gptq-prepared/</code>.</span></div>
+          <div class="m"><b>cyankiwi_awq</b><span>External community AWQ, W4A16 INT4 — <code>cyankiwi/MiniMax-M3-AWQ-INT4</code>. The independent quant comparator.</span></div>
+          <div class="m"><b>mxfp8 (official)</b><span>Official <code>MiniMaxAI/MiniMax-M3-MXFP8</code>, W8A16 (served via Marlin W8A16 on Hopper).</span></div>
+          <div class="m"><b>bf16 (baseline)</b><span>Official unquantized <code>MiniMaxAI/MiniMax-M3</code>. The reference every delta is measured against.</span></div>
+        </div>
+        <p class="src">Sources: matrix configs <code>minimax_m3_paired_gptq_awq_reasoning_r4.yaml</code>, <code>minimax_m3_mxfp8_reasoning_r4.yaml</code>, <code>minimax_m3_bf16_reasoning_r4.yaml</code>.</p>
+      </section>
+
+      <section id="results">
+        <h2><span class="number">03 / Results</span>The four-way comparison</h2>
+        <p>Scores are <strong>mean pass@1 over three generation seeds (42, 1234, 4158)</strong>, generation-based, on seeded stratified subsets: <strong>GPQA-Diamond 100, MMLU-Pro 100, GSM8K-CoT 100, AIME25 30</strong> questions. Higher is better; the best model per row is shaded.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>MiniMax-M3 quantization fidelity · mean pass@1 (3 seeds) · seeded subsets</caption>
+            <thead>
+              <tr><th>Task (metric)</th><th class="num">inhouse_gptq<br>W4A8</th><th class="num">cyankiwi_awq<br>W4A16</th><th class="num">mxfp8<br>W8A16</th><th class="num">bf16<br>baseline</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>GPQA-Diamond<br><small>exact_match, flexible-extract</small></td><td class="num">80.7%</td><td class="num worst">61.7%</td><td class="num best">81.7%</td><td class="num">79.3%</td></tr>
+              <tr><td>MMLU-Pro<br><small>exact_match, custom-extract (5-shot)</small></td><td class="num">73.3%</td><td class="num worst">69.0%</td><td class="num">76.3%</td><td class="num best">76.7%</td></tr>
+              <tr><td>GSM8K-CoT<br><small>exact_match, strict-match (8-shot)</small></td><td class="num">77.7%</td><td class="num worst">75.0%</td><td class="num best">84.3%</td><td class="num">81.3%</td></tr>
+              <tr><td>AIME25<br><small>exact_match, none</small></td><td class="num">58.9%</td><td class="num worst">24.4%</td><td class="num">57.8%</td><td class="num best">62.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Same numbers, expressed as change vs. the BF16 baseline</h4>
+        <div class="table-scroll">
+          <table>
+            <caption>Δ from BF16 (percentage points) — positive = above baseline</caption>
+            <thead><tr><th>Task</th><th class="num">inhouse_gptq</th><th class="num">cyankiwi_awq</th><th class="num">mxfp8</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA-Diamond</td><td class="num">+1.3</td><td class="num worst">−17.7</td><td class="num">+2.3</td></tr>
+              <tr><td>MMLU-Pro</td><td class="num">−3.3</td><td class="num worst">−7.7</td><td class="num">−0.3</td></tr>
+              <tr><td>GSM8K-CoT</td><td class="num">−3.7</td><td class="num worst">−6.3</td><td class="num">+3.0</td></tr>
+              <tr><td>AIME25</td><td class="num">−3.3</td><td class="num worst">−37.8</td><td class="num">−4.4</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <h3>What the table supports — and what it does not</h3>
+          <p>Read directionally: our <strong>in-house GPTQ (W4A8) tracks BF16 closely</strong> and stays within a few points on every task, while the <strong>external AWQ comparator degrades sharply</strong>, most severely on AIME25 (−37.8 pts) and GPQA (−17.7 pts). The official MXFP8 is the strongest quant here, roughly baseline-equivalent. But these are <strong>seeded subsets (N = 100 / 30)</strong> with wide confidence intervals; they are valid for <em>model-to-model</em> decisions, not as public-leaderboard scores.</p>
+        </div>
+
+        <div class="callout warning">
+          <h3>Do not confuse harness eras</h3>
+          <p>An earlier report recorded very different GPQA numbers (GPTQ 0.28 / AWQ 0.24) from a superseded <code>r3</code> methodology — multiple-choice <code>acc_norm</code>, <code>temperature=0</code>, thinking disabled. The table above is the current <code>r4</code> harness: generation-based, thinking on, three seeds. The two are not comparable; the r3 numbers are obsolete.</p>
+        </div>
+        <p class="src">Sources: per-model <code>aggregate.json</code> under <code>results/m3-quality/&lt;run&gt;/models/&lt;label&gt;/shards/&lt;shard&gt;/</code>. GPQA for GPTQ/AWQ from the authoritative <code>20260716T080721Z-m3-paired-gpqa-rerun-r48</code> root; reasoning-suite from <code>20260715T075800Z-m3-paired-reasoning-r4</code>; MXFP8 from <code>20260716T094348Z-m3-mxfp8-comparator-r4</code>; BF16 from <code>20260717T062057Z-m3-bf16-tp16-qualification-r50</code>.</p>
+      </section>
+
+      <section id="comparability">
+        <h2><span class="number">04 / Trust</span>Why these four are comparable</h2>
+        <p>Because the four models were evaluated in separate runs, comparability is not assumed — it is <strong>proven by hash</strong>. Every run records the SHA-256 of its harness contract, sample manifest, eval config, tokenizer, chat template, and rendered prompt. A dedicated <strong>cross-run contract gate</strong> checks a candidate run against the reference root and passes only if all fields match byte-for-byte.</p>
+        <p>All four runs share identical values, and the MXFP8 and BF16 runs each passed the gate with <strong>zero mismatches</strong> against the paired-reasoning reference root:</p>
+        <div class="hashbox">
+<span>sample_manifest_sha256 </span> e07d361ef51c3a792b0225516eb7195d21b11b2d826d7e3bb3b560a80c1e06db<br>
+<span>eval_config_sha256     </span> e104fa1c8a5936e3581ab070dd42a7bb8247943d2de37664ac7ee6a2ce4f0288<br>
+<span>harness_contract_sha256</span> a51895c9fffd6d6d8bb684be5674aacb55f0178c2eda0851a60d5a6e6543db9e<br>
+<span>tokenizer_sha256       </span> 8600bdbbb73dc766b95748361b0e928f022349a12ca30ce59d50cf50173c5f51<br>
+<span>chat_template_sha256   </span> 11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64<br>
+<span>rendered_prompt_sha256 </span> 980ca6dd6dbf92692ab7968541cf8e7fb50e633e4b2f2c83ef09477a038bbb5f
+        </div>
+        <p><strong>Comparability claim, stated plainly:</strong> this pipeline is <em>not</em> directly comparable to public leaderboard scores. It is valid only for model-to-model paired decisions, established through the byte-for-byte identical harness/sample contract above — never by conflating a subset score with a full public benchmark.</p>
+        <p class="src">Sources: <code>run_manifest.json</code> and <code>preflight/{harness_contract,tokenizer_contract}.json</code> per run; <code>cross_run_contract_gate.json</code> (MXFP8 &amp; BF16 both <code>"valid": true</code>); comparability statements in <code>M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md</code> and <code>M3_PRODUCTION_EVAL_HANDOFF.md</code>.</p>
+      </section>
+
+      <section id="status">
+        <h2><span class="number">05 / Status</span>What has completed</h2>
+        <p>All four target models have completed the r4 reasoning suite. Return codes are from each shard's <code>return_code.txt</code>.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Completion status by run root</caption>
+            <thead><tr><th>Run root</th><th>Models</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><code>…-paired-reasoning-r4</code></td><td>GPTQ + AWQ</td><td>reasoning_suite <strong>rc 0</strong>; original gpqa arms rc 1 (U+2028 crash, since repaired)</td></tr>
+              <tr><td><code>…-paired-gpqa-rerun-r48</code></td><td>GPTQ + AWQ</td><td>all <strong>rc 0</strong> (gpqa repair)</td></tr>
+              <tr><td><code>…-mxfp8-comparator-r4</code></td><td>MXFP8</td><td>all <strong>rc 0</strong> (after in-place resume; first pass SIGTERM'd at 12 h)</td></tr>
+              <tr><td><code>…-bf16-tp16-qualification-r50</code></td><td>BF16</td><td>all shard <strong>rc 0</strong>; smoke passed 7 gates, <code>ready_for_production=true</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warning">
+          <h3>The one missing piece: the merged report</h3>
+          <p>Per-model <em>comparable</em> scores already exist as <code>aggregate.json</code> (that is what the table above is built from), and cross-run comparability gates pass. But the automated <strong>four-way merged comparison report</strong> — <code>compare.json</code> + a root <code>report.md</code> with BF16-relative flip-rate / McNemar statistics, produced by <code>pipeline/evalsuite/compare.py</code> and <code>report.py</code> — has <strong>not yet been generated</strong> for all four models. The scripts exist and are unit-tested; running the four-way merge is a documented next task.</p>
+        </div>
+        <p class="src">Sources: per-shard <code>return_code.txt</code>; <code>M3_PRODUCTION_EVAL_HANDOFF.md</code> (BF16 qualification, gate pass); <code>pipeline/evalsuite/{compare,report,finalize_report}.py</code>.</p>
+      </section>
+
+      <section id="effort">
+        <h2><span class="number">06 / Effort</span>Most of the work was keeping BF16 alive</h2>
+        <p>The dominant blocker was not scoring — it was getting the unquantized BF16 baseline (which needs 2 nodes at TP16) to initialize and stay up. It took runs r48 through r50 to clear:</p>
+        <ul>
+          <li><strong>CPU starvation (r48).</strong> vLLM's Ray EngineCore hung at &ldquo;Connected to Ray cluster.&rdquo; On Slurm 21.08, <code>srun</code> steps with no <code>--cpus-per-task</code> bind each task to one physical core; the raylet's 192-worker prestart storm starved the driver. Fixed (r49, env-only) with <code>SLURM_CPUS_PER_TASK=192</code> and <code>RAY_enable_worker_prestart=0</code>.</li>
+          <li><strong>NCCL interface (r49→r50).</strong> 16-rank NCCL init failed because node hostnames don't route cross-node. Fixed with <code>NCCL_SOCKET_IFNAME=intranet</code> and <code>GLOO_SOCKET_IFNAME=intranet</code>.</li>
+          <li><strong>Production relaunch defects (r50).</strong> An NCCL PG timeout mid-generation (mitigated by <code>distributed_timeout_seconds: 3600</code>), an alias-vs-resolved-task-name bug, and a stale <code>driver-done</code> Ray sentinel that killed reruns.</li>
+          <li><strong>GPQA sample-checkpoint crash.</strong> A U+2028 line-separator character crashed the GPQA shard checkpoint; fixed in commit <code>703b605b</code>, then the GPQA shard was re-run in isolation (the <code>gpqa-rerun-r48</code> config).</li>
+        </ul>
+        <p>The contract machinery itself — deterministic stratified sample manifests, tokenizer/chat-template/harness hashing, fail-closed smoke gates, the cross-run contract gate, and the <code>srun</code> launcher — was built and unit-tested.</p>
+        <p class="src">Sources: <code>M3_PRODUCTION_EVAL_HANDOFF.md</code> (r48–r50 fixes); design doc (contract machinery); commit <code>703b605b</code>.</p>
+      </section>
+
+      <section id="reproduce">
+        <h2><span class="number">07 / Reproduce</span>Exact harness setup</h2>
+        <p class="lead">Everything a collaborator needs to reproduce a run. All paths are relative to the repo root; the shared harness config is the source of truth and its hash is pinned above.</p>
+
+        <h4>Framework &amp; versions</h4>
+        <ul>
+          <li><strong>Harness:</strong> EleutherAI <code>lm-evaluation-harness</code> via its direct <strong>vLLM</strong> backend.</li>
+          <li><strong>lm_eval version <code>0.4.12</code></strong> (recorded in <code>run_manifest.json</code> and <code>harness_contract.json</code>).</li>
+          <li>Other installed versions (from the <code>quant</code> venv, <em>not</em> persisted per-run): <code>vllm 0.24.0</code>, <code>torch 2.11.0</code>, <code>ray 2.56.0</code>, <code>transformers 5.14.1</code>, <code>compressed_tensors 0.17.2a20260707</code>. CUDA/driver versions are <strong>not</strong> persisted in any run artifact — do not guess them.</li>
+        </ul>
+
+        <h4>Shared harness config — <code>pipeline/configs/eval_minimax_m3_reasoning_r4.yaml</code></h4>
+        <pre><span class="c"># serve block (applies to every arm)</span>
+serve:
+  <span class="k">tensor_parallel_size</span>: 8
+  <span class="k">enable_expert_parallel</span>: true
+  <span class="k">block_size</span>: 128
+  <span class="k">kv_cache_dtype</span>: fp8
+  <span class="k">max_model_len</span>: 65536
+  <span class="k">gpu_memory_utilization</span>: 0.85
+  <span class="k">enforce_eager</span>: true
+  <span class="k">disable_custom_all_reduce</span>: true
+  <span class="k">vllm_kwargs</span>: { distributed_timeout_seconds: 3600 }
+
+<span class="c"># eval block</span>
+eval:
+  <span class="k">backend</span>: vllm
+  <span class="k">apply_chat_template</span>: true
+  <span class="k">fewshot_as_multiturn</span>: true
+  <span class="k">enable_thinking</span>: true            <span class="c"># reasoning mode ON</span>
+  <span class="k">think_end_token</span>: "&lt;/mm:think&gt;"
+  <span class="k">generation_seeds</span>: [42, 1234, 4158]
+  <span class="k">lm_eval_batch_size</span>: auto
+  <span class="k">log_samples</span>: true
+  <span class="k">bootstrap_seed</span>: 42
+  <span class="k">bootstrap_iters</span>: 10000
+  <span class="k">gen_kwargs</span>:
+    temperature: 1.0
+    top_p: 0.95
+    do_sample: true
+    max_gen_toks: 16384</pre>
+        <p class="src">Sampling note (from the harness contract): vLLM samples because <code>temperature&gt;0</code>; <code>do_sample</code> is recorded as harness intent and is not passed to <code>SamplingParams</code>.</p>
+
+        <h4>Tasks / aliases / few-shot / metrics (frozen at preflight)</h4>
+        <div class="table-scroll">
+          <table>
+            <caption>Resolved task contract · lm-eval 0.4.12</caption>
+            <thead><tr><th>Config name</th><th>Installed alias</th><th class="num">few-shot</th><th>metric</th><th>dataset</th><th class="num">task ver</th></tr></thead>
+            <tbody>
+              <tr><td>gpqa_diamond</td><td><code>gpqa_diamond_cot_zeroshot</code></td><td class="num">0</td><td>exact_match, flexible-extract</td><td>Idavidrein/gpqa</td><td class="num">2.2</td></tr>
+              <tr><td>mmlu_pro</td><td><code>mmlu_pro</code> (14 leaves)</td><td class="num">5</td><td>exact_match, custom-extract</td><td>TIGER-Lab/MMLU-Pro</td><td class="num">3.1</td></tr>
+              <tr><td>gsm8k</td><td><code>gsm8k_cot</code></td><td class="num">8</td><td>exact_match, strict-match</td><td>openai/gsm8k (main)</td><td class="num">3.0</td></tr>
+              <tr><td>aime_2025</td><td><code>aime25</code></td><td class="num">0</td><td>exact_match, none</td><td>math-ai/aime25</td><td class="num">0.0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>All tasks are <code>generate_until</code> (generation-based). Sample selection is <code>seeded_proportional_stratified_without_replacement</code> at <code>seed 42</code>: GPQA 100, MMLU-Pro 100 (stratified across the 14 subjects), GSM8K 100, AIME25 30 (full split).</p>
+
+        <h4>Per-model serving topology</h4>
+        <div class="table-scroll">
+          <table>
+            <caption>Model paths &amp; serving layout</caption>
+            <thead><tr><th>Label</th><th>Path</th><th>kind</th><th class="num">nodes</th><th class="num">TP</th><th>dist backend</th></tr></thead>
+            <tbody>
+              <tr><td>inhouse_gptq</td><td><code>artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay</code></td><td>gptq-w4a8</td><td class="num">1</td><td class="num">8</td><td>mp</td></tr>
+              <tr><td>cyankiwi_awq</td><td><code>hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4</code></td><td>awq-w4a16</td><td class="num">1</td><td class="num">8</td><td>mp</td></tr>
+              <tr><td>mxfp8</td><td><code>hf_assets/MiniMaxAI/MiniMax-M3-MXFP8</code></td><td>mxfp8-w8a16</td><td class="num">1</td><td class="num">8</td><td>mp</td></tr>
+              <tr><td>bf16</td><td><code>hf_assets/MiniMaxAI/MiniMax-M3</code></td><td>bf16</td><td class="num">2</td><td class="num">16</td><td>ray</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Launch (srun only — no sbatch)</h4>
+        <p>Top-level <code>srun</code> from a detached <code>tmux</code>, via the launcher, which fans out per-arm:</p>
+        <pre><span class="c"># per-arm launch (from run_m3_quality_eval_srun.sh)</span>
+srun --exclusive --nodes="$nodes" --ntasks="$nodes" \
+     --gpus-per-node=8 --kill-on-bad-exit=1 [--time TIME_LIMIT] …
+
+<span class="c"># required env for the multi-node BF16 arm (not in YAML — set by the controller)</span>
+export SLURM_CPUS_PER_TASK=192
+export RAY_enable_worker_prestart=0
+export NCCL_SOCKET_IFNAME=intranet
+export GLOO_SOCKET_IFNAME=intranet</pre>
+        <p>Launchers: <code>pipeline/slurm/run_m3_quality_eval_srun.sh</code> → <code>test_m3_quality_eval_arm.sh</code>; multi-node arms first pass a 2-node Ray topology gate (<code>test_m3_ray_topology.sh</code>).</p>
+
+        <h4>Reproduction checklist</h4>
+        <ol>
+          <li>Install the pinned venv (lm_eval 0.4.12, vllm 0.24.0, transformers 5.14.1, compressed_tensors 0.17.2a…).</li>
+          <li>Stage all four checkpoints at the paths above.</li>
+          <li>Run each matrix config (they share <code>eval_config: eval_minimax_m3_reasoning_r4.yaml</code>) via the <code>srun</code> launcher from <code>tmux</code>; BF16 needs the extra env exports.</li>
+          <li>Confirm each run's <code>run_manifest.json</code> reproduces the six hashes pinned in §04; run <code>m3_quality_eval contract-gate</code> against the reference root.</li>
+          <li>Read scores from <code>models/&lt;label&gt;/shards/&lt;shard&gt;/aggregate.json</code> (per-model comparable form). The merged report is not yet wired for four-way (see §05).</li>
+        </ol>
+        <p class="src">Sources: <code>pipeline/configs/eval_minimax_m3_reasoning_r4.yaml</code>; matrix configs; <code>preflight/{harness_contract,resolved_tasks,production_sample_manifest,tokenizer_contract}.json</code>; <code>pipeline/slurm/run_m3_quality_eval_srun.sh</code>; <code>M3_PRODUCTION_EVAL_HANDOFF.md</code>.</p>
+      </section>
+
+      <section id="next">
+        <h2><span class="number">08 / Future work</span>Next tasks</h2>
+        <ol class="roadmap">
+          <li>Generate the <strong>merged four-way comparison report</strong> (<code>comparisons/</code>, <code>compare.json</code>, root <code>report.md</code>) — the design's primary deliverable, with BF16-relative flip-rate and McNemar statistics.</li>
+          <li>Bake the multi-node env fixes into the launchers once the hot scripts go cold: <code>--cpus-per-task</code>, the <code>SOCKET_IFNAME</code> exports, a robust Ray placement monitor, and a job-suffixed <code>driver-done</code> sentinel — plus launcher tests.</li>
+          <li>Persist the full version set (vLLM / torch / CUDA / driver) into <code>run_manifest.json</code> to close the reproducibility gap.</li>
+          <li>Add a separate <strong>public-comparable GPQA profile</strong> (198 questions × 5 repeats, vendor prompt/extraction) if headline-score reproduction is ever wanted — kept distinct from the paired regression signal.</li>
+          <li>Deferred to the fuller pipeline: SGLang backend, serving throughput/latency/memory sweeps, multimodal (MMMU-Pro, Video-MME), agentic (SWE-bench, Terminal-Bench, tau2).</li>
+        </ol>
+        <p class="src">Sources: design doc (deliverable &amp; deferred scope); <code>M3_PRODUCTION_EVAL_HANDOFF.md</code> (launcher hardening backlog).</p>
+      </section>
+
+      <section id="ledger">
+        <h2><span class="number">09 / Ledger</span>Sources</h2>
+        <ul class="ledger">
+          <li><span class="t">Design · this fork</span><a href="../../docs/superpowers/specs/2026-07-12-minimax-m3-vllm-quality-evaluation-design.md">vLLM quality-evaluation design</a></li>
+          <li><span class="t">Handoff · this fork</span><a href="../../M3_PRODUCTION_EVAL_HANDOFF.md">M3_PRODUCTION_EVAL_HANDOFF.md</a></li>
+          <li><span class="t">Report · this fork</span><a href="../../M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md">M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md</a></li>
+          <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/eval_minimax_m3_reasoning_r4.yaml">eval_minimax_m3_reasoning_r4.yaml</a></li>
+          <li><span class="t">Code · this fork</span><a href="../../pipeline/evalsuite/compare.py">pipeline/evalsuite/compare.py</a>, <a href="../../pipeline/evalsuite/report.py">report.py</a></li>
+          <li><span class="t">Launcher · this fork</span><a href="../../pipeline/slurm/run_m3_quality_eval_srun.sh">run_m3_quality_eval_srun.sh</a></li>
+          <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 2</li>
+          <li><span class="t">Upstream</span><a href="https://github.com/EleutherAI/lm-evaluation-harness">lm-evaluation-harness</a></li>
+        </ul>
+      </section>
+
+    </article>
+  </main>
+
+  <footer>
+    <strong>Goal 2 field note.</strong> Scores are model-to-model paired signals on seeded subsets (N = 100 / 30), not public-leaderboard-comparable. Scoped to repository evidence dated on or before 20 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
+  </footer>
+</body>
+</html>

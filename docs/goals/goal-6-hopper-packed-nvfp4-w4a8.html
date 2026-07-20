@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Goal 6 field note: a benchmark-gated design to run official NVFP4 checkpoints on Hopper with weights kept packed at four bits, dynamic FP8 activations, and in-kernel E2M1-to-FP8 conversion feeding FP8 Tensor Cores.">
+  <title>Goal 6 · Packed NVFP4 W4A8 on Hopper · Field Note</title>
+  <style>
+    :root{
+      --paper:#f1ecdf;--paper-light:#faf7ef;--ink:#17201d;--muted:#62665f;--rule:#b9b19f;
+      --oxide:#b3482d;--oxide-dark:#78311f;--verified:#2f6a53;--verified-light:#dce9df;
+      --amber:#d59b35;--blueprint:#183a47;
+      --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+      --mono:"Cascadia Mono","IBM Plex Mono",Consolas,monospace;
+      --sans:"Aptos Narrow","Arial Narrow",sans-serif;--reading:800px;
+    }
+    *{box-sizing:border-box;}html{scroll-behavior:smooth;}
+    body{margin:0;overflow-x:hidden;color:var(--ink);
+      background:linear-gradient(90deg,transparent 49.8%,rgba(56,50,39,.025) 50%,transparent 50.2%),
+        repeating-linear-gradient(0deg,rgba(60,54,44,.018) 0,rgba(60,54,44,.018) 1px,transparent 1px,transparent 5px),var(--paper);
+      font-family:var(--serif);font-size:18px;line-height:1.68;text-rendering:optimizeLegibility;}
+    a{color:var(--oxide-dark);text-decoration-thickness:1px;text-underline-offset:.18em;}
+    a:hover{color:var(--oxide);}
+    code{font:.85em/1.3 var(--mono);background:rgba(23,32,29,.07);padding:.08em .3em;border-radius:2px;overflow-wrap:anywhere;}
+    strong{font-weight:750;}
+    .nav{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;padding:10px clamp(18px,4vw,64px);
+      background:var(--ink);color:var(--paper-light);font:700 11px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;}
+    .nav a{color:#c9d4cf;text-decoration:none;} .nav a:hover{color:#fff;} .nav a.here{color:#99d1b7;} .nav .sep{color:#5a6b64;}
+    header.hero{position:relative;overflow:hidden;padding:clamp(48px,7vw,92px) clamp(22px,7vw,96px) 52px;border-bottom:1px solid var(--ink);}
+    header.hero::after{content:"W4A8";position:absolute;right:-1vw;bottom:-8vw;color:rgba(24,58,71,.09);
+      font:900 clamp(140px,20vw,320px)/.75 var(--sans);letter-spacing:-.05em;pointer-events:none;}
+    .kicker{margin:0 0 22px;color:var(--oxide);font:800 12px/1.2 var(--mono);letter-spacing:.16em;text-transform:uppercase;}
+    h1{max-width:980px;margin:0;font:750 clamp(38px,5.6vw,80px)/.96 var(--serif);letter-spacing:-.04em;}
+    h1 em{color:var(--oxide);font-weight:500;}
+    .deck{position:relative;z-index:1;max-width:730px;margin:32px 0 0;padding-left:22px;border-left:6px solid var(--ink);font-size:clamp(19px,2vw,24px);line-height:1.4;}
+    .hero-meta{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px;margin-top:38px;font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    .stamp{padding:9px 11px;border:1px solid var(--ink);background:rgba(250,247,239,.56);}
+    .status{display:inline-block;white-space:nowrap;padding:6px 9px;font:800 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .status.working{color:#fff;background:var(--verified);} .status.hold{color:#fff;background:var(--oxide);}
+    .status.planned{color:var(--ink);background:#e7c36d;}
+    main{max-width:1120px;margin:0 auto;padding:64px clamp(20px,4vw,54px) 100px;}
+    section{scroll-margin-top:28px;margin:0 0 76px;}
+    h2{margin:0 0 24px;font:720 clamp(28px,4vw,48px)/1.03 var(--serif);letter-spacing:-.03em;}
+    h2 .number{display:block;margin-bottom:11px;color:var(--oxide);font:800 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;}
+    h3{margin:40px 0 13px;font:720 24px/1.15 var(--serif);}
+    h4{margin:26px 0 8px;font:800 12px/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--oxide-dark);}
+    p{margin:0 0 1.2em;max-width:var(--reading);}
+    ul,ol{max-width:var(--reading);} li{margin:0 0 .5em;}
+    .lead{font-size:22px;line-height:1.5;}
+    .dropcap::first-letter{float:left;margin:.08em .12em 0 0;color:var(--oxide);font:760 4em/.72 var(--serif);}
+    .table-scroll{overflow-x:auto;margin:28px 0;border-top:6px solid var(--ink);}
+    table{width:100%;border-collapse:collapse;background:rgba(250,247,239,.56);font-size:14.5px;line-height:1.45;}
+    caption{padding:13px 0;color:var(--muted);font:700 11px/1.3 var(--mono);text-align:left;letter-spacing:.08em;text-transform:uppercase;}
+    th,td{padding:13px 13px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top;}
+    th{color:var(--muted);font:800 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    td:first-child{font-weight:700;}
+    .callout{margin:32px 0;padding:24px 26px;border:1px solid var(--rule);border-top:7px solid var(--verified);background:var(--verified-light);max-width:var(--reading);}
+    .callout.warning{border-top-color:var(--oxide);background:#f1dfd6;}
+    .callout.blue{border-top-color:var(--blueprint);background:#dde6ea;}
+    .callout h3{margin:0 0 9px;font-size:21px;}
+    .callout p:last-child{margin-bottom:0;}
+    .chip{display:inline-flex;align-items:center;gap:6px;margin:2px 3px 2px 0;padding:5px 8px;border-radius:999px;font:750 10px/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;}
+    .chip.obs{color:#fff;background:var(--oxide-dark);} .chip.up{color:#fff;background:var(--verified);} .chip.prop{color:var(--ink);background:#e6bf68;}
+    pre{margin:20px 0;padding:20px 22px;overflow-x:auto;background:var(--ink);color:#e7ede9;border-left:5px solid var(--blueprint);
+      font:13px/1.55 var(--mono);border-radius:2px;max-width:var(--reading);}
+    pre .c{color:#8fa39c;} pre .k{color:#e6bf68;}
+    .roadmap{margin:30px 0 0;padding:0;list-style:none;counter-reset:road;max-width:var(--reading);}
+    .roadmap li{counter-increment:road;display:grid;grid-template-columns:48px 1fr;gap:16px;padding:20px 0;border-top:1px solid var(--rule);margin:0;}
+    .roadmap li::before{content:counter(road,decimal-leading-zero);color:var(--oxide);font:800 24px/1 var(--mono);}
+    .src{margin:8px 0 0;font:600 12.5px/1.5 var(--mono);color:var(--muted);max-width:var(--reading);}
+    .src code{background:rgba(23,32,29,.05);}
+    .ledger{columns:2;column-gap:40px;margin:0;padding:0;list-style:none;max-width:none;}
+    .ledger li{break-inside:avoid;margin:0 0 11px;padding:0 0 11px;border-bottom:1px solid var(--rule);font:600 13px/1.45 var(--mono);}
+    .ledger .t{display:block;margin-bottom:4px;color:var(--muted);font-size:9px;letter-spacing:.1em;text-transform:uppercase;}
+    footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
+    footer strong{color:#fff;}
+    @media (max-width:620px){
+      body{font-size:16px;}h1{font-size:34px;}.deck{margin-left:0;}
+      .ledger{columns:1;}th,td{min-width:120px;}header.hero{padding:40px 22px 36px;}
+    }
+    @media print{body{background:#fff;}.nav{display:none;}pre{color:#111;background:#f4f4f4;}a{color:#111;}}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a href="../automatic-quantization-pipeline-progress.html">← Program overview</a>
+    <span class="sep">|</span>
+    <a href="goal-1-fast-parallel-quantization.html">Goal 1</a>
+    <span class="sep">·</span>
+    <a href="goal-2-temporary-evaluation-pipeline.html">Goal 2</a>
+    <span class="sep">·</span>
+    <a class="here">Goal 6 · Packed NVFP4 W4A8 on Hopper</a>
+  </nav>
+
+  <header class="hero">
+    <p class="kicker">Goal 06 / engineering field note · <span class="status planned">Planned · benchmark-gated</span></p>
+    <h1>Packed <em>NVFP4 W4A8</em> on Hopper</h1>
+    <p class="deck">Run an official NVFP4 checkpoint on an H100 without unpacking it to FP8 first — keep the weights at four bits, convert fragments to FP8 inside the GEMM, and let Hopper's FP8 Tensor Cores do the multiply.</p>
+    <div class="hero-meta">
+      <span class="stamp">Design complete · prototype committed</span>
+      <span class="stamp">Zero hardware results yet</span>
+      <span class="stamp">Reuse Humming, not a clean-sheet kernel</span>
+    </div>
+  </header>
+
+  <main>
+    <article>
+
+      <section id="banner">
+        <div class="callout warning">
+          <h3><span class="chip obs">Read this first</span> No hardware has run yet</h3>
+          <p>Everything below is <strong>design plus committed CPU-side prototype code and a ready-but-unrun executor packet</strong>. There are <strong>zero</strong> measured latency, memory, correctness, or WGMMA-instruction numbers. Any figure on this page is either an upstream fact or a design-time arithmetic bound, and is labelled as such. The one-layer GPU probe is the immediate next task.</p>
+        </div>
+      </section>
+
+      <section id="motivation">
+        <h2><span class="number">01 / Motivation</span>Release-day compatibility, without paying twice for memory</h2>
+        <p class="lead dropcap">Official model releases increasingly ship NVFP4 checkpoints intended for native Blackwell FP4 execution. Hopper has FP8 Tensor Cores but no native FP4 multiply — so the checkpoint arrives in a format the hardware can't natively run.</p>
+        <p>The obvious workaround — expand the four-bit weights to FP8 at load time — <strong>nearly doubles persistent weight memory and throws away the format's principal bandwidth advantage</strong>. The goal instead is to <em>load an official NVFP4 checkpoint without offline conversion</em>, keep weights packed at four bits in GPU memory, convert only the needed weight fragments to FP8 <em>inside</em> the GEMM, and perform FP8 Tensor Core multiplication.</p>
+        <p>Two framing constraints: this is both a release-day compatibility/performance investigation <em>and</em> a stronger comparator for our in-house W4A8 than a weight-only A16 fallback would be. And it <strong>must not weaken the reliable upstream W4A16 compatibility path</strong> — anything that doesn't fit the specialization routes back to Marlin.</p>
+        <p class="src">Sources: <code>docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md</code> (motivation, non-goals); <code>PROJECT_GOALS.md</code> (goal 6).</p>
+      </section>
+
+      <section id="gap">
+        <h2><span class="number">02 / Engineering gap</span>The block-scale problem</h2>
+        <p>Hopper (SM90) lacks native FP4 Tensor Cores. What upstream vLLM <em>already</em> gives us on Hopper:</p>
+        <ul>
+          <li>Loads NVFP4 packed E2M1 weights + per-group E4M3 scales + a global scale, and repacks them for <strong>Marlin W4A16</strong> (weight-only four-bit, higher-precision activations).</li>
+          <li>Vectorized <code>E2M1→FP16/BF16</code> conversion, plus an <code>E2M1→E4M3</code> register conversion primitive.</li>
+          <li>Dynamic per-token FP8 activation quantization.</li>
+        </ul>
+        <p>What is <strong>missing</strong> is a packed-weight NVFP4 <strong>W4A8</strong> path that does in-kernel <code>E2M1→FP8</code> conversion feeding SM90 FP8 WGMMA. Two candidate reuse paths each fall short:</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Why the two obvious reuse paths don't fit</caption>
+            <thead><tr><th>Candidate</th><th>Why it doesn't fit</th></tr></thead>
+            <tbody>
+              <tr><td>vLLM Hopper CUTLASS W4A8</td><td>Accepts uniform signed <strong>INT4, group size 128</strong> — not NVFP4 <strong>E2M1, group size 16</strong>.</td></tr>
+              <tr><td>Marlin FP8 <code>mma.sync</code></td><td>Built only for SM89/SM12x; on SM90 it's simulated through FP16 MMA and does not accelerate Hopper. A useful path needs an SM90 WGMMA mainloop.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout blue">
+          <h3>The crux: two group-16 scales inside one K=32 WGMMA step</h3>
+          <p>The closest machinery is the <strong>Humming</strong> backend (<code>humming-kernels==0.1.10</code>, pinned by upstream vLLM): E4M3 activations × packed E2M1 weights on SM89+, compact group scales, global scales, dynamic input quant, WGMMA. But its FP8 path cannot apply two NVFP4 group-16 scales inside one K=32 WGMMA step — <code>HummingKernel.check_scale</code> requires every weight-scale group to be at least the MMA-K quantum <code>256 / activation_bits = 32</code>, while NVFP4's group size is <strong>16</strong>. The precise missing mechanism: each K=32 WGMMA weight fragment must load two E4M3 scales, apply each to its 16-wide half after <code>E2M1→E4M3</code> register conversion, then issue FP8 WGMMA.</p>
+        </div>
+        <p class="src">Sources: design spec (upstream inventory, INT4-vs-E2M1 mismatch, Marlin SM90 simulation, Humming <code>check_scale</code> group-quantum constraint).</p>
+      </section>
+
+      <section id="effort">
+        <h2><span class="number">03 / Effort</span>Extend Humming first; clean-sheet only if forced</h2>
+        <p>An initial two-reference audit appeared to show no packed NVFP4 W4A8 path anywhere — but a broader upstream search found one inside the Humming backend. That reversed the plan: <strong>extend and qualify the existing Humming W4A8 path first</strong>; a bespoke CUTLASS kernel is authorized <em>only</em> if the Humming specialization is absent or fails a predeclared correctness, memory, or performance gate. (A textbook application of the repo's search-first prime directive.)</p>
+        <h3>The chosen mechanism</h3>
+        <p>A bounded &ldquo;group-16 specialization&rdquo;: expand the existing scale-register path so a WGMMA N16 subblock carries the extra E4M3 scales, apply each scale to its 16-wide converted half while the weight is still in E4M3 registers, and disable Humming's ordinary post-accumulator group scaling for that policy. The numerical contract is fixed:</p>
+        <pre><span class="c"># in-GEMM weight conversion, with /8 headroom</span>
+B8 = Q_E4M3( E2M1(B4) * group_scale / 8 )
+
+<span class="c"># max finite product 6*448/8 = 336 stays inside E4M3 range;</span>
+<span class="c"># a single compensating (global_scale * 8) is applied outside the GEMM.</span></pre>
+        <p>The first specialization accepts only one scalar <code>B_global_scale</code> shared across fused projections; anything else routes to Marlin. The environment is frozen (vLLM <code>0.24.0</code> from <code>toncao/vllm@minimax-m3-compressed-tensors</code>; Humming tag commit pinned with SHA-256 hashes for the six target source files). A full custom SM90 CUTLASS E2M1 W4A8 datatype variant is fully mapped as a <strong>contingency</strong>, entered only after a concrete Humming blocker.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Planning-range effort estimates (not commitments)</caption>
+            <thead><tr><th>Stage</th><th>Rough range</th></tr></thead>
+            <tbody>
+              <tr><td>Target audit + reference + rejection proof</td><td>~2–5 engineering days</td></tr>
+              <tr><td>Humming A8/group-16 specialization + tests</td><td>~2–6 weeks</td></tr>
+              <tr><td>Dense qualification</td><td>~1–3 weeks</td></tr>
+              <tr><td>Contingency custom CUTLASS PoC</td><td>~4–8 (up to 8–12) weeks</td></tr>
+              <tr><td>MoE productionization</td><td>separate 3–5 person-month project</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="src">Sources: design spec (two-stage search, decision to extend Humming, H2 mechanism, numerical contract, version freeze, contingency map, effort ranges); implementation plan <code>docs/superpowers/plans/2026-07-19-hopper-nvfp4-w4a8-humming-specialization.md</code>.</p>
+      </section>
+
+      <section id="progress">
+        <h2><span class="number">04 / Progress</span>Committed prototype, nothing measured</h2>
+        <p>The executor packet is in state <code>READY_FOR_EXECUTOR</code>; the one-layer SM90 probe has not been run, and <code>pipeline/results/hopper_nvfp4_w4a8/</code> does not exist. What <em>has</em> been produced is CPU-side planner code, committed to <code>duy-branch</code> (commit <code>8e0456a1</code>):</p>
+        <ul>
+          <li>A pure-Python <strong>bit-exact NVFP4→E4M3 reference</strong> and memory-accounting oracle — <code>pipeline/hopper_nvfp4_w4a8/reference.py</code>.</li>
+          <li>A fail-closed, idempotent <strong>six-file Humming source overlay + installer</strong> — <code>pipeline/hopper_nvfp4_w4a8/humming_patch.py</code>, <code>pipeline/slurm/patch_humming_nvfp4_w4a8.py</code>, <code>install_humming_nvfp4_w4a8.sh</code>.</li>
+          <li>Torch-free <strong>opt-in preflight decision logic</strong> that rejects any non-matching case to <code>backend=marlin_w4a16</code> — <code>pipeline/hopper_nvfp4_w4a8/preflight.py</code>.</li>
+          <li>A <strong>one-layer GPU probe</strong> (N=128, K=128, M∈{1,8,32}) and its <code>srun</code> launcher — <code>gpu_probe.py</code>, <code>run_hopper_nvfp4_w4a8_probe_srun.sh</code>.</li>
+          <li>CPU contract tests (four <code>pipeline/tests/test_*hopper_nvfp4_w4a8*/*humming*</code> files) and the executor packet <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code>.</li>
+        </ul>
+        <div class="callout">
+          <h3>The only concrete numbers so far are analytical</h3>
+          <p>A design-time memory calculation shows the contingency's temporary eight-way scale pack would cost ≈<strong>1.0 byte/weight</strong> vs ≈<strong>0.5625 byte/weight</strong> for compact NVFP4 (4-bit weight + one E4M3 scale per 16) — roughly <strong>1.78×</strong>, which would <em>fail</em> the 1.10× memory gate. These are arithmetic bounds in the design, not benchmark measurements.</p>
+        </div>
+        <p><strong>Planned comparison targets</strong> (not yet measured): upstream <strong>NVFP4 W4A16 Marlin</strong> (compatibility + quality baseline) and <strong>load-expanded W8A8</strong> (a throughput ceiling / control — explicitly not a result the new path is required to beat).</p>
+        <p class="src">Sources: <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code> (packet state); design spec (memory arithmetic, comparison targets); commit <code>8e0456a1</code>. Note: the CPU test suite was not executed in the gathering session — treat &ldquo;tests pass&rdquo; as unverified until run.</p>
+      </section>
+
+      <section id="gates">
+        <h2><span class="number">05 / Gates</span>The benchmark that decides everything</h2>
+        <p>Goal 6 is benchmark-gated by design — each stage has predeclared numeric gates, and failure stops the work rather than escalating it.</p>
+
+        <h4>Immediate: one-layer SM90 Humming probe</h4>
+        <p>One node, one H100, M∈{1,8,32}, <code>srun</code> only (no <code>sbatch</code>), no model download, no serving, no timing, no MoE. It passes only if:</p>
+        <ul>
+          <li>exactly <code>humming-kernels==0.1.10</code> with all six sources patched; <code>device_capability == [9,0]</code>;</li>
+          <li>exact-emulation numerical match at <code>rtol=0.01, atol=0.25</code>, finite for every M;</li>
+          <li>K16 scale isolation holds; global scale multiplied by exactly 8; deterministic;</li>
+          <li><strong>memory ratio ≤ 1.10</strong> with no persistent FP8-expanded weight;</li>
+          <li>SASS contains FP8 <code>WGMMA.MMA_ASYNC</code> with E4M3 operands.</li>
+        </ul>
+
+        <h4>Stage 2: dense proof-of-concept continuation gates</h4>
+        <p>For every supported shape and M∈{1,8,32,128,512,2048}: no NaN/Inf; <strong>cosine similarity ≥ 0.999</strong> to the deterministic W4A8 reference; <strong>relative L2 error ≤ 0.02</strong>; deterministic; misaligned shapes select W4A16 first. <strong>Memory:</strong> persistent weight+scale bytes ≤ 1.10× the W4A16 Marlin representation. <strong>Performance:</strong> after warmup, median kernel latency <strong>≥ 15% faster than W4A16 Marlin in at least one decision-relevant M bucket</strong> and <strong>no more than 10% slower</strong> in the primary serving bucket.</p>
+
+        <div class="callout warning">
+          <h3>The stop rule</h3>
+          <p>If correctness or memory fails → <strong>stop</strong>. If correctness and memory pass but the performance gate fails → <strong>retain the prototype and evidence, but do not begin fused-MoE production work</strong>. Only a clean sweep continues.</p>
+        </div>
+        <p class="src">Sources: design spec (probe gates, Stage-2 continuation gates, stop rule); <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code> (probe scope &amp; gates).</p>
+      </section>
+
+      <section id="next">
+        <h2><span class="number">06 / Future work</span>Staged path</h2>
+        <ol class="roadmap">
+          <li><strong>Run the one-layer SM90 probe</strong> (the one active, ready packet). Decision: does the patched Humming A8/E2M1/group-16 specialization compile on SM90 and satisfy the scale-isolation, numerical, memory, and WGMMA-instruction gates?</li>
+          <li><strong>Stage 2 — dense PoC:</strong> qualify across all shapes and M buckets against the continuation gates above; apply the stop rule.</li>
+          <li><strong>Stage 3 — dense serving qualification:</strong> only after Stage 2 — integrate behind an opt-in serving setting and compare W4A8 vs W4A16 Marlin vs load-expanded W8A8 (throughput, ITL, TTFT, peak HBM, startup) under the repo's fail-closed evaluation-harness contract, with a predeclared paired tolerance and no conflation with public benchmark scores.</li>
+          <li><strong>Stage 4 — MoE / productionization:</strong> fused MoE, expert parallelism, routing, gate/up fusion, broader model families — out of scope until Stages 2 and 3 pass; receives a separate spec.</li>
+          <li><strong>Contingency:</strong> the custom SM90 CUTLASS E2M1 W4A8 datatype variant — only if Humming fails a gate; its genuinely novel work is narrowly the E2M1→E4M3 converter and the compact group-16 scale feed.</li>
+        </ol>
+        <p class="src">Sources: design spec (&ldquo;Staged execution and continuation gates&rdquo;); implementation plan (post-probe boundary); <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code>.</p>
+      </section>
+
+      <section id="ledger">
+        <h2><span class="number">07 / Ledger</span>Sources</h2>
+        <ul class="ledger">
+          <li><span class="t">Design · this fork</span><a href="../../docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md">Hopper packed NVFP4 W4A8 fallback design</a></li>
+          <li><span class="t">Plan · this fork</span><a href="../../docs/superpowers/plans/2026-07-19-hopper-nvfp4-w4a8-humming-specialization.md">Humming specialization implementation plan</a></li>
+          <li><span class="t">Handoff · this fork</span><a href="../../HOPPER_NVFP4_W4A8_HANDOFF.md">HOPPER_NVFP4_W4A8_HANDOFF.md</a></li>
+          <li><span class="t">Code · this fork</span><a href="../../pipeline/hopper_nvfp4_w4a8/reference.py">pipeline/hopper_nvfp4_w4a8/</a> (reference, preflight, probe, patch)</li>
+          <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 6</li>
+          <li><span class="t">Upstream</span><a href="https://docs.vllm.ai/en/stable/features/quantization/index.html">vLLM quantization / Marlin FP4</a></li>
+        </ul>
+      </section>
+
+    </article>
+  </main>
+
+  <footer>
+    <strong>Goal 6 field note.</strong> Benchmark-gated future project; design + committed CPU prototype only. Zero hardware measurements exist; all figures are upstream facts or design-time arithmetic. Scoped to repository evidence dated on or before 20 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
+  </footer>
+</body>
+</html>

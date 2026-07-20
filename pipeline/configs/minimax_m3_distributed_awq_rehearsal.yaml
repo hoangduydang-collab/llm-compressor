@@ -1,0 +1,61 @@
+# All-layer AWQ REHEARSAL for MiniMax-M3: production recipe and geometry,
+# reduced calibration (64 samples x 2048 vs the production 512).
+#
+# Purpose (2026-07-20): a ~3h bug-hunting run that is diagnostically much
+# closer to the 7h full-calibration run than the 4-layer smoke — every MoE
+# layer is smoothed AND quantized (all dead-channel layers 8/10-13, the
+# near-dead 9/14, and the deep layers where grid error grows), the saved
+# artifact has final geometry (~225 GB, fits the proven 1-node TP8 serve
+# envelope, so the rehearsal chain includes serve + chat probe). Per-layer
+# cost is dominated by weight-side work (~1 min/layer); sample-proportional
+# grid forwards are the only thing reduced. The artifact itself is NOT the
+# final model: 64-sample calibration gives noisier scales and lower quality;
+# evals on it are meaningless. Deleted at the end of a passing chain.
+name: minimax_m3_distributed_awq_rehearsal
+
+model:
+  id: MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
+  device_map: auto_offload
+  # Same deliberately-small cpu budget as the full config: bulk of the
+  # weights overflow to DistributedDiskCache instead of shm (VMA exhaustion,
+  # see BUGS_AND_FIXES.md "DDP weights-side VMA exhaustion").
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-awq-rehearsal
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"
+    - "re:.*block_sparse_moe[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*block_sparse_moe[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 64
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/nfs/hoangduy/results/m3-distributed-awq-rehearsal

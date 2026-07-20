@@ -21,11 +21,12 @@ Structure the page as:
 
 1. Objective: complete AWQ/GPTQ quantization in 4–8 hours.
 2. Approach: use the fork's existing distributed calibration path.
-3. Results and status: retain the 71-minute three-layer smoke, 852 GB peak host RSS,
-   1,152 verified quantized Linears per method, and the explicit caveat that no full
-   end-to-end result exists yet.
-4. Next steps: finish the full run, measure speedup, and run checkpoint and serving
-   quality gates.
+3. Results and status: report the latest full-calibration run rather than the
+   three-layer smoke. Include its calibration and end-to-end timing, checkpoint
+   output, and gate outcome so the 4–8 hour target is assessed honestly even when a
+   completed run is rejected by a correctness or quality gate.
+4. Next steps: finish the current corrected full run, measure speedup, and run
+   checkpoint and serving quality gates.
 
 Remove the initial failure to use available GPUs, the bespoke implementation detour,
 the thread-pool benchmark, and the r2–r9 debugging chronology.
@@ -38,8 +39,9 @@ Structure the page as:
 2. Core results: retain one four-model score table and a brief interpretation.
 3. Harness setup: retain the framework/version, model set, tasks and subset sizes,
    three seeds, generation settings, and serving topology in compact form.
-4. Limitations and next step: note seeded subsets and the pending merged comparison
-   report.
+4. Limitations and next steps: note seeded subsets, the pending merged comparison
+   report, and applying the real evaluation pipeline now that the quality-evaluation
+   side is ready.
 
 Remove the duplicate BF16-delta table, obsolete harness-era warning, raw hashes,
 run-by-run completion history, BF16 troubleshooting narrative, exact checkpoint

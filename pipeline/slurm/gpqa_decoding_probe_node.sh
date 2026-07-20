@@ -50,7 +50,7 @@ gate ready "$ready"
 run_pass() {  # $1 pass name, $2 gen_kwargs
   note "lm-eval pass $1 (gen_kwargs: $2)"
   "$BVENV/bin/lm_eval" --model local-chat-completions \
-    --model_args "base_url=http://localhost:$PORT/v1/chat/completions,model=$SERVED_NAME,num_concurrent=4,tokenizer=$TOKENIZER,max_length=$MAX_MODEL_LEN" \
+    --model_args "base_url=http://localhost:$PORT/v1/chat/completions,model=$SERVED_NAME,num_concurrent=4,tokenizer=$TOKENIZER,max_length=$MAX_MODEL_LEN,timeout=7200" \
     --tasks gpqa_diamond_cot_zeroshot --limit "$LIMIT" --seed 0 --apply_chat_template \
     --log_samples --output_path "$ROOT/$1" \
     --gen_kwargs "$2" >"$ROOT/lm_eval_$1.log" 2>&1

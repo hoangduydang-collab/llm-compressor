@@ -319,6 +319,13 @@ _ROUTED_ALIASES = {".gate_proj.": ".w1.", ".down_proj.": ".w2.", ".up_proj.": ".
 _DEQUANT_MAX_RESID = 0.25
 _DEQUANT_SCALE_RANGE = (0.2, 5.0)
 
+# M3 layers sampled deterministically on top of the even spread: dead
+# (8/10-13) or near-dead (9/14) norm channels — the AWQ scale-degeneracy
+# class from full r4 — plus the deepest layer (59), where grid-search error
+# is largest and r4 kept ~64 partially-corrupt modules that a 20-module
+# even spread misses with ~94% probability.
+_DEQUANT_RISK_LAYERS = (8, 9, 10, 11, 12, 13, 14, 59)
+
 
 def _check_dequant(ckpt, base, keys, errors, warnings):
     """Dequantize sampled packed modules and require them to match the base
@@ -345,6 +352,12 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
 
     sample_scales = [k for k in keys if k.endswith(f".{_SCALE}")]
     sample = sample_scales[:: max(1, len(sample_scales) // 20)][:20]
+    for layer in _DEQUANT_RISK_LAYERS:
+        tag = f"layers.{layer}."
+        in_layer = [k for k in sample_scales if tag in k]
+        for pick in in_layer[:1] + in_layer[-1:]:
+            if pick not in sample:
+                sample.append(pick)
     opened: dict[tuple, object] = {}
 
     def _get(root, wmap, k):

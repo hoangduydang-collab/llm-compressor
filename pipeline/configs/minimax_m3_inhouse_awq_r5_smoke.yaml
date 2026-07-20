@@ -9,9 +9,11 @@ schema_version: 1
 # same aliases/seed/sampling as the paired r48 and BF16 qualification roots,
 # so cross-run contract gating and later three-way comparison stay valid).
 #
-# PATH NOTE: points at the ABI OVERLAY built on r5's checkpoint-vllm-w123
-# re-export (raw w123 exports fail static serving-ABI; the overlay is
-# metadata-only, built via `m3_routed_diagnostics prepare-overlay`).
+# PATH NOTE: points directly at r5's checkpoint-vllm-w123 re-export. Unlike
+# the older GPTQ export (which needed an ABI overlay), the current
+# reexport_minimax_m3_vllm already writes the vLLM router/shared-expert
+# ignore aliases into config.json; m3_serve_abi passes on the raw export
+# (verified 2026-07-20, static_direct_r5.json valid=true).
 name: minimax-m3-inhouse-awq-r5-smoke
 backend: vllm
 baseline_label: inhouse_awq
@@ -20,9 +22,7 @@ eval_config: pipeline/configs/eval_minimax_m3_reasoning_r4.yaml
 
 models:
   - label: inhouse_awq
-    # FILL IN once r5 saves + re-exports (chain step 2), then prepare-overlay:
-    # <r5 result root>/awq/MiniMax-M3-awq-W4AFP8/<ts>/checkpoint-vllm-w123-abi-overlay
-    path: PLACEHOLDER_R5_OVERLAY_PATH
+    path: /mnt/nfs/hoangduy/results/m3-distributed-awq-full/20260720T060340Z-m3-ddp-awq-full-r5-deadchan/awq/MiniMax-M3-awq-W4AFP8/20260720-060402/checkpoint-vllm-w123
     kind: awq-w4afp8
     nodes: 1
     tensor_parallel_size: 8

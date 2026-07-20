@@ -54,6 +54,7 @@
     .goal-card p{margin:0 0 16px;font-size:15.5px;line-height:1.5;color:var(--muted);max-width:none;}
     .goal-card .foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
     .status{display:inline-block;white-space:nowrap;padding:5px 8px;font:800 9px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .status.done{color:#fff;background:var(--verified);}
     .status.working{color:#fff;background:var(--verified);}
     .status.hold{color:#fff;background:var(--oxide);}
     .status.planned{color:var(--ink);background:#e7c36d;}
@@ -85,7 +86,7 @@
   <header class="hero">
     <p class="kicker">MiniMax-M3 quantization &amp; evaluation / program field notes</p>
     <h1>The current <em>goals</em>, and where each one stands</h1>
-    <p class="deck">A single north star split into six long-term goals. Three are active enough to carry their own field note; the rest are folded in or held for later. This page is the index.</p>
+    <p class="deck">Six long-term goals with clear boundaries: parallel quantization and the evaluation pipeline are complete foundations; producing a correct in-house AWQ checkpoint is the active focus.</p>
     <div class="hero-meta" aria-label="Program metadata">
       <span class="stamp">Fork of llm-compressor</span>
       <span class="stamp">MiniMax-M3 case study</span>
@@ -97,7 +98,7 @@
     <article>
       <section id="intro">
         <p class="lead dropcap">The hard part of automatic quantization is not choosing four bits instead of sixteen. It is making a new model architecture, a quantization algorithm, and an inference engine agree on the same contract — then proving, with evidence, that the agreement held.</p>
-        <p>Our fork of <code>llm-compressor</code> is the control plane for that agreement, with MiniMax-M3 as the first case study. The durable, repo-authoritative list of goals lives in <code>PROJECT_GOALS.md</code> (last reviewed 2026-07-19). This overview reproduces that list and links each active goal to its own detailed page. Everything here is scoped to evidence already in the repository.</p>
+        <p>Our fork of <code>llm-compressor</code> is the control plane for that agreement, with MiniMax-M3 as the first case study. The durable goal definitions live in <code>PROJECT_GOALS.md</code>; this overview presents the current research-update boundaries and links the goals with dedicated field notes. Everything here is scoped to evidence already in the repository.</p>
       </section>
 
       <section id="goals">
@@ -107,15 +108,15 @@
           <a class="goal-card link" href="goals/goal-1-fast-parallel-quantization.html">
             <span class="gnum">Goal 01</span>
             <h3>Fast parallel quantization</h3>
-            <p>Parallelize AWQ and GPTQ calibration to bring a full MiniMax-M3 quantization run into a 4–8 hour window, using the fork's built-in distributed path rather than bespoke expert-parallel code.</p>
-            <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
+            <p>Completed the distributed AWQ/GPTQ path and demonstrated full MiniMax-M3 calibration inside the 4–8 hour target window.</p>
+            <div class="foot"><span class="status done">Done</span><span class="open">Open field note →</span></div>
           </a>
 
           <a class="goal-card link" href="goals/goal-2-temporary-evaluation-pipeline.html">
             <span class="gnum">Goal 02</span>
             <h3>Temporary evaluation pipeline</h3>
-            <p>A hash-locked, fail-closed harness to compare our in-house quant against other quants and the BF16 baseline — a stopgap that produces trustworthy model-to-model decisions while an official pipeline is built later.</p>
-            <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
+            <p>Delivered a reproducible, fail-closed paired harness for comparing in-house checkpoints with existing quants and the BF16 baseline.</p>
+            <div class="foot"><span class="status done">Done</span><span class="open">Open field note →</span></div>
           </a>
 
           <a class="goal-card link" href="goals/goal-6-hopper-packed-nvfp4-w4a8.html">
@@ -128,8 +129,8 @@
           <div class="goal-card plain">
             <span class="gnum">Goal 03</span>
             <h3>Working AWQ quantized model</h3>
-            <p>Produce a correct AWQ-quantized MiniMax-M3 by fixing the current AWQ defect. Tracked alongside Goal 1 — the distributed AWQ path is where the fix is landing.</p>
-            <div class="foot"><span class="status planned">After / with Goal 1</span></div>
+            <p>Produce and qualify a correct in-house AWQ-quantized MiniMax-M3 checkpoint through post-save, serving, and quality gates.</p>
+            <div class="foot"><span class="status working">Work in progress</span></div>
           </div>
 
           <div class="goal-card plain">
@@ -149,14 +150,14 @@
         </div>
 
         <div class="focus-band">
-          <h3>Current session focus: Goals 1 and 2</h3>
-          <p>Everything else is context, not the immediate objective. Goal 6 is an approved future project, but it remains benchmark-gated and does not displace the current focus. Goals 3–5 are folded into the active work or deferred.</p>
+          <h3>Current session focus: Goal 3</h3>
+          <p>Goals 1 and 2 are completed foundations. The active work is producing and qualifying a correct in-house AWQ checkpoint. Goals 4–6 remain future or benchmark-gated work.</p>
         </div>
       </section>
 
       <section id="how">
-        <h2><span class="number">How to read these</span>One page per active goal</h2>
-        <p>Each field note follows the same structure: <strong>motivation</strong> (why the goal matters), the <strong>current engineering gap</strong> (what is technically hard or missing), the <strong>effort made</strong> (what we tried and adopted), <strong>progress so far</strong> with concrete, sourced results, and a <strong>future work / next tasks</strong> section. Claims cite the repository files that back them.</p>
+        <h2><span class="number">How to read these</span>Field notes for completed and planned goals</h2>
+        <p>Each field note records the goal boundary, concrete evidence, and any handoff to another goal. Completed notes explain what satisfied the goal; planned notes state the decision gates that must pass before work expands. Claims cite the repository files that back them.</p>
         <ul>
           <li><a href="goals/goal-1-fast-parallel-quantization.html">Goal 1 — Fast parallel quantization</a></li>
           <li><a href="goals/goal-2-temporary-evaluation-pipeline.html">Goal 2 — Temporary evaluation pipeline</a></li>
@@ -167,7 +168,7 @@
   </main>
 
   <footer>
-    <strong>Field note status:</strong> internal research update, not a product-support statement. Goal list mirrors <code>PROJECT_GOALS.md</code> (last reviewed 2026-07-19); per-goal claims are scoped to repository evidence dated on or before 20 July 2026 and the sources each page links.
+    <strong>Field note status:</strong> internal research update, not a product-support statement. <code>PROJECT_GOALS.md</code> provides the durable goal definitions; the status boundaries shown here reflect repository evidence dated on or before 20 July 2026.
   </footer>
 </body>
 </html>

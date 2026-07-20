@@ -105,7 +105,7 @@
   <header class="hero">
     <p class="kicker">Goal 02 / engineering field note · <span class="status working">Work in progress</span></p>
     <h1>The <em>temporary</em> evaluation pipeline</h1>
-    <p class="deck">A stopgap harness that answers one question well: does our quantized checkpoint hold up against other quants and against BF16 — on identical prompts, identical samples, identical decoding — while a fuller official pipeline is built later.</p>
+    <p class="deck">A stopgap harness that answers one question well: does our quantized checkpoint hold up against other quants and against BF16 — on identical prompts, identical samples, identical decoding. The team's official pipeline now exists as its own repository; migrating MiniMax-M3 onto it is in progress.</p>
     <div class="hero-meta">
       <span class="stamp">4 checkpoints compared</span>
       <span class="stamp">lm-eval-harness 0.4.12 · vLLM</span>
@@ -123,7 +123,7 @@
         <p>It is deliberately minimal — a stopgap. Whole categories of evaluation are documented as <strong>deferred</strong>: vendor headline-score reproduction, an SGLang backend, serving throughput / latency / TTFT / memory sweeps, multimodal benchmarks (MMMU-Pro, Video-MME), and agentic benchmarks (SWE-bench, Terminal-Bench, tau2). Those belong to a later, fuller pipeline; this one exists to make trustworthy <em>model-to-model</em> decisions now.</p>
         <div class="callout blue">
           <h3>What &ldquo;temporary&rdquo; means precisely</h3>
-          <p>The repository does not use the word &ldquo;temporary,&rdquo; and does not promise a specific future &ldquo;official pipeline.&rdquo; What it <em>does</em> state is that quality comparison is the first deliverable and that the scope above is deferred. Read this page's &ldquo;temporary&rdquo; framing as: an interim paired-fidelity harness with a deliberately narrow, documented scope — not a claim of a scheduled replacement.</p>
+          <p>This harness — the llm-compressor <code>pipeline/evalsuite</code> — was the interim, deliberately-narrow paired-fidelity tool. The team's <strong>official evaluation pipeline now exists as its own repository</strong>, and migrating MiniMax-M3 onto it is <strong>work in progress</strong> (see <a href="#official">§08</a>). So &ldquo;temporary&rdquo; is now literal: this stopgap holds only until M3 runs on the official pipeline.</p>
         </div>
         <p class="src">Sources: <code>PROJECT_GOALS.md</code> (goal 2); <code>docs/superpowers/specs/2026-07-12-minimax-m3-vllm-quality-evaluation-design.md</code> (purpose, rationale, deferred scope).</p>
       </section>
@@ -330,10 +330,49 @@ export GLOO_SOCKET_IFNAME=intranet</pre>
         <p class="src">Sources: <code>pipeline/configs/eval_minimax_m3_reasoning_r4.yaml</code>; matrix configs; <code>preflight/{harness_contract,resolved_tasks,production_sample_manifest,tokenizer_contract}.json</code>; <code>pipeline/slurm/run_m3_quality_eval_srun.sh</code>; <code>M3_PRODUCTION_EVAL_HANDOFF.md</code>.</p>
       </section>
 
+      <section id="official">
+        <h2><span class="number">08 / What's next</span>The official pipeline (in progress)</h2>
+        <p class="lead">This field note describes the stopgap. The team's <strong>official evaluation pipeline</strong> now exists as its own repository (<code>AICloud/benchmarks</code>), and migrating MiniMax-M3 onto it is <strong>work in progress</strong>.</p>
+        <p>It is two pipelines joined at a shared reporting layer — <strong>performance</strong> (aiperf-driven: throughput, TTFT/ITL, $/Mtok) and <strong>quality</strong> — both talking to a <strong>self-deployed OpenAI-compatible endpoint</strong> (one model load feeds both). It is decoupled from quantization by design: the boundary is the HTTP endpoint, not a Python import, so it runs in its own repo and its own venv.</p>
+
+        <h3>Its quality harness — not the same as the stopgap above</h3>
+        <p>The quality suite is <strong>lm-eval <code>v0.4.10</code></strong> with the <code>[api]</code> backends, run <strong>against the served endpoint</strong> (not in-process vLLM), plus three layers the stopgap lacks: distribution-damage, reliability, and agentic.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Official quality harness · general (lm-eval) task registry</caption>
+            <thead><tr><th>Task</th><th>Path</th><th>Metric</th><th class="num">few-shot</th></tr></thead>
+            <tbody>
+              <tr><td>gsm8k</td><td>chat (generative)</td><td>exact_match</td><td class="num">5</td></tr>
+              <tr><td>ifeval</td><td>chat</td><td>prompt_level_strict_acc</td><td class="num">0</td></tr>
+              <tr><td>humaneval</td><td>chat</td><td>pass@1</td><td class="num">0</td></tr>
+              <tr><td>mmlu</td><td>loglikelihood</td><td>acc</td><td class="num">5</td></tr>
+              <tr><td>arc_challenge</td><td>loglikelihood</td><td>acc_norm</td><td class="num">25</td></tr>
+              <tr><td>hellaswag</td><td>loglikelihood</td><td>acc_norm</td><td class="num">10</td></tr>
+              <tr><td>truthfulqa_mc2</td><td>loglikelihood</td><td>acc</td><td class="num">0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Decoding is <strong>greedy (<code>temperature=0</code>), single seed</strong>; generative tasks route to <code>/v1/chat/completions</code>, multiple-choice to <code>/v1/completions</code> (loglikelihood, tokenized locally). The extra layers: <strong>distribution</strong> (flip-rate / top-k agreement / truncated KL vs baseline, from served <code>top_logprobs</code>), <strong>reliability</strong> (tool-call + structured-output error rates; unconstrained = model signal), <strong>agentic</strong> (SWE-bench Pro / Terminal-Bench / GAIA). Each suite emits a shared <code>NormalizedResult</code>; a reporting layer joins baseline+candidate into a SHIP / CAVEAT / NO_SHIP delta.</p>
+
+        <div class="callout warning">
+          <h3>Its numbers will not match the table in §03</h3>
+          <p>The official pipeline uses <strong>different tasks, greedy decoding, and loglikelihood MC scoring</strong> — versus the stopgap's GPQA / MMLU-Pro / AIME reasoning set, <code>temp=1.0</code> three-seed generation, and flexible-extract. So its absolute scores are <em>not</em> comparable to the §03 table. Continuity would require adding the reasoning tasks to the official <code>quality/general/tasks.py</code> registry (they are not in its default set).</p>
+        </div>
+
+        <h3>How M3 plugs in (WIP)</h3>
+        <p>The two repos stay separate, coupled over the endpoint: serve the M3 checkpoint on a pinned <strong>patched vLLM 0.24.0</strong> image (see the <a href="../m3-serving-recipe.md">M3 serving recipe</a>), point a benchmarks profile (<code>configs/minimax/minimax-m3.sh</code>) at it, and run <code>python -m quality.orchestrator --profile minimax-m3</code>. Status today:</p>
+        <ul>
+          <li>Official quality suites are <strong>built and GPU-free-tested</strong> against a mock endpoint; general/agentic <strong>execution is cluster-gated and not yet run for M3</strong> — the only committed result in that repo is a <em>performance</em> run for MiniMax-M2.5.</li>
+          <li>The reproducible <strong>M3 serving recipe</strong> (stable vLLM 0.24.0 + the W4A8 Python overlay) and a scaffolded <strong>M3 profile</strong> exist; a served endpoint, the benchmarks venv, and the three comparator profiles (BF16 / MXFP8 / cyankiwi AWQ) remain to wire up.</li>
+        </ul>
+        <p class="src">Sources: <code>benchmarks/quality/{README,general/tasks.py,general/command.py,distribution/metrics.py,requirements.txt}</code>; <code>benchmarks/README.md</code>; <code>docs/m3-serving-recipe.md</code>.</p>
+      </section>
+
       <section id="next">
-        <h2><span class="number">08 / Future work</span>Next tasks</h2>
+        <h2><span class="number">09 / Future work</span>Next tasks</h2>
         <ol class="roadmap">
-          <li>Generate the <strong>merged four-way comparison report</strong> (<code>comparisons/</code>, <code>compare.json</code>, root <code>report.md</code>) — the design's primary deliverable, with BF16-relative flip-rate and McNemar statistics.</li>
+          <li><strong>Complete the migration to the official pipeline (§08)</strong> — serve M3 on the patched vLLM 0.24.0 image, wire the four benchmarks profiles, and run the four-way through <code>quality/</code> (general + distribution + reliability + agentic). This is the active in-progress work; the items below pertain to the stopgap.</li>
+          <li>Generate the <strong>merged four-way comparison report</strong> (<code>comparisons/</code>, <code>compare.json</code>, root <code>report.md</code>) — the stopgap design's primary deliverable, with BF16-relative flip-rate and McNemar statistics.</li>
           <li>Bake the multi-node env fixes into the launchers once the hot scripts go cold: <code>--cpus-per-task</code>, the <code>SOCKET_IFNAME</code> exports, a robust Ray placement monitor, and a job-suffixed <code>driver-done</code> sentinel — plus launcher tests.</li>
           <li>Persist the full version set (vLLM / torch / CUDA / driver) into <code>run_manifest.json</code> to close the reproducibility gap.</li>
           <li>Add a separate <strong>public-comparable GPQA profile</strong> (198 questions × 5 repeats, vendor prompt/extraction) if headline-score reproduction is ever wanted — kept distinct from the paired regression signal.</li>
@@ -343,8 +382,10 @@ export GLOO_SOCKET_IFNAME=intranet</pre>
       </section>
 
       <section id="ledger">
-        <h2><span class="number">09 / Ledger</span>Sources</h2>
+        <h2><span class="number">10 / Ledger</span>Sources</h2>
         <ul class="ledger">
+          <li><span class="t">Official pipeline</span><a href="https://gitlab.bitdeer.vip/AICloud/benchmarks">AICloud/benchmarks</a> — <code>quality/</code> (lm-eval 0.4.10 + distribution/reliability/agentic)</li>
+          <li><span class="t">Serving · this fork</span><a href="../m3-serving-recipe.md">M3 serving recipe</a> — pinned vLLM 0.24.0 + W4A8 overlay</li>
           <li><span class="t">Design · this fork</span><a href="../../docs/superpowers/specs/2026-07-12-minimax-m3-vllm-quality-evaluation-design.md">vLLM quality-evaluation design</a></li>
           <li><span class="t">Handoff · this fork</span><a href="../../M3_PRODUCTION_EVAL_HANDOFF.md">M3_PRODUCTION_EVAL_HANDOFF.md</a></li>
           <li><span class="t">Report · this fork</span><a href="../../M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md">M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md</a></li>

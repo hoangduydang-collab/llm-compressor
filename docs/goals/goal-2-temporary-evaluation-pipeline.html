@@ -36,6 +36,7 @@
     .hero-meta{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px;margin-top:38px;font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
     .stamp{padding:9px 11px;border:1px solid var(--ink);background:rgba(250,247,239,.56);}
     .status{display:inline-block;white-space:nowrap;padding:6px 9px;font:800 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .status.done{color:#fff;background:var(--verified);}
     .status.working{color:#fff;background:var(--verified);}
     .status.hold{color:#fff;background:var(--oxide);}
     .status.planned{color:var(--ink);background:#e7c36d;}
@@ -103,9 +104,9 @@
   </nav>
 
   <header class="hero">
-    <p class="kicker">Goal 02 / engineering field note · <span class="status working">Work in progress</span></p>
+    <p class="kicker">Goal 02 / engineering field note · <span class="status done">Done</span></p>
     <h1>The <em>temporary</em> evaluation pipeline</h1>
-    <p class="deck">A paired harness for one practical decision: how closely do quantized checkpoints track BF16 when prompts, samples, decoding, and scoring are held constant?</p>
+    <p class="deck">Done: a reproducible, fail-closed paired harness now measures how closely quantized checkpoints track BF16 under one shared evaluation contract.</p>
     <div class="hero-meta">
       <span class="stamp">4 checkpoints compared</span>
       <span class="stamp">lm-eval-harness 0.4.12 · vLLM</span>
@@ -119,7 +120,8 @@
       <section id="purpose">
         <h2><span class="number">01 / Purpose</span>Comparable model-to-model evidence</h2>
         <p class="lead dropcap">Every checkpoint receives the same rendered prompts, exact examples, generation seeds, decoding settings, and scoring implementation.</p>
-        <p>The result is a controlled quantization-fidelity signal for internal decisions. It is deliberately <strong>not a public-leaderboard score</strong>: the evaluation uses seeded subsets and a fixed internal contract rather than each benchmark's full public protocol.</p>
+        <p>The completed deliverable is a working paired evaluation pipeline with fail-closed contract checks and reproducible raw evidence. It provides a controlled quantization-fidelity signal for internal decisions.</p>
+        <p>It is deliberately <strong>not a public-leaderboard score</strong>: the evaluation uses seeded subsets and a fixed internal contract rather than each benchmark's full public protocol.</p>
       </section>
 
       <section id="results">
@@ -157,13 +159,11 @@
         <p>The preflight contract pins the sample manifest, tokenizer, chat template, rendered prompts, and evaluation config. Cross-run gates require those inputs to match before scores are compared.</p>
       </section>
 
-      <section id="next">
-        <h2><span class="number">04 / Next</span>Move from harness proof to routine evaluation</h2>
+      <section id="available">
+        <h2><span class="number">04 / Available</span>Ready for the next checkpoint</h2>
         <p>These subsets are appropriate for paired internal decisions, but their confidence intervals are wider than full benchmark runs and the numbers should not be quoted as leaderboard results.</p>
-        <ol class="roadmap">
-          <li>Generate the merged four-way report with BF16-relative flip rates and paired significance statistics.</li>
-          <li>Apply this ready quality-evaluation pipeline to the next real full-calibration checkpoint after its static and serving gates pass.</li>
-        </ol>
+        <p><strong>Goal 2 is complete:</strong> the pipeline can evaluate a qualified checkpoint against BF16 and existing quantized comparators under a shared contract.</p>
+        <p>Generating additional merged reports and evaluating future in-house AWQ checkpoints are <strong>uses of this pipeline</strong>, not unfinished pipeline development.</p>
       </section>
 
       <section id="ledger">

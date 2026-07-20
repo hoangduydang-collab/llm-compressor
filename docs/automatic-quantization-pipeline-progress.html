@@ -55,6 +55,7 @@
     .goal-card .foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
     .status{display:inline-block;white-space:nowrap;padding:5px 8px;font:800 9px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
     .status.working{color:#fff;background:var(--verified);}
+    .status.done{color:#fff;background:var(--ink);}
     .status.hold{color:#fff;background:var(--oxide);}
     .status.planned{color:var(--ink);background:#e7c36d;}
     .status.future{color:#fff;background:var(--blueprint);}
@@ -97,7 +98,7 @@
     <article>
       <section id="intro">
         <p class="lead dropcap">The hard part of automatic quantization is not choosing four bits instead of sixteen. It is making a new model architecture, a quantization algorithm, and an inference engine agree on the same contract — then proving, with evidence, that the agreement held.</p>
-        <p>Our fork of <code>llm-compressor</code> is the control plane for that agreement, with MiniMax-M3 as the first case study. The durable, repo-authoritative list of goals lives in <code>PROJECT_GOALS.md</code> (last reviewed 2026-07-19). This overview reproduces that list and links each active goal to its own detailed page. Everything here is scoped to evidence already in the repository.</p>
+        <p>Our fork of <code>llm-compressor</code> is the control plane for that agreement, with MiniMax-M3 as the first case study. The durable, repo-authoritative list of goals lives in <code>PROJECT_GOALS.md</code> (last reviewed 2026-07-20). This overview reproduces that list and links each active goal to its own detailed page. Everything here is scoped to evidence already in the repository.</p>
       </section>
 
       <section id="goals">
@@ -107,14 +108,14 @@
           <a class="goal-card link" href="goals/goal-1-fast-parallel-quantization.html">
             <span class="gnum">Goal 01</span>
             <h3>Fast parallel quantization</h3>
-            <p>Parallelize AWQ and GPTQ calibration to bring a full MiniMax-M3 quantization run into a 4–8 hour window, using the fork's built-in distributed path rather than bespoke expert-parallel code.</p>
+            <p>Parallelize AWQ and GPTQ calibration to bring a full MiniMax-M3 quantization run into a 4–8 hour window, using the fork's built-in distributed path. The AWQ leg landed 2026-07-20: full 512×2048 run, gates green, in 7 h 22 m on one node.</p>
             <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
           </a>
 
           <a class="goal-card link" href="goals/goal-2-temporary-evaluation-pipeline.html">
             <span class="gnum">Goal 02</span>
             <h3>Temporary evaluation pipeline</h3>
-            <p>A hash-locked, fail-closed harness comparing our in-house quant against other quants and the BF16 baseline. The team's official pipeline now exists as its own repo; migrating M3 onto it is in progress.</p>
+            <p>A hash-locked, fail-closed harness comparing our in-house quants against other quants and the BF16 baseline. The in-house AWQ (r5) cleared the official smoke gate 2026-07-20; its production arm and the migration to the team's official pipeline are in progress.</p>
             <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
           </a>
 
@@ -128,8 +129,8 @@
           <div class="goal-card plain">
             <span class="gnum">Goal 03</span>
             <h3>Working AWQ quantized model</h3>
-            <p>Produce a correct AWQ-quantized MiniMax-M3 by fixing the current AWQ defect. Tracked alongside Goal 1 — the distributed AWQ path is where the fix is landing.</p>
-            <div class="foot"><span class="status planned">After / with Goal 1</span></div>
+            <p>Achieved 2026-07-20. The r4 corruption traced to an AWQ smoothing-scale degeneracy on dead norm channels (fixed in <code>e87eef77</code> with regression tests and hardened fail-closed gates). The full-calibration artifact (r5, 512×2048) passes every gate on all 57 layers, serves coherently on vLLM TP8, and cleared the official smoke eval (<code>ready_for_production: true</code>). Quality competitiveness vs BF16 is measured under Goal 2's production eval.</p>
+            <div class="foot"><span class="status done">Done · 2026-07-20</span></div>
           </div>
 
           <div class="goal-card plain">
@@ -150,7 +151,7 @@
 
         <div class="focus-band">
           <h3>Current session focus: Goals 1 and 2</h3>
-          <p>Everything else is context, not the immediate objective. Goal 6 is an approved future project, but it remains benchmark-gated and does not displace the current focus. Goals 3–5 are folded into the active work or deferred.</p>
+          <p>Everything else is context, not the immediate objective. Goal 6 is an approved future project, but it remains benchmark-gated and does not displace the current focus. Goal 3 is done as of 2026-07-20; Goals 4–5 are deferred.</p>
         </div>
       </section>
 
@@ -167,7 +168,7 @@
   </main>
 
   <footer>
-    <strong>Field note status:</strong> internal research update, not a product-support statement. Goal list mirrors <code>PROJECT_GOALS.md</code> (last reviewed 2026-07-19); per-goal claims are scoped to repository evidence dated on or before 20 July 2026 and the sources each page links.
+    <strong>Field note status:</strong> internal research update, not a product-support statement. Goal list mirrors <code>PROJECT_GOALS.md</code> (last reviewed 2026-07-20); per-goal claims are scoped to repository evidence dated on or before 20 July 2026 and the sources each page links.
   </footer>
 </body>
 </html>

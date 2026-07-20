@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Goal 2 field note: the temporary paired-fidelity evaluation pipeline comparing in-house GPTQ, external AWQ, official MXFP8, and the BF16 baseline for MiniMax-M3, with a fully reproducible harness setup.">
+  <meta name="description" content="Goal 2 field note: the temporary paired-fidelity evaluation pipeline comparing in-house GPTQ and AWQ, external AWQ, official MXFP8, and the BF16 baseline for MiniMax-M3, with a fully reproducible harness setup.">
   <title>Goal 2 · Temporary Evaluation Pipeline · Field Note</title>
   <style>
     :root{
@@ -129,14 +129,15 @@
       </section>
 
       <section id="models">
-        <h2><span class="number">02 / The field</span>Four checkpoints under test</h2>
+        <h2><span class="number">02 / The field</span>Five checkpoints under test</h2>
         <div class="legend">
           <div class="m"><b>inhouse_gptq</b><span>Our in-house GPTQ, W4A8 (W4AFP8). The ABI-overlay-repaired checkpoint under <code>artifacts/m3-awq-gptq-prepared/</code>.</span></div>
+          <div class="m"><b>inhouse_awq</b><span>Our in-house full-calibration AWQ, W4AFP8 (r5, dead-channel fix <code>e87eef77</code>) — Goal 3's artifact. Smoke-gated on this contract 2026-07-20; production scores pending.</span></div>
           <div class="m"><b>cyankiwi_awq</b><span>External community AWQ, W4A16 INT4 — <code>cyankiwi/MiniMax-M3-AWQ-INT4</code>. The independent quant comparator.</span></div>
           <div class="m"><b>mxfp8 (official)</b><span>Official <code>MiniMaxAI/MiniMax-M3-MXFP8</code>, W8A16 (served via Marlin W8A16 on Hopper).</span></div>
           <div class="m"><b>bf16 (baseline)</b><span>Official unquantized <code>MiniMaxAI/MiniMax-M3</code>. The reference every delta is measured against.</span></div>
         </div>
-        <p class="src">Sources: matrix configs <code>minimax_m3_paired_gptq_awq_reasoning_r4.yaml</code>, <code>minimax_m3_mxfp8_reasoning_r4.yaml</code>, <code>minimax_m3_bf16_reasoning_r4.yaml</code>.</p>
+        <p class="src">Sources: matrix configs <code>minimax_m3_paired_gptq_awq_reasoning_r4.yaml</code>, <code>minimax_m3_mxfp8_reasoning_r4.yaml</code>, <code>minimax_m3_bf16_reasoning_r4.yaml</code>, <code>minimax_m3_inhouse_awq_r5_smoke.yaml</code>.</p>
       </section>
 
       <section id="results">
@@ -201,7 +202,7 @@
 
       <section id="status">
         <h2><span class="number">05 / Status</span>What has completed</h2>
-        <p>All four target models have completed the r4 reasoning suite. Return codes are from each shard's <code>return_code.txt</code>.</p>
+        <p>All four original target models have completed the r4 reasoning suite; a fifth arm — the <strong>in-house full-calibration AWQ (r5, W4AFP8; Goal 3's artifact)</strong> — cleared the official smoke gate on the same contract on 2026-07-20 (contract-gate vs the BF16 r50 root: every scoring-relevant hash matched; the single <code>eval_config_sha256</code> mismatch is the post-r50 NCCL PG-timeout knob <code>b56dacf6</code>, documented in the run root's <code>COMPARABILITY.md</code>). Return codes are from each shard's <code>return_code.txt</code>.</p>
         <div class="table-scroll">
           <table>
             <caption>Completion status by run root</caption>
@@ -211,6 +212,7 @@
               <tr><td><code>…-paired-gpqa-rerun-r48</code></td><td>GPTQ + AWQ</td><td>all <strong>rc 0</strong> (gpqa repair)</td></tr>
               <tr><td><code>…-mxfp8-comparator-r4</code></td><td>MXFP8</td><td>all <strong>rc 0</strong> (after in-place resume; first pass SIGTERM'd at 12 h)</td></tr>
               <tr><td><code>…-bf16-tp16-qualification-r50</code></td><td>BF16</td><td>all shard <strong>rc 0</strong>; smoke passed 7 gates, <code>ready_for_production=true</code></td></tr>
+              <tr><td><code>…-inhouse-awq-r5-smoke</code></td><td>in-house AWQ (r5, W4AFP8)</td><td>smoke <strong>rc 0</strong>, all 7 gates, <code>ready_for_production=true</code>; 0 empty / 0 loops; production arm pending</td></tr>
             </tbody>
           </table>
         </div>
@@ -372,7 +374,8 @@ export GLOO_SOCKET_IFNAME=intranet</pre>
         <h2><span class="number">09 / Future work</span>Next tasks</h2>
         <ol class="roadmap">
           <li><strong>Complete the migration to the official pipeline (§08)</strong> — serve M3 on the patched vLLM 0.24.0 image, wire the four benchmarks profiles, and run the four-way through <code>quality/</code> (general + distribution + reliability + agentic). This is the active in-progress work; the items below pertain to the stopgap.</li>
-          <li>Generate the <strong>merged four-way comparison report</strong> (<code>comparisons/</code>, <code>compare.json</code>, root <code>report.md</code>) — the stopgap design's primary deliverable, with BF16-relative flip-rate and McNemar statistics.</li>
+          <li>Run the <strong>production-profile eval of the in-house AWQ r5</strong> (matrix <code>minimax_m3_inhouse_awq_r5_smoke.yaml</code>, smoke already green) — the arm that completes the in-house-AWQ-vs-other-quants-vs-BF16 comparison this goal exists for.</li>
+          <li>Generate the <strong>merged comparison report</strong> (<code>comparisons/</code>, <code>compare.json</code>, root <code>report.md</code>) — the stopgap design's primary deliverable, with BF16-relative flip-rate and McNemar statistics — now five-way once the r5 production arm lands.</li>
           <li>Bake the multi-node env fixes into the launchers once the hot scripts go cold: <code>--cpus-per-task</code>, the <code>SOCKET_IFNAME</code> exports, a robust Ray placement monitor, and a job-suffixed <code>driver-done</code> sentinel — plus launcher tests.</li>
           <li>Persist the full version set (vLLM / torch / CUDA / driver) into <code>run_manifest.json</code> to close the reproducibility gap.</li>
           <li>Add a separate <strong>public-comparable GPQA profile</strong> (198 questions × 5 repeats, vendor prompt/extraction) if headline-score reproduction is ever wanted — kept distinct from the paired regression signal.</li>
@@ -389,7 +392,7 @@ export GLOO_SOCKET_IFNAME=intranet</pre>
           <li><span class="t">Design · this fork</span><a href="../../docs/superpowers/specs/2026-07-12-minimax-m3-vllm-quality-evaluation-design.md">vLLM quality-evaluation design</a></li>
           <li><span class="t">Handoff · this fork</span><a href="../../M3_PRODUCTION_EVAL_HANDOFF.md">M3_PRODUCTION_EVAL_HANDOFF.md</a></li>
           <li><span class="t">Report · this fork</span><a href="../../M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md">M3_GPTQ_R4_AND_PAIRED_EVAL_REPORT.md</a></li>
-          <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/eval_minimax_m3_reasoning_r4.yaml">eval_minimax_m3_reasoning_r4.yaml</a></li>
+          <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/eval_minimax_m3_reasoning_r4.yaml">eval_minimax_m3_reasoning_r4.yaml</a>, <a href="../../pipeline/configs/minimax_m3_inhouse_awq_r5_smoke.yaml">minimax_m3_inhouse_awq_r5_smoke.yaml</a></li>
           <li><span class="t">Code · this fork</span><a href="../../pipeline/evalsuite/compare.py">pipeline/evalsuite/compare.py</a>, <a href="../../pipeline/evalsuite/report.py">report.py</a></li>
           <li><span class="t">Launcher · this fork</span><a href="../../pipeline/slurm/run_m3_quality_eval_srun.sh">run_m3_quality_eval_srun.sh</a></li>
           <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 2</li>

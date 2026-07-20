@@ -196,9 +196,9 @@
 
         <h3>Full-calibration configuration &amp; live status</h3>
         <p>The full recipe (<code>minimax_m3_distributed_awq_full.yaml</code>) uses <strong>512 calibration samples × 2048 sequence length</strong>, data-parallel split 64/rank across 8 ranks, with <code>device_map: auto_offload</code> and a deliberately small CPU budget to force disk offload — a single-process full-calibration attempt had died at 63,122 memory segments against a <code>vm.max_map_count</code> of 65,530.</p>
-        <div class="callout warning">
-          <h3>Honest status (checked 2026-07-20)</h3>
-          <p>The latest full AWQ run (<code>…-m3-ddp-awq-full-r5-deadchan</code>) is <strong>running</strong>, in early calibration. <strong>No completed full-calibration wall-clock and no final full-model checkpoint have been recorded yet.</strong> The 71-minute figure is a 3-layer smoke including save, not the full 57-MoE-layer run. Recent commits (<code>e87eef77</code> dead-channel smoothing degeneracy, <code>25a0324d</code> qparam broadcast under disk offload, norm-fold fixes) show the full-run path is still being hardened.</p>
+        <div class="callout">
+          <h3><span class="chip obs">Observed in this fork</span> The AWQ target landed: full run in 7 h 22 m (2026-07-20)</h3>
+          <p>Run <code>20260720T060340Z-m3-ddp-awq-full-r5-deadchan</code> completed the <strong>full 512×2048, all-57-MoE-layer AWQ quantization end-to-end in 7 h 22 m on one 8×H100 node</strong> (launch 06:03:40Z → controller exit 13:25:31Z: ~19 min load, 6 h 40 m calibration at ~7 min/layer, ~19 min save + in-line gates) — inside the 4–8 h target. The checkpoint passed every fail-closed gate (smooth-fold on all 57 layers, quant-verify + risk-layer dequant sampling), served coherent chat on single-node vLLM TP8, and cleared the Goal 2 official smoke eval (<code>ready_for_production: true</code>). The run carries the dead-channel smoothing-degeneracy fix (<code>e87eef77</code>) and the qparam-broadcast fix (<code>25a0324d</code>); both are upstream-contribution candidates.</p>
         </div>
         <p class="src">Sources: <code>M3_QUANT_SPEEDUP_PLAN.md</code> (Phase-1 bench); <code>M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md</code> (r2–r9 chain, RSS, cpus-per-task, r9-save + audit); <code>pipeline/configs/minimax_m3_distributed_awq_full.yaml</code>; run artifacts under <code>results/m3-distributed-quant-speedup/</code> and the live full-run dirs; recent <code>git log</code>.</p>
       </section>
@@ -206,9 +206,9 @@
       <section id="next">
         <h2><span class="number">05 / Future work</span>Next tasks</h2>
         <ol class="roadmap">
-          <li>Land a <strong>complete full-model distributed calibration</strong> of the recipe that passes the quality gate, and record its end-to-end wall-clock against the 4–8 h target. <em>(In progress — full AWQ run live as of 2026-07-20.)</em></li>
+          <li><strong>Done (2026-07-20):</strong> a complete full-model distributed AWQ calibration passed the quality gates with an end-to-end wall-clock of <strong>7 h 22 m</strong> — inside the 4–8 h target (r5-deadchan; see §04). The GPTQ leg's full-calibration wall-clock remains to be recorded under the same conditions.</li>
           <li>Report the measured <strong>DDP-vs-single-process speedup</strong> explicitly, stating that the comparison is against 1-core-bound single-process history. The internal target is <code>&gt;2×</code> (a goal, not a first-run hard-fail threshold); load and save times reported separately from calibration.</li>
-          <li>When the full AWQ checkpoint lands, run <code>verify_quant_checkpoint.py</code> + scale audit + a single-node TP8 serving smoke <strong>before</strong> serving it — do not serve the 766 GB 3-layer smoke checkpoint.</li>
+          <li><strong>Done (2026-07-20):</strong> the r5 checkpoint was gated (quant-verify + scale audit + risk-layer dequant sampling), re-exported, and served through a single-node TP8 smoke with a coherent chat probe before any further use.</li>
           <li>Optional follow-ups: a Triton GPTQ kernel port, and re-running the Goal 2 paired eval on the fast-path checkpoint to confirm quality is unchanged.</li>
         </ol>
         <p class="src">Sources: <code>M3_QUANT_SPEEDUP_PLAN.md</code> (&ldquo;Next steps, in order&rdquo;); <code>M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md</code> (success gate &amp; post-r9 serving decision).</p>
@@ -222,6 +222,7 @@
           <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 1 statement</li>
           <li><span class="t">Code · this fork</span><a href="../../pipeline/distributed.py">pipeline/distributed.py</a>, <a href="../../pipeline/calibration.py">pipeline/calibration.py</a></li>
           <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/minimax_m3_distributed_awq_full.yaml">minimax_m3_distributed_awq_full.yaml</a></li>
+          <li><span class="t">Evidence · this fork</span>r5 run artifacts: <code>results/m3-distributed-awq-full/20260720T060340Z-m3-ddp-awq-full-r5-deadchan/</code>; smoke-eval root <code>results/m3-quality/20260720T134946Z-m3-inhouse-awq-r5-smoke/</code>; post-mortem in <a href="../../BUGS_AND_FIXES.md">BUGS_AND_FIXES.md</a></li>
           <li><span class="t">Upstream</span><a href="https://github.com/vllm-project/llm-compressor">llm-compressor multi-GPU calibration</a></li>
         </ul>
       </section>

@@ -95,7 +95,7 @@
   <header class="hero">
     <p class="kicker">Goal 06 / engineering field note · <span class="status planned">Planned · benchmark-gated</span></p>
     <h1>Packed <em>NVFP4 W4A8</em> on Hopper</h1>
-    <p class="deck">Run an official NVFP4 checkpoint on an H100 without unpacking it to FP8 first — keep the weights at four bits, convert fragments to FP8 inside the GEMM, and let Hopper's FP8 Tensor Cores do the multiply.</p>
+    <p class="deck">Future work: test whether official NVFP4 checkpoints can keep four-bit weights packed on Hopper while converting fragments inside the GEMM for FP8 Tensor Core execution.</p>
     <div class="hero-meta">
       <span class="stamp">Design complete · prototype committed</span>
       <span class="stamp">Zero hardware results yet</span>
@@ -106,130 +106,45 @@
   <main>
     <article>
 
-      <section id="banner">
-        <div class="callout warning">
-          <h3><span class="chip obs">Read this first</span> No hardware has run yet</h3>
-          <p>Everything below is <strong>design plus committed CPU-side prototype code and a ready-but-unrun executor packet</strong>. There are <strong>zero</strong> measured latency, memory, correctness, or WGMMA-instruction numbers. Any figure on this page is either an upstream fact or a design-time arithmetic bound, and is labelled as such. The one-layer GPU probe is the immediate next task.</p>
-        </div>
-      </section>
-
       <section id="motivation">
-        <h2><span class="number">01 / Motivation</span>Release-day compatibility, without paying twice for memory</h2>
-        <p class="lead dropcap">Official model releases increasingly ship NVFP4 checkpoints intended for native Blackwell FP4 execution. Hopper has FP8 Tensor Cores but no native FP4 multiply — so the checkpoint arrives in a format the hardware can't natively run.</p>
-        <p>The obvious workaround — expand the four-bit weights to FP8 at load time — <strong>nearly doubles persistent weight memory and throws away the format's principal bandwidth advantage</strong>. The goal instead is to <em>load an official NVFP4 checkpoint without offline conversion</em>, keep weights packed at four bits in GPU memory, convert only the needed weight fragments to FP8 <em>inside</em> the GEMM, and perform FP8 Tensor Core multiplication.</p>
-        <p>Two framing constraints: this is both a release-day compatibility/performance investigation <em>and</em> a stronger comparator for our in-house W4A8 than a weight-only A16 fallback would be. And it <strong>must not weaken the reliable upstream W4A16 compatibility path</strong> — anything that doesn't fit the specialization routes back to Marlin.</p>
-        <p class="src">Sources: <code>docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md</code> (motivation, non-goals); <code>PROJECT_GOALS.md</code> (goal 6).</p>
+        <h2><span class="number">01 / Why</span>Preserve the value of packed NVFP4 on Hopper</h2>
+        <p class="lead dropcap">Official model releases increasingly ship NVFP4 checkpoints for native Blackwell FP4 execution. Hopper has FP8 Tensor Cores but no native FP4 multiply.</p>
+        <p>Expanding those weights to FP8 at load time improves compatibility but loses much of NVFP4's memory and bandwidth advantage. This investigation asks whether H100/H200 can keep weights packed at four bits, convert only the fragments needed by each GEMM, and execute the multiply on FP8 Tensor Cores.</p>
+        <div class="callout warning">
+          <h3>Plan only</h3>
+          <p>There are <strong>no hardware measurements</strong> yet. This page describes a benchmark-gated direction, not a demonstrated performance result or production commitment.</p>
+        </div>
       </section>
 
-      <section id="gap">
-        <h2><span class="number">02 / Engineering gap</span>The block-scale problem</h2>
-        <p>Hopper (SM90) lacks native FP4 Tensor Cores. What upstream vLLM <em>already</em> gives us on Hopper:</p>
-        <ul>
-          <li>Loads NVFP4 packed E2M1 weights + per-group E4M3 scales + a global scale, and repacks them for <strong>Marlin W4A16</strong> (weight-only four-bit, higher-precision activations).</li>
-          <li>Vectorized <code>E2M1→FP16/BF16</code> conversion, plus an <code>E2M1→E4M3</code> register conversion primitive.</li>
-          <li>Dynamic per-token FP8 activation quantization.</li>
-        </ul>
-        <p>What is <strong>missing</strong> is a packed-weight NVFP4 <strong>W4A8</strong> path that does in-kernel <code>E2M1→FP8</code> conversion feeding SM90 FP8 WGMMA. Two candidate reuse paths each fall short:</p>
-        <div class="table-scroll">
-          <table>
-            <caption>Why the two obvious reuse paths don't fit</caption>
-            <thead><tr><th>Candidate</th><th>Why it doesn't fit</th></tr></thead>
-            <tbody>
-              <tr><td>vLLM Hopper CUTLASS W4A8</td><td>Accepts uniform signed <strong>INT4, group size 128</strong> — not NVFP4 <strong>E2M1, group size 16</strong>.</td></tr>
-              <tr><td>Marlin FP8 <code>mma.sync</code></td><td>Built only for SM89/SM12x; on SM90 it's simulated through FP16 MMA and does not accelerate Hopper. A useful path needs an SM90 WGMMA mainloop.</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="callout blue">
-          <h3>The crux: two group-16 scales inside one K=32 WGMMA step</h3>
-          <p>The closest machinery is the <strong>Humming</strong> backend (<code>humming-kernels==0.1.10</code>, pinned by upstream vLLM): E4M3 activations × packed E2M1 weights on SM89+, compact group scales, global scales, dynamic input quant, WGMMA. But its FP8 path cannot apply two NVFP4 group-16 scales inside one K=32 WGMMA step — <code>HummingKernel.check_scale</code> requires every weight-scale group to be at least the MMA-K quantum <code>256 / activation_bits = 32</code>, while NVFP4's group size is <strong>16</strong>. The precise missing mechanism: each K=32 WGMMA weight fragment must load two E4M3 scales, apply each to its 16-wide half after <code>E2M1→E4M3</code> register conversion, then issue FP8 WGMMA.</p>
-        </div>
-        <p class="src">Sources: design spec (upstream inventory, INT4-vs-E2M1 mismatch, Marlin SM90 simulation, Humming <code>check_scale</code> group-quantum constraint).</p>
-      </section>
-
-      <section id="effort">
-        <h2><span class="number">03 / Effort</span>Extend Humming first; clean-sheet only if forced</h2>
-        <p>An initial two-reference audit appeared to show no packed NVFP4 W4A8 path anywhere — but a broader upstream search found one inside the Humming backend. That reversed the plan: <strong>extend and qualify the existing Humming W4A8 path first</strong>; a bespoke CUTLASS kernel is authorized <em>only</em> if the Humming specialization is absent or fails a predeclared correctness, memory, or performance gate. (A textbook application of the repo's search-first prime directive.)</p>
-        <h3>The chosen mechanism</h3>
-        <p>A bounded &ldquo;group-16 specialization&rdquo;: expand the existing scale-register path so a WGMMA N16 subblock carries the extra E4M3 scales, apply each scale to its 16-wide converted half while the weight is still in E4M3 registers, and disable Humming's ordinary post-accumulator group scaling for that policy. The numerical contract is fixed:</p>
-        <pre><span class="c"># in-GEMM weight conversion, with /8 headroom</span>
-B8 = Q_E4M3( E2M1(B4) * group_scale / 8 )
-
-<span class="c"># max finite product 6*448/8 = 336 stays inside E4M3 range;</span>
-<span class="c"># a single compensating (global_scale * 8) is applied outside the GEMM.</span></pre>
-        <p>The first specialization accepts only one scalar <code>B_global_scale</code> shared across fused projections; anything else routes to Marlin. The environment is frozen (vLLM <code>0.24.0</code> from <code>toncao/vllm@minimax-m3-compressed-tensors</code>; Humming tag commit pinned with SHA-256 hashes for the six target source files). A full custom SM90 CUTLASS E2M1 W4A8 datatype variant is fully mapped as a <strong>contingency</strong>, entered only after a concrete Humming blocker.</p>
-        <div class="table-scroll">
-          <table>
-            <caption>Planning-range effort estimates (not commitments)</caption>
-            <thead><tr><th>Stage</th><th>Rough range</th></tr></thead>
-            <tbody>
-              <tr><td>Target audit + reference + rejection proof</td><td>~2–5 engineering days</td></tr>
-              <tr><td>Humming A8/group-16 specialization + tests</td><td>~2–6 weeks</td></tr>
-              <tr><td>Dense qualification</td><td>~1–3 weeks</td></tr>
-              <tr><td>Contingency custom CUTLASS PoC</td><td>~4–8 (up to 8–12) weeks</td></tr>
-              <tr><td>MoE productionization</td><td>separate 3–5 person-month project</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="src">Sources: design spec (two-stage search, decision to extend Humming, H2 mechanism, numerical contract, version freeze, contingency map, effort ranges); implementation plan <code>docs/superpowers/plans/2026-07-19-hopper-nvfp4-w4a8-humming-specialization.md</code>.</p>
-      </section>
-
-      <section id="progress">
-        <h2><span class="number">04 / Progress</span>Committed prototype, nothing measured</h2>
-        <p>The executor packet is in state <code>READY_FOR_EXECUTOR</code>; the one-layer SM90 probe has not been run, and <code>pipeline/results/hopper_nvfp4_w4a8/</code> does not exist. What <em>has</em> been produced is CPU-side planner code, committed to <code>duy-branch</code> (commit <code>8e0456a1</code>):</p>
-        <ul>
-          <li>A pure-Python <strong>bit-exact NVFP4→E4M3 reference</strong> and memory-accounting oracle — <code>pipeline/hopper_nvfp4_w4a8/reference.py</code>.</li>
-          <li>A fail-closed, idempotent <strong>six-file Humming source overlay + installer</strong> — <code>pipeline/hopper_nvfp4_w4a8/humming_patch.py</code>, <code>pipeline/slurm/patch_humming_nvfp4_w4a8.py</code>, <code>install_humming_nvfp4_w4a8.sh</code>.</li>
-          <li>Torch-free <strong>opt-in preflight decision logic</strong> that rejects any non-matching case to <code>backend=marlin_w4a16</code> — <code>pipeline/hopper_nvfp4_w4a8/preflight.py</code>.</li>
-          <li>A <strong>one-layer GPU probe</strong> (N=128, K=128, M∈{1,8,32}) and its <code>srun</code> launcher — <code>gpu_probe.py</code>, <code>run_hopper_nvfp4_w4a8_probe_srun.sh</code>.</li>
-          <li>CPU contract tests (four <code>pipeline/tests/test_*hopper_nvfp4_w4a8*/*humming*</code> files) and the executor packet <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code>.</li>
-        </ul>
-        <div class="callout">
-          <h3>The only concrete numbers so far are analytical</h3>
-          <p>A design-time memory calculation shows the contingency's temporary eight-way scale pack would cost ≈<strong>1.0 byte/weight</strong> vs ≈<strong>0.5625 byte/weight</strong> for compact NVFP4 (4-bit weight + one E4M3 scale per 16) — roughly <strong>1.78×</strong>, which would <em>fail</em> the 1.10× memory gate. These are arithmetic bounds in the design, not benchmark measurements.</p>
-        </div>
-        <p><strong>Planned comparison targets</strong> (not yet measured): upstream <strong>NVFP4 W4A16 Marlin</strong> (compatibility + quality baseline) and <strong>load-expanded W8A8</strong> (a throughput ceiling / control — explicitly not a result the new path is required to beat).</p>
-        <p class="src">Sources: <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code> (packet state); design spec (memory arithmetic, comparison targets); commit <code>8e0456a1</code>. Note: the CPU test suite was not executed in the gathering session — treat &ldquo;tests pass&rdquo; as unverified until run.</p>
+      <section id="direction">
+        <h2><span class="number">02 / Direction</span>Extend an existing backend, fail closed to Marlin</h2>
+        <p>The preferred path is a narrow specialization of the existing <strong>Humming</strong> packed E2M1/FP8 backend. It already provides the closest upstream machinery for packed weights, dynamic FP8 activations, and Hopper WGMMA.</p>
+        <p>The established vLLM <strong>Marlin W4A16</strong> path remains the compatibility baseline and fallback. Unsupported shapes, scale layouts, or model structures must route to Marlin rather than silently selecting an unqualified kernel.</p>
       </section>
 
       <section id="gates">
-        <h2><span class="number">05 / Gates</span>The benchmark that decides everything</h2>
-        <p>Goal 6 is benchmark-gated by design — each stage has predeclared numeric gates, and failure stops the work rather than escalating it.</p>
-
-        <h4>Immediate: one-layer SM90 Humming probe</h4>
-        <p>One node, one H100, M∈{1,8,32}, <code>srun</code> only (no <code>sbatch</code>), no model download, no serving, no timing, no MoE. It passes only if:</p>
+        <h2><span class="number">03 / Decision gates</span>Continue only with evidence</h2>
+        <p>The dense proof must pass all three categories before serving or MoE work begins:</p>
         <ul>
-          <li>exactly <code>humming-kernels==0.1.10</code> with all six sources patched; <code>device_capability == [9,0]</code>;</li>
-          <li>exact-emulation numerical match at <code>rtol=0.01, atol=0.25</code>, finite for every M;</li>
-          <li>K16 scale isolation holds; global scale multiplied by exactly 8; deterministic;</li>
-          <li><strong>memory ratio ≤ 1.10</strong> with no persistent FP8-expanded weight;</li>
-          <li>SASS contains FP8 <code>WGMMA.MMA_ASYNC</code> with E4M3 operands.</li>
+          <li><strong>Correctness:</strong> finite, deterministic outputs that match the W4A8 reference within the predeclared tolerance.</li>
+          <li><strong>Memory:</strong> no persistent FP8-expanded weight and storage close to the packed W4A16 baseline.</li>
+          <li><strong>Performance:</strong> useful improvement in at least one decision-relevant serving bucket without materially slowing the primary bucket.</li>
         </ul>
-
-        <h4>Stage 2: dense proof-of-concept continuation gates</h4>
-        <p>For every supported shape and M∈{1,8,32,128,512,2048}: no NaN/Inf; <strong>cosine similarity ≥ 0.999</strong> to the deterministic W4A8 reference; <strong>relative L2 error ≤ 0.02</strong>; deterministic; misaligned shapes select W4A16 first. <strong>Memory:</strong> persistent weight+scale bytes ≤ 1.10× the W4A16 Marlin representation. <strong>Performance:</strong> after warmup, median kernel latency <strong>≥ 15% faster than W4A16 Marlin in at least one decision-relevant M bucket</strong> and <strong>no more than 10% slower</strong> in the primary serving bucket.</p>
-
-        <div class="callout warning">
-          <h3>The stop rule</h3>
-          <p>If correctness or memory fails → <strong>stop</strong>. If correctness and memory pass but the performance gate fails → <strong>retain the prototype and evidence, but do not begin fused-MoE production work</strong>. Only a clean sweep continues.</p>
-        </div>
-        <p class="src">Sources: design spec (probe gates, Stage-2 continuation gates, stop rule); <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code> (probe scope &amp; gates).</p>
+        <p>If correctness or memory fails, stop. If performance is not useful, retain the evidence but do not begin production integration.</p>
       </section>
 
       <section id="next">
-        <h2><span class="number">06 / Future work</span>Staged path</h2>
+        <h2><span class="number">04 / Future work</span>Staged path</h2>
         <ol class="roadmap">
-          <li><strong>Run the one-layer SM90 probe</strong> (the one active, ready packet). Decision: does the patched Humming A8/E2M1/group-16 specialization compile on SM90 and satisfy the scale-isolation, numerical, memory, and WGMMA-instruction gates?</li>
-          <li><strong>Stage 2 — dense PoC:</strong> qualify across all shapes and M buckets against the continuation gates above; apply the stop rule.</li>
-          <li><strong>Stage 3 — dense serving qualification:</strong> only after Stage 2 — integrate behind an opt-in serving setting and compare W4A8 vs W4A16 Marlin vs load-expanded W8A8 (throughput, ITL, TTFT, peak HBM, startup) under the repo's fail-closed evaluation-harness contract, with a predeclared paired tolerance and no conflation with public benchmark scores.</li>
-          <li><strong>Stage 4 — MoE / productionization:</strong> fused MoE, expert parallelism, routing, gate/up fusion, broader model families — out of scope until Stages 2 and 3 pass; receives a separate spec.</li>
-          <li><strong>Contingency:</strong> the custom SM90 CUTLASS E2M1 W4A8 datatype variant — only if Humming fails a gate; its genuinely novel work is narrowly the E2M1→E4M3 converter and the compact group-16 scale feed.</li>
+          <li>Run the one-layer SM90 probe for compilation, numerical correctness, packed memory, and actual FP8 WGMMA use.</li>
+          <li>Qualify a dense proof of concept across representative shapes and serving batch sizes.</li>
+          <li>Integrate an opt-in dense serving path and compare it with Marlin W4A16 and load-expanded W8A8.</li>
+          <li>Specify fused-MoE production work separately, and only after every dense-stage gate passes.</li>
         </ol>
-        <p class="src">Sources: design spec (&ldquo;Staged execution and continuation gates&rdquo;); implementation plan (post-probe boundary); <code>HOPPER_NVFP4_W4A8_HANDOFF.md</code>.</p>
       </section>
 
       <section id="ledger">
-        <h2><span class="number">07 / Ledger</span>Sources</h2>
+        <h2><span class="number">05 / Evidence</span>Sources</h2>
         <ul class="ledger">
           <li><span class="t">Design · this fork</span><a href="../../docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md">Hopper packed NVFP4 W4A8 fallback design</a></li>
           <li><span class="t">Plan · this fork</span><a href="../../docs/superpowers/plans/2026-07-19-hopper-nvfp4-w4a8-humming-specialization.md">Humming specialization implementation plan</a></li>

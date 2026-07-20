@@ -99,7 +99,7 @@ rc=$?; gate lm_eval_chat "$rc"
 
 note "step 4b: lm-eval smoke, loglikelihood path (mmlu --limit 1)"
 "$BVENV/bin/lm_eval" --model local-completions \
-  --model_args "base_url=http://localhost:$PORT/v1/completions,model=$SERVED_NAME,num_concurrent=4,tokenizer=$TOKENIZER" \
+  --model_args "base_url=http://localhost:$PORT/v1/completions,model=$SERVED_NAME,num_concurrent=4,tokenizer=$TOKENIZER,max_length=$MAX_MODEL_LEN" \
   --tasks mmlu --output_path "$ROOT/lm_eval_smoke" --seed 0 --apply_chat_template \
   --limit 1 >"$ROOT/lm_eval_ll.log" 2>&1
 rc=$?; gate lm_eval_loglikelihood "$rc"

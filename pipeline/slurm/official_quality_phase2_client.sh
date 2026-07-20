@@ -76,7 +76,8 @@ for f in candidate bf16; do
 done
 
 note "step 5: quality.run_ab (general --limit $GENERAL_LIMIT + distribution + delta + report)"
-( cd "$BENCH" && "$BVENV/bin/python" -m quality.run_ab \
+# run_ab shells out to a bare `lm_eval` — the benchmarks venv bin must be on PATH.
+( cd "$BENCH" && PATH="$BVENV/bin:$PATH" "$BVENV/bin/python" -m quality.run_ab \
     --profile configs/minimax/minimax-m3.sh \
     --baseline-config "$ROOT/profiles/minimax-m3-bf16.sh" \
     --run-id "$RUN_ID" \

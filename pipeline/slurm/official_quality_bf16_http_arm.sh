@@ -36,6 +36,12 @@ export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR=${FLASHINFER_WORKSPACE_DIR:-$HOME/cache/flashinfer}
 export VLLM_DISABLE_SHARED_EXPERTS_STREAM=${VLLM_DISABLE_SHARED_EXPERTS_STREAM:-1}
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+# Cross-node TP16 NCCL must bind the routable fabric; auto-detect picked an
+# unroutable iface on some node pairs (h107/h108: "NCCL error: unhandled system
+# error" in ncclCommInitRank while h97/h98 worked). Pin it, keep WARN evidence.
+export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-intranet}
+export GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-intranet}
+export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true
 
 finish() {

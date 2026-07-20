@@ -25,6 +25,9 @@ HOLD_MAX=10800 srun --exclusive --nodes=2 --ntasks=2 --ntasks-per-node=1 \
      > "$ROOT/bf16-srun.log" 2>&1 &
 BF16_JOB=$!
 
+# NOTE: launch in the MAIN shell (no command substitution): $(fn) runs in a
+# subshell, so the srun would not be our child — `wait $pid` then fails with
+# 127 instantly and the run collapses (observed 20260720T162402Z).
 launch_arm() {  # $1 arm  $2 ckpt  $3 port  $4 profile  $5 run_baseline_general
   ROOT="$ROOT" ARM="$1" CKPT="$2" PORT="$3" PROFILE="$4" RUN_BASELINE_GENERAL="$5" \
   srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8 --cpus-per-task=192 \
@@ -32,18 +35,21 @@ launch_arm() {  # $1 arm  $2 ckpt  $3 port  $4 profile  $5 run_baseline_general
        --export=ALL \
        bash "$REPO/pipeline/slurm/official_quality_full4_candidate_client.sh" \
        > "$ROOT/$1-srun.log" 2>&1 &
-  echo $!
+  LAST_PID=$!
 }
 
-GPTQ_PID=$(launch_arm gptq \
+launch_arm gptq \
   "$REPO/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay" \
-  8000 "$BENCH_CFG/minimax-m3.sh" 1)
-AWQ_PID=$(launch_arm awq \
+  8000 "$BENCH_CFG/minimax-m3.sh" 1
+GPTQ_PID=$LAST_PID
+launch_arm awq \
   "/mnt/nfs/hoangduy/results/m3-distributed-awq-full/20260720T060340Z-m3-ddp-awq-full-r5-deadchan/awq/MiniMax-M3-awq-W4AFP8/20260720-060402/checkpoint-vllm-w123" \
-  8004 "$BENCH_CFG/minimax-m3-awq-inhouse.sh" 0)
-MXFP8_PID=$(launch_arm mxfp8 \
+  8004 "$BENCH_CFG/minimax-m3-awq-inhouse.sh" 0
+AWQ_PID=$LAST_PID
+launch_arm mxfp8 \
   "/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3-MXFP8" \
-  8002 "$BENCH_CFG/minimax-m3-mxfp8.sh" 0)
+  8002 "$BENCH_CFG/minimax-m3-mxfp8.sh" 0
+MXFP8_PID=$LAST_PID
 
 rc_all=0
 for spec in "gptq:$GPTQ_PID" "awq:$AWQ_PID" "mxfp8:$MXFP8_PID"; do

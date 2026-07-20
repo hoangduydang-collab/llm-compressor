@@ -51,6 +51,54 @@ from llmcompressor.utils.pytorch.module import get_module_to_name_dict
 
 __all__ = ["AWQModifier"]
 
+# A smoothed input channel whose mean |activation| is at or below this
+# fraction of the largest channel's is treated as dead (produces no signal).
+_DEAD_CHANNEL_RTOL = 1e-6
+
+# Backstop band for final smoothing scales: |log10(scale)| <= 2. Folding a
+# larger scale into a Gemma-style offset norm pushes the stored weight into
+# the bf16 precision cliff around -1 and cannot be represented faithfully.
+_SCALE_CLAMP = 100.0
+
+
+def _grid_search_scales(
+    x_mean: torch.Tensor, w_mean: torch.Tensor | None, ratio: float
+) -> torch.Tensor:
+    """Per-channel smoothing scales for one grid-search point.
+
+    Dead input channels — mean |activation| numerically zero, e.g. an
+    offset-norm channel whose base weight is exactly -1 so its gain
+    (1 + w) is 0 — must not participate in smoothing. Their raw scale
+    saturates at the 1e-4 clamp floor, and a single floored entry poisons
+    the geometric normalization ``scales / sqrt(max * min)``, uniformly
+    inflating every live channel's scale by orders of magnitude. The
+    inflated fold drives the norm weights toward -1 where bf16 cannot
+    resolve per-channel gains, destroying the checkpoint (MiniMax-M3
+    layers 8/10-13; see BUGS_AND_FIXES.md "AWQ smoothing-scale
+    degeneracy on dead norm channels").
+
+    Dead channels are excluded from the normalization and pinned to
+    scale 1.0 (any scale on an always-zero channel is a functional
+    no-op). Final scales are hard-clamped to a bounded band as a
+    backstop so no single extreme channel can produce an unbounded fold.
+    """
+    x_mean = x_mean.view(-1)
+    if w_mean is not None:
+        scales = (x_mean.pow(ratio) / (w_mean.view(-1).pow(1 - ratio) + 1e-4)).clamp(
+            min=1e-4
+        )
+    else:
+        scales = x_mean.pow(ratio).clamp(min=1e-4)
+
+    dead = x_mean <= x_mean.max() * _DEAD_CHANNEL_RTOL
+    live = ~dead
+    if live.any():
+        scales = scales / (scales[live].max() * scales[live].min()).sqrt()
+    scales[dead] = 1.0
+    scales[torch.isinf(scales)] = 1
+    scales[torch.isnan(scales)] = 1
+    return scales.clamp(min=1.0 / _SCALE_CLAMP, max=_SCALE_CLAMP)
+
 
 class AWQModifier(Modifier):
     """
@@ -676,15 +724,9 @@ class AWQModifier(Modifier):
             )
             for ratio, use_duo_scaling in pbar:
                 # NOTE: s^-1 * x is fused here, according to paper
-                if use_duo_scaling:
-                    scales = (x_mean.pow(ratio) / (w_mean.pow(1 - ratio) + 1e-4)).clamp(
-                        min=1e-4
-                    )
-                else:
-                    scales = x_mean.pow(ratio).clamp(min=1e-4).view(-1)
-                scales = scales / (scales.max() * scales.min()).sqrt()
-                scales[torch.isinf(scales)] = 1
-                scales[torch.isnan(scales)] = 1
+                scales = _grid_search_scales(
+                    x_mean, w_mean if use_duo_scaling else None, ratio
+                )
                 _scalesview = scales.view(1, -1).to(device)
 
                 # (W * s)

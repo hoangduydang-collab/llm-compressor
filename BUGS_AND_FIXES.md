@@ -1136,6 +1136,71 @@ Smoke checkpoints (~820 GB each) are deleted at the end of a PASSING smoke
 chain (evidence/logs kept); broken smoke checkpoints r13/r14/r15 were
 deleted 2026-07-19 (~2.4 TB reclaimed, NFS was at 95%).
 
+## AWQ smoothing-scale degeneracy on dead norm channels (full r4 post-mortem, 2026-07-20)
+
+**Symptom:** Full run r4 (first with the qparam-broadcast fix) quantized for
+7h00m, then failed the new dequant-vs-base gate: `dequant mismatch in
+language_model.model.layers.12...experts.81.up_proj: resid=12.979`. Census:
+1,423/21,888 routed-expert modules bad — exactly the gate+up projections of
+layers 8, 10, 11, 12, 13 (down_proj clean; all other layers clean). Weight
+*scales* were uniformly ~118× too large while the packed int4 values were
+healthy (cosine ≈ 0.99 vs base after refitting); the saved post-attention
+norms of those layers had mean ≈ −0.992 (effective gain ~1/128).
+
+**Root cause (in `AWQModifier._compute_best_scale`, identical upstream):**
+The M3 base model's post-attention norms on layers 8/10/11/12/13 each carry a
+channel whose weight is EXACTLY −1.0. MiniMaxM3VLRMSNorm is Gemma-style
+(`y = x̂ · (1 + w)`), so that channel's gain is 0 — its output is always
+zero, hence its observed `x_mean` is exactly 0. The grid-search scale formula
+`x_mean.pow(ratio).clamp(min=1e-4)` floors the dead channel at 1e-4, and the
+geometric normalization `scales / (scales.max()·scales.min()).sqrt()` then
+divides EVERY channel by `sqrt(max·1e-4)` ≈ inflating all scales ~×100
+uniformly. The fold pushes the norm weights to ≈ −0.992, where bf16 cannot
+resolve per-channel gains (spacing ~2⁻⁹ near 1), so the norm÷ / balance×
+inverse pair no longer cancels and the layer is numerically destroyed.
+Corroboration: r3 and r4 grid-search error logs are bit-identical (predates
+the broadcast fix); the July-8 single-process full checkpoint shows the same
+disease (layer-8 norm min −188 pre-clamping era); layers 9/14 (norm min
+−0.9961, small-but-alive channel) are only mildly affected; upstream
+llm-compressor `main` has the identical unprotected formula (verified
+2026-07-19), so there was no existing fix to adopt.
+
+**Fix (`src/llmcompressor/modifiers/transform/awq/base.py`):** scale
+computation refactored into module-level `_grid_search_scales(x_mean, w_mean,
+ratio)`: channels with `x_mean <= max(x_mean)·1e-6` are classified dead,
+EXCLUDED from the geometric normalization, and pinned to scale 1.0 (any
+scale on an always-zero channel is a functional no-op, but a floored one
+poisons the normalization). Final scales are additionally hard-clamped to
+[1e-2, 1e2] as a backstop against any unbounded fold. Regression tests:
+`tests/llmcompressor/modifiers/transform/awq/test_grid_search_scales.py`
+(includes a test documenting the old formula reproducing the ~×100
+inflation).
+
+**Gate upgrades (would have caught r4 in a 45-min smoke):**
+
+1. `assert_smooth_fold_consistency` now audits ALL M3 MoE layers 3–59 by
+   default (was spot-check 3/31/59, which is why r4's layers 8–13 sailed
+   through); unsmoothed layers audit as scale = 1 and pass trivially, so the
+   full sweep is safe for partial-layer smokes.
+2. The gate also bounds fold MAGNITUDE: per-layer norm-implied scale mean
+   must lie in [0.05, 20] (healthy ≈ 0.7–0.9; r4 disease ≈ 110–118). A fold
+   can be perfectly self-consistent and still fatal via bf16 precision loss.
+3. NaN-robustness: rel_l2 compares with `not (err <= threshold)` so NaN/inf
+   fails closed, and the audit (`pipeline/m3_checkpoint_scale_audit.py`)
+   treats both-gains-zero dead channels as scale 1 instead of 0/0 = NaN —
+   otherwise a HEALTHY post-fix checkpoint would fail on layers 8/10–13.
+4. Smoke config now quantizes layer 8 (dead-channel layer) alongside
+   3/31/59 so every smoke exercises the degeneracy path end to end.
+
+Validated against real checkpoints: corrupt r4 FAILS on exactly layers
+8/10/11/12/13 (rel_l2 inf / scale mean ~117 / non-finite scale); known-good
+r9 PASSES all 57 layers. Corrupt r4 checkpoint preserved at
+`/mnt/nfs/hoangduy/results/m3-distributed-awq-full/20260719T162052Z-m3-ddp-awq-full-r4-qparamfix/...`
+until a good full checkpoint exists. Open question: grid-search error still
+grows monotonically with depth (3.74 at layer 59, 64 partially-corrupt
+modules there in r4) — watch whether the dead-channel fix also cures it in
+smoke/full r5.
+
 ## MiniMax-M3 full-calib AWQ garbage output (quality ablation, 2026-07-09)
 
 **Symptom:** After a successful graphs-on serve-verify, both smoke and full-calib AWQ

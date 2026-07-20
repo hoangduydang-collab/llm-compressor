@@ -595,9 +595,20 @@ def assert_smooth_fold_consistency(
     base: Path,
     layers: list[int],
     threshold: float = 0.02,
+    scale_mean_range: tuple[float, float] = (0.05, 20.0),
 ) -> None:
     """Fail-closed post-save gate: a smoothing fold applied to balance layers
-    (router / shared experts) must be matched by the inverse fold in the norm.
+    (router / shared experts) must be matched by the inverse fold in the norm,
+    AND the fold itself must be bounded.
+
+    The magnitude bound exists because a fold can be perfectly
+    self-consistent yet still fatal: full-run r4 (2026-07-19) hit the AWQ
+    dead-channel scale degeneracy, folding a uniform ~x128 into layers
+    8/10-13 — norm weights landed at ~-0.992 where bf16 cannot resolve
+    per-channel gains. Healthy folds have norm-implied scale means of
+    0.7-0.9; anything outside ``scale_mean_range`` is a degenerate fold.
+    Layers that were not smoothed audit as scale == 1 and pass trivially,
+    so the gate is safe to run over every layer in partial-layer smokes.
 
     The full-calibration AWQ run r2 (2026-07-18) saved a checkpoint whose
     routers carried the per-channel smoothing multiply while the offset norm
@@ -622,11 +633,25 @@ def assert_smooth_fold_consistency(
         return
 
     failures = []
+    lo, hi = scale_mean_range
     for layer, record in report["layers"].items():
         for component in ("router_compensation", "shared_gate_up_compensation"):
             err = record[component]["relative_l2_error"]
-            if err > threshold:
+            # `not <=` so NaN (e.g. non-finite prediction) fails closed.
+            if not (err <= threshold):
                 failures.append(f"layer {layer} {component}: rel_l2={err:.3e}")
+            scale_stats = record[component]["scale"]
+            scale_mean = scale_stats["mean"]
+            if scale_stats["finite_fraction"] < 1.0:
+                failures.append(
+                    f"layer {layer} {component}: non-finite norm-implied scale"
+                )
+            elif scale_mean is None or not (lo <= scale_mean <= hi):
+                failures.append(
+                    f"layer {layer} {component}: degenerate fold, "
+                    f"scale mean={scale_mean} outside [{lo}, {hi}] "
+                    "(healthy ~0.7-0.9; dead-channel degeneracy ~128)"
+                )
     if failures:
         raise RuntimeError(
             "smooth-fold consistency gate FAILED — balance-layer weights moved "
@@ -891,11 +916,16 @@ def run_quantize(
         # After the barrier so a gate failure on the source rank cannot strand
         # other ranks in a collective (the r11/r12 zombie choreography).
         if dist_ctx.is_source or not dist_ctx.enabled:
-            gate_layers = [
-                int(part)
-                for part in os.environ.get("M3_DIAGNOSTIC_LAYERS", "3,31,59").split(",")
-                if part.strip()
-            ]
+            # Default to every M3 MoE layer: r4's degenerate folds sat on
+            # layers 8/10-13, which a 3/31/59 spot-check cannot see. Layers
+            # that were not smoothed audit as scale == 1 and pass trivially.
+            gate_layers_env = os.environ.get("M3_DIAGNOSTIC_LAYERS", "")
+            if gate_layers_env.strip():
+                gate_layers = [
+                    int(part) for part in gate_layers_env.split(",") if part.strip()
+                ]
+            else:
+                gate_layers = list(range(3, 60))
             assert_smooth_fold_consistency(ckpt, Path(cfg.model.id), gate_layers)
             assert_quant_checkpoint_verified(ckpt, Path(cfg.model.id))
     else:

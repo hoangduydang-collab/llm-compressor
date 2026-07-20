@@ -81,7 +81,15 @@ def compensation_error(
     candidate_weight: torch.Tensor,
 ) -> dict[str, Any]:
     # MiniMaxM3VLRMSNorm is Gemma-style: smooth the effective 1 + weight.
-    scale = (1.0 + base_norm) / (1.0 + candidate_norm)
+    base_gain = 1.0 + base_norm
+    cand_gain = 1.0 + candidate_norm
+    scale = base_gain / cand_gain
+    # Dead channels (base weight exactly -1 -> gain 0: M3 layers 8/10-13)
+    # make the implied scale 0/0. A consistent fold leaves them at gain 0
+    # (scale 1); any other combination is inconsistent and must show up in
+    # the error, so pin only the both-zero case.
+    both_dead = (base_gain == 0) & (cand_gain == 0)
+    scale = torch.where(both_dead, torch.ones_like(scale), scale)
     predicted = base_weight * scale.reshape(1, -1)
     denom = base_weight.norm().clamp_min(1e-12)
     return {

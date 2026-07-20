@@ -2,8 +2,11 @@
 #
 # The launcher overrides method, model/offload/output paths and always passes
 # --evidence-only. The negative-lookahead ignore pattern leaves exactly decoder
-# layers 3, 31, and 59 eligible for quantization while preserving the production
-# recipe and full class-name sequential trace.
+# layers 3, 8, 31, and 59 eligible for quantization while preserving the
+# production recipe and full class-name sequential trace. Layer 8 is included
+# deliberately: its post-attention norm has a dead channel (base weight
+# exactly -1, gain 0) that triggered the AWQ smoothing-scale degeneracy in
+# full run r4 (see BUGS_AND_FIXES.md) — the smoke must exercise that path.
 name: minimax_m3_distributed_smoke
 
 model:
@@ -37,7 +40,7 @@ quantization:
     - "re:.*block_sparse_moe[.]shared_experts[.].*"
     - "re:.*self_attn[.].*"
     - "re:.*layers[.][0-2][.].*"
-    - "re:.*language_model[.]layers[.](?!(?:3|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*"
+    - "re:.*language_model[.]layers[.](?!(?:3|8|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*"
   sample_generation: false
 
 calibration:

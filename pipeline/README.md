@@ -23,7 +23,9 @@ pipeline/
 ## Install (on the 8xH100 cluster)
 
 A single environment handles quantize + serve + eval (vLLM 0.24.0 stable serves
-W4AFP8 MoE correctly — see the MoE-gate note below). Using `uv` + a project venv:
+W4AFP8 MoE correctly *once the M3 W4A8 Python overlay is applied* via
+`pipeline/slurm/patch_vllm_m3_serve.py` — see the MoE-gate note below and the full
+recipe in `docs/m3-serving-recipe.md`). Using `uv` + a project venv:
 
 ```bash
 source /mnt/nfs/hoangduy/env.sh                       # sets $UV, caches, WORK_ROOT

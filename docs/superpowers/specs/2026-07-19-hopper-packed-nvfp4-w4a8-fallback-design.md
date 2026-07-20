@@ -71,8 +71,13 @@ Primary references:
 
 ### Reference snapshot
 
-The serving environment evidenced in this repository is vLLM `0.24.0` from
-`toncao/vllm@minimax-m3-compressed-tensors`. The latest-upstream audit for this
+The serving environment referenced for *this NVFP4/Humming track* is vLLM `0.24.0`
+from `toncao/vllm@minimax-m3-compressed-tensors`. (Clarification: the general M3
+eval/production serving base evidenced in the repo is *stable* vLLM `0.24.0` plus the
+in-place W4A8 Python overlay in `pipeline/slurm/patch_vllm_m3_serve.py` — and those W4A8
+edits are needed on stock, the NVIDIA build, *and* this fork alike, so the fork is this
+track's reference tree, not a general serving requirement. See `docs/m3-serving-recipe.md`.)
+The latest-upstream audit for this
 reuse map inspected `vllm-project/vllm` commit
 `b6ff8a2f509cc7ac9c58176f5115a836aa1e08bd` on 2026-07-19. Its native CUTLASS
 NVFP4 path is hardware-gated and its Hopper-compatible Marlin path is W4A16,

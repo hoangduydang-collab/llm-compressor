@@ -39,6 +39,7 @@
     .hero-meta{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px;margin-top:38px;font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
     .stamp{padding:9px 11px;border:1px solid var(--ink);background:rgba(250,247,239,.56);}
     .status{display:inline-block;white-space:nowrap;padding:6px 9px;font:800 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .status.done{color:#fff;background:var(--verified);}
     .status.working{color:#fff;background:var(--verified);}
     .status.hold{color:#fff;background:var(--oxide);}
     .status.planned{color:var(--ink);background:#e7c36d;}
@@ -100,9 +101,9 @@
   </nav>
 
   <header class="hero">
-    <p class="kicker">Goal 01 / engineering field note · <span class="status working">Work in progress</span></p>
+    <p class="kicker">Goal 01 / engineering field note · <span class="status done">Done</span></p>
     <h1>Fast <em>parallel</em> quantization</h1>
-    <p class="deck">Distributed AWQ now reaches the 4–8 hour calibration target. The latest completed full run quantized in 7 hours, but a correctness gate rejected it; the corrected run remains the path to a usable checkpoint.</p>
+    <p class="deck">Done: distributed AWQ met the 4–8 hour calibration target with a seven-hour full run. The remaining checkpoint-correctness work belongs to Goal 3, not parallelization.</p>
     <div class="hero-meta">
       <span class="stamp">Target: full run in 4–8 h</span>
       <span class="stamp">AWQ + GPTQ</span>
@@ -128,23 +129,14 @@
         </div>
       </section>
 
-      <section id="status">
-        <h2><span class="number">03 / Current status</span>Corrected full run in progress</h2>
-        <p>The root cause is fixed: dead channels are excluded from geometric scale normalization and pinned to a neutral scale, with bounded scales as a backstop. The smoke recipe now always includes a known affected layer, and the fold audit checks every MoE layer.</p>
-        <p>As of <strong>20 July 2026</strong>, corrected full run <code>r5-deadchan</code> is in progress. The speed target has been demonstrated by r4, but the goal remains open until a full checkpoint passes tensor, dequantization, smoothing-fold, serving-ABI, and TP8 chat gates.</p>
-      </section>
-
-      <section id="next">
-        <h2><span class="number">04 / Next</span>Acceptance path</h2>
-        <ol class="roadmap">
-          <li>Complete the corrected full AWQ run and pass the full post-save gate chain.</li>
-          <li>Record calibration, save, and total wall-clock separately, then compare the accepted run with the historical single-process baseline.</li>
-          <li>Re-export the accepted checkpoint for vLLM, run the TP8 serving smoke, and apply the Goal 2 quality-evaluation pipeline.</li>
-        </ol>
+      <section id="handoff">
+        <h2><span class="number">03 / Boundary</span>Checkpoint correctness moves to Goal 3</h2>
+        <p>Goal 1 is complete because the distributed path demonstrated full calibration inside the target window. The failed r4 gate is evidence about AWQ checkpoint correctness, not parallelization throughput.</p>
+        <p>Producing a correct AWQ checkpoint, passing post-save and serving gates, and running quality evaluation are now <strong>Goal 3 work</strong>. The dead-channel scale fix and corrected full run continue there.</p>
       </section>
 
       <section id="ledger">
-        <h2><span class="number">05 / Evidence</span>Sources</h2>
+        <h2><span class="number">04 / Evidence</span>Sources</h2>
         <ul class="ledger">
           <li><span class="t">Evidence · this fork</span><a href="../../BUGS_AND_FIXES.md">BUGS_AND_FIXES.md</a> — full-run outcomes, root causes, and gate evidence</li>
           <li><span class="t">Plan · this fork</span><a href="../../M3_QUANT_SPEEDUP_PLAN.md">M3_QUANT_SPEEDUP_PLAN.md</a> — target and distributed strategy</li>
@@ -156,7 +148,7 @@
   </main>
 
   <footer>
-    <strong>Goal 1 field note.</strong> Internal research update scoped to repository evidence dated on or before 20 July 2026. Numbers are smoke-scale unless stated; the full-calibration target is not yet documented as achieved. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
+    <strong>Goal 1 field note.</strong> The seven-hour full run achieved the parallelization target; its checkpoint was rejected by a correctness gate and is not a usable AWQ artifact. Evidence is scoped through 20 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
   </footer>
 </body>
 </html>

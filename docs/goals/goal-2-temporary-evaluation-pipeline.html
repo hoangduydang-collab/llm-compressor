@@ -151,7 +151,7 @@
         <h2><span class="number">03 / Harness</span>Reproducible setup</h2>
         <ul>
           <li><strong>Framework:</strong> EleutherAI <code>lm-evaluation-harness 0.4.12</code>, direct vLLM backend.</li>
-          <li><strong>Models:</strong> in-house GPTQ W4A8, in-house AWQ W4AFP8 (r5, smoke-gated), cyankiwi AWQ W4A16, official MXFP8 W8A16, and official BF16.</li>
+          <li><strong>Models:</strong> in-house GPTQ W4A8, in-house AWQ W4AFP8 (smoke-gated), cyankiwi AWQ W4A16, official MXFP8 W8A16, and official BF16.</li>
           <li><strong>Tasks:</strong> GPQA-Diamond 100, MMLU-Pro 100, GSM8K-CoT 100, and the full 30-question AIME25 split.</li>
           <li><strong>Generation:</strong> seeds 42/1234/4158, thinking enabled, temperature 1.0, top-p 0.95, maximum 16,384 generated tokens.</li>
           <li><strong>Serving:</strong> TP8 for quantized and MXFP8 checkpoints; BF16 uses TP16 across two nodes.</li>
@@ -162,10 +162,10 @@
       <section id="available">
         <h2><span class="number">04 / Next</span>A fifth arm, then the official pipeline</h2>
         <p>The harness itself is built and appropriate for paired internal decisions — though its confidence intervals are wider than full benchmark runs, and the numbers should not be quoted as leaderboard results. Two things remain in progress.</p>
-        <p><strong>A fifth arm.</strong> The in-house full-calibration AWQ (r5, W4AFP8 — Goal 3's artifact) cleared the official smoke gate on <strong>2026-07-20</strong>: contract-gated against the BF16 r50 root, every scoring-relevant hash matched, and the single <code>eval_config_sha256</code> mismatch is the post-r50 NCCL PG-timeout knob (<code>b56dacf6</code>, documented in the run root's <code>COMPARABILITY.md</code>). Its production-profile scores are pending.</p>
+        <p><strong>A fifth arm.</strong> The in-house full-calibration AWQ checkpoint (W4AFP8 — Goal 3's artifact) cleared the pipeline's smoke gate on <strong>2026-07-20</strong>, validated as directly comparable to the BF16 baseline run: every scoring-relevant hash matched, and the one configuration difference is a harmless NCCL timeout setting added after the baseline (recorded in the run's <code>COMPARABILITY.md</code>). Its full production scores are still pending.</p>
         <div class="callout blue">
           <h3>From stopgap to the official pipeline</h3>
-          <p>The team's <strong>official evaluation pipeline now exists as its own repository</strong> (<code>AICloud/benchmarks</code>) — lm-eval <code>0.4.10</code> <code>[api]</code> run against a self-deployed OpenAI-compatible endpoint, plus distribution, reliability, and agentic layers this stopgap lacks. It uses <strong>different tasks, greedy decoding, and loglikelihood MC scoring</strong>, so its scores are <em>not</em> comparable to §02. Migrating MiniMax-M3 onto it — serve on a pinned patched vLLM 0.24.0 image, wire the four comparator profiles — is the active work; this harness holds only until M3 runs there.</p>
+          <p>The team's <strong>official evaluation pipeline now exists as its own repository</strong> (<code>AICloud/benchmarks</code>) — lm-eval <code>0.4.10</code> run over its API backend against a self-deployed OpenAI-compatible endpoint, plus distribution, reliability, and agentic test layers this stopgap lacks. Because it uses <strong>different tasks, greedy decoding, and loglikelihood multiple-choice scoring</strong>, its numbers are <em>not</em> comparable to the results table above. Migrating MiniMax-M3 onto it — serving the checkpoint on a pinned, patched vLLM 0.24.0 image and wiring up the four comparator profiles — is the active work; this stopgap harness holds only until M3 runs there.</p>
         </div>
       </section>
 

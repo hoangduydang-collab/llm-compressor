@@ -122,17 +122,17 @@
 
       <section id="result">
         <h2><span class="number">02 / Full-calibration result</span>The time target is met, and the checkpoint passed its gates</h2>
-        <p>The full AWQ run <code>r5-deadchan</code> quantized end-to-end in <strong>7 h 22 m on one 8×H100 node</strong> — ~19 min load, ~6 h 40 m calibration (≈7 min/layer across all <strong>57 MoE layers</strong>), ~19 min save plus in-line gates — covering all <strong>21,888 routed-expert Linears</strong> and landing inside the 4–8 hour target.</p>
+        <p>The full-calibration AWQ run quantized end-to-end in <strong>7 h 22 m on one 8×H100 node</strong> — about 19 min to load, 6 h 40 m of calibration (≈7 min per layer across all <strong>57 MoE layers</strong>), and 19 min to save plus run the in-line gates — covering all <strong>21,888 routed-expert Linears</strong> and landing inside the 4–8 hour target.</p>
         <div class="callout">
           <h3><span class="chip obs">Observed in this fork</span> The artifact landed and passed every gate</h3>
-          <p>The checkpoint cleared every fail-closed gate (smooth-fold on all 57 layers, quant-verify plus risk-layer dequant sampling), served coherent chat on single-node vLLM TP8, and cleared Goal 2's official smoke eval (<code>ready_for_production: true</code>). An earlier <code>r4</code> run had been rejected when AWQ's scale search inflated smoothing scales ~100× on zero-activation norm channels in five layers; the dead-channel fix (<code>e87eef77</code>) with the qparam-broadcast fix (<code>25a0324d</code>) resolved it — both upstream-contribution candidates.</p>
+          <p>The checkpoint cleared every fail-closed gate (smoothing-scale fold on all 57 layers, plus quant-verify and dequant sampling on the riskiest layers), served coherent chat on single-node vLLM TP8, and passed Goal 2's smoke evaluation (<code>ready_for_production: true</code>). An earlier run had been rejected by these gates: AWQ's scale search had inflated smoothing scales by ~100× on dead (zero-activation) norm channels in five layers. The dead-channel fix (commit <code>e87eef77</code>), with a related qparam-broadcast fix (<code>25a0324d</code>), resolved it — both are candidates to contribute back upstream to llm-compressor.</p>
         </div>
       </section>
 
       <section id="handoff">
         <h2><span class="number">03 / Boundary</span>Checkpoint correctness is Goal 3 — and it landed too</h2>
         <p>Goal 1 is complete because the distributed path demonstrated full calibration inside the target window. Producing a <em>correct</em>, gate-passing AWQ checkpoint is Goal 3's contract, not a parallelization-throughput question.</p>
-        <p>As of <strong>2026-07-20 that is also done</strong>: the dead-channel scale fix and the corrected r5 full run yielded an accepted artifact. Its quality against BF16 is measured under <strong>Goal 2</strong>'s production eval.</p>
+        <p>As of <strong>2026-07-20 that is also done</strong>: the dead-channel scale fix and the corrected full run yielded an accepted artifact. Its quality against the BF16 baseline is measured under <strong>Goal 2</strong>'s production evaluation.</p>
       </section>
 
       <section id="ledger">

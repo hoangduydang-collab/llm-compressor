@@ -112,14 +112,14 @@
           <a class="goal-card link" href="goals/goal-1-fast-parallel-quantization.html">
             <span class="gnum">Goal 01</span>
             <h3>Fast parallel quantization</h3>
-            <p>Completed the distributed AWQ/GPTQ path; the AWQ leg landed 2026-07-20 — a full 512×2048 run, gates green, in 7 h 22 m on one node, inside the 4–8 hour target.</p>
+            <p>Completed the distributed AWQ/GPTQ path; the AWQ leg landed 2026-07-20 — a full-calibration run, all gates green, in 7 h 22 m on one node, inside the 4–8 hour target.</p>
             <div class="foot"><span class="status done">Done</span><span class="open">Open field note →</span></div>
           </a>
 
           <a class="goal-card link" href="goals/goal-2-temporary-evaluation-pipeline.html">
             <span class="gnum">Goal 02</span>
             <h3>Temporary evaluation pipeline</h3>
-            <p>Built a reproducible, fail-closed paired harness comparing in-house checkpoints with existing quants and the BF16 baseline. The in-house AWQ (r5) cleared the official smoke gate 2026-07-20; its production arm and the migration to the team's official pipeline are in progress.</p>
+            <p>Built a reproducible, fail-closed paired harness comparing in-house checkpoints with existing quants and the BF16 baseline. The in-house AWQ checkpoint cleared the official smoke gate 2026-07-20; its full production run and the migration to the team's official pipeline are in progress.</p>
             <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
           </a>
 
@@ -133,7 +133,7 @@
           <div class="goal-card plain">
             <span class="gnum">Goal 03</span>
             <h3>Working AWQ quantized model</h3>
-            <p>Achieved 2026-07-20. The r4 corruption traced to an AWQ smoothing-scale degeneracy on dead norm channels (fixed in <code>e87eef77</code> with regression tests and hardened gates). The full-calibration r5 artifact passes every gate on all 57 layers, serves coherently on vLLM TP8, and cleared the official smoke eval (<code>ready_for_production: true</code>). Quality vs BF16 is measured under Goal 2.</p>
+            <p>Achieved 2026-07-20. The earlier checkpoint corruption traced to an AWQ smoothing-scale degeneracy on dead (zero-activation) norm channels, fixed in <code>e87eef77</code> with regression tests and hardened gates. The full-calibration artifact now passes every gate on all 57 layers, serves coherently on vLLM TP8, and cleared the smoke evaluation (<code>ready_for_production: true</code>). Its quality against the BF16 baseline is measured under Goal 2.</p>
             <div class="foot"><span class="status done">Done · 2026-07-20</span></div>
           </div>
 
@@ -155,7 +155,7 @@
 
         <div class="focus-band">
           <h3>Current session focus: Goal 2</h3>
-          <p>Goals 1 and 3 landed on 2026-07-20 — the distributed AWQ path and a correct, gate-passing in-house AWQ checkpoint. The active work is Goal 2: running the r5 production arm and migrating MiniMax-M3 onto the team's official evaluation pipeline. Goals 4–6 remain future or benchmark-gated work.</p>
+          <p>Goals 1 and 3 landed on 2026-07-20 — the distributed AWQ path and a correct, gate-passing in-house AWQ checkpoint. The active work is Goal 2: running the full production evaluation of that checkpoint and migrating MiniMax-M3 onto the team's official evaluation pipeline. Goals 4–6 remain future or benchmark-gated work.</p>
         </div>
       </section>
 

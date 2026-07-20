@@ -102,7 +102,7 @@
   <header class="hero">
     <p class="kicker">Goal 01 / engineering field note · <span class="status working">Work in progress</span></p>
     <h1>Fast <em>parallel</em> quantization</h1>
-    <p class="deck">The 30-hour calibration was never a compute problem. It was seven idle GPUs and one busy core. The fix already lived in the fork — it was simply never switched on.</p>
+    <p class="deck">Distributed AWQ now reaches the 4–8 hour calibration target. The latest completed full run quantized in 7 hours, but a correctness gate rejected it; the corrected run remains the path to a usable checkpoint.</p>
     <div class="hero-meta">
       <span class="stamp">Target: full run in 4–8 h</span>
       <span class="stamp">AWQ + GPTQ</span>
@@ -113,116 +113,42 @@
   <main>
     <article>
 
-      <section id="motivation">
-        <h2><span class="number">01 / Motivation</span>Why speed matters here</h2>
-        <p class="lead dropcap">A quantization run that cannot finish inside its wall-clock window produces nothing. A partially quantized checkpoint is not a smaller model — it is an unusable one.</p>
-        <p>The trigger was concrete. Two in-house AWQ full-calibration runs were cancelled after roughly half-completing in about 15 hours: they projected <strong>~27–34 hours</strong> of total work against only ~9 hours of remaining wall-clock, so they could never land a complete checkpoint. The target is therefore a <strong>full quantization process in 4–8 hours</strong>, for both AWQ and GPTQ.</p>
-        <p>The reason it was slow is the important part. The slowness was <strong>wasted hardware, not necessary compute</strong>:</p>
-        <ul>
-          <li><strong>Only 1 of 8 GPUs was used.</strong> The production config ran a single <code>python -m pipeline.run</code> process with <code>device_map: null</code>. Calibration streamed one layer to one GPU while the other seven sat idle.</li>
-          <li><strong>Experts were quantized serially.</strong> AWQ/GPTQ looped over 128 experts per MoE layer one at a time, and each narrow expert GEMM underutilizes an H100 — the fine-grained-MoE small-op pathology.</li>
-        </ul>
-        <p>The scale that makes this expensive: MiniMax-M3 is roughly <strong>450–460B parameters (~920 GB in bf16)</strong>, 60 layers (dense 0–2, MoE 3–59), hidden size 6144, 128 experts per MoE layer — about 7.25B params (~14.5 GB bf16) per MoE layer.</p>
-        <p class="src">Sources: <code>PROJECT_GOALS.md</code> (goal 1); <code>M3_QUANT_SPEEDUP_PLAN.md</code> — pain trigger &amp; cancellation (decision log, 2026-07-14), one-GPU / serial-expert diagnosis, model-scale notes.</p>
+      <section id="objective">
+        <h2><span class="number">01 / Objective</span>Full quantization within one working session</h2>
+        <p class="lead dropcap">The target is a complete MiniMax-M3 AWQ or GPTQ run in <strong>4–8 hours</strong>, including a saved checkpoint that survives correctness gates.</p>
+        <p>The implementation uses the fork's existing distributed calibration paths: AWQ shares calibration statistics across ranks, GPTQ distributes modules, and disk offload keeps host memory bounded. This is now the production direction for both methods.</p>
       </section>
 
-      <section id="gap">
-        <h2><span class="number">02 / Engineering gap</span>Wiring, not a missing algorithm</h2>
-        <p>The conclusion reached on 2026-07-14 was blunt: <strong>use the built-in distributed calibration and stop bespoke work.</strong> Multi-GPU calibration for both AWQ and GPTQ <em>already exists in this fork</em> — it was simply never switched on, because runs launched as a single process, so <code>is_distributed()</code> returned <code>False</code> and every distributed branch stayed dormant.</p>
-        <p>The gap was integration and launch wiring, not a new parallel algorithm. Concretely, what was missing:</p>
-        <ul>
-          <li><code>pipeline.run</code> did not initialize compressed-tensors distributed state, so a <code>torchrun</code> launch alone left the distributed branches inactive.</li>
-          <li>The calibration dataset needed deterministic <strong>rank-local slicing</strong>; the inherited sampler could index the unsliced dataset and overlap work across ranks.</li>
-          <li>Multi-rank metrics, metadata, and completion needed ownership rules while collective checkpoint ops stayed collective.</li>
-          <li>MiniMax-M3's composite VL/MoE load exposed three upstream integration gaps: a composite-config constructor keyword, an insufficient collective timeout during asymmetric loading, and post-load fused-expert linearization that duplicated shared storage.</li>
-        </ul>
-        <h3>The parallel algorithms that were already present</h3>
-        <ul>
-          <li><strong>AWQ — data-parallel.</strong> <code>_compute_best_scale</code> all-reduces activation statistics across ranks (<code>src/llmcompressor/modifiers/transform/awq/base.py</code>).</li>
-          <li><strong>GPTQ — module-parallel.</strong> <code>compress_modules</code> bin-packs modules across ranks, reduces Hessians to the owner rank, quantizes, and broadcasts back (<code>src/llmcompressor/modifiers/gptq/base.py</code>).</li>
-          <li><strong>Memory.</strong> Distributed compressed-tensors offload keeps <em>one shared CPU copy</em> across ranks, so host memory scales with model size, not rank count.</li>
-        </ul>
-        <p class="src">Sources: <code>M3_QUANT_SPEEDUP_PLAN.md</code> (conclusion &amp; gap list); <code>M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md</code>; code paths in <code>src/llmcompressor/modifiers/</code>.</p>
-      </section>
-
-      <section id="effort">
-        <h2><span class="number">03 / Effort</span>A detour, then the prime directive</h2>
-        <p>The instructive part of this goal is the mistake. A bespoke expert-parallel / expert-scatter implementation (<code>pipeline/expert_scatter.py</code>, <code>pipeline/ep_moe.py</code>, <code>pipeline/bench_expert_scatter.py</code>) was built and CPU-tested before we discovered the built-in path already existed. Those files are correct but shelved for reference only.</p>
+      <section id="result">
+        <h2><span class="number">02 / Full-calibration result</span>The time target is met; the artifact is not yet accepted</h2>
+        <p>The latest completed full AWQ run, <code>r4</code>, quantized for <strong>7h00m on 8×H100</strong>. It produced a full-model checkpoint covering all <strong>21,888 routed-expert Linears</strong>, placing calibration inside the 4–8 hour target.</p>
         <div class="callout warning">
-          <h3><span class="chip obs">Observed in this fork</span> The detour came from two unchecked assumptions</h3>
-          <p>A misread version string (<code>0.1.dev…</code> is a setuptools-scm fallback, not evidence of being behind upstream) and an unverified memory fear — the &ldquo;8&times;920 GB = 7.4 TB host RAM&rdquo; worry that motivated the bespoke design turned out to be <strong>wrong</strong>. The corrective is the repo's prime directive: <em>search reputable sources and read our own code before building.</em></p>
+          <h3>Rejected by the correctness gate</h3>
+          <p>The checkpoint is not usable. The post-save dequant-vs-base gate rejected <strong>1,423 of 21,888</strong> routed-expert modules. AWQ's scale search had allowed zero-activation norm channels to inflate smoothing scales by roughly 100× in five layers. The gate stopped this checkpoint before serving or quality evaluation.</p>
         </div>
-        <p>The &ldquo;search first&rdquo; check surfaced strong prior art: MoE-Quant (IST-DASLab) quantizes DeepSeek-V3/R1 671B with GPTQ in <strong>~2 h on 8×H100</strong>; llm-compressor v0.10 ships DDP for AWQ (2.9–3.2× on 4 GPUs) and GPTQ (3.8× on 4 GPUs; &ldquo;3.9 h → 1 h&rdquo; on Qwen3-30B-A3B); GPTQModel v6.1 reports 80%+ time reduction; and cyankiwi already published a working MiniMax-M3-AWQ-INT4 with standard tooling.</p>
-        <h3>What we adopted</h3>
-        <p>Extend the existing <code>pipeline.run</code> path exactly like the fork's DDP examples: (1) initialize compressed-tensors distributed state before model load when <code>WORLD_SIZE&gt;1</code>; (2) load via <code>load_context()</code> with <code>device_map=auto_offload</code>; (3) partition the calibration set into disjoint rank-local datasets before <code>oneshot</code>; (4) keep metadata/metrics rank-safe while preserving collective saving; (5) launch as one top-level <code>srun --gres=gpu:8</code> wrapping one <code>torchrun --nproc_per_node=8</code>.</p>
-        <p class="src">Entry points: <code>pipeline/distributed.py</code> (<code>DistributedContext.from_environment</code>, 8-hour process-group timeout), <code>pipeline/calibration.py</code> (<code>partition_bounds</code>, <code>build_calibration_dataset_with_partition</code>), configs <code>minimax_m3_distributed_smoke.yaml</code> / <code>minimax_m3_distributed_awq_full.yaml</code>, launcher <code>pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh</code>.</p>
       </section>
 
-      <section id="progress">
-        <h2><span class="number">04 / Progress</span>Concrete results so far</h2>
-        <p class="lead">The distributed path now runs end-to-end on a 3-layer smoke, saves valid checkpoints, and — crucially — proves the memory model was the myth. Full-model calibration is running but has not yet produced a recorded end-to-end time.</p>
-
-        <div class="tiles">
-          <div class="tile"><b>852 GB</b><span>Peak GPTQ host RSS — one shared copy, not a per-rank multiple</span></div>
-          <div class="tile"><b>71 min</b><span>Wall-clock for the r9 3-layer smoke, both methods, including checkpoint save</span></div>
-          <div class="tile"><b>1152</b><span>Quantized Linears verified per method (128 experts × 3 projections × 3 layers)</span></div>
-          <div class="tile"><b>0.88×</b><span>Thread-pool scatter vs serial 1-GPU — the result that killed the bespoke approach</span></div>
-        </div>
-
-        <h3>Phase-1 bench: the thread-pool approach was a dead end</h3>
-        <p>The serial one-GPU baseline took <strong>116.98 s</strong>; a one-process thread-pool scatter took <strong>132.97 s</strong> — a <strong>0.88×</strong> &ldquo;speedup&rdquo; against an 8× ceiling, with Python setup accounting for 45% of the measured serial work. A v2 bench confirmed the pattern (serial 63.88 s vs thread 115.88 s, 0.55×). This is what redirected the effort to the built-in distributed path.</p>
-
-        <h3>The DDP integration bug chain (r2 → r9)</h3>
-        <p>Smoke runs on 8×H100, one node, layers 3/31/59, 8 calibration samples, sequence length 512:</p>
-        <div class="table-scroll">
-          <table>
-            <caption>Distributed calibration smoke: run-by-run</caption>
-            <thead><tr><th>Run</th><th>Observation</th><th>Resolution</th></tr></thead>
-            <tbody>
-              <tr><td>r2</td><td>Both arms failed at model load — <code>tie_word_embeddings</code> unexpected-keyword <code>TypeError</code></td><td>Composite-config constructor fix (<code>4801028f</code>)</td></tr>
-              <tr><td>r3 / r4</td><td>NCCL 600 s timeout during asymmetric load of a 1,582-shard checkpoint; then host <code>/dev/shm</code> exhaustion during <code>linearize_moe</code> (~13.5 GiB/layer, near layer 17)</td><td>3-hour PG timeout (<code>71372092</code>); load-time expert mapping (<code>b907eaf4</code>)</td></tr>
-              <tr><td>r5</td><td>Loaded the model and ran calibration/early-layer work for <strong>2:11:07</strong> with no shared-memory exhaustion</td><td>Progressed further</td></tr>
-              <tr><td>r6</td><td>GPTQ elapsed 2:17:50, AWQ 3:42:09 (rc 1). <strong>Memory hypothesis validated:</strong> peak GPTQ host RSS 852 GB — one shared copy</td><td>Confirmed shared-copy memory model</td></tr>
-              <tr><td>r8</td><td>Root cause of slowness: launcher passed no <code>--cpus-per-task</code>, so every r2–r7 arm ran on 2 hardware threads</td><td><code>--cpus-per-task=192</code> (2 HTs → 188 CPUs); GPTQ + AWQ now run in parallel on separate nodes</td></tr>
-              <tr><td>r9-save</td><td>Completed <strong>rc 0 for both methods in 71 min</strong> wall including save; each saved a 766 GB checkpoint (3 quantized layers, remainder BF16)</td><td>First saved checkpoints + passing apply-correctness audit</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="callout">
-          <h3><span class="chip obs">Observed in this fork</span> Distributed AWQ genuinely applies smoothing on MiniMax-M3</h3>
-          <p><code>verify_quant_checkpoint.py</code> passed — 1,152 quantized Linears per method (exact count match). The scale audit showed real per-channel smoothing (norm ratios 0.46–0.89, compensation error 0.0025–0.0041, matching the known-good cyankiwi reference), with GPTQ as a negative control (norm unchanged, scale = 1.0). The distributed path is not a no-op.</p>
-        </div>
-
-        <h3>Full-calibration configuration &amp; live status</h3>
-        <p>The full recipe (<code>minimax_m3_distributed_awq_full.yaml</code>) uses <strong>512 calibration samples × 2048 sequence length</strong>, data-parallel split 64/rank across 8 ranks, with <code>device_map: auto_offload</code> and a deliberately small CPU budget to force disk offload — a single-process full-calibration attempt had died at 63,122 memory segments against a <code>vm.max_map_count</code> of 65,530.</p>
-        <div class="callout warning">
-          <h3>Honest status (checked 2026-07-20)</h3>
-          <p>The latest full AWQ run (<code>…-m3-ddp-awq-full-r5-deadchan</code>) is <strong>running</strong>, in early calibration. <strong>No completed full-calibration wall-clock and no final full-model checkpoint have been recorded yet.</strong> The 71-minute figure is a 3-layer smoke including save, not the full 57-MoE-layer run. Recent commits (<code>e87eef77</code> dead-channel smoothing degeneracy, <code>25a0324d</code> qparam broadcast under disk offload, norm-fold fixes) show the full-run path is still being hardened.</p>
-        </div>
-        <p class="src">Sources: <code>M3_QUANT_SPEEDUP_PLAN.md</code> (Phase-1 bench); <code>M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md</code> (r2–r9 chain, RSS, cpus-per-task, r9-save + audit); <code>pipeline/configs/minimax_m3_distributed_awq_full.yaml</code>; run artifacts under <code>results/m3-distributed-quant-speedup/</code> and the live full-run dirs; recent <code>git log</code>.</p>
+      <section id="status">
+        <h2><span class="number">03 / Current status</span>Corrected full run in progress</h2>
+        <p>The root cause is fixed: dead channels are excluded from geometric scale normalization and pinned to a neutral scale, with bounded scales as a backstop. The smoke recipe now always includes a known affected layer, and the fold audit checks every MoE layer.</p>
+        <p>As of <strong>20 July 2026</strong>, corrected full run <code>r5-deadchan</code> is in progress. The speed target has been demonstrated by r4, but the goal remains open until a full checkpoint passes tensor, dequantization, smoothing-fold, serving-ABI, and TP8 chat gates.</p>
       </section>
 
       <section id="next">
-        <h2><span class="number">05 / Future work</span>Next tasks</h2>
+        <h2><span class="number">04 / Next</span>Acceptance path</h2>
         <ol class="roadmap">
-          <li>Land a <strong>complete full-model distributed calibration</strong> of the recipe that passes the quality gate, and record its end-to-end wall-clock against the 4–8 h target. <em>(In progress — full AWQ run live as of 2026-07-20.)</em></li>
-          <li>Report the measured <strong>DDP-vs-single-process speedup</strong> explicitly, stating that the comparison is against 1-core-bound single-process history. The internal target is <code>&gt;2×</code> (a goal, not a first-run hard-fail threshold); load and save times reported separately from calibration.</li>
-          <li>When the full AWQ checkpoint lands, run <code>verify_quant_checkpoint.py</code> + scale audit + a single-node TP8 serving smoke <strong>before</strong> serving it — do not serve the 766 GB 3-layer smoke checkpoint.</li>
-          <li>Optional follow-ups: a Triton GPTQ kernel port, and re-running the Goal 2 paired eval on the fast-path checkpoint to confirm quality is unchanged.</li>
+          <li>Complete the corrected full AWQ run and pass the full post-save gate chain.</li>
+          <li>Record calibration, save, and total wall-clock separately, then compare the accepted run with the historical single-process baseline.</li>
+          <li>Re-export the accepted checkpoint for vLLM, run the TP8 serving smoke, and apply the Goal 2 quality-evaluation pipeline.</li>
         </ol>
-        <p class="src">Sources: <code>M3_QUANT_SPEEDUP_PLAN.md</code> (&ldquo;Next steps, in order&rdquo;); <code>M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md</code> (success gate &amp; post-r9 serving decision).</p>
       </section>
 
       <section id="ledger">
-        <h2><span class="number">06 / Ledger</span>Sources</h2>
+        <h2><span class="number">05 / Evidence</span>Sources</h2>
         <ul class="ledger">
-          <li><span class="t">Plan · this fork</span><a href="../../M3_QUANT_SPEEDUP_PLAN.md">M3_QUANT_SPEEDUP_PLAN.md</a> — conclusion, diagnosis, bench, next steps</li>
-          <li><span class="t">Handoff · this fork</span><a href="../../M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md">M3_DISTRIBUTED_QUANT_SPEEDUP_HANDOFF.md</a> — r2–r9 evidence chain</li>
-          <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 1 statement</li>
-          <li><span class="t">Code · this fork</span><a href="../../pipeline/distributed.py">pipeline/distributed.py</a>, <a href="../../pipeline/calibration.py">pipeline/calibration.py</a></li>
-          <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/minimax_m3_distributed_awq_full.yaml">minimax_m3_distributed_awq_full.yaml</a></li>
-          <li><span class="t">Upstream</span><a href="https://github.com/vllm-project/llm-compressor">llm-compressor multi-GPU calibration</a></li>
+          <li><span class="t">Evidence · this fork</span><a href="../../BUGS_AND_FIXES.md">BUGS_AND_FIXES.md</a> — full-run outcomes, root causes, and gate evidence</li>
+          <li><span class="t">Plan · this fork</span><a href="../../M3_QUANT_SPEEDUP_PLAN.md">M3_QUANT_SPEEDUP_PLAN.md</a> — target and distributed strategy</li>
+          <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 1 contract</li>
         </ul>
       </section>
 

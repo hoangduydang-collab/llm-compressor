@@ -12,7 +12,10 @@ set -uo pipefail
 REPO=/mnt/nfs/hoangduy/projects/llm-compressor
 BENCH_CFG=configs/minimax
 TS=$(date -u +%Y%m%dT%H%M%SZ)
-ROOT=/mnt/nfs/hoangduy/results/m3-official-quality/$TS-full4
+# ROOT_OVERRIDE: resume/tail mode — point at an existing run root; every task
+# replays instantly from its lm_cache and only missing work (new tasks, failed
+# legs) runs live. Fresh runs leave it unset.
+ROOT=${ROOT_OVERRIDE:-/mnt/nfs/hoangduy/results/m3-official-quality/$TS-full4}
 mkdir -p "$ROOT" /mnt/nfs/hoangduy/logs/m3-official-quality
 echo "$ROOT" > /mnt/nfs/hoangduy/logs/m3-official-quality/full4.latest_root
 echo "[controller] root=$ROOT"

@@ -20,7 +20,7 @@ BENCH=/mnt/nfs/hoangduy/projects/benchmarks
 BVENV=/mnt/nfs/hoangduy/venvs/benchmarks
 TOKENIZER=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
 SERVED_NAME=MiniMaxAI/MiniMax-M3
-MAX_MODEL_LEN=65536
+MAX_MODEL_LEN=${MAX_MODEL_LEN:-65536}   # 64k-budget runs serve longer contexts
 BF16_PORT=8001
 
 CLIENT=$ROOT/client-$ARM

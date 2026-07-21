@@ -44,8 +44,12 @@ export GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-intranet}
 export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
 mkdir -p "$FLASHINFER_WORKSPACE_DIR" 2>/dev/null || true
 
+# Job-scoped marker: a stale driver-done from a previous run on the same ROOT
+# made the resume-run worker leave ray immediately (ray stop pulled its 8 GPUs;
+# vLLM's 16-GPU placement group then timed out — observed job 13089).
+DRIVER_DONE="$ARM/ray_runtime/driver-done-${SLURM_JOB_ID:-nojob}"
 finish() {
-  touch "$ARM/ray_runtime/driver-done" 2>/dev/null || true
+  touch "$DRIVER_DONE" 2>/dev/null || true
   ray stop --force >/dev/null 2>&1 || true
 }
 trap finish EXIT
@@ -58,7 +62,7 @@ set +e   # topology script enables -e; everything below handles rc explicitly
 if ((rank != 0)); then
   note "worker joined; waiting for driver-done"
   for _ in $(seq 1 86400); do
-    [[ -f "$ARM/ray_runtime/driver-done" ]] && break
+    [[ -f "$DRIVER_DONE" ]] && break
     sleep 1
   done
   exit 0

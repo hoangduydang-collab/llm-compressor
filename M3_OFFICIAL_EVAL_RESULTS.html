@@ -163,6 +163,21 @@
   .note .t { font-weight: 640; margin: 0 0 6px; }
   .note p:last-child { margin-bottom: 0; }
 
+  /* transcript example cards */
+  .xcards { display: grid; gap: 14px; margin: 6px 0 4px; }
+  .xcard { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  .xhead { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 11px 14px;
+    background: var(--surface-2); border-bottom: 1px solid var(--line); }
+  .xhead .qt { font-weight: 640; font-size: 14px; }
+  .xhead .st { font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: .01em; }
+  .xbody { padding: 12px 15px; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    white-space: pre-wrap; color: var(--ink-2); word-break: break-word; }
+  .xbody .ok { color: var(--good); font-weight: 700; }
+  .xbody .stop { color: var(--crit); font-weight: 700; }
+  .xbody .cut { background: var(--crit-bg); color: var(--crit); padding: 0 5px; border-radius: 3px; font-weight: 600; }
+  .xbody .el { color: var(--ink-3); font-style: italic; }
+  .xcap { padding: 0 15px 13px; font-size: 12.5px; color: var(--ink-2); }
+
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin: 10px 2px 0; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -469,6 +484,46 @@
         <strong>0.078 (semantic loops — re-deriving the same argument)</strong>. The community AWQ is
         <strong>0.004 — degenerate single-token spam</strong> (<code>drop drop drop…</code>, <code>the the the…</code>).
       </p>
+    </div>
+
+    <h3>What an exhausted transcript looks like</h3>
+    <div class="col">
+      <p>
+        Three representative greedy AWQ transcripts from GPQA-Diamond. In each, the model does the physics
+        correctly — and in two it <em>reaches the right answer inside the reasoning</em> — yet never
+        terminates, so the visible answer is empty and the item scores zero. All three burned the full
+        65,536-token budget. Excerpts verbatim from the run's stored reasoning traces.
+      </p>
+    </div>
+    <div class="xcards">
+
+      <div class="xcard">
+        <div class="xhead">
+          <span class="qt">Supernova ejecta · special relativity</span>
+          <span class="st">gold C · 65,536 tokens · 168,801 reasoning chars · visible answer: empty</span>
+        </div>
+        <div class="xbody">We have a supernova ejecta moving towards the center of the Galaxy… We need to find <span class="el">[…168k characters of reasoning…]</span> So the answer is approximately 3,061,860 km, which is closest to (C) 3,060,000 km. Therefore, <span class="ok">the answer is (C).</span> <span class="stop">Actually, I realize I should think about this more carefully.</span> <span class="el">[reasoning re-opens and runs to the budget — no final answer is ever emitted]</span></div>
+        <div class="xcap">Reached the correct answer (C), then second-guessed a finished conclusion and never stopped.</div>
+      </div>
+
+      <div class="xcard">
+        <div class="xhead">
+          <span class="qt">Hydrogen atom |3,0,0⟩ → |1,0,0⟩ decay route</span>
+          <span class="st">gold B · 65,536 tokens · 222,427 reasoning chars · visible answer: empty</span>
+        </div>
+        <div class="xbody">… The second transition |2,1,m⟩ → |1,0,0⟩ has only one possible final state … So the probability of each route is 1/3. <span class="ok">The answer is (B):</span> |3,0,0⟩ → |2,1,0⟩ → |1,0,0⟩ with probability<span class="cut">▉ budget exhausted mid-sentence</span></div>
+        <div class="xcap">Reached the correct answer (B) but hit the 64k budget mid-emission — the final answer never left the think phase.</div>
+      </div>
+
+      <div class="xcard">
+        <div class="xhead">
+          <span class="qt">CERN bubble-chamber decay · resolution</span>
+          <span class="st">gold C · 65,536 tokens · 137,501 reasoning chars · visible answer: empty</span>
+        </div>
+        <div class="xbody">… Let me compute this more precisely: 27/3.41 = 7.91789… Actually, let me try γ = 27/3.41 = 7.9179 … Hmm, this gives 2.29 × 10⁻⁶ m, not 2.08 × 10⁻⁶ m. Let me try with … <span class="el">[the same quantity is recomputed indefinitely; the trace even code-switches into Chinese mid-loop — “仍然不匹配” (“still doesn’t match”), “让我试试不同的解释” (“let me try a different interpretation”)]</span></div>
+        <div class="xcap">A genuine non-convergence loop — recomputes the same value over and over, never committing.</div>
+      </div>
+
     </div>
 
     <div class="note good">

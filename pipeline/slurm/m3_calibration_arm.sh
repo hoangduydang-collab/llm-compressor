@@ -23,7 +23,12 @@ CKPT=${CKPT:-$REPO/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-
 PORT=${PORT:-8000}
 SERVED_NAME=MiniMaxAI/MiniMax-M3
 TOKENIZER=/mnt/nfs/hoangduy/hf_assets/MiniMaxAI/MiniMax-M3
-MAX_MODEL_LEN=${MAX_MODEL_LEN:-40960}   # telecom peak ~11k input + 32k agent budget
+# Telecom turn-0 prompt alone is ~8.2k tokens and vLLM enforces
+# prompt + max_tokens <= max_model_len, so 40960 rejected every request
+# (8193 + 32768 > 40960 -> all 114 sims infrastructure_error, observed
+# 20260722T083736Z). 65536 fits peak ~11k prompt + 32k agent budget and is the
+# same ctx the 1-node quality serves used.
+MAX_MODEL_LEN=${MAX_MODEL_LEN:-65536}
 
 C=$ROOT/calib
 mkdir -p "$C"
@@ -64,12 +69,27 @@ SPLIT=small NUM_TASKS=2 MAX_CONC=1 SAVE_TO="m3_calib_smoke_$CALIB_TS" \
   bash "$BENCH/performance/workloads/calibration/run_calibration.sh" \
   >"$C/smoke.log" 2>&1
 rc=$?
-if [ "$rc" != 0 ] || [ ! -s "$TAU2_DIR/data/simulations/m3_calib_smoke_$CALIB_TS/results.json" ]; then
-  note "SMOKE FAILED rc=$rc (fail-closed: not spending the base split)"
-  tail -30 "$C/smoke.log" | tee -a "$C/client.log"
+# Gate on simulation SUCCESS, not file existence: a results.json full of
+# infrastructure_error sims (0 messages) is a failure that must not spend the
+# base split (observed 20260722T083736Z: context-window rejects, file non-empty).
+smoke_ok=$(python3 - "$TAU2_DIR/data/simulations/m3_calib_smoke_$CALIB_TS/results.json" <<'PY'
+import json, sys
+try:
+    sims = json.load(open(sys.argv[1])).get("simulations", [])
+except Exception:
+    print(0); raise SystemExit
+good = [s for s in sims
+        if s.get("termination_reason") != "infrastructure_error"
+        and s.get("messages")]
+print(1 if sims and len(good) == len(sims) else 0)
+PY
+)
+if [ "$rc" != 0 ] || [ "$smoke_ok" != 1 ]; then
+  note "SMOKE FAILED rc=$rc smoke_ok=$smoke_ok (fail-closed: not spending the base split)"
+  { grep -m3 -iE "error|exception" "$C/smoke.log"; tail -15 "$C/smoke.log"; } | tee -a "$C/client.log"
   teardown; exit 1
 fi
-note "smoke OK"
+note "smoke OK (all sims terminated normally with messages)"
 
 note "BASE: 114 telecom tasks, conc 5"
 SPLIT=base MAX_CONC=5 SAVE_TO="m3_calib_base_$CALIB_TS" \
@@ -82,7 +102,7 @@ tail -5 "$C/driver.log" | tee -a "$C/client.log"
 if [ "$rc" = 0 ]; then
   note "extract AG_* shape"
   (cd "$BENCH" && "$TAU2_DIR/.venv/bin/python" \
-     performance/calibration/extract_latency.py \
+     performance/workloads/calibration/extract_latency.py \
      --runs-dir "$TAU2_DIR/data/simulations/m3_calib_base_$CALIB_TS" \
      --dump-samples 3) >"$C/ag_block.txt" 2>&1 || rc=$?
   note "AG_* block -> $C/ag_block.txt"

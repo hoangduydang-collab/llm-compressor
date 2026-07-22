@@ -519,6 +519,50 @@
         sampling and represent genuine, severe damage.
       </p>
     </div>
+
+    <h3>From empty answer to correct answer</h3>
+    <div class="col">
+      <p>
+        Terminating is necessary but not sufficient — do the recovered answers get the question right? On the
+        exhausted subset (the hardest GPQA items, empty under the original greedy run), sampling converts a
+        large share of dead responses into correct ones. "Per draw" is the honest single-sample expectation at
+        temperature 1.0; "≥1 of 3" is the optimistic pass@3.
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Arm · exhausted subset</th><th>Greedy correct</th><th>Sampled correct / draw</th><th>≥1 correct in 3 draws</th><th>Correct when it finishes</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">BF16 (control)</td><td>36%</td><td>32%</td><td>44%</td><td>86%</td></tr>
+          <tr><td class="arm">GPTQ (control)</td><td>30%</td><td>38%</td><td>57%</td><td>90%</td></tr>
+          <tr><td class="arm">AWQ r5 (in-house)</td><td>24%</td><td class="cell-good">42%</td><td class="cell-good">60%</td><td>83%</td></tr>
+          <tr><td class="arm">cyankiwi AWQ</td><td>6%</td><td class="cell-crit">5%</td><td class="cell-crit">12%</td><td>32%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p style="margin-top:16px">
+        For our AWQ, per-draw accuracy on these previously-dead items rises from <strong>24% (greedy) to 42%
+        under sampling</strong>, and <strong>60% are answered correctly on at least one of three draws</strong>.
+        Crucially, when a sampled attempt <em>does</em> terminate it is correct 83% of the time — matching the
+        healthy arms (BF16 86%, GPTQ 90%). So the bottleneck is purely getting the model to stop: AWQ loses
+        <strong>termination, not correctness</strong>. cyankiwi stays dead (5% per draw, only 12% ever correct)
+        because it almost never terminates.
+      </p>
+    </div>
+    <div class="note">
+      <p class="t">Scope &amp; caveats</p>
+      <p>
+        These figures cover the <strong>exhausted subset only</strong> (the hardest items) — they are
+        <em>not</em> the overall task-score change under sampling, which requires a full re-run and remains open.
+        "Correct" is best-effort GPQA answer-letter extraction (approximate). The greedy column is a fresh 32k
+        re-run, so it terminates a little (run-to-run nondeterminism); these same items scored zero in the
+        actual eval.
+      </p>
+    </div>
+
     <div class="note">
       <p class="t">What this means for the verdict</p>
       <p>

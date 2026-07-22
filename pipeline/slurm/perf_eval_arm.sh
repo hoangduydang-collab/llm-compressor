@@ -57,11 +57,21 @@ fi
 # run_performance.sh runs the preflight gate itself (aborts on fail) and with
 # PERF_STRICT=1 propagates workflow failures as a nonzero exit. (run_all.sh
 # would swallow that rc — do not use it here.)
-note "perf suite (preflight + workflows) against $BASE_URL"
+# AGENTIC_ONLY=1: refresh mode — preflight gate, then ONLY the agentic
+# workload (used to re-measure under a new AG_* shape without repeating the
+# ~2h reasoning sweep).
 cd "$BENCH"
-PROFILE="$PROFILE" ENGINE=vllm PERF_STRICT=1 \
-  bash performance/scripts/run_performance.sh >"$C/suite.log" 2>&1
-rc=$?
+if [ "${AGENTIC_ONLY:-0}" = 1 ]; then
+  note "AGENTIC-ONLY refresh (preflight + agentic) against $BASE_URL"
+  PROFILE="$PROFILE" ENGINE=vllm bash performance/scripts/preflight.sh >"$C/suite.log" 2>&1 &&
+    PROFILE="$PROFILE" ENGINE=vllm bash performance/workloads/run_perf_agentic.sh >>"$C/suite.log" 2>&1
+  rc=$?
+else
+  note "perf suite (preflight + workflows) against $BASE_URL"
+  PROFILE="$PROFILE" ENGINE=vllm PERF_STRICT=1 \
+    bash performance/scripts/run_performance.sh >"$C/suite.log" 2>&1
+  rc=$?
+fi
 note "suite rc=$rc"
 tail -8 "$C/suite.log" | tee -a "$C/client.log"
 echo "$BENCH/results/$PROFILE/vllm/perf" > "$C/results.path"

@@ -26,6 +26,10 @@ echo "[controller] root=$ROOT"
 # One shared timestamp so every arm's suite lands under the same RUN_TS
 # (benchmarks/env.sh honors a preset RUN_TS; propagated via --export=ALL).
 export RUN_TS=$TS
+# AGENTIC_ONLY=1 -> every arm runs preflight + ONLY the agentic workload
+# (shape-refresh mode; reasoning results from a prior full run stay valid).
+export AGENTIC_ONLY=${AGENTIC_ONLY:-0}
+echo "[controller] run_ts=$RUN_TS agentic_only=$AGENTIC_ONLY"
 
 # BF16 2-node serve arm, held until client-done. Perf client is CPU-only and
 # remote; 65536 ctx (arm default) is fine and matches the quality serves.

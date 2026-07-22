@@ -34,6 +34,8 @@ Env / CLI (all overridable):
   N_SAMPLES     sampled generations per doc            (default 5)
   MAX_TOKENS    generation budget per generation       (default 32768)
   N_CONTROL     terminated docs to include as control  (default 25)
+  N_EXHAUSTED   cap exhausted docs (0 = all; evenly    (default 0)
+                spaced by doc_id when the cap bites)
   CONCURRENCY   in-flight requests                      (default 24)
   REQUEST_TIMEOUT_S                                     (default 3600)
 """
@@ -163,12 +165,17 @@ def main() -> int:
     n_samples = int(os.environ.get("N_SAMPLES", "5"))
     max_tokens = int(os.environ.get("MAX_TOKENS", "32768"))
     n_control = int(os.environ.get("N_CONTROL", "25"))
+    n_exhausted = int(os.environ.get("N_EXHAUSTED", "0"))
     conc = int(os.environ.get("CONCURRENCY", "24"))
     timeout = float(os.environ.get("REQUEST_TIMEOUT_S", "3600"))
 
     docs = _load_docs(_latest(samples_glob))
     exhausted = sorted(d for d, v in docs.items() if v["exhausted"])
     terminated = sorted(d for d, v in docs.items() if not v["exhausted"])
+    # cap exhausted docs (evenly spaced by doc_id for representativeness)
+    if n_exhausted > 0 and len(exhausted) > n_exhausted:
+        step = max(1, len(exhausted) // n_exhausted)
+        exhausted = exhausted[::step][:n_exhausted]
     # evenly spaced control from the terminated docs
     if terminated and n_control > 0:
         step = max(1, len(terminated) // n_control)

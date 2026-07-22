@@ -22,9 +22,12 @@ echo "[controller] root=$ROOT"
 TOK=/mnt/nfs/hoangduy/results/m3-official-quality/20260721T154830Z-tok64k/results
 G() { echo "$TOK/$1/vllm/quality/_lm_eval/gpqa_diamond_cot_zeroshot/**/samples_*.jsonl"; }
 
-export N_SAMPLES=${N_SAMPLES:-5} MAX_TOKENS=${MAX_TOKENS:-32768}
+export N_SAMPLES=${N_SAMPLES:-3} MAX_TOKENS=${MAX_TOKENS:-32768}
 export N_CONTROL=${N_CONTROL:-25} CONCURRENCY=${CONCURRENCY:-24}
 export REQUEST_TIMEOUT_S=${REQUEST_TIMEOUT_S:-3600}
+# AWQ arms have 77/101 exhausted docs; cap to 50 (even-spaced) to bound cost.
+# gptq/bf16 have only ~23 exhausted -> uncapped (N_EXHAUSTED=0 = all).
+AWQ_EXHAUSTED_CAP=${AWQ_EXHAUSTED_CAP:-50}
 
 # BF16 2-node serve arm, held until client-done. Longer ready budget for the
 # ~920 GB TP16 load; 40960 ctx is plenty for 32k gen on short GPQA prompts.
@@ -38,8 +41,9 @@ BF16_JOB=$!
 
 # Launch in the MAIN shell (never $(fn) subshell: the srun would not be our
 # child and `wait $pid` returns 127 instantly — observed 20260720T162402Z).
-launch_local() {  # $1 arm  $2 ckpt  $3 port  $4 samples_glob
+launch_local() {  # $1 arm  $2 ckpt  $3 port  $4 samples_glob  $5 n_exhausted(0=all)
   ROOT="$ROOT" ARM="$1" MODE=local CKPT="$2" PORT="$3" SAMPLES_GLOB="$4" \
+  N_EXHAUSTED="${5:-0}" \
   srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8 --cpus-per-task=192 \
        --time=12:00:00 --kill-on-bad-exit=1 --job-name="m3-sprobe-$1" --export=ALL \
        bash "$REPO/pipeline/slurm/sampling_probe_arm.sh" \
@@ -49,15 +53,15 @@ launch_local() {  # $1 arm  $2 ckpt  $3 port  $4 samples_glob
 
 launch_local gptq \
   "$REPO/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay" \
-  8000 "$(G minimax-m3)"
+  8000 "$(G minimax-m3)" 0
 GPTQ_PID=$LAST_PID
 launch_local awq \
   "/mnt/nfs/hoangduy/results/m3-distributed-awq-full/20260720T060340Z-m3-ddp-awq-full-r5-deadchan/awq/MiniMax-M3-awq-W4AFP8/20260720-060402/checkpoint-vllm-w123" \
-  8004 "$(G minimax-m3-awq-inhouse)"
+  8004 "$(G minimax-m3-awq-inhouse)" "$AWQ_EXHAUSTED_CAP"
 AWQ_PID=$LAST_PID
 launch_local cyankiwi \
   "/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4" \
-  8003 "$(G minimax-m3-awq-cyankiwi)"
+  8003 "$(G minimax-m3-awq-cyankiwi)" "$AWQ_EXHAUSTED_CAP"
 CYAN_PID=$LAST_PID
 
 # BF16 probe: no GPU, just HTTP+CPU against the shared BF16 endpoint.

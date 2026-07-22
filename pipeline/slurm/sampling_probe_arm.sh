@@ -54,7 +54,7 @@ note "run probe driver against $BASE_URL"
 SAMPLES_GLOB="$SAMPLES_GLOB" BASE_URL="$BASE_URL" SERVED_NAME="$SERVED_NAME" \
   OUT="$ROOT/sampling/$ARM.jsonl" \
   N_SAMPLES="${N_SAMPLES:-5}" MAX_TOKENS="${MAX_TOKENS:-32768}" \
-  N_CONTROL="${N_CONTROL:-25}" CONCURRENCY="${CONCURRENCY:-24}" \
+  N_CONTROL="${N_CONTROL:-25}" N_EXHAUSTED="${N_EXHAUSTED:-0}" CONCURRENCY="${CONCURRENCY:-24}" \
   REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-3600}" \
   "$BVENV/bin/python" "$REPO/pipeline/sampling_probe.py" >>"$C/driver.log" 2>&1
 rc=$?; note "driver rc=$rc"; tail -5 "$C/driver.log" | tee -a "$C/client.log"

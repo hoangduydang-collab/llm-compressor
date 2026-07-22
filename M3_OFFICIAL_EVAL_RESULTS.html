@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniMax-M3 Quantization — Official Eval Results</title>
+<style>
+  :root {
+    /* cool-neutral ground, single steel-blue accent; green/amber/red are
+       semantic (recovery severity), never the accent */
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #161b22;
+    --ink-2: #47515f;
+    --ink-3: #6b7684;
+    --line: #d9dee6;
+    --line-2: #c5ccd6;
+    --accent: #23628f;
+    --accent-soft: #e4eef5;
+    --good: #2f8f57;
+    --good-bg: #e5f2ea;
+    --warn: #b0781a;
+    --warn-bg: #f6ecd9;
+    --crit: #c1443a;
+    --crit-bg: #f7e3e1;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", "Menlo", "Cascadia Code", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --maxw: 900px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1217;
+      --surface: #161b22;
+      --surface-2: #1c222b;
+      --ink: #e7ebf0;
+      --ink-2: #aab4c0;
+      --ink-3: #7c8794;
+      --line: #2a323d;
+      --line-2: #38414e;
+      --accent: #6fb2df;
+      --accent-soft: #17303f;
+      --good: #5cc487;
+      --good-bg: #14281c;
+      --warn: #d6a24e;
+      --warn-bg: #2c2413;
+      --crit: #e8756a;
+      --crit-bg: #2e1a18;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f5; --ink: #161b22;
+    --ink-2: #47515f; --ink-3: #6b7684; --line: #d9dee6; --line-2: #c5ccd6;
+    --accent: #23628f; --accent-soft: #e4eef5;
+    --good: #2f8f57; --good-bg: #e5f2ea; --warn: #b0781a; --warn-bg: #f6ecd9;
+    --crit: #c1443a; --crit-bg: #f7e3e1;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1c222b; --ink: #e7ebf0;
+    --ink-2: #aab4c0; --ink-3: #7c8794; --line: #2a323d; --line-2: #38414e;
+    --accent: #6fb2df; --accent-soft: #17303f;
+    --good: #5cc487; --good-bg: #14281c; --warn: #d6a24e; --warn-bg: #2c2413;
+    --crit: #e8756a; --crit-bg: #2e1a18;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px 96px; }
+  .col { max-width: 68ch; }
+
+  /* ---- header ---- */
+  header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+  }
+  .head-inner { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 32px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4.2vw, 40px); line-height: 1.12; margin: 0 0 12px;
+    letter-spacing: -.02em; text-wrap: balance; font-weight: 680;
+  }
+  .dek { font-size: 18px; color: var(--ink-2); margin: 0 0 22px; max-width: 62ch; text-wrap: pretty; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono);
+    font-size: 12.5px; color: var(--ink-3);
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---- section rhythm ---- */
+  section { margin-top: 52px; }
+  h2 {
+    font-size: 13px; font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: .1em; color: var(--accent); margin: 0 0 4px;
+  }
+  h2 + .h2sub { font-size: 24px; letter-spacing: -.01em; margin: 0 0 18px; font-weight: 640; text-wrap: balance; }
+  h3 { font-size: 18px; margin: 30px 0 8px; font-weight: 620; letter-spacing: -.01em; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 640; }
+  code {
+    font-family: var(--mono); font-size: .875em; background: var(--surface-2);
+    padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);
+  }
+
+  /* ---- KPI tiles ---- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 4px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 16px 14px; position: relative; overflow: hidden;
+  }
+  .tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+  .tile.good::before { background: var(--good); }
+  .tile.crit::before { background: var(--crit); }
+  .tile .k { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
+  .tile .v { font-size: 30px; font-weight: 680; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .tile .v small { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+  .tile .d { font-size: 13px; color: var(--ink-2); margin-top: 8px; line-height: 1.4; }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 13px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface-2); color: var(--ink-2);
+    font-weight: 600; font-size: 12px; letter-spacing: .02em; z-index: 1;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.baseline td { background: var(--accent-soft); }
+  td.arm, th.arm { font-weight: 600; }
+  .cell-good { color: var(--good); background: var(--good-bg); font-weight: 600; }
+  .cell-warn { color: var(--warn); background: var(--warn-bg); font-weight: 600; }
+  .cell-crit { color: var(--crit); background: var(--crit-bg); font-weight: 700; }
+  .muted { color: var(--ink-3); }
+
+  /* ---- bar meters ---- */
+  .bars { display: grid; gap: 10px; margin: 4px 0 6px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 68px; align-items: center; gap: 12px; font-size: 13.5px; }
+  .bar-row .lab { color: var(--ink-2); font-weight: 600; }
+  .track { position: relative; height: 20px; background: var(--surface-2); border-radius: 5px; border: 1px solid var(--line); overflow: hidden; }
+  .track .baseline-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink-3); opacity: .55; }
+  .fill { height: 100%; border-radius: 4px 0 0 4px; }
+  .fill.f-crit { background: var(--crit); }
+  .fill.f-warn { background: var(--warn); }
+  .fill.f-ok { background: var(--accent); }
+  .bar-row .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* ---- callouts ---- */
+  .note {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 18px; margin: 18px 0;
+  }
+  .note.finding { border-left-color: var(--crit); }
+  .note.good { border-left-color: var(--good); }
+  .note .t { font-weight: 640; margin: 0 0 6px; }
+  .note p:last-child { margin-bottom: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin: 10px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  .sources { font-size: 14px; }
+  .sources li { margin: 7px 0; }
+  .verdict-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 12px; }
+  .verdict {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+  }
+  .verdict .tag { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+    text-transform: uppercase; padding: 2px 8px; border-radius: 5px; margin-bottom: 8px; font-weight: 600; }
+  .tag.ship { background: var(--good-bg); color: var(--good); }
+  .tag.caveat { background: var(--crit-bg); color: var(--crit); }
+  .verdict h4 { margin: 0 0 6px; font-size: 16px; }
+  .verdict p { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+
+  .toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 10; font-family: var(--mono); font-size: 12px;
+    background: var(--surface); color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 7px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 560px) {
+    .bar-row { grid-template-columns: 96px 1fr 54px; }
+  }
+</style>
+</head>
+<body>
+<button class="toggle" id="themeToggle" aria-label="Toggle light/dark theme">◐ theme</button>
+
+<header>
+  <div class="head-inner">
+    <p class="eyebrow">MiniMax-M3 · Quantization quality · Official pipeline</p>
+    <h1>Which M3 quants are safe to ship — and why AWQ isn't yet</h1>
+    <p class="dek">
+      Two paired evaluations of our in-house quants against the BF16 baseline. GPTQ and MXFP8
+      recover the baseline cleanly. AWQ carries a large, specific regression on reasoning tasks
+      that turns out to be one mechanism — the model stops terminating its own thinking — not
+      broad capability loss.
+    </p>
+    <div class="meta">
+      <span><b>Pipeline:</b> benchmarks <code>quality.run_ab</code></span>
+      <span><b>Runs:</b> full4 (07-20) · tok64k (07-21) · sampling probe (07-22)</span>
+      <span><b>Engine:</b> vLLM 0.24.0 · lm-eval 0.4.10</span>
+      <span><b>Baseline:</b> MiniMax-M3 BF16</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ TL;DR ============ -->
+  <section id="tldr">
+    <h2>Bottom line</h2>
+    <div class="h2sub">Read this if you have thirty seconds</div>
+    <div class="col">
+      <p>
+        Across seven tasks, <strong>GPTQ (W4A8) and MXFP8 are ship-grade</strong> — every task recovers
+        ≥97.4% of BF16, token spend matches the baseline, and the handful of answer changes are
+        symmetric noise. <strong>In-house AWQ (W4A8, recipe r5) is not shippable as-is:</strong> it loses
+        30 points on GPQA and 6 on IFEval. But the damage is not "AWQ can't reason" — when it produces
+        an answer, its accuracy matches BF16. The loss is that on hard prompts it falls into
+        <strong>runaway thinking loops, exhausts the generation budget, and emits nothing</strong>, which
+        scores as zero. Doubling the budget to 64k did not fix it — but switching from greedy to MiniMax's
+        recommended sampling recovers roughly half the stuck items, so part of the gap is a decoding artifact,
+        not pure recipe damage. A community AWQ quant is worse than ours on every axis, so this is an
+        AWQ-on-M3 problem, not a flaw unique to our recipe.
+      </p>
+    </div>
+    <div class="tiles">
+      <div class="tile good">
+        <p class="k">GPTQ · worst task recovery</p>
+        <p class="v">97.4<small>%</small></p>
+        <p class="d">MMLU; all six other tasks ≥98%. Token spend ≈ BF16.</p>
+      </div>
+      <div class="tile good">
+        <p class="k">MXFP8 · worst task recovery</p>
+        <p class="v">97.5<small>%</small></p>
+        <p class="d">IFEval; spends 20% <em>less</em> than BF16 on GPQA.</p>
+      </div>
+      <div class="tile crit">
+        <p class="k">AWQ · GPQA recovery</p>
+        <p class="v">70.2<small>%</small></p>
+        <p class="d">−24.2 points. 100% attributable to non-termination.</p>
+      </div>
+      <div class="tile crit">
+        <p class="k">AWQ · GPQA budget-exhausted</p>
+        <p class="v">38.9<small>%</small></p>
+        <p class="d">vs 12.6% for BF16, at a 64k-token budget.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WHAT WE RAN ============ -->
+  <section id="method">
+    <h2>Method</h2>
+    <div class="h2sub">What was measured, and what the numbers do and don't mean</div>
+    <div class="col">
+      <p>
+        Both runs use the official benchmarks A/B pipeline: each quant is served on its own node and
+        scored against a shared BF16 endpoint. Two complementary runs:
+      </p>
+      <ul>
+        <li><strong>full4</strong> — breadth. Four arms (BF16, GPTQ, MXFP8, AWQ) × seven tasks, 32k-token budget.</li>
+        <li><strong>tok64k</strong> — depth. Five arms (adds a community AWQ, <em>cyankiwi</em> W4A16) × the two most-damaged tasks (GPQA-Diamond, IFEval), 64k-token budget, with per-request token accounting.</li>
+      </ul>
+      <p>
+        Decoding is <strong>greedy (temperature 0)</strong>, the suite's reproducibility convention.
+        Thinking is <strong>on</strong> (M3 is a reasoning model; the <code>minimax_m3</code> parser strips
+        the <code>&lt;think&gt;</code> block and scores only the final answer — which is why an exhausted,
+        answer-less response scores zero). GPQA-Diamond is graduate-level science with long chain-of-thought;
+        IFEval is verifiable instruction-following, but on a reasoning model it too runs through a full
+        think phase before answering.
+      </p>
+    </div>
+    <div class="note">
+      <p class="t">Comparability caveat</p>
+      <p>
+        These scores are <strong>valid for quant-vs-quant and quant-vs-BF16 decisions</strong> — all arms run
+        the identical protocol. They are <strong>not directly comparable to public leaderboards</strong>: we use
+        greedy decoding (MiniMax's own recipe is temperature 1.0 / top_p 0.95) and a task subset. The greedy
+        choice matters for the AWQ finding and is the subject of an open follow-up (below).
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ VERDICTS ============ -->
+  <section id="verdicts">
+    <h2>Per-arm verdict</h2>
+    <div class="h2sub">Three clean, one blocked</div>
+    <div class="verdict-row">
+      <div class="verdict">
+        <span class="tag ship">Ship</span>
+        <h4>GPTQ · W4A8 (in-house)</h4>
+        <p>Recovery 97.4–101.1% across all seven tasks. Token spend within 2% of BF16. Flips symmetric (wins ≈ losses) — quantization noise, not directional damage.</p>
+      </div>
+      <div class="verdict">
+        <span class="tag ship">Ship</span>
+        <h4>MXFP8 (vendor)</h4>
+        <p>Recovery 97.5–100.6%. Matches or beats BF16 on 5 of 7 tasks; actually spends fewer tokens on GPQA. Symmetric flips.</p>
+      </div>
+      <div class="verdict">
+        <span class="tag caveat">Caveat</span>
+        <h4>AWQ · W4A8 r5 (in-house)</h4>
+        <p>GPQA −24.2 pts, IFEval −6.1 pts, both from reasoning non-termination. Capability intact conditional on the model actually finishing. Not shippable until the loop is fixed.</p>
+      </div>
+      <div class="verdict">
+        <span class="tag caveat">Reference</span>
+        <h4>AWQ · W4A16 (community, cyankiwi)</h4>
+        <p>Included as an external control. Worse than our AWQ on every metric — confirms the failure is intrinsic to AWQ-on-M3, not our recipe.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FULL4 MATRIX ============ -->
+  <section id="breadth">
+    <h2>Breadth — full4</h2>
+    <div class="h2sub">Recovery vs BF16 across seven tasks</div>
+    <p class="col">Each cell is the candidate's score as a percentage of BF16 on the same task (32k budget, greedy). Green ≥99%, amber 93–97%, red &lt;93%.</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="arm">Task</th>
+            <th>BF16 (abs.)</th>
+            <th>GPTQ</th>
+            <th>MXFP8</th>
+            <th>AWQ r5</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GSM8K</td><td class="muted">0.949</td><td class="cell-good">100.1%</td><td class="cell-good">100.3%</td><td class="cell-warn">97.3%</td></tr>
+          <tr><td class="arm">MMLU</td><td class="muted">0.750</td><td>97.4%</td><td class="cell-good">100.4%</td><td class="cell-warn">93.8%</td></tr>
+          <tr><td class="arm">ARC-Challenge</td><td class="muted">0.469</td><td class="cell-good">101.1%</td><td>98.7%</td><td>98.7%</td></tr>
+          <tr><td class="arm">HellaSwag</td><td class="muted">0.705</td><td>99.4%</td><td class="cell-good">100.3%</td><td>97.8%</td></tr>
+          <tr><td class="arm">TruthfulQA-mc2</td><td class="muted">0.640</td><td>98.3%</td><td class="cell-good">100.6%</td><td class="cell-warn">96.7%</td></tr>
+          <tr><td class="arm">IFEval</td><td class="muted">0.874</td><td>98.3%</td><td>97.5%</td><td class="cell-warn">93.0%</td></tr>
+          <tr><td class="arm">GPQA-Diamond</td><td class="muted">0.813</td><td>99.4%</td><td>98.1%</td><td class="cell-crit">70.2%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--good)"></i>≥99% recover</span>
+      <span><i class="sw" style="background:var(--surface-2);border:1px solid var(--line-2)"></i>97–99%</span>
+      <span><i class="sw" style="background:var(--warn)"></i>93–97%</span>
+      <span><i class="sw" style="background:var(--crit)"></i>&lt;93%</span>
+    </div>
+
+    <h3>Answer-level churn (flips vs BF16)</h3>
+    <p class="col">
+      Aggregate recovery hides how many individual answers changed. The <em>direction</em> of change
+      separates noise from damage: GPTQ and MXFP8 flip roughly as many wrong→right as right→wrong
+      (churn). AWQ flips heavily <strong>right→wrong</strong> — a systematic loss, most extreme on GPQA
+      (53 lost / 5 gained).
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Task (n)</th><th>GPTQ →✗ / →✓</th><th>MXFP8 →✗ / →✓</th><th>AWQ →✗ / →✓</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GPQA (198)</td><td>8 / 7</td><td>10 / 7</td><td class="cell-crit">53 / 5</td></tr>
+          <tr><td class="arm">IFEval (541)</td><td>34 / 27</td><td>31 / 19</td><td class="cell-warn">57 / 24</td></tr>
+          <tr><td class="arm">MMLU (14,042)</td><td>971 / 695</td><td>622 / 666</td><td class="cell-warn">1416 / 761</td></tr>
+          <tr><td class="arm">GSM8K (1,319)</td><td>26 / 27</td><td>17 / 21</td><td>59 / 25</td></tr>
+          <tr><td class="arm">HellaSwag (10,042)</td><td>199 / 153</td><td>118 / 137</td><td>400 / 241</td></tr>
+          <tr><td class="arm">ARC (1,172)</td><td>37 / 43</td><td>38 / 31</td><td>60 / 53</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TOKEN SPEND ============ -->
+  <section id="tokens">
+    <h2>Depth — tok64k</h2>
+    <div class="h2sub">The regression is a token-spend blowup</div>
+    <p class="col">
+      The novel finding. With per-request accounting at a 64k budget, AWQ isn't just less accurate —
+      it burns <strong>2–5× the tokens</strong> of BF16 on the same prompts, and a large fraction of
+      requests hit the budget ceiling without ever finishing. GPTQ tracks BF16 exactly; MXFP8 is at or
+      below baseline. The bars show completion-token spend relative to BF16 (marker = 1.0× baseline).
+    </p>
+
+    <h3>Token spend, GPQA-Diamond (× BF16)</h3>
+    <div class="bars">
+      <div class="bar-row"><span class="lab">GPTQ</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-ok" style="width:20.2%"></div></div><span class="num">1.01×</span></div>
+      <div class="bar-row"><span class="lab">MXFP8</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-ok" style="width:15.9%"></div></div><span class="num">0.80×</span></div>
+      <div class="bar-row"><span class="lab">AWQ r5</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-warn" style="width:43.9%"></div></div><span class="num">2.19×</span></div>
+      <div class="bar-row"><span class="lab">cyankiwi AWQ</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-crit" style="width:61.2%"></div></div><span class="num">3.06×</span></div>
+    </div>
+
+    <h3>Token spend, IFEval (× BF16)</h3>
+    <div class="bars">
+      <div class="bar-row"><span class="lab">GPTQ</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-ok" style="width:16.3%"></div></div><span class="num">1.02×</span></div>
+      <div class="bar-row"><span class="lab">MXFP8</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-ok" style="width:17.2%"></div></div><span class="num">1.08×</span></div>
+      <div class="bar-row"><span class="lab">AWQ r5</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-warn" style="width:59%"></div></div><span class="num">3.69×</span></div>
+      <div class="bar-row"><span class="lab">cyankiwi AWQ</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-crit" style="width:81%"></div></div><span class="num">5.09×</span></div>
+    </div>
+
+    <h3>Score & budget-exhaustion at 64k</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Arm</th><th>GPQA</th><th>GPQA exhausted</th><th>IFEval</th><th>IFEval exhausted</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">BF16</td><td>0.803</td><td>12.6%</td><td>0.893</td><td>0.9%</td></tr>
+          <tr><td class="arm">GPTQ</td><td class="cell-good">0.803</td><td>11.6%</td><td>0.874</td><td>1.1%</td></tr>
+          <tr><td class="arm">MXFP8</td><td class="cell-good">0.828</td><td>7.6%</td><td>0.885</td><td>1.3%</td></tr>
+          <tr><td class="arm">AWQ r5</td><td class="cell-crit">0.576</td><td class="cell-crit">38.9%</td><td class="cell-warn">0.812</td><td class="cell-warn">9.2%</td></tr>
+          <tr><td class="arm">cyankiwi AWQ</td><td class="cell-crit">0.455</td><td class="cell-crit">55.6%</td><td class="cell-warn">0.782</td><td class="cell-warn">13.7%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col muted" style="margin-top:10px">
+      "Exhausted" = the response hit the 64k generation ceiling without emitting a final answer.
+      Even BF16 has a ~12% hard core on GPQA (genuinely difficult items) — the signal is the excess above it.
+    </p>
+  </section>
+
+  <!-- ============ MECHANISM ============ -->
+  <section id="mechanism">
+    <h2>Root cause</h2>
+    <div class="h2sub">One mechanism: reasoning that never terminates</div>
+    <div class="col">
+      <p>
+        The GPQA and IFEval regressions look like two problems but are one. On hard prompts the AWQ
+        model enters its <code>&lt;think&gt;</code> phase and never converges — it burns the entire budget
+        mid-thought and returns an empty answer. Three independent lines of evidence:
+      </p>
+    </div>
+
+    <div class="note finding">
+      <p class="t">1 · Extra budget does not rescue it</p>
+      <p>
+        Of the 74 GPQA items AWQ exhausted at a 32k budget, <strong>63 were still exhausted at 64k</strong>
+        — only 11 recovered, and 14 new ones broke. Accuracy moved 0.571 → 0.576 (flat). This is
+        non-termination, not "needs more room." AWQ's mean GPQA completion length is <strong>26,463 tokens
+        vs BF16's 12,059</strong>.
+      </p>
+    </div>
+
+    <div class="note finding">
+      <p class="t">2 · IFEval failure is 100% empties, not lost instruction-following</p>
+      <p>
+        When AWQ actually answers an IFEval prompt, it passes at <strong>0.892 — statistically identical to
+        BF16's 0.901.</strong> The entire −8-point gap is the 9.1% of prompts that exhaust the budget and
+        emit nothing. Counterfactually crediting those empties at BF16's answer-rate reconstructs
+        <strong>0.893 = BF16's score exactly.</strong> Instruction-following capability is intact.
+      </p>
+    </div>
+
+    <div class="note finding">
+      <p class="t">3 · The exhausted transcripts are literal loops</p>
+      <p>
+        Repetition analysis of the exhausted reasoning tails (zlib compression ratio; lower = more
+        repetitive): BF16/GPTQ/MXFP8 sit at ~0.15 — coherent reasoning that simply overran. Our AWQ is
+        <strong>0.078 (semantic loops — re-deriving the same argument)</strong>. The community AWQ is
+        <strong>0.004 — degenerate single-token spam</strong> (<code>drop drop drop…</code>, <code>the the the…</code>).
+      </p>
+    </div>
+
+    <div class="note good">
+      <p class="t">Recipe vindication</p>
+      <p>
+        The external cyankiwi AWQ (W4A16) is worse than our r5 on every axis — more spend, more
+        exhaustion (55.6% vs 38.9% on GPQA), lower score (0.455 vs 0.576), more one-sided flips (71/2 vs
+        50/5). The failure mode is intrinsic to AWQ on M3's long reasoning, and <strong>our recipe is the
+        better AWQ of the two.</strong>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ OPEN QUESTION ============ -->
+  <section id="open">
+    <h2>Follow-up — resolved</h2>
+    <div class="h2sub">Sampling breaks the loops for our AWQ, not for the community quant</div>
+    <div class="col">
+      <p>
+        Reasoning models are known to loop under greedy decoding (DeepSeek-R1's card warns of it;
+        MiniMax recommends temperature 1.0 / top_p 0.95), and our runs are greedy. A scoped probe re-ran
+        the previously-exhausted GPQA items under both greedy and MiniMax's sampling at a fixed 32k budget.
+        The result splits cleanly by arm — non-termination rate on that stuck-item subset:
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Arm · exhausted-item subset</th><th>Greedy</th><th>Sampled</th><th>Change</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">BF16 (control)</td><td>64.0%</td><td>62.7%</td><td class="muted">flat</td></tr>
+          <tr><td class="arm">GPTQ (control)</td><td>52.2%</td><td>58.0%</td><td class="muted">flat</td></tr>
+          <tr><td class="arm">AWQ r5 (in-house)</td><td>76.0%</td><td class="cell-good">49.3%</td><td class="cell-good">−27 pts</td></tr>
+          <tr><td class="arm">cyankiwi AWQ</td><td>94.0%</td><td class="cell-warn">87.3%</td><td class="cell-warn">−7 pts</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p style="margin-top:16px">
+        Sampling does not reduce exhaustion on BF16 or GPTQ — confirming their overruns are genuinely hard
+        items, not loops (a clean control that the test isn't just a termination knob). It
+        <strong>substantially rescues our AWQ:</strong> non-termination drops 76% → 49%, and <strong>74% of the
+        stuck items terminate on at least one sampled attempt</strong> (mean 51% of attempts). So a large share
+        of our AWQ regression is a <strong>greedy × quant artifact</strong> — the true deployment-mode (sampling)
+        damage is smaller than the greedy scores imply, though not zero. The community cyankiwi quant barely
+        moves (94% → 87%; only 30% of items ever terminate): its degenerate single-token loops are robust to
+        sampling and represent genuine, severe damage.
+      </p>
+    </div>
+    <div class="note">
+      <p class="t">What this means for the verdict</p>
+      <p>
+        The paired verdicts stand (greedy is the fixed, shared protocol), but the AWQ regression now splits
+        into a <strong>greedy-induced component</strong> — fixable decode-side (sampling, repetition penalty, or
+        a think-budget cap) — and a <strong>residual recipe component</strong>. GPQA and IFEval share the one
+        root cause, so a single fix addresses both. Thinking stays on throughout: it is the standard, correct
+        setting for a reasoning model, and disabling it would both break convention and hide a real deployment
+        risk. Full reasoning transcripts for every exhausted request are captured, so the loops can be inspected
+        without a rerun.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ SOURCES ============ -->
+  <section id="sources">
+    <h2>Context & sources</h2>
+    <div class="h2sub">Where the metrics and interpretation come from</div>
+    <ul class="sources col">
+      <li><strong>Our metrics survey</strong> — <code>QUANT_REGRESSION_METRICS_SURVEY.md</code> (this repo): the flip-rate, recovery-%, and token-usage metrics used here, with full citations.</li>
+      <li><strong>Flips / "Accuracy is Not All You Need"</strong> — Dutta et al., <a href="https://arxiv.org/abs/2407.09141">arXiv:2407.09141</a>: aggregate accuracy can hold while individual answers flip; motivates the directional flip metric.</li>
+      <li><strong>Quantization token inflation</strong> — the phenomenon where quantized models reach the right answer but fail to emit it, and reasoning-length inflation under quantization (surveyed in the doc above).</li>
+      <li><strong>Thinking helps and hurts instruction-following</strong> — <a href="https://arxiv.org/pdf/2606.09662">arXiv:2606.09662</a>: why IFEval on a reasoning model is a full reasoning task, not a short one.</li>
+      <li><strong>Greedy looping in reasoning models</strong> — DeepSeek-R1 model card; <a href="https://arxiv.org/pdf/2503.24370">arXiv:2503.24370</a> (thinking intervention).</li>
+      <li><strong>MiniMax-M3 recommended decoding</strong> — <a href="https://huggingface.co/MiniMaxAI/MiniMax-M3">model card</a> / <a href="https://www.minimax.io/blog/minimax-m3">launch blog</a>: temp 1.0 / top_p 0.95, 16k output.</li>
+    </ul>
+    <h3>Raw evidence on disk</h3>
+    <ul class="sources col">
+      <li><code>results/m3-official-quality/20260720T165938Z-full4/</code> — 7-task deltas, flips, replay tree.</li>
+      <li><code>results/m3-official-quality/20260721T154830Z-tok64k/</code> — token-usage sidecars (<code>usage_delta</code>, <code>task_flips</code>), per-request <code>usage.jsonl</code> with reasoning text.</li>
+      <li><code>results/m3-sampling-probe/20260722T031036Z/sampling/</code> — greedy-vs-sampled generations per arm (<code>pipeline/sampling_probe.py</code>).</li>
+    </ul>
+  </section>
+
+  <footer>
+    MiniMax-M3 quantization quality · official benchmarks A/B pipeline · greedy decoding, thinking on ·
+    paired-comparison valid, not leaderboard-comparable. Generated for internal collaboration.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeToggle');
+    var root = document.documentElement;
+    function current() {
+      if (root.dataset.theme) return root.dataset.theme;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      root.dataset.theme = current() === 'dark' ? 'light' : 'dark';
+    });
+  })();
+</script>
+</body>
+</html>

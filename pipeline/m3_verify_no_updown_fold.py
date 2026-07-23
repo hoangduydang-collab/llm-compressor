@@ -40,6 +40,8 @@ from safetensors import safe_open
 
 from compressed_tensors.compressors.pack_quantized.helpers import unpack_from_int32
 
+from pipeline.m3_gate_alpha_fold import GATE_SMOOTH_SCALE_NAME
+
 # Sampled sparse layers (span the depth; 30 is where r5's fold was largest)
 DEFAULT_LAYERS = "3,8,20,30,45,59"
 DEFAULT_EXPERTS = "0,31,64,101,127"
@@ -78,6 +80,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--layers", default=DEFAULT_LAYERS)
     parser.add_argument("--experts", default=DEFAULT_EXPERTS)
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--mode",
+        choices=("r6", "r7"),
+        default="r6",
+        help=(
+            "r6 (default): expect NO down-side fold — dequant(down) must match "
+            "base at rounding noise. r7 (gate-alpha fold): expect down columns "
+            "scaled by the stored per-expert gate_smooth_scale — dequant(down) "
+            "DIVIDED column-wise by that buffer must match base, the buffer must "
+            "be finite and inside the [1/8, 8] backstop band, and (self-check) "
+            "the UNdivided comparison must fail whenever the fold is non-trivial."
+        ),
+    )
     args = parser.parse_args(argv)
 
     bmap, cmap = _weight_map(args.base), _weight_map(args.checkpoint)
@@ -87,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     report: dict = {
         "base": args.base,
         "checkpoint": args.checkpoint,
+        "mode": args.mode,
         "thresholds": {
             "median_relerr_max": MEDIAN_RELERR_MAX,
             "p99_relerr_max": P99_RELERR_MAX,
@@ -97,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     passed = True
     for layer in layers:
         rel_all, cos_all = [], []
+        fold_seen = False
         for expert in experts:
             base_key = (
                 f"language_model.model.layers.{layer}"
@@ -111,6 +128,25 @@ def main(argv: list[str] | None = None) -> int:
             if deq.shape != base.shape:
                 print(f"ERROR: shape mismatch {deq.shape} vs {base.shape}", file=sys.stderr)
                 return 3
+            if args.mode == "r7":
+                scale_key = (
+                    f"language_model.model.layers.{layer}"
+                    f".block_sparse_moe.experts.{expert}.{GATE_SMOOTH_SCALE_NAME}"
+                )
+                if scale_key not in cmap:
+                    print(f"ERROR: r7 mode but {scale_key} missing", file=sys.stderr)
+                    return 3
+                s = _load(args.checkpoint, cmap, scale_key).float()
+                if (
+                    not torch.isfinite(s).all()
+                    or (s < 1.0 / 8.0 - 1e-6).any()
+                    or (s > 8.0 + 1e-6).any()
+                ):
+                    print(f"ERROR: {scale_key} outside backstop band", file=sys.stderr)
+                    return 3
+                fold_seen = fold_seen or bool(((s - 1.0).abs() > 0.01).any())
+                # down columns were multiplied by s at fold time
+                deq = deq / s.view(1, -1)
             diff = deq - base
             # per-COLUMN (down input channel = the folded axis) relative L2
             rel = diff.norm(dim=0) / base.norm(dim=0).clamp(min=1e-12)
@@ -132,13 +168,20 @@ def main(argv: list[str] | None = None) -> int:
             and stats["relerr_p99"] <= P99_RELERR_MAX
         )
         stats["convention_ok"] = convention_ok
-        stats["no_fold"] = no_fold
+        stats["no_fold" if args.mode == "r6" else "fold_consistent"] = no_fold
+        if args.mode == "r7":
+            stats["fold_nontrivial"] = fold_seen
         report["layers"][str(layer)] = stats
         passed = passed and convention_ok and no_fold
         print(
             f"L{layer}: relerr med={stats['relerr_median']:.4f} "
             f"p99={stats['relerr_p99']:.4f} cos_med={stats['cosine_median']:.4f} "
-            f"convention_ok={convention_ok} no_fold={no_fold}",
+            f"convention_ok={convention_ok} "
+            + (
+                f"no_fold={no_fold}"
+                if args.mode == "r6"
+                else f"fold_consistent={no_fold} fold_nontrivial={fold_seen}"
+            ),
             flush=True,
         )
 

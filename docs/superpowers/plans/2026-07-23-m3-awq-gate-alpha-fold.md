@@ -1,18 +1,30 @@
 # M3 AWQ r7 — function-preserving down-side smoothing via the gate path ("gate-alpha fold")
 
-- Status: DESIGN — conditional; do not implement until the r6 decision gate below fires.
+- Status: IN PROGRESS (2026-07-23, unconditional per Duy's decision).
+  - DONE — calibration side: `pipeline/m3_gate_alpha_fold.py` (per-expert,
+    per-channel scales; alpha/limit co-scaling; fp32 `gate_smooth_scale`
+    buffer), mapping flag `include_gate_alpha_fold` / env
+    `M3_AWQ_GATE_ALPHA_FOLD=1`, generic `awq_fold_scale_consumer` hook in
+    AWQModifier, fail-closed prep check in pipeline.quantize. Fold identity
+    proven exact (fp64) incl. clamp regime; fp32 production residual ≤1e-5
+    (tests/pipeline/test_m3_gate_alpha_fold.py).
+  - DONE — gates/persistence: `m3_verify_no_updown_fold --mode r7`
+    (fold-consistency vs stored scales + backstop band); reexport is
+    passthrough-safe for the new buffer; sidecar builder
+    (`m3_gate_alpha_serve_patch.build_sidecar_from_checkpoint`).
+  - SCAFFOLDED — serve side: `pipeline/m3_gate_alpha_serve_patch.py` (pure
+    math unit-tested offline incl. calibration/serve consistency; three vLLM
+    0.24.0 shims REQUIRE executor smoke — see validation ladder).
 - Date: 2026-07-23
 - Prereq reading: BUGS_AND_FIXES.md "AWQ up->down smoothing fold is not
   function-preserving on MiniMax-M3"; `M3_AWQ_R6_REQUANT_HANDOFF.md`.
 
-## Decision gate (when to build this at all)
+## Decision gate — REMOVED
 
-Implement r7 only if the r6 evaluation (up->down mapping removed) shows in-house
-AWQ still **materially behind GPTQ** on the reasoning suite (GPQA recovery or
-budget-exhaustion gap beyond the paired noise band). If r6 ≈ GPTQ, ship r6 and
-close; the mapping this design rescues was worth a median ~6% down-weight-MSE
-on a flat activation landscape — do not build serve plumbing to reclaim it
-unless the eval says that 6% matters.
+Originally r7 was conditional on the r6 verdict; Duy has opted to build r7
+unconditionally (2026-07-23). r6 still runs FIRST and alone (one variable at a
+time): it is the root-cause confirmation and the safe fallback artifact. r7 is
+the candidate that reclaims the down-side smoothing benefit on top.
 
 ## Problem being solved
 

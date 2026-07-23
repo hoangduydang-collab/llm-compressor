@@ -301,6 +301,7 @@ _M3_LM = r".*language_model[.]layers[.]"
 def get_minimax_m3_awq_mappings(
     disable_mlp_input_smoothing: bool | None = None,
     layer: int | None = None,
+    include_gate_alpha_fold: bool | None = None,
 ) -> list:
     """Return AWQ mappings for all sparse layers or one selected sparse layer.
 
@@ -324,6 +325,16 @@ def get_minimax_m3_awq_mappings(
     docs/superpowers/plans/2026-07-23-m3-awq-gate-alpha-fold.md, "r7").
     The post-attention-norm mapping below is unaffected: it folds across a purely
     linear boundary (norm -> router/shared/expert input projections).
+
+    r7 gate-alpha fold (``include_gate_alpha_fold=True`` / env
+    ``M3_AWQ_GATE_ALPHA_FOLD=1``): a function-preserving replacement that keeps
+    the down-side group reshaping by folding through the gate path's homogeneous
+    factor — ``gate_rows /= s_r`` with per-channel, per-expert
+    ``alpha_r = 1.702*s_r`` and ``limit_r = 7/s_r`` co-scaling (exact identity;
+    see pipeline/m3_gate_alpha_fold.py). Grouped per expert exactly like the
+    removed mapping, so scales stay per-expert AND per-channel. UNSAFE without
+    ``attach_minimax_m3_gate_alpha_fold`` — pipeline.quantize enforces this
+    fail-closed.
     """
     from llmcompressor.modifiers.transform.awq import AWQMapping
 
@@ -334,6 +345,10 @@ def get_minimax_m3_awq_mappings(
     if disable_mlp_input_smoothing is None:
         disable_mlp_input_smoothing = os.environ.get(
             "M3_AWQ_DISABLE_MLP_INPUT_SMOOTH", "0"
+        ).lower() in {"1", "true", "yes"}
+    if include_gate_alpha_fold is None:
+        include_gate_alpha_fold = os.environ.get(
+            "M3_AWQ_GATE_ALPHA_FOLD", "0"
         ).lower() in {"1", "true", "yes"}
 
     mappings = [
@@ -355,6 +370,15 @@ def get_minimax_m3_awq_mappings(
         # not function-preserving through M3's ``(clamp(up)+1)*glu`` activation (see
         # docstring). Enforced by tests/pipeline/test_minimax_m3_awq_mappings.py.
     ]
+    if include_gate_alpha_fold:
+        # r7: per-expert gate->down fold, exact ONLY with the alpha/limit
+        # co-scaling machinery attached (see module docstring above).
+        mappings.append(
+            AWQMapping(
+                rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
+                [rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]down_proj$"],
+            )
+        )
     if not disable_mlp_input_smoothing:
         mappings.insert(
             2,

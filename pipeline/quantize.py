@@ -813,6 +813,26 @@ def run_quantize(
         )
         register_minimax_m3_awq_mappings()
         print("[pipeline] registered MiniMax-M3 AWQ mappings")
+        if os.environ.get("M3_AWQ_GATE_ALPHA_FOLD", "0").lower() in {"1", "true", "yes"}:
+            # r7 gate-alpha fold: the gate->down mapping is only function-
+            # preserving with per-expert alpha/limit co-scaling attached
+            # (pipeline/m3_gate_alpha_fold.py). linearize_moe is idempotent —
+            # oneshot would run it anyway; running it here lets us attach the
+            # consumers before calibration starts. Fail closed if nothing was
+            # prepared.
+            from llmcompressor.modeling.moe.linearize import linearize_moe
+            from pipeline.m3_gate_alpha_fold import (
+                assert_gate_alpha_fold_ready,
+                attach_minimax_m3_gate_alpha_fold,
+            )
+
+            linearize_moe(model)
+            prepared = attach_minimax_m3_gate_alpha_fold(model)
+            assert_gate_alpha_fold_ready(model, prepared)
+            print(
+                f"[pipeline] gate-alpha fold prepared on {prepared} experts "
+                "(per-expert, per-channel scales; alpha/limit co-scaling active)"
+            )
 
     ds, partition = build_calibration_dataset_with_partition(cfg.calibration, tokenizer)
     _persist_calibration_partition(run_dir, ds, partition, dist_ctx)

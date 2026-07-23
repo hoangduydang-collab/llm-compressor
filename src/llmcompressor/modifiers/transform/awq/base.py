@@ -1,4 +1,6 @@
 import inspect
+import json
+import os
 from collections.abc import Iterator
 from typing import Literal
 
@@ -59,6 +61,71 @@ _DEAD_CHANNEL_RTOL = 1e-6
 # larger scale into a Gemma-style offset norm pushes the stored weight into
 # the bf16 precision cliff around -1 and cannot be represented faithfully.
 _SCALE_CLAMP = 100.0
+
+
+def _channel_landscape_stats(values: torch.Tensor) -> dict:
+    """Concentration summary of a non-negative per-channel statistic.
+
+    Answers "is this landscape flat or peaked" for AWQ diagnostics: percentile
+    ratios to the median, the share of total mass and of squared mass ("energy",
+    the salience proxy E[x]^2) held by the top 1% of channels (uniform landscape
+    -> 0.01), log10 spread over live channels, excess kurtosis, and the dead-
+    channel count (same 1e-6-of-max rule as the smoothing-scale dead-channel
+    handling). All ratios are computed on live channels only.
+    """
+    v = values.detach().float().flatten()
+    n = v.numel()
+    dead = v <= v.max() * _DEAD_CHANNEL_RTOL
+    live = v[~dead]
+    if live.numel() == 0:
+        return {"n_channels": n, "n_dead": int(dead.sum()), "degenerate": True}
+    med = live.median().clamp(min=torch.finfo(torch.float32).tiny)
+    r = live / med
+    top_k = max(1, live.numel() // 100)
+    top = live.sort(descending=True).values[:top_k]
+    energy = live * live
+    top_energy = energy.sort(descending=True).values[:top_k]
+    log_r = r.log10()
+    centered = r - r.mean()
+    var = centered.pow(2).mean()
+    kurtosis = (
+        (centered.pow(4).mean() / var.pow(2) - 3.0).item() if var > 0 else 0.0
+    )
+    return {
+        "n_channels": n,
+        "n_dead": int(dead.sum()),
+        "median": med.item(),
+        "mean_over_median": (live.mean() / med).item(),
+        "max_over_median": r.max().item(),
+        "p90_over_median": r.quantile(0.9).item(),
+        "p99_over_median": r.quantile(0.99).item(),
+        "p999_over_median": r.quantile(0.999).item(),
+        "top1pct_share": (top.sum() / live.sum()).item(),
+        "top1pct_energy": (top_energy.sum() / energy.sum()).item(),
+        "log10_std": log_r.std().item(),
+        "kurtosis_excess": kurtosis,
+    }
+
+
+def _scale_landscape_stats(scales: torch.Tensor) -> dict:
+    """Summary of a chosen smoothing-scale vector (how far from identity)."""
+    s = scales.detach().float().flatten()
+    dev = (s - 1.0).abs()
+    return {
+        "min": s.min().item(),
+        "median": s.median().item(),
+        "mean": s.mean().item(),
+        "max": s.max().item(),
+        "abs_dev_median": dev.median().item(),
+        "abs_dev_p95": dev.quantile(0.95).item(),
+        "abs_dev_max": dev.max().item(),
+    }
+
+
+def _is_landscape_log_rank() -> bool:
+    """True on the single rank that should emit landscape logs (stats are
+    all-reduced, so every rank would log identical lines)."""
+    return not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0
 
 
 def _grid_search_scales(
@@ -185,6 +252,20 @@ class AWQModifier(Modifier):
         this specifies how many grid points should be used. To decrease the runtime,
         at the possible cost of slightly worse scales, this can be decreased.
         Defaults to 20
+    :param log_landscape_stats: when True, emit one ``AWQ_LANDSCAPE {json}`` INFO
+        line per mapping (rank 0 only under DDP) summarizing the calibration
+        activation landscape (x_mean concentration: top-1% share/energy,
+        percentile ratios, log-spread, kurtosis, dead channels), the weight
+        landscape (w_mean, same stats), and the chosen scales (|s-1| stats,
+        identity-vs-best error). These are exactly the quantities needed to
+        diagnose flat-vs-peaked landscapes and AWQ's expected payoff without
+        reconstructing them from checkpoints afterwards. Also enabled by the
+        ``AWQ_LOG_LANDSCAPE_STATS=1`` environment variable. Defaults to False.
+    :param log_landscape_vectors_dir: when set (and landscape logging is on),
+        additionally accumulate the full per-channel ``x_mean`` / ``w_mean`` /
+        ``best_scales`` vectors (fp16) for every mapping and save them on
+        finalize to ``<dir>/awq_landscape_vectors.rank<r>.pt`` (rank 0 only).
+        Also settable via ``AWQ_LOG_LANDSCAPE_VECTORS_DIR``. Defaults to None.
     """
 
     # Allow arbitrary types because AWQMapping has fields of type torch.nn.Module
@@ -195,6 +276,8 @@ class AWQModifier(Modifier):
     offload_device: torch.device | None | Sentinel = Sentinel("not_provided")
     duo_scaling: bool | Literal["both"] = True
     n_grid: int = 20
+    log_landscape_stats: bool = False
+    log_landscape_vectors_dir: str | None = None
 
     # Private vars set during initialization, cleared during finalization
     _resolved_mappings: list[ResolvedMapping] = PrivateAttr(default_factory=list)
@@ -209,6 +292,9 @@ class AWQModifier(Modifier):
     # Lists to store completed and explicitly skipped mapping metrics.
     _error_metrics: list[dict] = PrivateAttr(default_factory=list)
     _skipped_error_metrics: list[dict] = PrivateAttr(default_factory=list)
+    # Per-mapping landscape summaries / optional full vectors (landscape logging)
+    _landscape_metrics: list[dict] = PrivateAttr(default_factory=list)
+    _landscape_vectors: dict[str, dict] = PrivateAttr(default_factory=dict)
 
     def on_initialize(self, state: State, **kwargs) -> bool:
         """
@@ -220,6 +306,15 @@ class AWQModifier(Modifier):
         :param state: state to run AWQ on
         :return: True on a successful run, False otherwise
         """
+
+        # Environment overrides so long-running launchers can enable landscape
+        # telemetry without a recipe/config change (see field docstrings).
+        if os.environ.get("AWQ_LOG_LANDSCAPE_STATS", "").lower() in {"1", "true", "yes"}:
+            self.log_landscape_stats = True
+        if self.log_landscape_vectors_dir is None:
+            self.log_landscape_vectors_dir = (
+                os.environ.get("AWQ_LOG_LANDSCAPE_VECTORS_DIR") or None
+            )
 
         if self.mappings is None:
             logger.info("No AWQModifier.mappings provided, inferring from model...")
@@ -317,12 +412,15 @@ class AWQModifier(Modifier):
             self.on_end(state, None)
 
         self._log_error_metrics()
+        self._save_landscape_vectors()
 
         self._parent_args_cache.clear()
         self._smooth_activation_stats.clear()
         self._resolved_mappings.clear()
         self._error_metrics.clear()
         self._skipped_error_metrics.clear()
+        self._landscape_metrics.clear()
+        self._landscape_vectors.clear()
 
         return True
 
@@ -637,6 +735,17 @@ class AWQModifier(Modifier):
                     _smooth(layer, orig_layer_weights)
                 _smooth(smooth_layer, orig_layer_weights)
 
+                # Optional model-side fold consumer: when the smoothing scale
+                # must also be carried into non-weight state to keep the fold
+                # function-preserving (e.g. MiniMax-M3's gate-side fold, where
+                # per-channel swiglu alpha/limit co-scale with the gate rows),
+                # the model-prep code attaches a callable to the smooth layer.
+                # Called synchronously with the fold so the subsequent
+                # propagation pass sees a consistent module.
+                fold_consumer = getattr(smooth_layer, "awq_fold_scale_consumer", None)
+                if fold_consumer is not None:
+                    fold_consumer(best_scales.detach().cpu())
+
                 # remove caches needed to smooth this mapping
                 del self._smooth_activation_stats[mapping.smooth_name]
                 del orig_layer_weights
@@ -809,11 +918,90 @@ class AWQModifier(Modifier):
             }
         )
 
+        if self.log_landscape_stats:
+            self._record_landscape(
+                mapping,
+                x_mean=x_mean,
+                w_mean=w_mean if self.duo_scaling else None,
+                best_scales=best_scales,
+                initial_error=initial_error,
+                best_error=best_error,
+                best_ratio=best_ratio,
+                best_duo_scaling=best_duo_scaling,
+            )
+
         assert (
             torch.isnan(best_scales).sum() == 0
         ), f"Nan found in scales: {best_scales}"
 
         return best_scales.detach().cpu()
+
+    def _record_landscape(
+        self,
+        mapping: ResolvedMapping,
+        *,
+        x_mean: torch.Tensor,
+        w_mean: torch.Tensor | None,
+        best_scales: torch.Tensor,
+        initial_error: float,
+        best_error: float,
+        best_ratio: float,
+        best_duo_scaling: bool,
+    ) -> None:
+        """Summarize and log the calibration landscape for one mapping.
+
+        Emitted as a single parseable ``AWQ_LANDSCAPE {json}`` INFO line (rank 0
+        only; stats are identical across ranks after all-reduce). ``x_mean`` is
+        the mean |activation| per input channel of the balance layers on the
+        calibration set; ``w_mean`` the group-max-normalized mean |weight| per
+        input channel pooled over quantizable balance layers. ``initial_error``
+        is the identity grid point, so ``1 - best/initial`` is exactly "what
+        did smoothing buy over not smoothing" on calibration data.
+        """
+        record = {
+            "layer_name": mapping.smooth_name,
+            "parent_name": mapping.parent_name,
+            "n_balance_layers": len(mapping.balance_layers),
+            "x_mean": _channel_landscape_stats(x_mean),
+            "w_mean": _channel_landscape_stats(w_mean) if w_mean is not None else None,
+            "scales": _scale_landscape_stats(best_scales),
+            "best_ratio": best_ratio,
+            "best_duo_scaling": best_duo_scaling,
+            "initial_error_identity": initial_error,
+            "best_error": best_error,
+            "smoothing_gain": (
+                1.0 - best_error / initial_error if initial_error > 0 else 0.0
+            ),
+        }
+        self._landscape_metrics.append(record)
+        if _is_landscape_log_rank():
+            logger.info(f"AWQ_LANDSCAPE {json.dumps(record)}")
+        if self.log_landscape_vectors_dir is not None:
+            self._landscape_vectors[mapping.smooth_name] = {
+                "x_mean": x_mean.detach().cpu().to(torch.float16),
+                "w_mean": (
+                    w_mean.detach().cpu().to(torch.float16)
+                    if w_mean is not None
+                    else None
+                ),
+                "best_scales": best_scales.detach().cpu().to(torch.float16),
+            }
+
+    def _save_landscape_vectors(self) -> None:
+        """Persist accumulated per-channel landscape vectors (rank 0 only)."""
+        if not self._landscape_vectors or self.log_landscape_vectors_dir is None:
+            return
+        if not _is_landscape_log_rank():
+            return
+        os.makedirs(self.log_landscape_vectors_dir, exist_ok=True)
+        path = os.path.join(
+            self.log_landscape_vectors_dir, "awq_landscape_vectors.rank0.pt"
+        )
+        torch.save(self._landscape_vectors, path)
+        logger.info(
+            f"AWQ landscape vectors for {len(self._landscape_vectors)} mappings "
+            f"saved to {path}"
+        )
 
     @torch.no_grad()
     def _compute_loss(

@@ -39,7 +39,8 @@ def test_no_fold_crosses_the_expert_activation(disable_mlp_input_smoothing):
     alpha/clamp co-scaling machinery), and no balance layer may be an expert
     down_proj: any such pair folds through ``(clamp(up)+1)*glu``."""
     mappings = get_minimax_m3_awq_mappings(
-        disable_mlp_input_smoothing=disable_mlp_input_smoothing
+        disable_mlp_input_smoothing=disable_mlp_input_smoothing,
+        include_gate_alpha_fold=False,
     )
     for mapping in mappings:
         assert not _matches(mapping.smooth_layer, EXAMPLE_UP), (
@@ -55,6 +56,36 @@ def test_no_fold_crosses_the_expert_activation(disable_mlp_input_smoothing):
                 "down_proj used as a balance layer: its input is not a linear "
                 "function of any foldable weight on M3"
             )
+
+
+def test_up_proj_never_a_smooth_layer_even_with_r7_flag():
+    """The r5 bug can never come back: up->down stays forbidden in every mode."""
+    mappings = get_minimax_m3_awq_mappings(
+        disable_mlp_input_smoothing=False, include_gate_alpha_fold=True
+    )
+    for mapping in mappings:
+        assert not _matches(mapping.smooth_layer, EXAMPLE_UP)
+
+
+def test_r7_gate_alpha_mapping_shape():
+    """With the r7 flag, exactly one extra mapping appears: per-expert
+    gate_proj -> down_proj (per-expert AND per-channel scales — the regex pair
+    groups per expert via match_modules_set, like the removed mapping did)."""
+    base = get_minimax_m3_awq_mappings(
+        disable_mlp_input_smoothing=False, include_gate_alpha_fold=False
+    )
+    with_r7 = get_minimax_m3_awq_mappings(
+        disable_mlp_input_smoothing=False, include_gate_alpha_fold=True
+    )
+    assert len(with_r7) == len(base) + 1
+    extra = [m for m in with_r7 if _matches(m.smooth_layer, EXAMPLE_GATE_PROJ)]
+    assert len(extra) == 1
+    assert len(extra[0].balance_layers) == 1
+    assert _matches(extra[0].balance_layers[0], EXAMPLE_DOWN)
+    # per-expert grouping: the SAME expert index must match both sides, and a
+    # different expert's down_proj must still match the regex (grouping is done
+    # by match_modules_set per parent, not by the pattern itself)
+    assert _matches(extra[0].smooth_layer, EXAMPLE_GATE_PROJ)
 
 
 def test_moe_input_mapping_present_and_complete():

@@ -515,7 +515,7 @@
     <h2>Context & sources</h2>
     <div class="h2sub">Where the metrics and interpretation come from</div>
     <ul class="sources col">
-      <li><strong>M3 companion report</strong> — <code>M3_OFFICIAL_EVAL_RESULTS.html</code> (this repo): the AWQ-on-M3 pathology this run tests for, and the shared metric definitions.</li>
+      <li><strong>M3 companion reports</strong> — <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a> (this repo): the AWQ-on-M3 pathology this run tests for, and the shared metric definitions; serving speed in <a href="M3_OFFICIAL_PERF_RESULTS.html"><code>M3_OFFICIAL_PERF_RESULTS.html</code></a>.</li>
       <li><strong>Our metrics survey</strong> — <code>QUANT_REGRESSION_METRICS_SURVEY.md</code>: flip-rate, recovery-%, and token-usage metrics, with citations.</li>
       <li><strong>Flips / "Accuracy is Not All You Need"</strong> — Dutta et al., <a href="https://arxiv.org/abs/2407.09141">arXiv:2407.09141</a>.</li>
       <li><strong>Checkpoint under test</strong> — <a href="https://huggingface.co/PhalaCloud/GLM-5.2-W4AFP8">PhalaCloud/GLM-5.2-W4AFP8</a>: AWQ weight scaling, int4 g128 routed experts + FP8 activations, SGLang <code>w4afp8</code> layout. Its model card reports GPQA 90.9 under temp-1.0 sampling — not comparable to our greedy protocol (see caveat).</li>

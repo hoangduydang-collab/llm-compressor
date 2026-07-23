@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GLM-5.2 Quantization — Official Eval Results</title>
+<style>
+  :root {
+    /* cool-neutral ground, single steel-blue accent; green/amber/red are
+       semantic (recovery severity), never the accent */
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #161b22;
+    --ink-2: #47515f;
+    --ink-3: #6b7684;
+    --line: #d9dee6;
+    --line-2: #c5ccd6;
+    --accent: #23628f;
+    --accent-soft: #e4eef5;
+    --good: #2f8f57;
+    --good-bg: #e5f2ea;
+    --warn: #b0781a;
+    --warn-bg: #f6ecd9;
+    --crit: #c1443a;
+    --crit-bg: #f7e3e1;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", "Menlo", "Cascadia Code", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --maxw: 900px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1217;
+      --surface: #161b22;
+      --surface-2: #1c222b;
+      --ink: #e7ebf0;
+      --ink-2: #aab4c0;
+      --ink-3: #7c8794;
+      --line: #2a323d;
+      --line-2: #38414e;
+      --accent: #6fb2df;
+      --accent-soft: #17303f;
+      --good: #5cc487;
+      --good-bg: #14281c;
+      --warn: #d6a24e;
+      --warn-bg: #2c2413;
+      --crit: #e8756a;
+      --crit-bg: #2e1a18;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f5; --ink: #161b22;
+    --ink-2: #47515f; --ink-3: #6b7684; --line: #d9dee6; --line-2: #c5ccd6;
+    --accent: #23628f; --accent-soft: #e4eef5;
+    --good: #2f8f57; --good-bg: #e5f2ea; --warn: #b0781a; --warn-bg: #f6ecd9;
+    --crit: #c1443a; --crit-bg: #f7e3e1;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1c222b; --ink: #e7ebf0;
+    --ink-2: #aab4c0; --ink-3: #7c8794; --line: #2a323d; --line-2: #38414e;
+    --accent: #6fb2df; --accent-soft: #17303f;
+    --good: #5cc487; --good-bg: #14281c; --warn: #d6a24e; --warn-bg: #2c2413;
+    --crit: #e8756a; --crit-bg: #2e1a18;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px 96px; }
+  .col { max-width: 68ch; }
+
+  header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+  }
+  .head-inner { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 32px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4.2vw, 40px); line-height: 1.12; margin: 0 0 12px;
+    letter-spacing: -.02em; text-wrap: balance; font-weight: 680;
+  }
+  .dek { font-size: 18px; color: var(--ink-2); margin: 0 0 22px; max-width: 62ch; text-wrap: pretty; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono);
+    font-size: 12.5px; color: var(--ink-3);
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  section { margin-top: 52px; }
+  h2 {
+    font-size: 13px; font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: .1em; color: var(--accent); margin: 0 0 4px;
+  }
+  h2 + .h2sub { font-size: 24px; letter-spacing: -.01em; margin: 0 0 18px; font-weight: 640; text-wrap: balance; }
+  h3 { font-size: 18px; margin: 30px 0 8px; font-weight: 620; letter-spacing: -.01em; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 640; }
+  code {
+    font-family: var(--mono); font-size: .875em; background: var(--surface-2);
+    padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);
+  }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 4px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 16px 14px; position: relative; overflow: hidden;
+  }
+  .tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+  .tile.good::before { background: var(--good); }
+  .tile.crit::before { background: var(--crit); }
+  .tile .k { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
+  .tile .v { font-size: 30px; font-weight: 680; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .tile .v small { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+  .tile .d { font-size: 13px; color: var(--ink-2); margin-top: 8px; line-height: 1.4; }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 13px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface-2); color: var(--ink-2);
+    font-weight: 600; font-size: 12px; letter-spacing: .02em; z-index: 1;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.baseline td { background: var(--accent-soft); }
+  td.arm, th.arm { font-weight: 600; }
+  .cell-good { color: var(--good); background: var(--good-bg); font-weight: 600; }
+  .cell-warn { color: var(--warn); background: var(--warn-bg); font-weight: 600; }
+  .cell-crit { color: var(--crit); background: var(--crit-bg); font-weight: 700; }
+  .muted { color: var(--ink-3); }
+
+  .bars { display: grid; gap: 10px; margin: 4px 0 6px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 68px; align-items: center; gap: 12px; font-size: 13.5px; }
+  .bar-row .lab { color: var(--ink-2); font-weight: 600; }
+  .track { position: relative; height: 20px; background: var(--surface-2); border-radius: 5px; border: 1px solid var(--line); overflow: hidden; }
+  .track .baseline-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink-3); opacity: .55; }
+  .fill { height: 100%; border-radius: 4px 0 0 4px; }
+  .fill.f-crit { background: var(--crit); }
+  .fill.f-warn { background: var(--warn); }
+  .fill.f-ok { background: var(--accent); }
+  .bar-row .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .note {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 18px; margin: 18px 0;
+  }
+  .note.finding { border-left-color: var(--crit); }
+  .note.good { border-left-color: var(--good); }
+  .note .t { font-weight: 640; margin: 0 0 6px; }
+  .note p:last-child { margin-bottom: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin: 10px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  .sources { font-size: 14px; }
+  .sources li { margin: 7px 0; }
+  .verdict-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 12px; }
+  .verdict {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+  }
+  .verdict .tag { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+    text-transform: uppercase; padding: 2px 8px; border-radius: 5px; margin-bottom: 8px; font-weight: 600; }
+  .tag.ship { background: var(--good-bg); color: var(--good); }
+  .tag.caveat { background: var(--crit-bg); color: var(--crit); }
+  .tag.notegray { background: var(--surface-2); color: var(--ink-2); }
+  .verdict h4 { margin: 0 0 6px; font-size: 16px; }
+  .verdict p { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+
+  .toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 10; font-family: var(--mono); font-size: 12px;
+    background: var(--surface); color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 7px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 560px) {
+    .bar-row { grid-template-columns: 96px 1fr 54px; }
+  }
+</style>
+</head>
+<body>
+<button class="toggle" id="themeToggle" aria-label="Toggle light/dark theme">◐ theme</button>
+
+<header>
+  <div class="head-inner">
+    <p class="eyebrow">GLM-5.2 · Quantization quality · Official pipeline</p>
+    <h1>Phala's AWQ-produced W4AFP8 is clean — the M3 AWQ pathology does not replicate</h1>
+    <p class="dek">
+      A three-arm paired evaluation of the community PhalaCloud W4AFP8 checkpoint (weights chosen by AWQ)
+      and the official FP8 release against the official BF16 baseline. Every W4AFP8 task lands within the
+      statistical noise band of BF16, and — unlike MiniMax-M3's AWQ — it spends <em>fewer</em> reasoning
+      tokens than the baseline on the hard tasks. The M3 non-termination failure is a model×recipe
+      interaction, not a property of AWQ.
+    </p>
+    <div class="meta">
+      <span><b>Pipeline:</b> benchmarks <code>quality.orchestrator</code> (standalone arms) + <code>quality.rebuild_delta</code></span>
+      <span><b>Run:</b> glm52full7 (07-22 → 07-23)</span>
+      <span><b>Engine:</b> SGLang 0.5.13.post1 · lm-eval 0.4.10</span>
+      <span><b>Baseline:</b> zai-org/GLM-5.2 BF16 (TP32, 4×8 H100)</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ TL;DR ============ -->
+  <section id="tldr">
+    <h2>Bottom line</h2>
+    <div class="h2sub">Read this if you have thirty seconds</div>
+    <div class="col">
+      <p>
+        The question behind this run: MiniMax-M3's AWQ quants showed a severe, specific failure —
+        runaway thinking loops that exhaust the generation budget, tanking accuracy and inflating token
+        spend. Does the same thing happen to another AWQ-produced checkpoint on another model?
+        <strong>No.</strong> On GLM-5.2, the PhalaCloud W4AFP8 (int4 experts chosen by AWQ, FP8
+        activations) recovers <strong>96.2–102.4% of BF16 across all seven tasks — every delta inside the
+        2σ noise band</strong> — and its answer flips are symmetric churn (GPQA: 15 lost / 17 gained,
+        vs M3-AWQ's 53 / 5). On token spend it is the <em>anti</em>-M3: it uses <strong>14% fewer
+        tokens than BF16 on GPQA and 11% fewer on IFEval</strong>, and exhausts the 64k budget less often
+        than the baseline does.
+      </p>
+      <p>
+        The official FP8 release is equally healthy, with two footnotes: a marginal GSM8K dip
+        (−1.4 pts, just past the 2σ band — one excursion among 14 comparisons) and an above-noise MMLU
+        <em>gain</em> (+2.4 pts). On the quality axis, <strong>both quants are ship-grade</strong>;
+        serving performance was not measured in this run.
+      </p>
+    </div>
+    <div class="tiles">
+      <div class="tile good">
+        <p class="k">W4AFP8 · worst task recovery</p>
+        <p class="v">96.2<small>%</small></p>
+        <p class="d">TruthfulQA-mc2 (−2.3 pts, band ±3.0). All 7 tasks within noise.</p>
+      </div>
+      <div class="tile good">
+        <p class="k">W4AFP8 · GPQA recovery</p>
+        <p class="v">101.4<small>%</small></p>
+        <p class="d">0.727 vs BF16's 0.717. M3's AWQ scored 70.2% here.</p>
+      </div>
+      <div class="tile good">
+        <p class="k">W4AFP8 · GPQA token spend</p>
+        <p class="v">0.86<small>× BF16</small></p>
+        <p class="d">Exhausts 17.2% of items vs BF16's 21.2%. M3-AWQ: 2.19×, 38.9%.</p>
+      </div>
+      <div class="tile good">
+        <p class="k">FP8 · worst task recovery</p>
+        <p class="v">98.5<small>%</small></p>
+        <p class="d">GSM8K −1.4 pts, marginally past the 2σ band; all else clean.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ METHOD ============ -->
+  <section id="method">
+    <h2>Method</h2>
+    <div class="h2sub">What was measured, and what the numbers do and don't mean</div>
+    <div class="col">
+      <p>
+        Three arms, each self-hosted on SGLang 0.5.13.post1 and evaluated with the same standalone
+        general-suite protocol (the sequential-arm variant of the M3 pipeline; deltas rebuilt offline
+        with <code>quality.rebuild_delta</code>, 2σ noise-floor bands from the baseline's own sampling
+        stderr):
+      </p>
+      <ul>
+        <li><strong>BF16 baseline</strong> — zai-org/GLM-5.2 (753B, 1.4 TB), 4 nodes, TP32.</li>
+        <li><strong>FP8</strong> — zai-org/GLM-5.2-FP8 (official release, 704 GB), 2 nodes, TP16.</li>
+        <li><strong>W4AFP8</strong> — PhalaCloud/GLM-5.2-W4AFP8 (407 GB): routed-expert weights int4
+          group-128 <em>chosen by AWQ</em>, static-scale FP8 activations; attention/shared-experts FP8;
+          1 node, TP8. SGLang's <code>w4afp8</code> path, per the checkpoint's own README.</li>
+      </ul>
+      <p>
+        Seven tasks — GSM8K (5-shot), IFEval, GPQA-Diamond CoT (0-shot), MMLU (5-shot), ARC-Challenge,
+        HellaSwag, TruthfulQA-mc2 — matching the M3 full4 suite. Decoding is <strong>greedy
+        (temperature 0)</strong>, the suite's reproducibility convention; thinking is <strong>on</strong>
+        (the <code>glm45</code> parser strips reasoning and scores only the final answer, so a
+        budget-exhausted, answer-less response scores zero). Generation budget is <strong>65,536
+        tokens</strong> — the M3 tok64k depth — with per-request token accounting (the usage proxy) on
+        every generative task. Serving config held identical across arms: FP8 e4m3 KV cache, 131k
+        context, chunked prefill 2048, same kernels/env.
+      </p>
+    </div>
+    <div class="note">
+      <p class="t">Comparability caveat</p>
+      <p>
+        These scores are <strong>valid for quant-vs-quant and quant-vs-BF16 decisions</strong> — all arms
+        run the identical protocol. They are <strong>not comparable to public leaderboards or to Phala's
+        own model-card table</strong> (which used temperature 1.0 / top_p 0.95 on H200s): we decode
+        greedily, serve with an FP8 KV cache on <em>all</em> arms (including the BF16 baseline — uniform,
+        so deltas isolate weight quantization), and ~20% of GPQA items exhaust even a 64k budget under
+        greedy CoT on <em>every</em> arm, depressing absolute GPQA scores equally. MC tasks run as
+        loglikelihood scoring with a chat template — absolute MMLU/ARC numbers are low by public-recipe
+        standards for all arms alike.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ VERDICTS ============ -->
+  <section id="verdicts">
+    <h2>Per-arm verdict</h2>
+    <div class="h2sub">Both quants clean on quality; perf unmeasured</div>
+    <div class="verdict-row">
+      <div class="verdict">
+        <span class="tag ship">Ship (quality)</span>
+        <h4>W4AFP8 · PhalaCloud (AWQ-produced)</h4>
+        <p>All 7 tasks within the 2σ band (formal verdict CAVEAT only because no perf/cost gain is
+        measured yet). Symmetric flips. Spends <em>less</em> than BF16 on reasoning tasks. Fits one
+        8×H100 node vs BF16's four.</p>
+      </div>
+      <div class="verdict">
+        <span class="tag ship">Ship (quality)</span>
+        <h4>FP8 · official (zai-org)</h4>
+        <p>Six tasks within noise; GSM8K −1.44 pts marginally past its 1.1-pt band (one 2σ excursion in
+        14 comparisons — expected multiplicity), MMLU +2.4 pts above noise in FP8's favor. Fits two nodes.</p>
+      </div>
+      <div class="verdict">
+        <span class="tag notegray">Baseline</span>
+        <h4>BF16 · official (zai-org)</h4>
+        <p>The reference arm. Note it is itself budget-censored on GPQA (21.2% exhausted at 64k, greedy)
+        — GLM-5.2 reasons long, and the ceiling binds every arm equally.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BREADTH ============ -->
+  <section id="breadth">
+    <h2>Breadth — seven tasks</h2>
+    <div class="h2sub">Recovery vs BF16, with statistical noise bands</div>
+    <p class="col">
+      Each cell: candidate score as % of BF16 on the same task (64k budget, greedy). Bands are
+      2× the baseline's sampling stderr (floor 0.005 absolute). Green ≥99%, amber 93–97%, red &lt;93%;
+      <strong>every W4AFP8 and FP8 delta except FP8's GSM8K sits inside its band</strong>.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="arm">Task</th>
+            <th>BF16 (abs.)</th>
+            <th>FP8</th>
+            <th>W4AFP8</th>
+            <th>2σ band (abs.)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GSM8K</td><td class="muted">0.958</td><td class="cell-warn">98.5%<sup>*</sup></td><td class="cell-good">99.3%</td><td class="muted">±0.011</td></tr>
+          <tr><td class="arm">IFEval</td><td class="muted">0.882</td><td class="cell-good">100.0%</td><td class="cell-good">99.6%</td><td class="muted">±0.028</td></tr>
+          <tr><td class="arm">GPQA-Diamond</td><td class="muted">0.717</td><td class="cell-good">99.3%</td><td class="cell-good">101.4%</td><td class="muted">±0.064</td></tr>
+          <tr><td class="arm">MMLU</td><td class="muted">0.448</td><td class="cell-good">105.3%<sup>†</sup></td><td class="cell-good">99.1%</td><td class="muted">±0.008</td></tr>
+          <tr><td class="arm">ARC-Challenge</td><td class="muted">0.466</td><td class="cell-good">101.8%</td><td class="cell-good">102.4%</td><td class="muted">±0.029</td></tr>
+          <tr><td class="arm">HellaSwag</td><td class="muted">0.755</td><td class="cell-good">100.1%</td><td class="cell-good">100.7%</td><td class="muted">±0.009</td></tr>
+          <tr><td class="arm">TruthfulQA-mc2</td><td class="muted">0.598</td><td class="cell-good">101.1%</td><td>96.2%</td><td class="muted">±0.030</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--good)"></i>≥99% recover</span>
+      <span><i class="sw" style="background:var(--surface-2);border:1px solid var(--line-2)"></i>97–99% / within band</span>
+      <span><i class="sw" style="background:var(--warn)"></i>past 2σ band</span>
+    </div>
+    <p class="col muted" style="margin-top:10px">
+      <sup>*</sup> FP8 GSM8K: −1.44 pts vs a ±1.1 pt band — the only above-noise regression in the run.
+      <sup>†</sup> FP8 MMLU: +2.4 pts, above noise in the <em>favorable</em> direction.
+      W4AFP8's TruthfulQA (−2.3 pts) is inside its ±3.0 band: within-noise.
+    </p>
+
+    <h3>Answer-level churn (flips vs BF16)</h3>
+    <p class="col">
+      The M3 signature was heavily one-sided flips (right→wrong). Here both quants flip
+      <strong>symmetrically</strong> — churn, not directional damage. Compare M3-AWQ's GPQA
+      53 lost / 5 gained with W4AFP8's 15 / 17.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Task (n)</th><th>FP8 →✗ / →✓</th><th>FP8 flip rate</th><th>W4AFP8 →✗ / →✓</th><th>W4AFP8 flip rate</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GPQA (198)</td><td>19 / 18</td><td class="muted">18.7%</td><td>15 / 17</td><td class="muted">16.2%</td></tr>
+          <tr><td class="arm">IFEval (541)</td><td>25 / 25</td><td class="muted">9.2%</td><td>27 / 25</td><td class="muted">9.6%</td></tr>
+          <tr><td class="arm">GSM8K (1,319)</td><td class="cell-warn">30 / 11</td><td class="muted">3.1%</td><td>30 / 21</td><td class="muted">3.9%</td></tr>
+          <tr><td class="arm">MMLU (14,042)</td><td class="cell-good">1156 / 1489</td><td class="muted">18.8%</td><td>1784 / 1730</td><td class="muted">25.0%</td></tr>
+          <tr><td class="arm">HellaSwag (10,042)</td><td>244 / 252</td><td class="muted">4.9%</td><td>279 / 331</td><td class="muted">6.1%</td></tr>
+          <tr><td class="arm">ARC (1,172)</td><td>45 / 55</td><td class="muted">8.5%</td><td>49 / 62</td><td class="muted">9.5%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col muted" style="margin-top:10px">
+      TruthfulQA-mc2 is a continuous per-item score (no right/wrong notion): mean delta −0.023 (W4AFP8) /
+      +0.006 (FP8). FP8's GSM8K flips (30/11) are the item-level view of its marginal aggregate dip;
+      MMLU's high flip rates on both arms reflect churn near a low absolute baseline, and for FP8 the
+      churn nets <em>positive</em>.
+    </p>
+  </section>
+
+  <!-- ============ TOKEN SPEND ============ -->
+  <section id="tokens">
+    <h2>Depth — token accounting</h2>
+    <div class="h2sub">The M3 regression channel, measured item-by-item: nothing blows up</div>
+    <p class="col">
+      This was the channel that destroyed M3's AWQ (2–5× token inflation, 3× budget exhaustion). On
+      GLM-5.2 the AWQ-produced W4AFP8 goes the <em>other way</em> on the reasoning-heavy tasks: less
+      spend, fewer exhausted items than the BF16 baseline itself. Bars show completion-token spend on
+      phash-joined prompts relative to BF16 (marker = 1.0×).
+    </p>
+
+    <h3>Token spend, GPQA-Diamond (× BF16)</h3>
+    <div class="bars">
+      <div class="bar-row"><span class="lab">FP8</span><div class="track"><div class="baseline-mark" style="left:40%"></div><div class="fill f-ok" style="width:39.4%"></div></div><span class="num">0.99×</span></div>
+      <div class="bar-row"><span class="lab">W4AFP8</span><div class="track"><div class="baseline-mark" style="left:40%"></div><div class="fill f-ok" style="width:34.6%"></div></div><span class="num">0.86×</span></div>
+    </div>
+
+    <h3>Token spend, IFEval (× BF16)</h3>
+    <div class="bars">
+      <div class="bar-row"><span class="lab">FP8</span><div class="track"><div class="baseline-mark" style="left:40%"></div><div class="fill f-ok" style="width:37.9%"></div></div><span class="num">0.95×</span></div>
+      <div class="bar-row"><span class="lab">W4AFP8</span><div class="track"><div class="baseline-mark" style="left:40%"></div><div class="fill f-ok" style="width:35.6%"></div></div><span class="num">0.89×</span></div>
+    </div>
+
+    <h3>Token spend, GSM8K (× BF16)</h3>
+    <div class="bars">
+      <div class="bar-row"><span class="lab">FP8</span><div class="track"><div class="baseline-mark" style="left:40%"></div><div class="fill f-ok" style="width:43.3%"></div></div><span class="num">1.08×</span></div>
+      <div class="bar-row"><span class="lab">W4AFP8</span><div class="track"><div class="baseline-mark" style="left:40%"></div><div class="fill f-ok" style="width:44.9%"></div></div><span class="num">1.12×</span></div>
+    </div>
+
+    <h3>Spend distribution &amp; budget exhaustion at 64k</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Task · arm</th><th>mean tok</th><th>p50</th><th>p90</th><th>exhausted</th><th>spend × BF16</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">GPQA · BF16</td><td>18,985</td><td>5,381</td><td>65,536</td><td>21.2%</td><td class="muted">1.00×</td></tr>
+          <tr><td class="arm">GPQA · FP8</td><td>18,718</td><td>4,871</td><td>65,536</td><td>21.7%</td><td>0.99×</td></tr>
+          <tr><td class="arm">GPQA · W4AFP8</td><td>16,410</td><td>4,627</td><td>65,536</td><td class="cell-good">17.2%</td><td class="cell-good">0.86×</td></tr>
+          <tr class="baseline"><td class="arm">IFEval · BF16</td><td>5,781</td><td>1,299</td><td>5,490</td><td>6.5%</td><td class="muted">1.00×</td></tr>
+          <tr><td class="arm">IFEval · FP8</td><td>5,475</td><td>1,331</td><td>5,711</td><td>5.9%</td><td>0.95×</td></tr>
+          <tr><td class="arm">IFEval · W4AFP8</td><td>5,144</td><td>1,250</td><td>5,026</td><td class="cell-good">5.4%</td><td class="cell-good">0.89×</td></tr>
+          <tr class="baseline"><td class="arm">GSM8K · BF16</td><td>1,132</td><td>428</td><td>903</td><td>0.9%</td><td class="muted">1.00×</td></tr>
+          <tr><td class="arm">GSM8K · FP8</td><td>1,225</td><td>439</td><td>946</td><td>1.1%</td><td>1.08×</td></tr>
+          <tr><td class="arm">GSM8K · W4AFP8</td><td>1,272</td><td>444</td><td>920</td><td>1.1%</td><td>1.12×</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col muted" style="margin-top:10px">
+      "Exhausted" = hit the 65,536-token ceiling without a final answer (scores zero). GPQA's p90 is the
+      ceiling itself on every arm — ~1 in 5 items never finishes under greedy CoT regardless of precision.
+      That censoring binds all arms equally, so the cross-arm comparison stands; absolute GPQA scores do
+      not represent uncensored capability. GSM8K's ~+10% quant spend is ~140 tokens/question in absolute
+      terms, with exhaustion flat at ~1%.
+    </p>
+  </section>
+
+  <!-- ============ M3 CONTRAST ============ -->
+  <section id="contrast">
+    <h2>The M3 question, answered</h2>
+    <div class="h2sub">Same failure probes, opposite outcome</div>
+    <div class="col">
+      <p>
+        The M3 report established a three-signal fingerprint for the AWQ pathology: collapsed reasoning
+        recovery, one-sided right→wrong flips, and token-spend inflation with budget exhaustion. Side by
+        side on the same probes (M3: in-house AWQ r5 W4A8, 64k run; GLM-5.2: PhalaCloud AWQ→W4AFP8):
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Signal</th><th>M3 · AWQ r5</th><th>GLM-5.2 · W4AFP8 (AWQ)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GPQA recovery</td><td class="cell-crit">70.2%</td><td class="cell-good">101.4%</td></tr>
+          <tr><td class="arm">GPQA flips (lost / gained)</td><td class="cell-crit">53 / 5</td><td class="cell-good">15 / 17</td></tr>
+          <tr><td class="arm">GPQA token spend vs BF16</td><td class="cell-crit">2.19×</td><td class="cell-good">0.86×</td></tr>
+          <tr><td class="arm">GPQA exhausted (vs baseline)</td><td class="cell-crit">38.9% (vs 12.6%)</td><td class="cell-good">17.2% (vs 21.2%)</td></tr>
+          <tr><td class="arm">IFEval token spend vs BF16</td><td class="cell-crit">3.69×</td><td class="cell-good">0.89×</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note good">
+      <p class="t">What this establishes</p>
+      <p>
+        The M3 failure is <strong>not "AWQ breaks reasoning models."</strong> An AWQ-produced 4-bit expert
+        quant of a 753B reasoning MoE passes every probe that M3's AWQ failed — on a harder budget test
+        than M3's original run. The non-termination loop is a model×recipe interaction (M3-specific
+        sensitivity, possibly to attention/expert quantization choices or calibration), which sharpens the
+        M3 follow-up: the question is what M3's AWQ recipe damaged, not whether AWQ is usable. It also
+        means our own in-house AWQ→W4AFP8 recipes have an existence proof to aim at on GLM-class models.
+      </p>
+    </div>
+    <div class="note">
+      <p class="t">Differences to keep in mind</p>
+      <p>
+        This is one checkpoint, not a controlled recipe study: Phala's AWQ calibration set/recipe differ
+        from our M3 r5; GLM-5.2's W4AFP8 keeps attention and shared experts in FP8 (only routed experts
+        are int4), while M3 recipes quantized more; engines differ (SGLang vs vLLM); and GLM-5.2 vs M3 are
+        different bases. The clean result bounds "AWQ is inherently broken" out; it does not localize
+        M3's failure.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ SOURCES ============ -->
+  <section id="sources">
+    <h2>Context & sources</h2>
+    <div class="h2sub">Where the metrics and interpretation come from</div>
+    <ul class="sources col">
+      <li><strong>M3 companion report</strong> — <code>M3_OFFICIAL_EVAL_RESULTS.html</code> (this repo): the AWQ-on-M3 pathology this run tests for, and the shared metric definitions.</li>
+      <li><strong>Our metrics survey</strong> — <code>QUANT_REGRESSION_METRICS_SURVEY.md</code>: flip-rate, recovery-%, and token-usage metrics, with citations.</li>
+      <li><strong>Flips / "Accuracy is Not All You Need"</strong> — Dutta et al., <a href="https://arxiv.org/abs/2407.09141">arXiv:2407.09141</a>.</li>
+      <li><strong>Checkpoint under test</strong> — <a href="https://huggingface.co/PhalaCloud/GLM-5.2-W4AFP8">PhalaCloud/GLM-5.2-W4AFP8</a>: AWQ weight scaling, int4 g128 routed experts + FP8 activations, SGLang <code>w4afp8</code> layout. Its model card reports GPQA 90.9 under temp-1.0 sampling — not comparable to our greedy protocol (see caveat).</li>
+      <li><strong>Official releases</strong> — <a href="https://huggingface.co/zai-org/GLM-5.2">zai-org/GLM-5.2</a> (BF16) and <a href="https://huggingface.co/zai-org/GLM-5.2-FP8">GLM-5.2-FP8</a>.</li>
+      <li><strong>W4AFP8 mechanics</strong> — SGLang's <code>w4afp8</code> path: static per-tensor FP8 activation scales for routed experts (max-reduced across experts at load), dynamic FP8 for other linears; CUTLASS grouped W4A8 GEMM.</li>
+    </ul>
+    <h3>Raw evidence on disk</h3>
+    <ul class="sources col">
+      <li><code>/mnt/nfs/hoangduy/results/glm52-official-quality/20260722T1042Z/</code> — run root: per-arm <code>client-*/</code> (serve logs, gates, capability probes), <code>results/&lt;profile&gt;/sglang/quality/general.glm52full7.json</code> (scores), <code>flips.glm52full7.json</code>, <code>delta.glm52full7.nf.json</code> (2σ-band verdicts).</li>
+      <li><code>…/results/&lt;profile&gt;/sglang/quality/_lm_eval/&lt;task&gt;/usage.jsonl</code> — per-request tokens, finish_reason, reasoning text (usage-proxy capture); <code>samples_*.jsonl</code> — per-item records behind the flips.</li>
+      <li><code>pipeline/slurm/glm52_quality_arm.sh</code> / <code>glm52_quality_arm_multinode.sh</code> — arm runners (serve flags, fail-closed gates); <code>benchmarks/configs/glm/glm-5.2-*.sh</code> — arm profiles.</li>
+      <li>Serving reliability fixes discovered en route (recorded in the arm scripts): node-local <code>TRITON_CACHE_DIR</code> <em>and</em> <code>TORCHINDUCTOR_CACHE_DIR</code> (node-shared default caches get cross-job poisoned → <code>KeyError: 'cubin'</code>); <code>mem-fraction 0.75</code> + <code>chunked-prefill 2048</code> (input-logprob logits OOM at 0.85); loglikelihood gate uses the real lm-eval payload (<code>max_tokens=1, echo, logprobs</code>) — SGLang 400s the vLLM-style <code>max_tokens=0</code> probe.</li>
+    </ul>
+  </section>
+
+  <footer>
+    GLM-5.2 quantization quality · official benchmarks pipeline · greedy, thinking on, 64k budget,
+    FP8 KV uniform across arms · paired-comparison valid, not leaderboard-comparable · quality axis only
+    (no perf run). Generated for internal collaboration.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeToggle');
+    var root = document.documentElement;
+    function current() {
+      if (root.dataset.theme) return root.dataset.theme;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      root.dataset.theme = current() === 'dark' ? 'light' : 'dark';
+    });
+  })();
+</script>
+</body>
+</html>

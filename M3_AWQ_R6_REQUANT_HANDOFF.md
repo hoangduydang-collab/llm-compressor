@@ -104,7 +104,7 @@ cd /mnt/nfs/hoangduy/projects/llm-compressor
 python -m pytest tests/pipeline/test_minimax_m3_awq_mappings.py -q
 ```
 
-Expected: `4 passed`, return code 0.
+Expected: `6 passed`, return code 0 (r2 revision; r1's file had 4).
 Stop if: any test fails (the r6 mapping set is wrong at this revision).
 
 ### Dry run

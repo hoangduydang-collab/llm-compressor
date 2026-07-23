@@ -13,6 +13,10 @@
 # bf16 general re-eval; the live bf16 endpoint is still required for
 # capability probes and the distribution suite). If run_ab refuses the reused
 # baseline, rerun with RUN_BASELINE_GENERAL=1.
+#
+# Partitions: both arms land on whatever partition has idle nodes; override
+# with BF16_PARTITION / ARM_PARTITION (e.g. BF16_PARTITION=debug when compute
+# is full).
 set -uo pipefail
 REPO=/mnt/nfs/hoangduy/projects/llm-compressor
 BENCH_CFG=configs/minimax
@@ -35,8 +39,10 @@ export MAX_CONTEXT_LEN=81920
 export MAX_MODEL_LEN=81920
 export GENERAL_REQUEST_TIMEOUT_S=10800
 
-# BF16 serve arm on the debug pair (HOLD_MAX in 10s ticks -> 30h).
-HOLD_MAX=10800 srun --exclusive --partition=debug --nodes=2 --ntasks=2 \
+# BF16 serve arm, 2 nodes (HOLD_MAX in 10s ticks -> 30h).
+BF16_PART_OPT=()
+[ -n "${BF16_PARTITION:-}" ] && BF16_PART_OPT=(--partition="$BF16_PARTITION")
+HOLD_MAX=10800 srun --exclusive "${BF16_PART_OPT[@]}" --nodes=2 --ntasks=2 \
      --ntasks-per-node=1 --gpus-per-node=8 --cpus-per-task=192 \
      --time=32:00:00 --kill-on-bad-exit=1 --job-name=m3-tok64k-r6-bf16 \
      --export=ALL \

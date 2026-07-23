@@ -54,6 +54,12 @@ class QuantizationConfig:
     smoothquant_strength: float = 0.8
     awq_duo_scaling: bool = True
     gptq_dampening_frac: float | None = None
+    # r8: additional module-name regexes quantized to FP8_DYNAMIC (W8A8, data-
+    # free RTN weights + per-token dynamic activations) on top of the main
+    # method/scheme. Must be DISJOINT from the main modifier's targets — list
+    # only modules the main `ignore` excludes (e.g. M3 attention, shared
+    # experts, dense MLPs). Empty list = no extra FP8 pass.
+    fp8_dynamic_targets: list[str] = field(default_factory=list)
     # Post-quant sanity generation. Disable for very large offloaded models, where
     # autoregressive generation runs on CPU/disk (~minutes per token) and adds hours.
     sample_generation: bool = True

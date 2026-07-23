@@ -1,0 +1,69 @@
+# r8 full: distributed GPTQ W4AFP8 on routed experts + FP8_DYNAMIC (W8A8) on
+# attention / shared experts / dense MLPs, quantized from source BF16.
+#
+# Motivation (2026-07-23 analysis): after int4-ing the routed experts, BF16
+# attention (214 MB/layer) + shared expert (113 MB/layer) dominate per-token
+# weight traffic — 74% of activated bytes. FP8-ing them cuts whole-model
+# per-token weight reads 27.3 GB -> 17.6 GB (1.55x) for ~10 GB checkpoint
+# growth savings. FP8_DYNAMIC is data-free (RTN weights, per-token dynamic
+# activations): no calibration cost, no folds, no r5-class risk.
+#
+# Clone of minimax_m3_distributed_awq_full.yaml with method=gptq and the r8
+# fp8_dynamic_targets. GPTQ's ignore list is UNCHANGED — the FP8 modifier
+# owns the attention/shared/dense modules via explicit targets (disjoint
+# sets). The attention indexer stays BF16 by design (tiny; token-selection
+# quality risk). Launch through run_m3_distributed_quant_smoke_srun.sh with
+# METHODS=gptq EVIDENCE_ONLY=0, after minimax_m3_distributed_r8_smoke.yaml
+# passes its gates (first distributed-pipeline GPTQ run + first mixed recipe).
+name: minimax_m3_distributed_r8_full
+
+model:
+  id: MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
+  device_map: auto_offload
+  # See minimax_m3_distributed_awq_full.yaml for the small-cpu-budget
+  # rationale (shm VMA exhaustion; bulk weights go to DistributedDiskCache).
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-r8-full
+
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"
+    - "re:.*block_sparse_moe[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*block_sparse_moe[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+  fp8_dynamic_targets:
+    - "re:.*language_model[.]layers[.][0-9]+[.]self_attn[.](q|k|v|o)_proj$"
+    - "re:.*language_model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_up_proj|down_proj)$"
+    - "re:.*language_model[.]layers[.][0-2][.]mlp[.](gate_up_proj|down_proj)$"
+  gptq_dampening_frac: 0.01
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 512
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/nfs/hoangduy/results/m3-distributed-r8-full

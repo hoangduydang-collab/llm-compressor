@@ -27,6 +27,22 @@ def build_recipe(quant: QuantizationConfig) -> list:
     scheme = quant.scheme
     ignore = list(quant.ignore)
 
+    def with_fp8_rest(recipe: list) -> list:
+        # r8: FP8_DYNAMIC (W8A8) on modules the main modifier ignores — e.g.
+        # M3 attention / shared experts / dense MLPs, which dominate the
+        # remaining BF16 weight traffic once the routed experts are int4.
+        # Data-free (RTN weights, dynamic per-token activations), so it adds
+        # no calibration cost; mirrors
+        # examples/quantization_non_uniform/quantization_multiple_modifiers.py
+        if quant.fp8_dynamic_targets:
+            recipe.append(
+                QuantizationModifier(
+                    targets=list(quant.fp8_dynamic_targets),
+                    scheme="FP8_DYNAMIC",
+                )
+            )
+        return recipe
+
     def gptq() -> object:
         kwargs: dict = {"targets": "Linear", "scheme": scheme, "ignore": ignore}
         if quant.gptq_dampening_frac is not None:
@@ -48,19 +64,21 @@ def build_recipe(quant: QuantizationConfig) -> list:
         return QuantizationModifier(targets=["Linear"], scheme=scheme, ignore=ignore)
 
     if method == "gptq":
-        return [gptq()]
+        return with_fp8_rest([gptq()])
     if method == "awq":
-        return awq_then_quant()
+        return with_fp8_rest(awq_then_quant())
     if method == "smoothquant+gptq":
-        return [smoothquant(), gptq()]
+        return with_fp8_rest([smoothquant(), gptq()])
     if method == "smoothquant+awq":
-        return [smoothquant(), *awq_then_quant()]
+        return with_fp8_rest([smoothquant(), *awq_then_quant()])
     if method == "quant_only":
-        return [quant_only()]
+        return with_fp8_rest([quant_only()])
     if method == "autoround":
         from llmcompressor.modifiers.autoround import AutoRoundModifier
 
-        return [AutoRoundModifier(targets="Linear", scheme=scheme, ignore=ignore)]
+        return with_fp8_rest(
+            [AutoRoundModifier(targets="Linear", scheme=scheme, ignore=ignore)]
+        )
     if method in ("spinquant+gptq", "spinquant+awq"):
         # Rotation transforms spread outliers across weights AND activations,
         # which is the most promising lever for low-bit activations (W4A8/W4AFP8).
@@ -68,7 +86,7 @@ def build_recipe(quant: QuantizationConfig) -> list:
 
         rotation = SpinQuantModifier(rotations=["R1", "R2"])
         tail = [gptq()] if method.endswith("gptq") else awq_then_quant()
-        return [rotation, *tail]
+        return with_fp8_rest([rotation, *tail])
 
     raise ValueError(f"unhandled method {method!r}")
 
@@ -82,4 +100,5 @@ def describe_recipe(quant: QuantizationConfig) -> dict:
         "smoothquant_strength": quant.smoothquant_strength,
         "awq_duo_scaling": quant.awq_duo_scaling,
         "gptq_dampening_frac": quant.gptq_dampening_frac,
+        "fp8_dynamic_targets": list(quant.fp8_dynamic_targets),
     }

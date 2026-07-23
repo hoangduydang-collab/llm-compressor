@@ -1783,3 +1783,73 @@ gate, runtime smoke, or quality evaluation. The required order is: pre-quantizat
 gate, representative canary for expensive/new recipes, full quantization, serving ABI
 gate, runtime smoke, then quality evaluation. Version one supports GPTQ and AWQ; other
 methods fail as unsupported rather than receiving a guessed pass.
+
+## AWQ up->down smoothing fold is not function-preserving on MiniMax-M3 (root-cause candidate for the AWQ non-termination pathology, 2026-07-23)
+
+**Symptom (long-standing):** in-house AWQ W4AFP8 (r5) loses 24 pts on GPQA /
+6 pts on IFEval purely through reasoning non-termination (runaway `<think>`
+loops, budget exhaustion), while GPTQ on the identical scheme/pipeline is
+clean (`M3_OFFICIAL_QUALITY_RESULTS.html`). GLM-5.2's AWQ-produced W4AFP8 and
+Qwen3-30B-A3B (our own pipeline) are also clean — a model x method
+interaction no prior hypothesis explained.
+
+**Root cause (recipe-level, `get_minimax_m3_awq_mappings` mapping 4):** the
+per-expert `experts.N.up_proj -> experts.N.down_proj` AWQ mapping folds
+`up_rows /= s_r`, `down_cols *= s_r`. That fold is a pure reparameterization
+only if down's input is LINEAR in up's output. M3's expert activation is
+gpt-oss style — `h = (clamp(up, ±7) + 1.0) * glu` (`swiglu_beta = 1.0`,
+`swiglu_limit = 7.0`; `MiniMaxM3VLExperts._apply_gate`) — affine and clamped
+in `up`. After folding, the model effectively computes `(up + s_r·1.0) * glu`
+with the up-clamp moved to `±7·s_r`: a per-channel FUNCTION change on every
+token. Recovered from the shipped r5 checkpoint (base row-group maxes vs
+stored `weight_scale`), the fold scales are far from 1 — median `s_r` 0.90 /
+1.66 / 1.39 at layers 3 / 30 / 59 — and a gaussian estimate puts the
+perturbation at ~5% / ~33% / ~14% RMS of the true down input, ~10x the int4
+rounding error itself. It is a coherent per-channel drift (fixed sign per
+channel), which matches the observed phenotype: capability intact, long-
+horizon termination behavior broken, partially rescued by sampling.
+
+**Why every probe missed it:** the AWQ grid-search loss evaluates
+`Q(W·s)/s` on unmodified modules — the scale round-trips inside the weights
+and never crosses the activation, so the selection loss cannot see the
+damage the later fold causes. The fold-consistency and dequant-vs-base gates
+verify WEIGHT algebra (which is perfectly consistent); the dequant gate's
+fitted per-column scales absorb exactly this rescaling. The linearized
+calibration experts reuse `_apply_gate`, so calibration matched serve — the
+bug is purely the fold's linearity assumption.
+
+**Why it is M3-specific and AWQ-specific:** Qwen3/GLM use plain SwiGLU
+(`h = u·glu`, beta 0, no clamp) — the identical mapping is exactly legal
+there, hence their clean results. GPTQ never rescales weights, hence its
+clean result on M3. AutoAWQ's Mixtral-family mapping performs the same
+w3 -> w2 fold, consistent with the community cyankiwi quant failing worse.
+Upstream llm-compressor has NO registered mappings for gpt-oss-family
+activations; the M3 mapping was hand-authored here (mirroring cyankiwi).
+
+**Supporting evidence that removal is cheap:** the mapping's measured
+benefit is small — the r5 run's own telemetry (identity included in the
+grid) shows median 6% down-weight-MSE reduction; both M3's expert-input
+activation landscape (recovered from production calibration statistics) and
+its weights are flat/incoherent (random-rotation test: 2.9% gain), so
+salience-protection has little to protect on M3.
+
+**Fix (r6):** mapping removed in `get_minimax_m3_awq_mappings` with a
+regression guard (`tests/pipeline/test_minimax_m3_awq_mappings.py`) that
+fails if any fold crosses the expert activation boundary. General rule
+encoded there: a fold may only pass through an activation factor in which it
+is homogeneous. The post-attention-norm MoE-input mapping is unaffected
+(purely linear boundary, consumer set verified complete: router + shared +
+expert gate/up; r5 fold audit clean at bf16 rounding).
+
+**Planned follow-up (r7, optional):** a function-preserving replacement that
+keeps the down-side group reshaping by folding through the gate path's
+homogeneous factor — `gate_rows /= s_r`, per-channel `alpha_r = 1.702·s_r`
+AND per-channel gate clamp `limit_r = 7/s_r`, `down_cols *= s_r` — exact for
+every input (`glu' = glu/s`). Design note:
+`docs/superpowers/plans/2026-07-23-m3-awq-gate-alpha-fold.md`. Decision gate:
+only pursue if the r6 eval shows AWQ still materially behind GPTQ.
+
+**Verification path:** requantize r6 (same 512x2048 contract), then the
+stuck-item GPQA probe (`pipeline/sampling_probe.py` item set from the tok64k
+run) before any full eval: prediction is r6 non-termination collapses toward
+GPTQ's rate. Packet: `M3_AWQ_R6_REQUANT_HANDOFF.md`.

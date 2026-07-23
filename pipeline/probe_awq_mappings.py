@@ -51,8 +51,9 @@ def _simulate_linearized_experts(model, n_experts: int) -> int:
     ``linearize_moe`` turns the fused 3D experts into a ``ModuleList`` of per-expert
     modules exposing split ``gate_proj`` / ``up_proj`` / ``down_proj`` Linears. That only
     happens on the real load, so this stubs the same *names* (tiny Linears) on the meta
-    model to validate mapping 3/4 grouping without a full load. Expert count does not
-    affect grouping, so a small N is used for speed.
+    model to validate the routed-expert mapping grouping (post-attention-norm MoE-input;
+    the up->down mapping was removed in r6 — see minimax_m3_config) without a full
+    load. Expert count does not affect grouping, so a small N is used for speed.
     """
     from torch import nn
 
@@ -134,8 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=0,
         metavar="N",
-        help="stub N per-expert Linears (gate/up/down) to validate mapping 3/4 "
-        "grouping on meta (mimics linearize_moe). 0 disables (default).",
+        help="stub N per-expert Linears (gate/up/down) to validate routed-expert "
+        "mapping grouping on meta (mimics linearize_moe). 0 disables (default).",
     )
     args = parser.parse_args(argv)
 
@@ -159,10 +160,10 @@ def main(argv: list[str] | None = None) -> int:
         print("== routed experts (meta) ==")
         print(f"  fused experts modules present: {len(fused_experts)} "
               f"e.g. {fused_experts[:2]}")
-        print("  NOTE: mappings 3/4 target split `mlp.experts.N.{gate,up,down}_proj`, "
+        print("  NOTE: the MoE-input mapping targets split `mlp.experts.N.*_proj`, "
               "which exist only AFTER linearize_moe on the real load. 0 matches / an "
-              "'incomplete set' here for those mappings is EXPECTED on the meta model; "
-              "validate mappings 3/4 in the smoke run. Mappings 1/2 (attention) are "
+              "'incomplete set' here for that mapping is EXPECTED on the meta model; "
+              "validate it in the smoke run. Attention mappings are "
               "authoritative here.")
         print()
 

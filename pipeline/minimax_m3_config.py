@@ -304,11 +304,26 @@ def get_minimax_m3_awq_mappings(
 ) -> list:
     """Return AWQ mappings for all sparse layers or one selected sparse layer.
 
-    Mirrors the keep-bf16 strategy from ``cyankiwi/MiniMax-M3-AWQ-INT4``, translated
+    Derived from the keep-bf16 strategy of ``cyankiwi/MiniMax-M3-AWQ-INT4``, translated
     to transformers 5.12.1 module names (``self_attn.indexer.*``, ``mlp.experts.N.*``).
     Indexer, router, and shared experts stay bf16 via ``quantization.ignore`` but are
     included as balance layers so smoothed activations stay consistent. Routed-expert
     patterns match only after ``linearize_moe`` splits the fused experts on load.
+
+    NO up_proj -> down_proj mapping (r6, 2026-07-23). A smoothing fold may only pass
+    through an activation factor in which it is homogeneous. M3's expert activation is
+    ``(clamp(up, ±limit) + 1.0) * glu`` (gpt-oss style, swiglu_beta=1.0): the down
+    input is AFFINE and CLAMPED in up's output, so folding ``up_rows /= s`` /
+    ``down_cols *= s`` rescales the effective beta to ``s*beta`` and the up-clamp to
+    ``±limit*s`` per channel — a function change, not a reparameterization. The shipped
+    r5 fold scales (median s≈1.66 at L30) perturbed expert outputs by ~5-33% RMS,
+    invisible to the grid-search loss (computed pre-fold) and to the weight-algebra
+    gates. See BUGS_AND_FIXES.md "AWQ up->down smoothing fold is not
+    function-preserving on MiniMax-M3". This mapping was the M3-specific AWQ damage
+    channel; do not re-add it without the gate-side homogeneous fold (see
+    docs/superpowers/plans/2026-07-23-m3-awq-gate-alpha-fold.md, "r7").
+    The post-attention-norm mapping below is unaffected: it folds across a purely
+    linear boundary (norm -> router/shared/expert input projections).
     """
     from llmcompressor.modifiers.transform.awq import AWQMapping
 
@@ -336,10 +351,9 @@ def get_minimax_m3_awq_mappings(
             rf"re:{lm}{s}[.]self_attn[.]v_proj$",
             [rf"re:{lm}{s}[.]self_attn[.]o_proj$"],
         ),
-        AWQMapping(
-            rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
-            [rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]down_proj$"],
-        ),
+        # NOTE: deliberately NO ``experts.N.up_proj -> experts.N.down_proj`` mapping —
+        # not function-preserving through M3's ``(clamp(up)+1)*glu`` activation (see
+        # docstring). Enforced by tests/pipeline/test_minimax_m3_awq_mappings.py.
     ]
     if not disable_mlp_input_smoothing:
         mappings.insert(

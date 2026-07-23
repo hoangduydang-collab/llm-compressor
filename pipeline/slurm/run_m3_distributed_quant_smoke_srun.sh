@@ -36,6 +36,9 @@ CPUS_PER_TASK="${CPUS_PER_TASK:-192}"
 # results/logs/offload trees are already method-scoped, so the arms share
 # nothing but the read-only checkpoint and calibration dataset cache).
 PARALLEL_METHODS="${PARALLEL_METHODS:-1}"
+# Space-separated subset of "gptq awq" to run (e.g. METHODS=awq for an
+# AWQ-only requant); default preserves the original both-methods behavior.
+METHODS="${METHODS:-gptq awq}"
 # 1 (default): metrics/evidence only, no checkpoint. 0: save the quantized
 # checkpoint so pipeline/m3_checkpoint_scale_audit.py and
 # pipeline/verify_quant_checkpoint.py can run against it.
@@ -197,7 +200,7 @@ fi
 
 overall=0
 declare -A method_pids=()
-for method in gptq awq; do
+for method in $METHODS; do
   command=(
     srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8
     --cpus-per-task="$CPUS_PER_TASK"
@@ -233,7 +236,7 @@ for method in gptq awq; do
   fi
 done
 
-for method in gptq awq; do
+for method in $METHODS; do
   [[ -n "${method_pids[$method]:-}" ]] || continue
   rc=0
   wait "${method_pids[$method]}" || rc=$?

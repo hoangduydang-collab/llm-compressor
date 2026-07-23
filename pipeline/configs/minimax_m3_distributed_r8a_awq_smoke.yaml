@@ -1,0 +1,65 @@
+# r8a smoke: AWQ variant of r8 — first run combining the AWQ recipe
+# ([AWQModifier, QuantizationModifier(int4)]) with the appended
+# QuantizationModifier(FP8_DYNAMIC) on attention / shared experts / dense MLP.
+# Same layer scoping as minimax_m3_distributed_r8_smoke.yaml:
+#   - AWQ W4AFP8 experts: layers 3, 8, 31, 59
+#   - FP8 attention (q/k/v/o, NOT the indexer): layers 0, 3, 8
+#   - FP8 shared experts (fused gate_up_proj + down_proj): layers 3, 8
+#   - FP8 dense MLP (fused gate_up_proj + down_proj): layer 0
+# AWQ-specific hazard this smoke must prove out (GPTQ r8 smokes could not):
+# the AWQ norm-fold COMPENSATES router/shared-expert weights, so the FP8
+# weight qparams must be observed on the post-fold weights (modifier order:
+# AWQ -> int4 -> FP8). If the order were wrong, the smooth-fold audit's
+# dequantized shared-expert witness diverges from the norm-implied
+# prediction and Gate B fails. int4 base is the r6 recipe (no up->down
+# fold) — r7's gate-alpha fold is not yet validated end to end.
+name: minimax_m3_distributed_r8a_awq_smoke
+
+model:
+  id: MiniMaxAI/MiniMax-M3
+  trust_remote_code: true
+  auto_class: AutoModelForImageTextToText
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/nfs/hoangduy/offload/m3-distributed-smoke
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*vision_tower.*"
+    - "re:.*multi_modal_projector.*"
+    - "re:.*patch_merge_mlp.*"
+    - "re:.*mlp[.]gate$"
+    - "re:.*block_sparse_moe[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*block_sparse_moe[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*language_model[.]layers[.](?!(?:3|8|31|59)(?:[.]|$))[0-9]+(?:[.]|$).*"
+  fp8_dynamic_targets:
+    - "re:.*language_model[.]layers[.](0|3|8)[.]self_attn[.](q|k|v|o)_proj$"
+    - "re:.*language_model[.]layers[.](3|8)[.]mlp[.]shared_experts[.](gate_up_proj|down_proj)$"
+    - "re:.*language_model[.]layers[.]0[.]mlp[.](gate_up_proj|down_proj)$"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 8
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["MiniMaxM3VLDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/nfs/hoangduy/results/m3-distributed-quant-smoke

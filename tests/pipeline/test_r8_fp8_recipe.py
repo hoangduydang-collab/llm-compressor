@@ -10,6 +10,7 @@ from pipeline.config import QuantizationConfig
 from pipeline.recipe import build_recipe, describe_recipe
 
 R8_FULL_CONFIG = "pipeline/configs/minimax_m3_distributed_r8_full.yaml"
+R8A_FULL_CONFIG = "pipeline/configs/minimax_m3_distributed_r8a_awq_full.yaml"
 
 # Representative in-memory module names (post linearize_moe, quant pipeline).
 M3_NAMES = {
@@ -35,8 +36,8 @@ FP8_EXPECTED = {"attn_q", "attn_o", "shared_gateup", "shared_down",
                 "dense0_gateup", "dense2_down"}
 
 
-def _load_fp8_targets() -> list[str]:
-    cfg = yaml.safe_load(open(R8_FULL_CONFIG))
+def _load_fp8_targets(config: str = R8_FULL_CONFIG) -> list[str]:
+    cfg = yaml.safe_load(open(config))
     return cfg["quantization"]["fp8_dynamic_targets"]
 
 
@@ -79,6 +80,41 @@ def test_build_recipe_appends_fp8_modifier():
     assert describe_recipe(quant)["fp8_dynamic_targets"] == list(
         quant.fp8_dynamic_targets
     )
+
+
+def test_r8a_awq_full_config_matches_r8_scoping():
+    """The AWQ variant must target/ignore the same module sets as r8."""
+    targets = _load_fp8_targets(R8A_FULL_CONFIG)
+    for key, name in M3_NAMES.items():
+        hit = any(_matches(t, name) for t in targets)
+        assert hit == (key in FP8_EXPECTED), (key, name, hit)
+    cfg = yaml.safe_load(open(R8A_FULL_CONFIG))["quantization"]
+    assert cfg["method"] == "awq"
+    ignore = [p for p in cfg["ignore"] if p.startswith("re:")]
+    for key in FP8_EXPECTED:
+        name = M3_NAMES[key]
+        assert any(re.search(p[3:], name) for p in ignore), (key, name)
+
+
+def test_build_recipe_awq_appends_fp8_modifier_last():
+    """AWQ + fp8_dynamic_targets -> [AWQ, int4 quant, FP8 quant]. The FP8
+    modifier must come AFTER the AWQ modifier so its weight qparams are
+    observed on the post-fold (compensated) shared-expert weights."""
+    quant = QuantizationConfig(
+        method="awq",
+        scheme="W4AFP8",
+        ignore=["lm_head"],
+        fp8_dynamic_targets=["re:.*self_attn[.](q|k|v|o)_proj$"],
+    )
+    recipe = build_recipe(quant)
+    assert [type(m).__name__ for m in recipe] == [
+        "AWQModifier",
+        "QuantizationModifier",
+        "QuantizationModifier",
+    ]
+    fp8 = recipe[-1]
+    assert fp8.scheme == "FP8_DYNAMIC"
+    assert fp8.targets == ["re:.*self_attn[.](q|k|v|o)_proj$"]
 
 
 def test_build_recipe_without_fp8_targets_is_unchanged():

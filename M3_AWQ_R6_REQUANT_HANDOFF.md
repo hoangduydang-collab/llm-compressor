@@ -2,10 +2,13 @@
 
 - Protocol version: 1
 - State: READY_FOR_EXECUTOR
-- Packet revision: 2026-07-23-r1
+- Packet revision: 2026-07-23-r2 (r2: enable AWQ landscape telemetry via
+  AWQ_LOG_LANDSCAPE_STATS=1 at launch; base commit updated to include it —
+  supersedes r1; if the quant was already launched from r1, do NOT restart it
+  for this: telemetry is additive-only and r1 evidence remains valid)
 - Planner owner: planner session 2026-07-23 (root-cause: up->down fold not function-preserving)
 - Intended executor: any executor
-- Base Git commit: 3a323808270f486047ed53110229c83db5866753
+- Base Git commit: 84c11bc55d0dd38136504ec3648ad5c84bc6b393
 - Decision question: does removing the up->down AWQ smoothing fold (r6) collapse
   the in-house AWQ GPQA non-termination excess toward GPTQ's rate?
 
@@ -88,8 +91,8 @@ Run the controller inside a persistent tmux session on the login node
 ```bash
 cd /mnt/nfs/hoangduy/projects/llm-compressor
 git fetch origin && git checkout duy-branch && git pull --ff-only
-git rev-parse HEAD   # MUST print 3a323808270f486047ed53110229c83db5866753 or a descendant that contains it
-git merge-base --is-ancestor 3a323808270f486047ed53110229c83db5866753 HEAD && echo ancestor-ok
+git rev-parse HEAD   # MUST print 84c11bc55d0dd38136504ec3648ad5c84bc6b393 or a descendant that contains it
+git merge-base --is-ancestor 84c11bc55d0dd38136504ec3648ad5c84bc6b393 HEAD && echo ancestor-ok
 git status --porcelain | grep -v '^??' && { echo "STOP: tracked changes"; } || echo tracked-clean
 ```
 
@@ -125,6 +128,11 @@ Expected: exactly ONE printed srun command (awq only, no gptq), containing
 Step 1 — quantization (reuse the SAME RUN_ID from the dry run):
 
 ```bash
+# AWQ_LOG_LANDSCAPE_STATS=1 (r2): per-mapping activation/weight landscape +
+# chosen-scale telemetry, one AWQ_LANDSCAPE json line per mapping in the
+# torchrun logs / quant_metrics jsonl. Additive-only; srun forwards the
+# submitting environment by default.
+export AWQ_LOG_LANDSCAPE_STATS=1
 METHODS=awq EVIDENCE_ONLY=0 \
   CONFIG=pipeline/configs/minimax_m3_distributed_awq_full.yaml \
   RESULT_ROOT=/mnt/nfs/hoangduy/results/m3-distributed-awq-full/$RUN_ID \

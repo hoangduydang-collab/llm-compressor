@@ -1,14 +1,5 @@
 import torch
-import torch.distributed as dist
-from compressed_tensors.distributed import (
-    as_broadcastable,
-    greedy_bin_packing,
-    is_distributed,
-    wait_for_comms,
-)
-from compressed_tensors.offload import get_execution_device
 from compressed_tensors.quantization.utils import is_module_quantized
-from compressed_tensors.utils import update_offload_parameter
 
 from llmcompressor.core import Event, State
 from llmcompressor.modifiers import Modifier
@@ -20,8 +11,6 @@ from llmcompressor.modifiers.quantization.quantization.mixin import Quantization
 from llmcompressor.observers import ACTIVATION_OBS
 
 __all__ = ["QuantizationModifier"]
-
-_WEIGHT_Q_PARAMS = ["weight_scale", "weight_zero_point", "weight_global_scale"]
 
 
 class QuantizationModifier(Modifier, QuantizationMixin):
@@ -90,26 +79,20 @@ class QuantizationModifier(Modifier, QuantizationMixin):
         self.sync_obs_act_stats(modules)
         update_qparams(modules, ACTIVATION_OBS)
 
-        ### Not Distributed
-        if not is_distributed():
-            observe(modules, "weight")
-            update_qparams(modules, "weight")
-            return
-
-        ### Distributed
-        rank = dist.get_rank()
-        world_size = dist.get_world_size()
-
-        module_list, rank_to_modules, module_to_rank = greedy_bin_packing(
-            modules,
-            world_size,
-            item_weight_fn=lambda mod: mod.weight.numel(),
-        )
-
-        observe(rank_to_modules[rank], "weight")
-        update_qparams(rank_to_modules[rank], "weight")
-        dist.barrier()  # wait for async offload updates to finish
-        self._broadcast_qparam_onloads(module_list, module_to_rank)
+        # Weights are replicated across DDP ranks, so weight observation is
+        # deterministic and every rank computes identical qparams — run it on
+        # ALL ranks, same pattern as the ACTIVATION_OBS update above (the
+        # source-rank gating inside the patched DistributedDiskCache
+        # deduplicates the offload writes). Do NOT rank-shard this: each
+        # update_offload_parameter emits a dist.barrier() under the patched
+        # disk cache, so all ranks must make identical call sequences. The
+        # previous greedy_bin_packing shard gave ranks UNEVEN update counts
+        # whenever len(modules) % world_size != 0 (e.g. M3's 6 FP8 modules
+        # over 8 ranks: two ranks got zero) -> mismatched barrier counts ->
+        # NCCL deadlock at 100% GPU (r8 smoke hang, 2026-07-23; see
+        # BUGS_AND_FIXES.md).
+        observe(modules, "weight")
+        update_qparams(modules, "weight")
 
     def on_calibration_end(self, state: State, event: Event, **kwargs):
         """
@@ -117,34 +100,3 @@ class QuantizationModifier(Modifier, QuantizationMixin):
         """
         QuantizationMixin.end_calibration(self, state.model)
 
-    def _broadcast_qparam_onloads(
-        self,
-        module_list: list[torch.nn.Module],
-        module_to_rank: dict[torch.nn.Module, int],
-    ):
-        rank = dist.get_rank()
-        pending_comms = []
-        received = []
-        for module in module_list:
-            if get_execution_device(module) != torch.device("cpu"):
-                for qparam_name in _WEIGHT_Q_PARAMS:
-                    if (qparam := getattr(module, qparam_name, None)) is not None:
-                        pending_comms.append(
-                            dist.broadcast(
-                                as_broadcastable(qparam),
-                                src=module_to_rank[module],
-                                async_op=True,
-                            )
-                        )
-                        if module_to_rank[module] != rank:
-                            received.append((module, qparam_name, qparam))
-
-        wait_for_comms(pending_comms)
-
-        # With dict/disk offload, ``getattr`` mints a fresh onload tensor each
-        # call: the broadcast above fills a temporary that save_pretrained
-        # never sees. Write the received values back through the offload
-        # cache, else non-owner ranks (including the saving rank) keep
-        # uninitialized qparams for every module they did not observe.
-        for module, qparam_name, qparam in received:
-            update_offload_parameter(module, qparam_name, qparam)

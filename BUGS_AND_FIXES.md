@@ -1895,3 +1895,41 @@ if upstream semantics change) and asserts the fixed path persists.
 offload-managed module — parameters OR buffers — must go through
 `update_offload_parameter`. In-place tensor mutation is silently discarded by
 the disk cache, and only functional/persistence gates catch it.
+
+## r8 smoke: NCCL deadlock from rank-sharded FP8 weight-qparam updates (fixed, 2026-07-23)
+
+**Symptom:** First distributed GPTQ + FP8_DYNAMIC mixed-recipe smoke
+(`20260723T105742Z-m3-ddp-gptq-smoke-r8-fp8rest`) froze after subgraph 5
+(layer 3): all 8 ranks' last log lines at the same instant (11:17:10), GPUs
+pinned at 100% for 90+ min with zero output. Per-rank metrics showed GPTQ
+compress COMPLETED evenly (48 modules/rank = 384/8) — the hang was after it.
+
+**Root cause:** `QuantizationModifier.on_sequential_epoch_end`'s distributed
+branch rank-sharded the weight-qparam update
+(`update_qparams(rank_to_modules[rank], "weight")` via greedy_bin_packing).
+Each update goes through the patched `DistributedDiskCache.update_offload`,
+which ends in `dist.barrier()`. Layer 3 has 6 FP8 modules (4 attention + 2
+shared-expert) over 8 ranks → six ranks emitted per-update barriers, two
+emitted none → mismatched collective sequences → permanent NCCL spin (100%
+GPU = busy-poll, not compute). Never seen before because (a) pure-GPTQ runs
+shard 384 M3 expert modules = always divisible by 8, and (b) the
+ACTIVATION_OBS qparam path just above already updates all modules on all
+ranks.
+
+**Fix:** weights are replicated across DDP ranks, so weight observation is
+deterministic — every rank now runs `observe`/`update_qparams` over ALL
+modules (identical values; the patched disk cache's source-rank gating
+deduplicates the writes). The sharding + `_broadcast_qparam_onloads` helper
+were removed. Regression test:
+`test_weight_qparam_update_is_rank_aligned`.
+
+**Latent risk noted:** GPTQ's `compress_modules` retains rank-sharded
+`update_offload_parameter` calls (uneven bin packing would deadlock the same
+way); M3's per-layer module counts keep it even today. If a future model's
+expert count isn't divisible by world_size, apply the same treatment (or
+make the patched update_offload barrier-free).
+
+**Lesson:** with a collective inside `update_offload`, every code path that
+persists parameters must make an IDENTICAL sequence of update calls on every
+rank. Audit any rank-conditional `update_offload_parameter` under
+distributed disk offload.

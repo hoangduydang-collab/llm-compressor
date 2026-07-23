@@ -19,10 +19,6 @@ GPTQ's ``_broadcast_quantized_params`` shares the pattern and the fix.
 import torch
 
 from llmcompressor.modifiers.gptq.base import GPTQModifier
-from llmcompressor.modifiers.quantization.quantization import base as q_base
-from llmcompressor.modifiers.quantization.quantization.base import (
-    QuantizationModifier,
-)
 
 _MARKER = 7.5
 
@@ -53,25 +49,6 @@ def _disk_copy(module: torch.nn.Module, name: str) -> torch.Tensor:
     return module._parameters[name].detach().clone()
 
 
-def test_qparam_broadcast_persists_through_disk_offload(tmp_path, monkeypatch):
-    module = _offloaded_linear_with_scale(tmp_path)
-
-    monkeypatch.setattr(q_base.dist, "get_rank", lambda: 1)
-    monkeypatch.setattr(q_base.dist, "broadcast", _fake_broadcast)
-    # disk-offloaded modules report cpu execution here; the real runs execute
-    # on cuda, which is the branch under test
-    monkeypatch.setattr(
-        q_base, "get_execution_device", lambda m: torch.device("cuda")
-    )
-
-    QuantizationModifier._broadcast_qparam_onloads(
-        None, [module], {module: 0}
-    )
-
-    expected = torch.full((4, 1), _MARKER)
-    assert torch.allclose(_disk_copy(module, "weight_scale"), expected)
-
-
 def test_gptq_broadcast_persists_through_disk_offload(tmp_path, monkeypatch):
     from llmcompressor.modifiers.gptq import base as gptq_base
 
@@ -88,22 +65,36 @@ def test_gptq_broadcast_persists_through_disk_offload(tmp_path, monkeypatch):
     assert torch.allclose(_disk_copy(module, "weight"), expected_weight)
 
 
-def test_owner_rank_does_not_rewrite_offload(tmp_path, monkeypatch):
-    """The owner rank already persisted via update_qparams; the broadcast
-    write-back must only target modules received from other ranks (here the
-    fake broadcast mutates the onload temp, and on the owner rank that temp
-    must NOT be pushed back to disk)."""
-    module = _offloaded_linear_with_scale(tmp_path)
-    before = _disk_copy(module, "weight_scale")
+def test_weight_qparam_update_is_rank_aligned(monkeypatch):
+    """Regression for the r8 smoke NCCL deadlock (2026-07-23): the weight
+    qparam update in on_sequential_epoch_end must run over ALL quantized
+    modules on every rank. A rank-sharded update emits
+    update_offload_parameter (-> patched DistributedDiskCache.update_offload
+    -> dist.barrier) an UNEVEN number of times per rank whenever
+    len(modules) % world_size != 0 (M3: 6 FP8 modules over 8 ranks), which
+    deadlocks NCCL with GPUs pinned at 100%."""
+    from llmcompressor.modifiers.quantization.quantization import base as q_base
+    from llmcompressor.modifiers.quantization.quantization.base import (
+        QuantizationModifier,
+    )
 
-    monkeypatch.setattr(q_base.dist, "get_rank", lambda: 0)
-    monkeypatch.setattr(q_base.dist, "broadcast", _fake_broadcast)
+    modules = [torch.nn.Linear(4, 4) for _ in range(6)]
+    seen = {"weight_updates": None}
+
+    monkeypatch.setattr(q_base, "is_module_quantized", lambda m: True)
+    monkeypatch.setattr(q_base, "observe", lambda mods, name: None)
+
+    def record_update(mods, base_name):
+        if base_name == "weight":
+            seen["weight_updates"] = list(mods)
+
+    monkeypatch.setattr(q_base, "update_qparams", record_update)
     monkeypatch.setattr(
-        q_base, "get_execution_device", lambda m: torch.device("cuda")
+        QuantizationModifier, "sync_obs_act_stats", lambda self, mods: None
     )
 
-    QuantizationModifier._broadcast_qparam_onloads(
-        None, [module], {module: 0}
-    )
+    modifier = QuantizationModifier.__new__(QuantizationModifier)
+    modifier.on_sequential_epoch_end(None, None, modules)
 
-    assert torch.allclose(_disk_copy(module, "weight_scale"), before)
+    # every rank must issue the identical, full-module-list update sequence
+    assert seen["weight_updates"] == modules

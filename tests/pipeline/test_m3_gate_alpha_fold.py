@@ -167,3 +167,62 @@ def test_consumer_rejects_bad_scales():
         expert.gate_proj.awq_fold_scale_consumer(torch.ones(INTER + 1))
     with pytest.raises(ValueError):
         expert.gate_proj.awq_fold_scale_consumer(torch.full((INTER,), -1.0))
+
+
+def test_consumer_persists_through_offload_cache():
+    """Regression for the 2026-07-23 r7 smoke failure: with DISK offload
+    active (production M3 runs set ``offload_folder``), the expert's
+    ``_buffers`` is a DiskCache — a raw in-place write mutates only the
+    transient onloaded copy, and the checkpoint ships all-ones
+    ``gate_smooth_scale`` while the weights ARE folded (function change at
+    serve; caught by the r7-mode fold-consistency gate). The consumer must
+    persist via ``update_offload_parameter``, exactly like
+    AWQModifier._smooth does for the weights. (CPU offload shares storage,
+    so the loss only reproduces with the disk cache.)"""
+    import os
+    import tempfile
+
+    from compressed_tensors.offload import offload_module
+
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(f"{tmp}/guard")
+        os.makedirs(f"{tmp}/fix")
+        # mechanism guard (separate expert to avoid contaminating the fix
+        # check): if raw in-place buffer writes ever start persisting, the
+        # update_offload_parameter workaround in _make_fold_consumer can be
+        # revisited.
+        guard = _Container(n=1)
+        attach_minimax_m3_gate_alpha_fold(guard)
+        offload_module(
+            guard[0], onload_device="cpu", offload_device="disk",
+            offload_dir=f"{tmp}/guard",
+        )
+        getattr(guard[0], GATE_SMOOTH_SCALE_NAME).mul_(3.0)
+        assert torch.allclose(
+            guard[0].state_dict()[GATE_SMOOTH_SCALE_NAME],
+            torch.ones(INTER),
+        ), (
+            "offload semantics changed: raw in-place buffer writes now "
+            "persist — revisit the update_offload_parameter workaround in "
+            "_make_fold_consumer"
+        )
+
+        torch.manual_seed(7)
+        container = _Container(n=1)
+        prepared = attach_minimax_m3_gate_alpha_fold(container)
+        assert prepared == 1
+        expert = container[0]
+        offload_module(
+            expert, onload_device="cpu", offload_device="disk",
+            offload_dir=f"{tmp}/fix",
+        )
+
+        scales = torch.exp(torch.randn(INTER, dtype=torch.float32) * 0.3)
+        expert.gate_proj.awq_fold_scale_consumer(scales)
+
+        stored = expert.state_dict()[GATE_SMOOTH_SCALE_NAME].float()
+        expected = scales.clamp(0.125, 8.0)
+        torch.testing.assert_close(stored, expected, rtol=1e-6, atol=1e-7)
+        # derived vectors must match the persisted value (serve derivation)
+        torch.testing.assert_close(expert.swiglu_alpha_vec, 1.702 * expected)
+        torch.testing.assert_close(expert.swiglu_limit_vec, 7.0 / expected)

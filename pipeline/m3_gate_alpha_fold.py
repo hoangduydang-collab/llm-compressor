@@ -38,6 +38,7 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+from compressed_tensors.offload import update_offload_parameter
 
 GATE_SMOOTH_SCALE_NAME = "gate_smooth_scale"
 # Backstop band, mirroring the r4 dead-channel lesson: bound every fold.
@@ -102,10 +103,17 @@ def _make_fold_consumer(expert: torch.nn.Module, alpha: float, limit: float):
             )
         if not torch.isfinite(s).all() or (s <= 0).any():
             raise ValueError("gate-alpha fold received non-finite or non-positive scales")
-        buf.mul_(s)
-        buf.clamp_(min=_SCALE_MIN, max=_SCALE_MAX)
-        expert.swiglu_alpha_vec = alpha * buf
-        expert.swiglu_limit_vec = limit / buf
+        updated = (buf * s).clamp_(min=_SCALE_MIN, max=_SCALE_MAX)
+        # Persist through the offload-aware API, exactly like AWQModifier._smooth
+        # does for the weights. With cpu/disk offload active (production M3
+        # runs), the module's _buffers is an OffloadCache: a raw in-place
+        # ``buf.mul_(s)`` mutates only the transient onloaded copy and the
+        # stored value silently stays 1.0 at save time — the 2026-07-23 r7
+        # smoke shipped all-ones gate_smooth_scale this way (caught by the
+        # r7-mode fold-consistency gate; see BUGS_AND_FIXES.md).
+        update_offload_parameter(expert, GATE_SMOOTH_SCALE_NAME, updated)
+        expert.swiglu_alpha_vec = alpha * updated
+        expert.swiglu_limit_vec = limit / updated
 
     return _consume
 

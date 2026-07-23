@@ -1853,3 +1853,45 @@ only pursue if the r6 eval shows AWQ still materially behind GPTQ.
 stuck-item GPQA probe (`pipeline/sampling_probe.py` item set from the tok64k
 run) before any full eval: prediction is r6 non-termination collapses toward
 GPTQ's rate. Packet: `M3_AWQ_R6_REQUANT_HANDOFF.md`.
+
+## r7 gate-alpha fold: `gate_smooth_scale` lost under disk offload (fixed, 2026-07-23)
+
+**Symptom:** First r7 smoke (RUN_ID `20260723T092246Z-m3-ddp-awq-smoke-r7-gatealpha`)
+completed RC=0 with all markers healthy (fold prepared on 7,296 experts,
+`gate_smooth_scale` persisted for every expert, AWQ_LANDSCAPE telemetry
+present), but `pipeline.m3_verify_no_updown_fold --mode r7` FAILED (exit 4):
+down_proj columns scaled r5-style (relerr med 0.13–0.25 vs base) while every
+stored `gate_smooth_scale` was exactly 1.0 (`fold_nontrivial=false`). Direct
+weight probes confirmed both fold sides applied (gate rows ÷ s, down cols × s,
+implied s med ≈0.81, mutually consistent) — the *weights* were folded, the
+*scales* were not persisted.
+
+**Root cause:** Production M3 runs set `offload_folder`, so every module's
+`_parameters`/`_buffers` is a compressed-tensors `DiskCache`. The fold
+consumer mutated the buffer in place (`buf.mul_(s)`), which only touches the
+transient onloaded copy; the disk store keeps the original ones and
+`save_pretrained` reads the store. AWQModifier's own weight folds persist
+because `_smooth` goes through `update_offload_parameter` — the sanctioned
+write-back API. Note the asymmetry: CPU offload shares storage (raw in-place
+writes DO persist), so the loss reproduces **only with the disk cache** —
+which is why nothing in the pre-smoke unit suite caught it.
+
+**Consequences of the broken artifact:** calibration itself stayed
+function-preserving (the derived `swiglu_alpha_vec`/`swiglu_limit_vec` are
+plain in-memory attributes computed from the correct product), but the saved
+checkpoint is r5-class broken at serve time: folded weights with no way to
+reconstruct the per-channel alpha/limit. The r7-mode fold-consistency gate
+exists precisely for this class and fail-closed correctly.
+
+**Fix:** `_make_fold_consumer` now writes the composed, clamped scale via
+`update_offload_parameter(expert, GATE_SMOOTH_SCALE_NAME, updated)` (works for
+offloaded and plain modules) and derives the alpha/limit vectors from the same
+persisted value. Regression test
+`test_consumer_persists_through_offload_cache` reproduces the loss with a real
+`DiskCache` (mechanism guard asserts raw writes still get dropped, so we learn
+if upstream semantics change) and asserts the fixed path persists.
+
+**Lesson:** any state an llm-compressor modifier must persist on an
+offload-managed module — parameters OR buffers — must go through
+`update_offload_parameter`. In-place tensor mutation is silently discarded by
+the disk cache, and only functional/persistence gates catch it.

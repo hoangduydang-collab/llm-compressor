@@ -137,6 +137,29 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
             f"acts={None if not a else a.get('num_bits')}"
             f"{'' if not a else '/' + str(a.get('type')) + '/dyn=' + str(a.get('dynamic'))}"
         )
+    # r8 mixed recipes: an 8-bit float weight group (FP8_DYNAMIC on
+    # attention / shared experts / dense MLPs) alongside the int4 expert
+    # group. Its presence switches the keep-bf16 expectations below and adds
+    # the fp8 coverage/format checks.
+    fp8_groups = {
+        gname: g
+        for gname, g in groups.items()
+        if g.get("weights", {}).get("num_bits") == 8
+        and g.get("weights", {}).get("type") == "float"
+    }
+    mixed_fp8 = bool(fp8_groups)
+    if mixed_fp8:
+        print(f"  mixed int4+FP8 checkpoint (fp8 groups: {sorted(fp8_groups)})")
+        for gname, g in fp8_groups.items():
+            gfmt = g.get("format")
+            if gfmt != "float-quantized":
+                _fail(
+                    f"fp8 group {gname} has format={gfmt!r} (expected "
+                    "'float-quantized'): a global pack-quantized override "
+                    "runs fp8 weights through the int4 packer — see "
+                    "BUGS_AND_FIXES.md, r8 smoke v2 (2026-07-23)",
+                    errors,
+                )
     print(f"  ignore ({len(ignore)}):")
     for p in ignore:
         print(f"    - {p}")
@@ -162,9 +185,20 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
             scale_keys.add(pref)
         elif k.endswith(".weight"):
             plain.add(pref)
+    # fp8 float-quantized modules keep a plain fp8 ``.weight`` plus a
+    # per-channel ``.weight_scale`` (no ``weight_packed``).
+    fp8_quantized = plain & scale_keys
+    plain -= fp8_quantized
     print(f"  total tensors: {len(keys)}")
     print(f"  quantized (weight_packed) modules: {len(quantized)}")
+    print(f"  fp8 float-quantized modules:       {len(fp8_quantized)}")
     print(f"  plain (.weight) modules:           {len(plain)}")
+    if fp8_quantized and not mixed_fp8:
+        _fail(
+            f"{len(fp8_quantized)} modules look float-quantized but the config "
+            f"declares no fp8 weight group, e.g. {sorted(fp8_quantized)[:3]}",
+            errors,
+        )
 
     # Self-diagnosing: show the actual leaf (proj) names of quantized modules so a
     # naming mismatch is obvious rather than silently reported as "nothing quantized".
@@ -193,12 +227,23 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
         _ok("every quantized module has a matching weight_scale")
 
     # ---- 3. keep-bf16 modules must NOT be quantized -------------------------
+    # In mixed int4+FP8 checkpoints the fp8 group legitimately covers the
+    # shared experts and dense MLPs (and attention, which has no entry here);
+    # int4 must still never touch them, and every other keep-bf16 module must
+    # not be quantized in ANY format.
     print("\n== keep-bf16 modules must not be quantized ==")
+    fp8_ok_in_mixed = {"shared_experts", "dense_layers_0_2"}
     for name, pat in _MUST_NOT_QUANTIZE.items():
-        leaked = sorted(m for m in quantized if pat.search(m))
+        packed_leak = sorted(m for m in quantized if pat.search(m))
+        fp8_hits = sorted(m for m in fp8_quantized if pat.search(m))
+        allow_fp8 = mixed_fp8 and name in fp8_ok_in_mixed
+        leaked = packed_leak + ([] if allow_fp8 else fp8_hits)
         if leaked:
-            _fail(f"{name}: {len(leaked)} modules were quantized but should be bf16, "
+            _fail(f"{name}: {len(leaked)} modules were quantized but should be "
+                  f"{'bf16 or fp8' if allow_fp8 else 'bf16'}, "
                   f"e.g. {leaked[:3]}", errors)
+        elif allow_fp8 and fp8_hits:
+            _ok(f"{name}: no int4 leak; {len(fp8_hits)} fp8-quantized (mixed recipe)")
         else:
             _ok(f"{name}: none quantized")
 
@@ -275,6 +320,32 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
         print(f"  [warn] count mismatch (diff {len(quantized) - expected_q})")
     else:
         _ok("quantized Linear count matches expectation exactly")
+
+    # ---- 4b. fp8 (mixed recipe) coverage ------------------------------------
+    if mixed_fp8:
+        print("\n== fp8 (mixed recipe) coverage ==")
+        fp8_attn = sorted(m for m in fp8_quantized if ".self_attn." in m)
+        fp8_shared = sorted(m for m in fp8_quantized if "shared_experts" in m)
+        fp8_dense = sorted(
+            m for m in fp8_quantized
+            if re.search(r"\.layers\.[0-2]\.mlp\.", m)
+        )
+        fp8_by_layer: dict[int, int] = defaultdict(int)
+        for m in fp8_quantized:
+            lm = _LAYER.search(m)
+            if lm:
+                fp8_by_layer[int(lm.group(1))] += 1
+        print(f"  fp8 modules: attn={len(fp8_attn)} shared={len(fp8_shared)} "
+              f"dense={len(fp8_dense)}")
+        print(f"  fp8 layers covered: {sorted(fp8_by_layer)}")
+        for label, mods in (("attention", fp8_attn),
+                            ("shared_experts", fp8_shared),
+                            ("dense mlp (layers 0-2)", fp8_dense)):
+            if mods:
+                _ok(f"fp8 covers {label} ({len(mods)} modules)")
+            else:
+                _fail(f"fp8 group present but no fp8-quantized {label} "
+                      "modules found (target regex mismatch?)", errors)
 
     # ---- 5. width / group-size divisibility --------------------------------
     print("\n== geometry (256 serve constraint + group_size) ==")
@@ -465,11 +536,16 @@ def _check_untouched(ckpt, base, keys, errors, warnings):
             opened[shard] = safe_open(str(root / wmap[k]), framework="pt")
         return opened[shard].get_tensor(k)
 
+    key_set = set(keys)
+
     def _sample(patterns, limit, exclude=()):
         hits = [k for k in keys
                 if any(p in k for p in patterns)
                 and not any(x in k for x in exclude)
-                and k.endswith(".weight") and k in base_map]
+                and k.endswith(".weight") and k in base_map
+                # quantized-in-any-format modules (e.g. r8's fp8 attention)
+                # are not "untouched" — they carry a weight_scale sibling
+                and k[: -len(".weight")] + f".{_SCALE}" not in key_set]
         return hits[:: max(1, len(hits) // limit)][:limit]
 
     ident = _sample(_IDENTITY_PATTERNS, 12, exclude=_NORM_PATTERNS)
@@ -525,10 +601,20 @@ def _check_tensors(ckpt, keys, gsize, errors, warnings):
         if not torch.isfinite(scale).all():
             _fail(f"non-finite weight_scale in {pref}", errors)
         pk = f"{pref}.{_PACKED}"
+        wk = f"{pref}.weight"
         if pk in weight_map or pk in keys:
             packed = _get(pk)
             if not torch.isfinite(packed.float()).all():
                 _fail(f"non-finite weight_packed in {pref}", errors)
+        elif wk in weight_map or wk in keys:
+            # float-quantized (fp8) module: plain weight must actually BE fp8
+            w = _get(wk)
+            if w.dtype != torch.float8_e4m3fn:
+                _fail(f"{pref}: has weight_scale but weight dtype {w.dtype} "
+                      "(expected float8_e4m3fn for float-quantized modules)",
+                      errors)
+            if (scale <= 0).any():
+                _fail(f"non-positive weight_scale in fp8 module {pref}", errors)
         # group-scale shape: scale should have out_features rows and
         # in_features/group_size columns for GROUP strategy
         shp = f"{pref}.{_SHAPE}"

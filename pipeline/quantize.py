@@ -463,6 +463,36 @@ def _persist_calibration_partition(
     return path
 
 
+def _stamp_mixed_precision_formats(model) -> dict[str, int]:
+    """Per-scheme compression formats for mixed int4+FP8 checkpoints (r8).
+
+    ``infer_model_format`` respects ``scheme.format`` when set: stamp 4-bit
+    int weight groups as ``pack-quantized`` (what vLLM's W4A8 CUTLASS path
+    loads) and 8-bit float weight groups as ``float-quantized`` (plain fp8
+    ``weight`` + per-channel ``weight_scale``). Returns per-format module
+    counts for logging. Idempotent; schemes without weights are skipped.
+    """
+    from compressed_tensors.config import CompressionFormat
+    from compressed_tensors.quantization.utils import is_module_quantized
+
+    counts: dict[str, int] = {}
+    for module in model.modules():
+        if not is_module_quantized(module):
+            continue
+        weights = getattr(module.quantization_scheme, "weights", None)
+        if weights is None:
+            continue
+        if weights.num_bits == 4 and str(weights.type) == "int":
+            fmt = CompressionFormat.pack_quantized
+        elif weights.num_bits == 8 and str(weights.type) == "float":
+            fmt = CompressionFormat.float_quantized
+        else:
+            continue
+        module.quantization_scheme.format = fmt.value
+        counts[fmt.value] = counts.get(fmt.value, 0) + 1
+    return counts
+
+
 def install_distributed_disk_update_offload_patch() -> bool:
     """Make ``DistributedDiskCache.update_offload`` distributed-safe.
 
@@ -873,7 +903,19 @@ def run_quantize(
         # model.save_pretrained, then only rank zero writes shared side artifacts.
         save_kwargs: dict = {"save_compressed": True}
         if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
-            save_kwargs["quantization_format"] = "pack-quantized"
+            if cfg.quantization.fp8_dynamic_targets:
+                # Mixed int4+FP8 checkpoint (r8): a global quantization_format
+                # stamps EVERY config group — the r8 v2 smoke packed the FP8
+                # attention/shared/dense weights through the int4 compressor
+                # (weight_packed) which vLLM's FP8 path cannot load. But pure
+                # inference is wrong the other way (the W4AFP8 group infers
+                # 'int-quantized'). Stamp per-scheme formats instead; the
+                # model-level format then flattens to 'mixed-precision' and
+                # vLLM resolves formats per config group.
+                counts = _stamp_mixed_precision_formats(model)
+                print(f"[pipeline] per-scheme compression formats: {counts}")
+            else:
+                save_kwargs["quantization_format"] = "pack-quantized"
         if dist_ctx.is_source or not dist_ctx.enabled:
             if cfg.model.offload_folder is not None:
                 # overlaps with the gather: prefetched files hit page cache

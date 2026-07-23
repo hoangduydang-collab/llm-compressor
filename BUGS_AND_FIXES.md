@@ -1933,3 +1933,33 @@ make the patched update_offload barrier-free).
 persists parameters must make an IDENTICAL sequence of update calls on every
 rank. Audit any rank-conditional `update_offload_parameter` under
 distributed disk offload.
+
+## r8 smoke v2: global pack-quantized override corrupts FP8 group at save (fixed, 2026-07-23)
+
+**Symptom:** With the deadlock fixed, r8 smoke v2 ran to completion but the
+post-save verification gate failed: dense/shared/attention FP8 modules were
+saved as `weight_packed I32` (int4-style packing of 8-bit values, e.g. q_proj
+[8192, 1536] = 4-per-int32) instead of `weight F8_E4M3 + weight_scale`.
+vLLM's FP8 path cannot load that. Both config groups showed
+`format: pack-quantized`.
+
+**Root cause (two-sided trap):** the pipeline forces
+`quantization_format="pack-quantized"` at save for W4-family schemes — with
+mixed recipes that force stamps EVERY config group. But simply dropping the
+override is wrong the other way: compressed-tensors' per-module inference
+maps the W4AFP8 expert group to 'int-quantized' (naive int8-style), which
+vLLM's W4A8 CUTLASS path cannot load either (that is why the force existed).
+
+**Fix:** `_stamp_mixed_precision_formats(model)` sets `scheme.format` per
+group before save (4-bit int weights -> pack-quantized; 8-bit float weights
+-> float-quantized); `infer_model_format` respects per-scheme formats and
+flattens the model-level format to 'mixed-precision'. vLLM 0.24 resolves
+formats per config group (verified in `_quantization_scheme_map_from_config`),
+falling back to the global format only when a group has none.
+`verify_quant_checkpoint` is now mixed-recipe aware: fp8 group must carry
+format='float-quantized'; shared/dense may be fp8 (never int4); fp8 coverage
+(attention/shared/dense present) and fp8 weight dtype are fail-closed;
+untouched-tensor sampling excludes any module with a weight_scale sibling.
+
+**Lesson:** never apply a global compression-format override to a
+multi-config-group model; formats are per-scheme state.

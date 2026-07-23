@@ -667,9 +667,19 @@ def assert_smooth_fold_consistency(
     for layer, record in report["layers"].items():
         for component in ("router_compensation", "shared_gate_up_compensation"):
             err = record[component]["relative_l2_error"]
+            comp_threshold = threshold
+            if record[component].get("fp8_dequantized"):
+                # r8 mixed recipes FP8-quantize the shared experts: the
+                # dequantized witness carries ~3.6% rel RMS rounding noise
+                # on top of any fold, so widen the band (a lost fold still
+                # shows >0.09 — see the r2 reference magnitudes above).
+                comp_threshold = max(threshold, 0.08)
             # `not <=` so NaN (e.g. non-finite prediction) fails closed.
-            if not (err <= threshold):
-                failures.append(f"layer {layer} {component}: rel_l2={err:.3e}")
+            if not (err <= comp_threshold):
+                failures.append(
+                    f"layer {layer} {component}: rel_l2={err:.3e} "
+                    f"(threshold {comp_threshold})"
+                )
             scale_stats = record[component]["scale"]
             scale_mean = scale_stats["mean"]
             if scale_stats["finite_fraction"] < 1.0:

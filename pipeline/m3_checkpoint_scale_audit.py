@@ -62,6 +62,30 @@ def load_suffix(
     return name, tensor
 
 
+def load_weight_dequant(
+    checkpoint: Path, suffix: str | tuple[str, ...]
+) -> tuple[str, torch.Tensor, bool]:
+    """``load_suffix`` + fp8 dequantization for float-quantized modules.
+
+    r8 mixed checkpoints store shared-expert / attention weights as fp8 codes
+    with a per-channel ``weight_scale`` sibling; comparing the raw codes
+    against base bf16 is meaningless (rel_l2 ~ 1/scale ~ 1e3, the r8 v3 smoke
+    gate failure). Returns (name, dequantized tensor, was_fp8).
+    """
+    weight_map = _index(checkpoint)
+    name = resolve_suffix(weight_map, suffix)
+    with safe_open(checkpoint / weight_map[name], framework="pt", device="cpu") as handle:
+        tensor = handle.get_tensor(name).float()
+    scale_name = name[: -len(".weight")] + ".weight_scale"
+    if name.endswith(".weight") and scale_name in weight_map:
+        with safe_open(
+            checkpoint / weight_map[scale_name], framework="pt", device="cpu"
+        ) as handle:
+            tensor = tensor * handle.get_tensor(scale_name).float()
+        return name, tensor, True
+    return name, tensor, False
+
+
 def tensor_stats(tensor: torch.Tensor) -> dict[str, Any]:
     finite = torch.isfinite(tensor)
     values = tensor[finite]
@@ -109,9 +133,17 @@ def audit_checkpoint(base: Path, candidate: Path, layers: list[int]) -> dict[str
         _, base_norm = load_suffix(base, norm_suffixes)
         _, cand_norm = load_suffix(candidate, norm_suffixes)
         _, base_router = load_suffix(base, router_suffixes)
-        _, cand_router = load_suffix(candidate, router_suffixes)
+        _, cand_router, router_fp8 = load_weight_dequant(candidate, router_suffixes)
         _, base_shared = load_suffix(base, shared_suffixes)
-        _, cand_shared = load_suffix(candidate, shared_suffixes)
+        _, cand_shared, shared_fp8 = load_weight_dequant(candidate, shared_suffixes)
+        router_comp = compensation_error(
+            base_norm, cand_norm, base_router, cand_router
+        )
+        router_comp["fp8_dequantized"] = router_fp8
+        shared_comp = compensation_error(
+            base_norm, cand_norm, base_shared, cand_shared
+        )
+        shared_comp["fp8_dequantized"] = shared_fp8
         records[str(layer)] = {
             "normalization": {
                 "base": tensor_stats(base_norm),
@@ -119,12 +151,8 @@ def audit_checkpoint(base: Path, candidate: Path, layers: list[int]) -> dict[str
                 "base_effective": tensor_stats(1.0 + base_norm),
                 "candidate_effective": tensor_stats(1.0 + cand_norm),
             },
-            "router_compensation": compensation_error(
-                base_norm, cand_norm, base_router, cand_router
-            ),
-            "shared_gate_up_compensation": compensation_error(
-                base_norm, cand_norm, base_shared, cand_shared
-            ),
+            "router_compensation": router_comp,
+            "shared_gate_up_compensation": shared_comp,
         }
     return {"checkpoint": str(candidate.resolve()), "layers": records}
 

@@ -1998,3 +1998,66 @@ like unquantized ones did in r6. Regression:
 mixed-precision recipes the scheme type must gate participation in
 smoothing objectives. The checkpoint verifier's column-scale plausibility
 band caught this before any eval GPU time.
+
+## r7 gate-alpha serve shim crashed CUDA graph capture; bind markers invisible (fixed, 2026-07-24)
+
+**Symptom:** the r7 serve ABI smoke died during engine init with "Cannot
+copy between CPU and CUDA tensors during CUDA graph capture unless the CPU
+tensor is pinned" from the patched `apply_moe_activation`. After fixing
+that, the relaunch became READY but the fail-closed bind-marker grep still
+failed with zero "M3 gate-alpha" lines in the serve log.
+
+**Root causes:** (1) the sidecar scale table stayed a CPU fp32 tensor and
+the activation hot path did `ctx["table"].to(input.device)`; the same path
+also ran a dynamic-shape `torch.nonzero` for the global->local expert
+remap. Both are illegal under CUDA graph capture. (2) The shim logged via
+`logging.getLogger("llmc.m3_gate_alpha")`; vLLM's logging config only
+wires handlers for the `vllm.*` tree, so worker INFO records were dropped
+and a correctly bound server looked unbound to the marker check.
+
+**Fix:** move the table to the weight's device AND reorder rows to
+local-expert ids once at bind time (`RoutedExperts.expert_map` is available
+in the loader-level `process_weights_after_loading` hook); the hot path is
+now pure static-shape GPU ops with a fail-closed device check. Logger
+renamed under the vllm namespace (`vllm.llmc_m3_gate_alpha`). Validated:
+"M3 gate-alpha: bound 57/57 MoE layers" on workers, coherent 512-token
+generation, ABI_SMOKE_RC=0.
+
+**Lesson:** anything a serve shim touches per-forward must be device-
+resident and static-shape BEFORE capture: do moves/remaps at bind time. And
+a fail-closed marker is only fail-closed if its log path is proven — use
+vLLM's own logger namespace inside patched vLLM modules.
+
+## r8 mixed int4+FP8 checkpoint served garbage with a passing smoke (fixed, 2026-07-24)
+
+**Symptom:** the r8 (GPTQ int4 experts + FP8 rest) serve ABI smoke returned
+RC=0 while both probes emitted pure repetition garbage ("omensomens...").
+
+**Root causes (stacked):** (1) the smoke only checked HTTP success, not
+content. (2) The saved `quantization_config.ignore` carries the GPTQ
+recipe's broad quant-layout regexes (`re:.*self_attn[.].*`,
+`re:.*(mlp|block_sparse_moe)[.]shared_experts[.].*`,
+`re:.*layers[.][0-2][.].*`) — vLLM checks ignore BEFORE targets, so every
+FP8 module served as "unquantized" and its raw fp8 bits were cast into
+bf16 params with the scales silently dropped (the tolerant M3 loader skips
+unknown keys). Verified against the shipped config with vLLM's own
+`should_ignore_layer`. (3) The float group's targets are quant-layout
+(`language_model.layers...`, `mlp.shared_experts.gate_up_proj`) and can
+never match serve/disk names. (4) Architectural: vLLM's M3 plugin fuses
+q/k/v with the deliberately-bf16 indexer projections into ONE GEMM weight
+(`MinimaxM3QKVParallelLinearWithIndexer`) on sparse layers, so fp8 qkv
+cannot serve on this model at all.
+
+**Fix:** `pipeline/reexport_minimax_m3_vllm.py --fp8-serve-fix` dequantizes
+attention q/k/v back to BF16 (dropping scales, recomputing offsets),
+rewrites the float targets to serve layout (o_proj + shared experts +
+dense 0-2), replaces the broad ignores with precise serve-layout entries,
+and runs a fail-closed storage-vs-scheme audit using vLLM's own matcher.
+The ABI smoke now parses each completion and enforces keyword + 8-gram
+diversity gates. Tests: `tests/pipeline/test_reexport_fp8_serve.py`.
+
+**Lesson:** a quantization_config is a serving contract written in the
+SERVE model's namespace — every rename between quant layout and disk
+layout must rewrite targets and ignores too, and an exported checkpoint
+should be audited storage-vs-scheme before GPU time. Smoke tests must
+assert on output content, never transport success.

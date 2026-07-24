@@ -64,6 +64,7 @@ _CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in _select_experts"
 _PROBE_MARK = "llmc M3 MoE quality probe"
 _LOAD_AUDIT_MARK = "llmc M3 load audit"
 _BOUNDARY_MARK = "llmc M3 layer boundary probe"
+_GATE_ALPHA_MARK = "llmc M3 r7 gate-alpha per-channel swiglu"
 
 # Optional, env-gated (M3_MOE_PROBE=1) diagnostic appended to the vLLM M3 model
 # module so it runs inside the spawned Worker_TP* processes (in-process
@@ -992,6 +993,176 @@ def _find_m3_moe_model_files(vllm_dir: Path) -> list[Path]:
 
 _PROBE_START = f'# === {_PROBE_MARK} ('
 _PROBE_END = f'# === end {_PROBE_MARK} ==='
+_GATE_ALPHA_START = f"# === {_GATE_ALPHA_MARK} ("
+_GATE_ALPHA_END = f"# === end {_GATE_ALPHA_MARK} ==="
+
+# Env-gated (M3_GATE_ALPHA_SIDECAR=<path>) r7 serve support, appended to
+# model_loader/utils.py so it runs inside every spawned worker. r7 checkpoints
+# fold per-expert per-channel scales s_r into gate rows / down cols and store
+# s_r as gate_smooth_scale (collected into a sidecar .pt by
+# pipeline/m3_gate_alpha_serve_patch.build_sidecar_from_checkpoint). Serving
+# them REQUIRES the per-channel swiglu alpha_r = A*s_r, limit_r = L/s_r.
+# Hook choice: process_weights_after_loading — the W4A8 MoE method REPLACES
+# w13_weight_packed during repack, so binding after load_weights would attach
+# tables to a dead parameter. Shims install lazily (first M3 bind) to avoid
+# import cycles at utils-import time. Every wiring gap raises: silently
+# serving the scalar swiglu would be a silent function change (the r5 bug
+# class). Dormant without the env var.
+_GATE_ALPHA_BLOCK = '''
+
+# === @MARK@ (r7; see pipeline/m3_gate_alpha_serve_patch.py) ===
+import os as _llmc_ga_os
+
+if _llmc_ga_os.environ.get("M3_GATE_ALPHA_SIDECAR"):
+    import contextvars as _llmc_ga_cv
+    import re as _llmc_ga_re
+
+    import torch as _llmc_ga_torch
+
+    from vllm.logger import init_logger as _llmc_ga_init_logger
+
+    _llmc_ga_log = _llmc_ga_init_logger("llmc.m3_gate_alpha")
+    _llmc_ga_ALPHA = float(_llmc_ga_os.environ.get("M3_GATE_ALPHA_ALPHA", "1.702"))
+    _llmc_ga_LIMIT = float(_llmc_ga_os.environ.get("M3_GATE_ALPHA_LIMIT", "7.0"))
+    _llmc_ga_ctx = _llmc_ga_cv.ContextVar("llmc_m3_gate_alpha", default=None)
+    _llmc_ga_layer_re = _llmc_ga_re.compile(r"\\.layers\\.(\\d+)\\.")
+
+    _llmc_ga_payload = _llmc_ga_torch.load(
+        _llmc_ga_os.environ["M3_GATE_ALPHA_SIDECAR"],
+        map_location="cpu",
+        weights_only=True,
+    )
+    _llmc_ga_tables = {
+        int(k): v.to(_llmc_ga_torch.float32)
+        for k, v in _llmc_ga_payload["layers"].items()
+    }
+    if not _llmc_ga_tables:
+        raise RuntimeError("M3_GATE_ALPHA_SIDECAR contains no layer tables")
+
+    def _llmc_ga_install_shims():
+        from vllm import _custom_ops as _ops
+        from vllm.model_executor.layers.fused_moe.activation import MoEActivation
+        from vllm.model_executor.layers.fused_moe.experts import cutlass_moe
+
+        if getattr(cutlass_moe, "_llmc_ga_patched", False):
+            return
+        _uninterleave = MoEActivation.SWIGLUOAI_UNINTERLEAVE
+        _runner = cutlass_moe.run_cutlass_moe_w4a8_fp8
+
+        def _run(output, hidden_states, w1, w2, topk_ids, activation,
+                 global_num_experts, expert_map, *args, **kwargs):
+            table = getattr(w1, "_m3_gate_alpha", None)
+            if table is None:
+                raise RuntimeError(
+                    "M3 gate-alpha: w1 has no bound scale table (sidecar set "
+                    "but binding missed this layer) -- refusing scalar swiglu"
+                )
+            token = _llmc_ga_ctx.set(
+                {"table": table, "expert_map": expert_map, "offsets": None}
+            )
+            try:
+                return _runner(output, hidden_states, w1, w2, topk_ids,
+                               activation, global_num_experts, expert_map,
+                               *args, **kwargs)
+            finally:
+                _llmc_ga_ctx.reset(token)
+
+        cutlass_moe.run_cutlass_moe_w4a8_fp8 = _run
+
+        _sizes = _ops.get_cutlass_moe_mm_problem_sizes_from_expert_offsets
+
+        def _sizes_shim(expert_first_token_offset, *args, **kwargs):
+            ctx = _llmc_ga_ctx.get()
+            if ctx is not None:
+                ctx["offsets"] = expert_first_token_offset
+            return _sizes(expert_first_token_offset, *args, **kwargs)
+
+        _ops.get_cutlass_moe_mm_problem_sizes_from_expert_offsets = _sizes_shim
+
+        _prior_apply = cutlass_moe.apply_moe_activation
+
+        def _apply(activation, output, input, **kwargs):
+            ctx = _llmc_ga_ctx.get()
+            if ctx is None or activation is not _uninterleave:
+                return _prior_apply(activation, output, input, **kwargs)
+            table = ctx["table"].to(input.device)
+            expert_map = ctx["expert_map"]
+            if expert_map is not None:
+                local_to_global = _llmc_ga_torch.argsort(
+                    expert_map[expert_map >= 0]
+                )
+                inverse = _llmc_ga_torch.nonzero(
+                    expert_map >= 0
+                ).flatten()[local_to_global]
+                table = table.index_select(0, inverse.to(table.device))
+            offsets = ctx["offsets"]
+            if offsets is None:
+                raise RuntimeError(
+                    "M3 gate-alpha: expert offsets not captured before the "
+                    "activation (kernel call path changed?)"
+                )
+            off = offsets.to(_llmc_ga_torch.int64)
+            idx = _llmc_ga_torch.arange(input.shape[0], device=off.device)
+            row_expert = _llmc_ga_torch.bucketize(idx, off[1:-1], right=True)
+            s = table.index_select(0, row_expert.to(table.device))
+            d = input.shape[-1] // 2
+            gate = input[..., :d]
+            up = input[..., d:]
+            gate = _llmc_ga_torch.minimum(
+                gate, (_llmc_ga_LIMIT / s).to(gate.dtype)
+            )
+            up = up.clamp(min=-_llmc_ga_LIMIT, max=_llmc_ga_LIMIT)
+            glu = gate * _llmc_ga_torch.sigmoid(
+                gate * (_llmc_ga_ALPHA * s).to(gate.dtype)
+            )
+            output.copy_(((up + 1.0) * glu).to(output.dtype))
+            return output
+
+        cutlass_moe.apply_moe_activation = _apply
+        cutlass_moe._llmc_ga_patched = True
+        _llmc_ga_log.info(
+            "M3 gate-alpha shims installed (alpha=%s, limit=%s, %d layer tables)",
+            _llmc_ga_ALPHA, _llmc_ga_LIMIT, len(_llmc_ga_tables),
+        )
+
+    def _llmc_ga_bind(model):
+        bound, moe_modules = 0, 0
+        for name, module in model.named_modules():
+            if "block_sparse_moe" not in name:
+                continue
+            weight = getattr(module, "w13_weight_packed", None)
+            if weight is None:
+                weight = getattr(module, "w13_weight", None)
+            if weight is None:
+                continue
+            moe_modules += 1
+            m = _llmc_ga_layer_re.search(name)
+            if m is None or int(m.group(1)) not in _llmc_ga_tables:
+                raise RuntimeError(
+                    f"M3 gate-alpha: MoE module {name} has no sidecar table"
+                )
+            weight._m3_gate_alpha = _llmc_ga_tables[int(m.group(1))]
+            bound += 1
+        return bound, moe_modules
+
+    _llmc_ga_orig_pwal = process_weights_after_loading
+
+    def process_weights_after_loading(model, model_config, target_device):
+        _llmc_ga_orig_pwal(model, model_config, target_device)
+        bound, moe_modules = _llmc_ga_bind(model)
+        if moe_modules == 0:
+            _llmc_ga_log.info(
+                "M3 gate-alpha: no block_sparse_moe MoE modules on %s; skipped",
+                type(model).__name__,
+            )
+            return
+        _llmc_ga_install_shims()
+        _llmc_ga_log.info(
+            "M3 gate-alpha: bound %d/%d MoE layers on %s",
+            bound, moe_modules, type(model).__name__,
+        )
+# === end @MARK@ ===
+'''.replace("@MARK@", _GATE_ALPHA_MARK)
 _LOAD_AUDIT_START = f"# === {_LOAD_AUDIT_MARK} ("
 _LOAD_AUDIT_END = f"# === end {_LOAD_AUDIT_MARK} ==="
 _BOUNDARY_START = f"# === {_BOUNDARY_MARK} ("
@@ -1150,6 +1321,55 @@ def ensure_m3_layer_boundary(*, apply: bool = True) -> str:
     return "; ".join(statuses)
 
 
+def _patch_append_gate_alpha(text: str) -> tuple[str, bool, bool]:
+    """(Re)inject the env-gated r7 gate-alpha block into model_loader/utils.py."""
+    if "def process_weights_after_loading" not in text:
+        return text, False, False
+
+    start = text.find(_GATE_ALPHA_START)
+    if start != -1:
+        end = text.find(_GATE_ALPHA_END, start)
+        if end != -1:
+            end += len(_GATE_ALPHA_END)
+            existing = text[start:end]
+            new_block = _GATE_ALPHA_BLOCK.strip("\n")
+            if existing.strip() == new_block.strip():
+                return text, False, True
+            new_text = (
+                text[:start].rstrip("\n")
+                + "\n\n"
+                + new_block
+                + "\n"
+                + text[end:].lstrip("\n")
+            )
+            return new_text, True, True
+
+    new_text = text.rstrip("\n") + "\n" + _GATE_ALPHA_BLOCK
+    return new_text, True, True
+
+
+def ensure_m3_gate_alpha(*, apply: bool = True) -> str:
+    """Inject (idempotently) the dormant r7 gate-alpha serve support.
+
+    Appends to ``model_executor/model_loader/utils.py`` (the module that owns
+    ``process_weights_after_loading`` — see _GATE_ALPHA_BLOCK's hook-choice
+    note). Dormant unless the worker env sets ``M3_GATE_ALPHA_SIDECAR``.
+    """
+    path = _vllm_dir() / "model_executor" / "model_loader" / "utils.py"
+    if not path.exists():
+        return f"skipped ({path} not found; build layout differs)"
+    text = path.read_text(encoding="utf-8")
+    new_text, changed, found = _patch_append_gate_alpha(text)
+    if not found:
+        return f"{path.name}: no process_weights_after_loading (build differs)"
+    if changed and apply:
+        path.write_text(new_text, encoding="utf-8")
+        return f"{path.name}: injected"
+    if changed and not apply:
+        return f"{path.name}: NOT injected"
+    return f"{path.name}: already injected"
+
+
 def ensure_m3_quality_diagnostics(*, apply: bool = True) -> str:
     """Install all dormant MiniMax-M3 quality diagnostics."""
 
@@ -1233,6 +1453,12 @@ def main() -> int:
         action="store_true",
         help="also inject the env-gated MoE quality probe (M3_MOE_PROBE=1 at serve)",
     )
+    ap.add_argument(
+        "--gate-alpha",
+        action="store_true",
+        help="also inject the env-gated r7 gate-alpha serve support "
+        "(M3_GATE_ALPHA_SIDECAR=<sidecar.pt> at serve)",
+    )
     args = ap.parse_args()
 
     vllm_dir = _vllm_dir()
@@ -1253,6 +1479,7 @@ def main() -> int:
     if args.check:
         probe_status = ensure_m3_moe_probe(apply=False)
         print(f"MoE quality probe: {probe_status}")
+        print(f"r7 gate-alpha: {ensure_m3_gate_alpha(apply=False)}")
         already = all(results)
         print("STATUS:", "patched" if already else "NOT patched")
         return 0 if already else 1
@@ -1262,6 +1489,13 @@ def main() -> int:
         print(
             "  Enable at serve time with: M3_MOE_PROBE=1 (optional "
             "M3_MOE_PROBE_RECOMPUTE=1 to also log routed-only norm)."
+        )
+
+    if args.gate_alpha:
+        print(f"r7 gate-alpha: {ensure_m3_gate_alpha(apply=True)}")
+        print(
+            "  Enable at serve time with: M3_GATE_ALPHA_SIDECAR="
+            "<checkpoint>/gate_smooth_scale_sidecar.pt (dormant otherwise)."
         )
 
     print(

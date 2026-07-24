@@ -246,6 +246,22 @@ if [[ "$APPLY_M3_PATCHES" == "1" || "$APPLY_M3_PATCHES" == "true" ]]; then
   fi
 fi
 
+# r7 gate-alpha checkpoints: inject the dormant per-channel-swiglu support and
+# hand the sidecar to the workers. Fail loud — serving an r7 checkpoint with
+# the scalar swiglu is a silent function change (see m3_gate_alpha_serve_patch).
+if [[ -n "${M3_GATE_ALPHA_SIDECAR:-}" ]]; then
+  [[ -f "$M3_GATE_ALPHA_SIDECAR" ]] || {
+    echo "ERROR: M3_GATE_ALPHA_SIDECAR not found: $M3_GATE_ALPHA_SIDECAR"
+    exit 1
+  }
+  python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --gate-alpha || {
+    echo "ERROR: gate-alpha injection failed"
+    exit 1
+  }
+  export M3_GATE_ALPHA_SIDECAR
+  echo "[http-smoke] r7 gate-alpha enabled: $M3_GATE_ALPHA_SIDECAR"
+fi
+
 ARGS=(
   serve "$MODEL_CKPT"
   --served-model-name "$SERVED_NAME"

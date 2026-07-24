@@ -126,13 +126,20 @@ def build_sidecar_from_checkpoint(ckpt: str | Path, out: str | Path) -> int:
     weight_map = index["weight_map"]
     per_layer: dict[int, dict[int, torch.Tensor]] = {}
     pat = re.compile(r"\.layers\.(\d+)\..*experts\.(\d+)\.gate_smooth_scale$")
+    by_shard: dict[str, list[tuple[str, int, int]]] = {}
     for name, shard in weight_map.items():
         m = pat.search(name)
         if not m:
             continue
-        layer, expert = int(m.group(1)), int(m.group(2))
+        by_shard.setdefault(shard, []).append(
+            (name, int(m.group(1)), int(m.group(2)))
+        )
+    # one mmap per shard — re-opening a ~50 GB shard per tensor exhausts
+    # the process's mmap budget (ENOMEM) long before all 7296 scales load
+    for shard, entries in by_shard.items():
         with safe_open(ckpt / shard, framework="pt") as fh:
-            per_layer.setdefault(layer, {})[expert] = fh.get_tensor(name).float()
+            for name, layer, expert in entries:
+                per_layer.setdefault(layer, {})[expert] = fh.get_tensor(name).float()
     layers = {
         layer: torch.stack([experts[i] for i in sorted(experts)])
         for layer, experts in per_layer.items()

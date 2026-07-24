@@ -70,8 +70,46 @@ node_main() {
     fi
   fi
 
-  if MODEL="$SERVED_NAME" PORT="$PORT" PROMPT="What is 2+2? Answer briefly." \
-     MAX_TOKENS=64 bash pipeline/slurm/smoke_chat_completions.sh; then
+  # Each probe must pass a CONTENT gate, not just HTTP 200: the r8 smoke
+  # (2026-07-24) returned RC=0 while serving pure repetition garbage
+  # ("omensomens..."). We assert an expected keyword and reject degenerate
+  # (low 8-gram diversity) completions.
+  PYBIN=/mnt/nfs/hoangduy/venvs/quant/bin/python
+  probe() {
+    local prompt="$1" max_tokens="$2" expect="$3" out="$4"
+    if ! MODEL="$SERVED_NAME" PORT="$PORT" PROMPT="$prompt" \
+        MAX_TOKENS="$max_tokens" bash pipeline/slurm/smoke_chat_completions.sh \
+        >"$out" 2>&1; then
+      echo "[abi-smoke] probe HTTP FAILED: $prompt"
+      cat "$out"
+      return 1
+    fi
+    cat "$out"
+    EXPECT_RE="$expect" "$PYBIN" - "$out" <<'PYEOF'
+import json, os, re, sys
+raw = open(sys.argv[1]).read()
+start, end = raw.find("{"), raw.rfind("}")
+if start < 0 or end <= start:
+    sys.exit("[abi-smoke] no JSON object in probe output")
+msg = json.loads(raw[start:end + 1])["choices"][0]["message"]
+content = (msg.get("content") or "") + " " + (msg.get("reasoning") or "")
+if not content.strip():
+    sys.exit("[abi-smoke] CONTENT gate FAILED: empty completion")
+if not re.search(os.environ["EXPECT_RE"], content, re.IGNORECASE):
+    sys.exit(f"[abi-smoke] CONTENT gate FAILED: expected /{os.environ['EXPECT_RE']}/i "
+             f"not found in completion ({content[:160]!r}...)")
+if len(content) > 200:
+    grams = {content[i:i + 8] for i in range(len(content) - 7)}
+    ratio = len(grams) / (len(content) - 7)
+    if ratio < 0.2:
+        sys.exit(f"[abi-smoke] DEGENERACY gate FAILED: 8-gram diversity "
+                 f"{ratio:.3f} < 0.2 ({content[:160]!r}...)")
+print("[abi-smoke] content gate OK")
+PYEOF
+  }
+
+  if probe "What is 2+2? Answer briefly." 256 '(^|[^0-9])4([^0-9]|$)|four' \
+       "$LOG_DIR/$TS-$TAG-probe-short.json"; then
     rc=0
   else
     echo "[abi-smoke] chat smoke FAILED"
@@ -81,9 +119,8 @@ node_main() {
   # Longer generation probe: quant-garbage checkpoints often pass a 1-token
   # factoid but degenerate over hundreds of tokens.
   if [ "$rc" = 0 ]; then
-    if ! MODEL="$SERVED_NAME" PORT="$PORT" \
-       PROMPT="Explain, step by step, why the sky is blue." MAX_TOKENS=512 \
-       bash pipeline/slurm/smoke_chat_completions.sh; then
+    if ! probe "Explain, step by step, why the sky is blue." 512 \
+         'rayleigh|scatter|blue' "$LOG_DIR/$TS-$TAG-probe-long.json"; then
       echo "[abi-smoke] long-generation smoke FAILED"
       rc=1
     fi

@@ -1057,9 +1057,7 @@ if _llmc_ga_os.environ.get("M3_GATE_ALPHA_SIDECAR"):
                     "M3 gate-alpha: w1 has no bound scale table (sidecar set "
                     "but binding missed this layer) -- refusing scalar swiglu"
                 )
-            token = _llmc_ga_ctx.set(
-                {"table": table, "expert_map": expert_map, "offsets": None}
-            )
+            token = _llmc_ga_ctx.set({"table": table, "offsets": None})
             try:
                 return _runner(output, hidden_states, w1, w2, topk_ids,
                                activation, global_num_experts, expert_map,
@@ -1085,16 +1083,16 @@ if _llmc_ga_os.environ.get("M3_GATE_ALPHA_SIDECAR"):
             ctx = _llmc_ga_ctx.get()
             if ctx is None or activation is not _uninterleave:
                 return _prior_apply(activation, output, input, **kwargs)
-            table = ctx["table"].to(input.device)
-            expert_map = ctx["expert_map"]
-            if expert_map is not None:
-                local_to_global = _llmc_ga_torch.argsort(
-                    expert_map[expert_map >= 0]
+            # The table is moved to the weight's device and remapped to
+            # local-expert order at bind time: a CPU->GPU copy (or a
+            # dynamic-shape nonzero) here would abort CUDA graph capture.
+            table = ctx["table"]
+            if table.device != input.device:
+                raise RuntimeError(
+                    "M3 gate-alpha: scale table on %s but activation on %s "
+                    "(bind-time device move missed)"
+                    % (table.device, input.device)
                 )
-                inverse = _llmc_ga_torch.nonzero(
-                    expert_map >= 0
-                ).flatten()[local_to_global]
-                table = table.index_select(0, inverse.to(table.device))
             offsets = ctx["offsets"]
             if offsets is None:
                 raise RuntimeError(
@@ -1141,7 +1139,20 @@ if _llmc_ga_os.environ.get("M3_GATE_ALPHA_SIDECAR"):
                 raise RuntimeError(
                     f"M3 gate-alpha: MoE module {name} has no sidecar table"
                 )
-            weight._m3_gate_alpha = _llmc_ga_tables[int(m.group(1))]
+            # Move to the weight's device and reorder rows from global to
+            # local expert ids NOW: the activation shim runs inside CUDA
+            # graph capture, where CPU->GPU copies and dynamic-shape ops
+            # (nonzero) are illegal.
+            table = _llmc_ga_tables[int(m.group(1))].to(weight.device)
+            emap = getattr(module, "expert_map", None)
+            if emap is not None:
+                emap = emap.to(table.device)
+                local_to_global = _llmc_ga_torch.argsort(emap[emap >= 0])
+                inverse = _llmc_ga_torch.nonzero(
+                    emap >= 0
+                ).flatten()[local_to_global]
+                table = table.index_select(0, inverse)
+            weight._m3_gate_alpha = table
             bound += 1
         return bound, moe_modules
 

@@ -49,6 +49,7 @@ W4A8 (SwiGLU-OAI uninterleaved) natively.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -61,6 +62,7 @@ SWIGLU_BETA = 1.0
 _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
 _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
 _CG_AR_MARK_V2 = "llmc M3 cudagraph fused-AR mode switch v2"
+_CG_AR_MARK_V3 = "llmc M3 cudagraph fused-AR mode switch v3"
 _CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in _select_experts"
 _PROBE_MARK = "llmc M3 MoE quality probe"
 _LOAD_AUDIT_MARK = "llmc M3 load audit"
@@ -988,6 +990,38 @@ def _patch_fused_ar_cudagraph(text: str) -> tuple[str, bool, bool]:
     return new_text, True, True
 
 
+def _patch_fused_ar_mode_off(text: str) -> tuple[str, bool, bool]:
+    """v3 on top of v2: LLMC_M3_FI_AR_MODE=off disables the FlashInfer fused AR
+    entirely (always NCCL fallback), including EAGER warmup runs.
+
+    Motivation (20260724-130708 fix matrix): banning the fused AR only from
+    capture (nccl_graphs) reduced but did not eliminate the stream-on IMA
+    (1/6), and pdl_off still failed 2/3 — every failure sits 1-2s after the
+    flashinfer workspace init that the eager warmup pass still performs. Mode
+    "off" removes the fused AR from warmup too; if stream-on is then clean the
+    eager fused AR x aux-stream interaction is confirmed, if it still fails
+    the aux stream x capture race is independent of flashinfer.
+    """
+    if _CG_AR_MARK_V3 in text:
+        return text, False, True
+
+    v2_guard_tail = (
+        '    if _LLMC_FI_AR_MODE == "nccl_graphs" and torch.cuda.is_current_stream_capturing():\n'
+        "        return False, 0\n"
+    )
+    if v2_guard_tail not in text:
+        # v2 not installed yet; caller must run _patch_fused_ar_cudagraph first.
+        return text, False, False
+
+    v3_guard = (
+        f"    # {_CG_AR_MARK_V3}: mode \"off\" = never use the FlashInfer fused AR\n"
+        "    # (always NCCL fallback), including eager warmup runs.\n"
+        '    if _LLMC_FI_AR_MODE == "off":\n'
+        "        return False, 0\n"
+    ) + v2_guard_tail
+    return text.replace(v2_guard_tail, v3_guard, 1), True, True
+
+
 def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
     """Sanitize NaN router logits at the real MoE routing entry (cudagraph padding).
 
@@ -1450,6 +1484,14 @@ def ensure_m3_quality_diagnostics(*, apply: bool = True) -> str:
     )
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via temp file + rename so a concurrently-importing vLLM worker on
+    another node can never observe a torn/truncated module file."""
+    tmp = path.with_suffix(path.suffix + ".llmc-tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _apply(path: Path, patch_fn, check_only: bool, *, fatal: bool = True) -> bool:
     """Return True if the file is patched (already or newly)."""
     text = path.read_text(encoding="utf-8")
@@ -1462,7 +1504,7 @@ def _apply(path: Path, patch_fn, check_only: bool, *, fatal: bool = True) -> boo
         print(msg)
         return False
     if changed and not check_only:
-        path.write_text(new_text, encoding="utf-8")
+        _atomic_write(path, new_text)
         print(f"patched: {path}")
     elif changed and check_only:
         print(f"UNPATCHED: {path}")
@@ -1476,6 +1518,7 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
         ("W4A8 SWIGLU support", vllm_dir / "model_executor/layers/fused_moe/experts/cutlass_moe.py", _patch_supports_activation),
         ("W4A8 SWIGLU clamp", vllm_dir / "model_executor/layers/fused_moe/activation.py", _patch_apply_activation),
         ("cudagraph fused AR", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_cudagraph),
+        ("cudagraph fused AR off-mode", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_mode_off),
         ("cudagraph MoE router", vllm_dir / "model_executor/layers/fused_moe/router/base_router.py", _patch_moe_router_cudagraph),
     ]
 

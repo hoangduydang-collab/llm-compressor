@@ -73,10 +73,16 @@ export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR="${FLASHINFER_WORKSPACE_DIR:-${HOME}/cache/flashinfer}"
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-# MiniMax-M3-only: disable shared-expert aux-stream overlap (HTTP async IMA
-# workaround). Override with VLLM_DISABLE_SHARED_EXPERTS_STREAM=0 for RCA A/B.
-# Do NOT put this in env.sh — other models keep standard vLLM defaults.
-export VLLM_DISABLE_SHARED_EXPERTS_STREAM="${VLLM_DISABLE_SHARED_EXPERTS_STREAM:-1}"
+# MiniMax-M3 shared-expert aux-stream overlap: ON by default since 2026-07-24.
+# The old stream-off workaround masked a fork bug — BreakableCUDAGraph._capture
+# dropped torch.cuda.graph's pre-cleanup device synchronize, so warmup work on
+# the aux stream raced empty_cache's cuMemUnmap during the capture ladder (IMA
+# at 43-48/51). LLMC_M3_CAPTURE_SYNC=sync restores the upstream ordering
+# (patch_vllm_m3_serve.py). Validation: 12/12 + 2/2 clean captures, conc-1
+# TPOT 8.454 -> 7.828 ms (-7.4%), greedy smokes clean (BUGS_AND_FIXES.md).
+# Override with VLLM_DISABLE_SHARED_EXPERTS_STREAM=1 to fall back to stream-off.
+export VLLM_DISABLE_SHARED_EXPERTS_STREAM="${VLLM_DISABLE_SHARED_EXPERTS_STREAM:-0}"
+export LLMC_M3_CAPTURE_SYNC="${LLMC_M3_CAPTURE_SYNC:-sync}"
 # Nemotron leftovers — meaningless / harmful for MiniMax HTTP smoke.
 unset VLLM_USE_FLASHINFER_MOE_FP4 2>/dev/null || true
 # Do NOT force VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 (Nemotron default).
@@ -317,6 +323,7 @@ echo "  language-model-only: $LANGUAGE_MODEL_ONLY"
 echo "  enforce_eager:       $ENFORCE_EAGER"
 echo "  debug_cudagraph:     $DEBUG_CUDAGRAPH"
 echo "  disable_shared_experts_stream: $VLLM_DISABLE_SHARED_EXPERTS_STREAM"
+echo "  capture_sync:        $LLMC_M3_CAPTURE_SYNC"
 echo "  log:                 $LOG"
 
 # Read-only observability for the RCA matrix: print effective env + argv, then exit
@@ -341,6 +348,7 @@ if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == 
   echo "  CUDA_LAUNCH_BLOCKING=${CUDA_LAUNCH_BLOCKING:-<unset>}"
   echo "  TORCH_USE_CUDA_DSA=${TORCH_USE_CUDA_DSA:-<unset>}"
   echo "  VLLM_DISABLE_SHARED_EXPERTS_STREAM=$VLLM_DISABLE_SHARED_EXPERTS_STREAM"
+  echo "  LLMC_M3_CAPTURE_SYNC=$LLMC_M3_CAPTURE_SYNC"
   echo "  VLLM_USE_BREAKABLE_CUDAGRAPH=${VLLM_USE_BREAKABLE_CUDAGRAPH:-<unset>}"
   echo "  APPLY_M3_PATCHES=$APPLY_M3_PATCHES"
   echo "  PATCH_CKPT_CONFIG=$PATCH_CKPT_CONFIG"

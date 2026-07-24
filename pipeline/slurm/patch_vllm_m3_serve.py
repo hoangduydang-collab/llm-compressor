@@ -60,6 +60,7 @@ SWIGLU_BETA = 1.0
 
 _MARK = "llmc M3 W4A8 SWIGLUOAI_UNINTERLEAVE patch"
 _CG_AR_MARK = "llmc M3 cudagraph: skip FlashInfer fused AR"
+_CG_AR_MARK_V2 = "llmc M3 cudagraph fused-AR mode switch v2"
 _CG_MOE_MARK = "llmc M3 cudagraph: nan_to_num router_logits in _select_experts"
 _PROBE_MARK = "llmc M3 MoE quality probe"
 _LOAD_AUDIT_MARK = "llmc M3 load audit"
@@ -906,18 +907,33 @@ def _patch_apply_activation(text: str) -> tuple[str, bool, bool]:
 
 
 def _patch_fused_ar_cudagraph(text: str) -> tuple[str, bool, bool]:
-    """Skip FlashInfer fused AR when CUDA graphs are on; use NCCL fallback."""
-    if _CG_AR_MARK in text:
+    """Install the env-switchable FlashInfer fused-AR capture guard (v2).
+
+    History: the v1 guard (``get_current_vllm_config()`` + enforce_eager check)
+    was FAIL-OPEN — during worker forward/capture the config context is unset,
+    the call raises, and ``except: pass`` skipped the NCCL fallback. So the
+    fused AR ran inside captured graphs all along; it works with the
+    shared-experts aux stream DISABLED (all production serves) and IMAs at
+    capture ~43-45/51 with the stream enabled (20260710 RCA; the 43-45 window
+    is exactly the first graph size under the flashinfer 0.5 MB token gate,
+    where the fused AR + its lazy workspace init first join the capture).
+    Upstream corroboration: vLLM #45800 (same model, hang at ~43/51 in
+    flashinfer rendezvous during capture), #47293 (revert: capture crashes in
+    flashinfer_trtllm_fused_allreduce_norm on H100), #48071 (workaround =
+    disable the fusion).
+
+    v2 replaces v1 with a mode switch read once at import:
+      LLMC_M3_FI_AR_MODE=legacy       (default) v1-equivalent runtime behavior:
+                                      fused AR everywhere, incl. under capture
+      LLMC_M3_FI_AR_MODE=nccl_graphs  NCCL+norm fallback while a CUDA graph is
+                                      capturing (captured graphs replay NCCL)
+      LLMC_M3_FI_AR_MODE=pdl_off      fused AR under capture, but PDL disabled
+                                      during capture (mechanism probe)
+    """
+    if _CG_AR_MARK_V2 in text:
         return text, False, True
 
-    anchor = (
-        'def _can_use_flashinfer(hidden_states: torch.Tensor, tp_size: int) -> tuple[bool, int]:\n'
-        '    """Whether the flashinfer fused path applies; returns (ok, max_token_num)."""'
-    )
-    if anchor not in text:
-        return text, False, False
-
-    injection = (
+    v1_block = (
         "    # llmc M3 cudagraph: FlashInfer fused AR+RMSNorm is not capturable on TP8\n"
         "    # (illegal memory access at capture_end; vLLM #46253). Use NCCL fallback.\n"
         f"    # {_CG_AR_MARK}\n"
@@ -930,7 +946,45 @@ def _patch_fused_ar_cudagraph(text: str) -> tuple[str, bool, bool]:
         "    except Exception:\n"
         "        pass\n"
     )
-    new_text = text.replace(anchor, anchor + "\n" + injection, 1)
+
+    anchor = (
+        'def _can_use_flashinfer(hidden_states: torch.Tensor, tp_size: int) -> tuple[bool, int]:\n'
+        '    """Whether the flashinfer fused path applies; returns (ok, max_token_num)."""'
+    )
+    pdl_anchor = "            launch_with_pdl=True,\n"
+    if anchor not in text or pdl_anchor not in text:
+        return text, False, False
+
+    mode_const = (
+        f"import os as _llmc_os  # {_CG_AR_MARK_V2}\n"
+        "\n"
+        '_LLMC_FI_AR_MODE = _llmc_os.environ.get("LLMC_M3_FI_AR_MODE", "legacy")\n'
+        "\n"
+        "\n"
+    )
+
+    guard = (
+        f"    # {_CG_AR_MARK_V2}: the FlashInfer fused AR+RMSNorm conflicts with\n"
+        "    # the shared-experts aux stream under CUDA graph capture (IMA at\n"
+        "    # capture ~43-45/51; vLLM #46253/#45800/#47293). Modes:\n"
+        "    #   legacy      fused AR everywhere, incl. capture (v1 runtime behavior)\n"
+        "    #   nccl_graphs NCCL+norm fallback while a CUDA graph is capturing\n"
+        "    #   pdl_off     fused AR under capture, PDL disabled during capture\n"
+        '    if _LLMC_FI_AR_MODE == "nccl_graphs" and torch.cuda.is_current_stream_capturing():\n'
+        "        return False, 0\n"
+    )
+
+    pdl_replacement = (
+        "            launch_with_pdl=(\n"
+        f'                _LLMC_FI_AR_MODE != "pdl_off"  # {_CG_AR_MARK_V2}\n'
+        "                or not torch.cuda.is_current_stream_capturing()\n"
+        "            ),\n"
+    )
+
+    # Remove the fail-open v1 block if present (installed venvs), then inject v2.
+    new_text = text.replace(v1_block, "", 1)
+    new_text = new_text.replace(anchor, mode_const + anchor + "\n" + guard, 1)
+    new_text = new_text.replace(pdl_anchor, pdl_replacement, 1)
     return new_text, True, True
 
 

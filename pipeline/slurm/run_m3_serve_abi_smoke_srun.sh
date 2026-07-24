@@ -88,10 +88,21 @@ node_main() {
     EXPECT_RE="$expect" "$PYBIN" - "$out" <<'PYEOF'
 import json, os, re, sys
 raw = open(sys.argv[1]).read()
-start, end = raw.find("{"), raw.rfind("}")
-if start < 0 or end <= start:
-    sys.exit("[abi-smoke] no JSON object in probe output")
-msg = json.loads(raw[start:end + 1])["choices"][0]["message"]
+# The response body is the first line-anchored "{" that parses as a chat
+# completion; inline braces in the preamble (chat_template_kwargs={...})
+# must not fool the extractor.
+end = raw.rfind("}")
+body = None
+for m in re.finditer(r"^\{", raw, re.MULTILINE):
+    if m.start() < end:
+        try:
+            body = json.loads(raw[m.start():end + 1])
+            break
+        except json.JSONDecodeError:
+            continue
+if body is None:
+    sys.exit("[abi-smoke] no parseable chat-completion JSON in probe output")
+msg = body["choices"][0]["message"]
 content = (msg.get("content") or "") + " " + (msg.get("reasoning") or "")
 if not content.strip():
     sys.exit("[abi-smoke] CONTENT gate FAILED: empty completion")

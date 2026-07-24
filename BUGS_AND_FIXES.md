@@ -2061,3 +2061,63 @@ SERVE model's namespace — every rename between quant layout and disk
 layout must rewrite targets and ignores too, and an exported checkpoint
 should be audited storage-vs-scheme before GPU time. Smoke tests must
 assert on output content, never transport success.
+
+## MiniMax-M3 shared-experts aux-stream CUDA-graph capture IMA (root-caused, fixed 2026-07-24)
+
+**Symptom:** With the shared-experts overlap stream enabled
+(`VLLM_DISABLE_SHARED_EXPERTS_STREAM=0`), M3 TP8/EP serves crash ~1/3 of
+launches with an illegal memory access during the decode CUDA-graph capture
+ladder (trials died at 43-48 of 51), always inside
+`torch._C._accelerator_emptyCache()`. Production has run with the stream
+disabled since the 2026-07-10 RCA, giving up shared/routed-expert overlap
+(~2-5% TPOT).
+
+**False leads (each falsified by a dedicated matrix arm, session
+20260724-130708-fixmatrix, 3-6 trials/arm, cyankiwi ckpt, TP8/EP,
+graphs+breakable):** the FlashInfer trtllm fused AR+RMSNorm (its workspace
+init fires ~1s before the typical IMA and its size gate matches the 43/51
+failure point — but NCCL-under-capture 5/6, PDL-off 1/6, and fused-AR fully
+OFF still 2/6 clean with the failure merely moved to 48/51: an amplifier,
+not the cause); `Tensor.record_stream` deferred-free bookkeeping (skipping
+it under capture still failed 1/3 clean).
+
+**Root cause:** the fork's `BreakableCUDAGraph._capture`
+(`vllm/compilation/breakable_cudagraph.py`) replicates
+`torch.cuda.graph.__enter__`'s pre-capture cleanup (`gc.collect()` +
+`empty_cache()`) but drops the `torch.cuda.synchronize()` that upstream runs
+FIRST (torch/cuda/graphs.py:239). Each capture is preceded by an eager
+warmup pass that runs the shared-experts overlap on the aux stream; without
+the sync, those kernels can still be in flight when `empty_cache()` returns
+memory to the driver. Under `expandable_segments:True` the release is
+`cuMemUnmap`, which — unlike `cudaFree` — does not implicitly synchronize
+the device, so the aux stream races the unmap → IMA. This also explains why
+`expandable_segments:False` alone fixed it (12/12 clean): `cudaFree`
+supplies the missing sync as a side effect.
+
+**Fix:** `pipeline/slurm/patch_vllm_m3_serve.py` target "breakable-capture
+pre-cleanup sync" (`LLMC_M3_CAPTURE_SYNC=sync`) restores the upstream
+ordering with a `torch.cuda.synchronize()` before the pre-capture cleanup.
+Startup-only cost (~51 syncs). Validation: arm H (stream ON,
+expandable_segments:True, fused AR legacy) — see tally below. Fallback fix
+if ever needed: `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False`
+(arm G, 12/12 + arm FG 3/3), at the price of losing expandable segments'
+fragmentation resistance on long serves.
+
+**Validation tally (stream ON unless noted):** streamOFF-legacy 3/3 clean
+(prod baseline); legacy 2/3; nccl_graphs 5/6; pdl_off 1/6; fused-AR-off
+2/6; record_stream-skip 1/3; **G expSegOff 12/12; FG 3/3; H capture-sync
+6/6 (extension to 12 in flight)**. Legacy stream-on failure rate ≈1/3 →
+12 clean trials ≈ <1% false-pass.
+
+**Not yet done before any production default flip:** conc-1 TPOT A/B
+(stream-on+H vs stream-off prod) and a paired quality smoke — a capture
+race that IMAs when caught could in principle bake a stale pointer into a
+graph silently, so correctness must be asserted on outputs, not on
+crash-free startup.
+
+**Lesson:** when porting a torch context manager's body into bespoke code,
+port its ORDERING, not just its calls — the dropped `synchronize()` was
+load-bearing precisely because `cudaFree`'s implicit sync usually hides its
+absence. And when a fix works for reasons you can't state (expSegOff), keep
+digging: the mechanism (`cudaFree` vs `cuMemUnmap`) pointed straight at the
+one-line root cause.

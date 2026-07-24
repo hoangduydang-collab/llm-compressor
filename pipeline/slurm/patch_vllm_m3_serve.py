@@ -1074,6 +1074,62 @@ def _patch_shared_experts_record_stream(text: str) -> tuple[str, bool, bool]:
     return new_text, True, True
 
 
+_CAPTURE_SYNC_MARK = "llmc M3 breakable-capture pre-cleanup device sync v1"
+
+
+def _patch_breakable_capture_sync(text: str) -> tuple[str, bool, bool]:
+    """Env-gated device synchronize before ``_capture``'s pre-cleanup.
+
+    Upstream ``torch.cuda.graph.__enter__`` runs ``torch.cuda.synchronize()``
+    BEFORE its gc + empty_cache pre-capture cleanup (torch/cuda/graphs.py).
+    The fork's ``BreakableCUDAGraph._capture`` replicates the gc+empty_cache
+    part but dropped the synchronize. Without it, the eager warmup pass that
+    precedes each capture (which runs the shared-experts overlap on the aux
+    stream) can still have kernels in flight when ``empty_cache()`` unmaps
+    memory. With expandable_segments:True the unmap is ``cuMemUnmap`` (no
+    implicit device sync, unlike ``cudaFree``) -> capture-ladder IMA in
+    ``_accelerator_emptyCache`` (20260724-130708 fix matrix: stream-on IMAs
+    across legacy/nccl_graphs/pdl_off/arOFF/rsSkip arms; clean under
+    expandable_segments:False, whose cudaFree supplies the missing sync).
+
+    LLMC_M3_CAPTURE_SYNC=legacy (default) keeps current fork behavior;
+    LLMC_M3_CAPTURE_SYNC=sync restores the upstream ordering.
+    """
+    if _CAPTURE_SYNC_MARK in text:
+        return text, False, True
+
+    import_anchor = "import vllm.envs as envs\n"
+    if import_anchor not in text:
+        return text, False, False
+
+    const = (
+        import_anchor
+        + f"\nimport os as _llmc_os  # {_CAPTURE_SYNC_MARK}\n"
+        + '\n_LLMC_CAPTURE_SYNC = _llmc_os.environ.get("LLMC_M3_CAPTURE_SYNC", "legacy")\n'
+    )
+
+    anchor = (
+        "        gc.collect()\n"
+        "        torch.accelerator.empty_cache()\n"
+    )
+    if text.count(anchor) != 1:
+        return text, False, False
+
+    replacement = (
+        f"        # {_CAPTURE_SYNC_MARK}: torch.cuda.graph.__enter__ runs\n"
+        "        # torch.cuda.synchronize() before this cleanup; quiesce all\n"
+        "        # streams (incl. the shared-experts aux stream's warmup work)\n"
+        "        # before empty_cache unmaps expandable segments.\n"
+        '        if _LLMC_CAPTURE_SYNC == "sync":\n'
+        "            torch.cuda.synchronize()\n"
+        "        gc.collect()\n"
+        "        torch.accelerator.empty_cache()\n"
+    )
+    new_text = text.replace(import_anchor, const, 1)
+    new_text = new_text.replace(anchor, replacement, 1)
+    return new_text, True, True
+
+
 def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
     """Sanitize NaN router logits at the real MoE routing entry (cudagraph padding).
 
@@ -1572,6 +1628,7 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
         ("cudagraph fused AR", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_cudagraph),
         ("cudagraph fused AR off-mode", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_mode_off),
         ("shared-experts record_stream guard", vllm_dir / "model_executor/layers/fused_moe/runner/shared_experts.py", _patch_shared_experts_record_stream),
+        ("breakable-capture pre-cleanup sync", vllm_dir / "compilation/breakable_cudagraph.py", _patch_breakable_capture_sync),
         ("cudagraph MoE router", vllm_dir / "model_executor/layers/fused_moe/router/base_router.py", _patch_moe_router_cudagraph),
     ]
 

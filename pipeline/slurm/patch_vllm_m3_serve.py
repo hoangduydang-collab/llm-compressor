@@ -1021,7 +1021,10 @@ if _llmc_ga_os.environ.get("M3_GATE_ALPHA_SIDECAR"):
 
     from vllm.logger import init_logger as _llmc_ga_init_logger
 
-    _llmc_ga_log = _llmc_ga_init_logger("llmc.m3_gate_alpha")
+    # Logger name MUST live under the "vllm" namespace: vLLM's logging config
+    # only wires handlers for its own tree, so "llmc.*" INFO lines never
+    # reached the serve log and the fail-closed bind-marker grep false-failed.
+    _llmc_ga_log = _llmc_ga_init_logger("vllm.llmc_m3_gate_alpha")
     _llmc_ga_ALPHA = float(_llmc_ga_os.environ.get("M3_GATE_ALPHA_ALPHA", "1.702"))
     _llmc_ga_LIMIT = float(_llmc_ga_os.environ.get("M3_GATE_ALPHA_LIMIT", "7.0"))
     _llmc_ga_ctx = _llmc_ga_cv.ContextVar("llmc_m3_gate_alpha", default=None)

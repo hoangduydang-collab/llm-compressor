@@ -61,25 +61,39 @@ _COPY_BUFFER_BYTES = 64 * 1024 * 1024
 _ATTN_QKV_WEIGHT_RE = re.compile(
     r".*language_model\.model\.layers\.\d+\.self_attn\.(q|k|v)_proj\.weight$"
 )
+# CRITICAL (v2 crash, 2026-07-24): vLLM resolves each module's scheme by
+# matching the module's OWN prefix -- and can only expand fused prefixes
+# (gate_up_proj -> gate_proj/up_proj) through the model class's
+# packed_modules_mapping, which the M3 NVIDIA plugin class does NOT define.
+# Targets/ignores written only in checkpoint-shard names therefore match
+# nothing: gate_up_proj fell through to the int4 Linear catch-all and its
+# fp8 channel scale hit the int4 group-scale param shape assert. Every
+# pattern below alternates over BOTH the fused vLLM prefix and the unfused
+# shard names so it works with or without a fused mapping.
 _FP8_SERVE_TARGETS = [
     "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]o_proj$",
     "re:.*language_model[.]model[.]layers[.][0-9]+[.]block_sparse_moe[.]"
-    "shared_experts[.](gate_proj|up_proj|down_proj)$",
+    "shared_experts[.](gate_up_proj|gate_proj|up_proj|down_proj)$",
     "re:.*language_model[.]model[.]layers[.][0-2][.]mlp[.]"
-    "(gate_proj|up_proj|down_proj)$",
+    "(gate_up_proj|gate_proj|up_proj|down_proj)$",
 ]
 _IGNORE_REMOVE = {
     "re:.*self_attn[.].*",
     "re:.*mlp[.]shared_experts[.].*",
     "re:.*block_sparse_moe[.]shared_experts[.].*",
     "re:.*layers[.][0-2][.].*",
+    # superseded shard-only form from the first --fp8-serve-fix revision
+    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.](q|k|v)_proj$",
 }
 _IGNORE_ADD = [
-    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.](q|k|v)_proj$",
+    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]"
+    "(qkv_proj|q_proj|k_proj|v_proj)$",
     "re:.*self_attn[.]index_(q|k)_proj$",
 ]
-# vLLM fused-module shard mapping for the M3 plugin (qkv also fuses the
-# indexer projections on sparse layers).
+# Fused-module shard mapping mirroring the M3 plugin's fusions (qkv also
+# fuses the indexer projections on sparse layers). The plugin class defines
+# no packed_modules_mapping, so vLLM matches fused prefixes DIRECTLY; the
+# audit checks both semantics.
 _FUSED_MAPPING = {
     "qkv_proj": ["q_proj", "k_proj", "v_proj", "index_q_proj", "index_k_proj"],
     "gate_up_proj": ["gate_proj", "up_proj"],
@@ -468,9 +482,21 @@ def audit_serve_consistency(output: Path) -> dict[str, int]:
             continue
         if "weight" not in params and "weight_packed" not in params:
             continue
-        ignored = should_ignore_layer(
-            fused_prefix(module), ignore=ignore, fused_mapping=_FUSED_MAPPING
+        prefix = fused_prefix(module)
+        # The M3 NVIDIA plugin class defines no packed_modules_mapping, so
+        # vLLM matches the fused prefix DIRECTLY (empty mapping). Check that
+        # semantics first, then the expanded semantics for future-proofing.
+        ignored_direct = should_ignore_layer(prefix, ignore=ignore, fused_mapping={})
+        ignored_expanded = should_ignore_layer(
+            prefix, ignore=ignore, fused_mapping=_FUSED_MAPPING
         )
+        if ignored_direct != ignored_expanded:
+            errors.append(
+                f"{module}: ignore verdict differs between direct "
+                f"({ignored_direct}) and fused-expanded ({ignored_expanded}) "
+                "matching"
+            )
+        ignored = ignored_direct
         if "weight_packed" in params:
             counts["packed"] += 1
             if ignored:
@@ -479,6 +505,11 @@ def audit_serve_consistency(output: Path) -> dict[str, int]:
             counts["fp8"] += 1
             if ignored:
                 errors.append(f"{module}: fp8 stored but ignored at serve")
+            elif not matches_float(prefix):
+                errors.append(
+                    f"{module}: fp8 stored but fused prefix {prefix} matches "
+                    "no float target (vLLM matches the fused prefix directly)"
+                )
             elif not matches_float(module):
                 errors.append(f"{module}: fp8 stored but matches no float target")
         elif _QUANTIZABLE_SUFFIX_RE.search(module) and "vision_tower" not in module:
@@ -488,7 +519,7 @@ def audit_serve_consistency(output: Path) -> dict[str, int]:
                     f"{module}: unquantized Linear not ignored (would be "
                     "mis-schemed by the int4 Linear catch-all)"
                 )
-            if matches_float(module):
+            if matches_float(module) or matches_float(prefix):
                 errors.append(f"{module}: plain weights but matches a float target")
     if errors:
         preview = "\n  ".join(errors[:40])

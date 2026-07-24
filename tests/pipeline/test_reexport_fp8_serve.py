@@ -161,10 +161,46 @@ def test_fp8_serve_fix_end_to_end(checkpoint, tmp_path):
     assert not any(".self_attn.indexer." in e for e in ignore)
     assert (
         "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]"
-        "(q|k|v)_proj$" in ignore
+        "(qkv_proj|q_proj|k_proj|v_proj)$" in ignore
     )
     assert "re:.*self_attn[.]index_(q|k)_proj$" in ignore
     assert "re:.*block_sparse_moe[.]gate$" in ignore  # router still ignored
+
+
+def test_fused_prefixes_match_directly(checkpoint, tmp_path):
+    """Regression for the v2 serve crash: the M3 NVIDIA plugin class has no
+    packed_modules_mapping, so vLLM matches each fused module prefix
+    DIRECTLY against targets/ignores — shard-name-only patterns match
+    nothing and the module falls to the int4 Linear catch-all."""
+    import re as _re
+
+    from vllm.model_executor.layers.quantization.compressed_tensors.utils import (
+        should_ignore_layer,
+    )
+
+    out = tmp_path / "out"
+    reexport_checkpoint(checkpoint, out, fp8_serve_fix=True)
+    qc = json.loads((out / "config.json").read_text())["quantization_config"]
+    targets = qc["config_groups"]["group_0"]["targets"]
+
+    def matches(name):
+        return any(_re.match(t[3:], name) for t in targets if t.startswith("re:"))
+
+    # fp8 fused modules must match the float group by their fused prefix
+    assert matches(f"{L}.3.block_sparse_moe.shared_experts.gate_up_proj")
+    assert matches(f"{L}.1.mlp.gate_up_proj")
+    assert matches(f"{L}.3.self_attn.o_proj")
+    # the (bf16) fused qkv must be ignored by its fused prefix, no mapping
+    assert should_ignore_layer(
+        f"{L}.3.self_attn.qkv_proj", ignore=qc["ignore"], fused_mapping={}
+    )
+    # and the int4 experts must match neither ignore nor the float group
+    assert not should_ignore_layer(
+        f"{L}.3.block_sparse_moe.experts.0.w1",
+        ignore=qc["ignore"],
+        fused_mapping={},
+    )
+    assert not matches(f"{L}.3.block_sparse_moe.experts.0.w1")
 
 
 def test_audit_rejects_ignored_fp8(checkpoint, tmp_path):

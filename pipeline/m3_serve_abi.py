@@ -206,6 +206,24 @@ def analyze_serving_abi(config: dict[str, Any], weight_keys: Iterable[str]) -> d
         name for name in plain if classify_module(name) in _PLAIN_QUANTIZABLE
     }
     runtime_modules = quantized | plain_quantizable
+    # Mixed int4+fp8 checkpoints (r8/r8a lanes): fp8 Linears keep a plain
+    # ``.weight`` (F8_E4M3) + ``.weight_scale`` and are matched by the regex
+    # targets of a float-typed config group — targeted, NOT ignored. vLLM
+    # checks ignore before targets, so an fp8 module that also matches an
+    # ignore pattern serves its raw fp8 bits cast to bf16 (the r8 v1 bug).
+    groups = quant.get("config_groups") or {}
+    float_target_patterns = [
+        target
+        for group in groups.values()
+        if str((group.get("weights") or {}).get("type") or "").lower() == "float"
+        for target in (group.get("targets") or [])
+        if isinstance(target, str) and target.startswith("re:")
+    ]
+    fp8_targeted = {
+        name
+        for name in plain_quantizable
+        if any(_matches(pattern, name) for pattern in float_target_patterns)
+    }
     source_modules = {transformers_alias(name) for name in runtime_modules}
     patterns = [
         {
@@ -229,10 +247,21 @@ def analyze_serving_abi(config: dict[str, Any], weight_keys: Iterable[str]) -> d
                         "error": str(error),
                     }
                 )
-    groups = quant.get("config_groups") or {}
     for group_name, group in groups.items():
         targets = group.get("targets") or []
-        if "Linear" not in targets:
+        if "Linear" in targets:
+            continue
+        # A group may forgo the Linear catch-all only if it is a float (fp8)
+        # group whose regex targets actually hit runtime modules; anything
+        # else is a quant layout vLLM will never apply.
+        is_float = str((group.get("weights") or {}).get("type") or "").lower() == "float"
+        regex_targets = [
+            t for t in targets if isinstance(t, str) and t.startswith("re:")
+        ]
+        hits_runtime = any(
+            _matches(t, name) for t in regex_targets for name in runtime_modules
+        )
+        if not (is_float and hits_runtime):
             errors.append(
                 {
                     "code": "quantization_group_does_not_target_linear",
@@ -245,7 +274,22 @@ def analyze_serving_abi(config: dict[str, Any], weight_keys: Iterable[str]) -> d
             {"code": "module_has_packed_and_plain_weight", "module": name}
         )
     for name in sorted(plain_quantizable):
-        if not any(_matches(pattern, name) for pattern in ignore):
+        matched_ignore = [pattern for pattern in ignore if _matches(pattern, name)]
+        if name in fp8_targeted:
+            if matched_ignore:
+                errors.append(
+                    {
+                        "code": "fp8_module_is_ignored",
+                        "module": name,
+                        "patterns": matched_ignore,
+                    }
+                )
+            if name not in scales:
+                errors.append(
+                    {"code": "fp8_targeted_module_missing_scale", "module": name}
+                )
+            continue
+        if not matched_ignore:
             errors.append(
                 {
                     "code": "plain_runtime_module_not_ignored",
@@ -275,6 +319,7 @@ def analyze_serving_abi(config: dict[str, Any], weight_keys: Iterable[str]) -> d
             "quantized_modules": len(quantized),
             "plain_modules": len(plain),
             "plain_quantizable_modules": len(plain_quantizable),
+            "fp8_targeted_modules": len(fp8_targeted),
             "runtime_modules_checked": len(runtime_modules),
         },
         "components": {

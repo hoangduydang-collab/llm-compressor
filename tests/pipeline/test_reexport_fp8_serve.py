@@ -16,6 +16,7 @@ from safetensors.torch import save_file
 
 from pipeline.reexport_minimax_m3_vllm import (
     _FP8_SERVE_TARGETS,
+    _FP8_SERVE_TARGETS_UNIFORM,
     audit_serve_consistency,
     reexport_checkpoint,
 )
@@ -226,6 +227,48 @@ def test_audit_rejects_unignored_plain_linear(checkpoint, tmp_path):
     cfg_path.write_text(json.dumps(config))
     with pytest.raises(ValueError, match="not ignored"):
         audit_serve_consistency(out)
+
+
+def test_uniform_qkv_mode_quantizes_indexer(checkpoint, tmp_path):
+    out = tmp_path / "out"
+    result = reexport_checkpoint(
+        checkpoint, out, fp8_serve_fix=True, fp8_serve_fix_mode="uniform-qkv"
+    )
+    assert result["dequantized"] == 0
+    assert result["dropped"] == 0
+    assert result["quantized"] == 1  # the lone index_q_proj
+
+    from safetensors import safe_open
+
+    with safe_open(out / "model-00001-of-00002.safetensors", "pt") as fh:
+        keys = set(fh.keys())
+        q_w = fh.get_tensor(f"{L}.0.self_attn.q_proj.weight")
+        idx_w = fh.get_tensor(f"{L}.3.self_attn.index_q_proj.weight")
+        idx_s = fh.get_tensor(f"{L}.3.self_attn.index_q_proj.weight_scale")
+    assert q_w.dtype == torch.float8_e4m3fn  # q/k/v kept fp8
+    assert idx_w.dtype == torch.float8_e4m3fn
+    assert idx_s.dtype == torch.bfloat16 and list(idx_s.shape) == [4, 1]
+    # roundtrip: dequant matches the original within fp8 resolution
+    torch.manual_seed(0)  # matches fixture construction order? use stored ref
+    original = None
+    from safetensors import safe_open as so
+    with so(checkpoint / "model-00001-of-00002.safetensors", "pt") as fh:
+        original = fh.get_tensor(f"{L}.3.self_attn.index_q_proj.weight")
+    recon = idx_w.to(torch.float32) * idx_s.to(torch.float32)
+    err = (recon - original.to(torch.float32)).abs().max()
+    scale_mag = original.to(torch.float32).abs().max()
+    assert err <= 0.1 * scale_mag  # fp8 e4m3 per-channel: coarse but bounded
+    # index consistency: new scale key present
+    index = json.loads((out / "model.safetensors.index.json").read_text())
+    assert f"{L}.3.self_attn.index_q_proj.weight_scale" in index["weight_map"]
+    assert index["weight_map"][f"{L}.3.self_attn.index_q_proj.weight_scale"] == \
+        "model-00001-of-00002.safetensors"
+
+    qc = json.loads((out / "config.json").read_text())["quantization_config"]
+    assert qc["config_groups"]["group_0"]["targets"] == _FP8_SERVE_TARGETS_UNIFORM
+    ignore = qc["ignore"]
+    assert not any("qkv_proj" in e or "index_" in e for e in ignore)
+    assert "re:.*block_sparse_moe[.]gate$" in ignore
 
 
 def test_plain_reexport_unchanged_without_flag(checkpoint, tmp_path):

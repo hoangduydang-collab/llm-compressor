@@ -61,6 +61,10 @@ _COPY_BUFFER_BYTES = 64 * 1024 * 1024
 _ATTN_QKV_WEIGHT_RE = re.compile(
     r".*language_model\.model\.layers\.\d+\.self_attn\.(q|k|v)_proj\.weight$"
 )
+_INDEXER_WEIGHT_RE = re.compile(
+    r".*language_model\.model\.layers\.\d+\.self_attn\.index_(q|k)_proj\.weight$"
+)
+_F8_MAX = 448.0  # float8_e4m3fn
 # CRITICAL (v2 crash, 2026-07-24): vLLM resolves each module's scheme by
 # matching the module's OWN prefix -- and can only expand fused prefixes
 # (gate_up_proj -> gate_proj/up_proj) through the model class's
@@ -70,12 +74,26 @@ _ATTN_QKV_WEIGHT_RE = re.compile(
 # fp8 channel scale hit the int4 group-scale param shape assert. Every
 # pattern below alternates over BOTH the fused vLLM prefix and the unfused
 # shard names so it works with or without a fused mapping.
-_FP8_SERVE_TARGETS = [
-    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]o_proj$",
+_FP8_SHARED_DENSE_TARGETS = [
     "re:.*language_model[.]model[.]layers[.][0-9]+[.]block_sparse_moe[.]"
     "shared_experts[.](gate_up_proj|gate_proj|up_proj|down_proj)$",
     "re:.*language_model[.]model[.]layers[.][0-2][.]mlp[.]"
     "(gate_up_proj|gate_proj|up_proj|down_proj)$",
+]
+# dequant-qkv mode: attention keeps only o_proj fp8.
+_FP8_SERVE_TARGETS = [
+    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]o_proj$",
+    *_FP8_SHARED_DENSE_TARGETS,
+]
+# uniform-qkv mode (MXFP8 precedent): the whole fused qkv+indexer GEMM is
+# fp8, so attention targets cover the fused prefix, its shards, AND the
+# indexer projections.
+_FP8_SERVE_TARGETS_UNIFORM = [
+    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]"
+    "(qkv_proj|q_proj|k_proj|v_proj|o_proj)$",
+    "re:.*language_model[.]model[.]layers[.][0-9]+[.]self_attn[.]"
+    "index_(q|k)_proj$",
+    *_FP8_SHARED_DENSE_TARGETS,
 ]
 _IGNORE_REMOVE = {
     "re:.*self_attn[.].*",
@@ -144,27 +162,51 @@ def _collect_tensor_metadata(
 
 def plan_fp8_serve_fix(
     tensor_metadata: dict[str, dict[str, Any]],
-) -> tuple[dict[str, str], set[str]]:
-    """Return (weight -> weight_scale to dequant with, keys to drop)."""
+    mode: str = "dequant-qkv",
+) -> tuple[dict[str, str], set[str], set[str]]:
+    """Plan the tensor transforms for a serve fix.
+
+    Returns (dequant: weight -> its weight_scale key, drop keys,
+    quantize: weight keys to fp8-quantize in place with a new sibling scale).
+
+    ``dequant-qkv``: attention q/k/v fp8 -> BF16 (drops their scales), so the
+    mixed-shard fused qkv+indexer GEMM stays uniformly bf16.
+    ``uniform-qkv``: the MXFP8 precedent — keep q/k/v fp8 and instead
+    fp8-quantize the bf16 indexer projections per-channel, so the fused GEMM
+    is uniformly fp8.
+    """
     dequant: dict[str, str] = {}
     drop: set[str] = set()
+    quantize: set[str] = set()
     for key, meta in tensor_metadata.items():
-        if not _ATTN_QKV_WEIGHT_RE.match(key):
-            continue
-        if meta["dtype"] != "F8_E4M3":
-            raise ValueError(
-                f"{key}: expected F8_E4M3 attention weight, found {meta['dtype']}"
-            )
-        scale_key = key + "_scale"
-        if scale_key not in tensor_metadata:
-            raise ValueError(f"{key}: missing sibling {scale_key}")
-        dequant[key] = scale_key
-        drop.add(scale_key)
-    if not dequant:
+        if _ATTN_QKV_WEIGHT_RE.match(key):
+            if meta["dtype"] != "F8_E4M3":
+                raise ValueError(
+                    f"{key}: expected F8_E4M3 attention weight, found {meta['dtype']}"
+                )
+            scale_key = key + "_scale"
+            if scale_key not in tensor_metadata:
+                raise ValueError(f"{key}: missing sibling {scale_key}")
+            if mode == "dequant-qkv":
+                dequant[key] = scale_key
+                drop.add(scale_key)
+        elif mode == "uniform-qkv" and _INDEXER_WEIGHT_RE.match(key):
+            if meta["dtype"] not in ("BF16", "F16", "F32"):
+                raise ValueError(
+                    f"{key}: expected float indexer weight, found {meta['dtype']}"
+                )
+            if key + "_scale" in tensor_metadata:
+                raise ValueError(f"{key}: already has a weight_scale")
+            quantize.add(key)
+    if mode == "dequant-qkv" and not dequant:
         raise ValueError(
             "--fp8-serve-fix found no fp8 attention q/k/v weights to dequantize"
         )
-    return dequant, drop
+    if mode == "uniform-qkv" and not quantize:
+        raise ValueError(
+            "uniform-qkv found no bf16 indexer projections to quantize"
+        )
+    return dequant, drop, quantize
 
 
 def _build_tensor_reader(
@@ -217,12 +259,43 @@ def _dequant_fp8_to_bf16_bytes(
     return dequant.to(torch.bfloat16).contiguous().view(torch.uint8).numpy().tobytes()
 
 
+def _quant_bf16_to_fp8_bytes(
+    weight_raw: bytes, shape: list[int], dtype: str
+) -> tuple[bytes, bytes]:
+    """Per-output-channel fp8 e4m3 quantization; returns (weight, BF16 scale).
+
+    The scale is computed in fp32 but STORED as BF16 [out, 1] (matching the
+    llm-compressor fp8 scales already in the checkpoint), and the weights are
+    quantized with the stored (bf16-rounded) scale so serve-side dequant is
+    exactly consistent.
+    """
+    import torch
+
+    torch_dtype = {"BF16": torch.bfloat16, "F16": torch.float16,
+                   "F32": torch.float32}[dtype]
+    weight = (
+        torch.frombuffer(bytearray(weight_raw), dtype=torch_dtype)
+        .reshape(shape)
+        .to(torch.float32)
+    )
+    amax = weight.abs().amax(dim=1, keepdim=True).clamp(min=1e-12)
+    scale = (amax / _F8_MAX).to(torch.bfloat16)
+    quant = (weight / scale.to(torch.float32)).clamp(-_F8_MAX, _F8_MAX)
+    weight_bytes = (
+        quant.to(torch.float8_e4m3fn).contiguous().view(torch.uint8)
+        .numpy().tobytes()
+    )
+    scale_bytes = scale.contiguous().view(torch.uint8).numpy().tobytes()
+    return weight_bytes, scale_bytes
+
+
 def rewrite_safetensors_shard(
     source: Path,
     output: Path,
     *,
     drop_keys: frozenset[str] | set[str] = frozenset(),
     dequant_map: dict[str, str] | None = None,
+    quantize_keys: frozenset[str] | set[str] = frozenset(),
     tensor_reader: Callable[[str], tuple[bytes, str, list[int]]] | None = None,
 ) -> int:
     """Rewrite a shard header and copy or transform its tensor payloads.
@@ -231,7 +304,9 @@ def rewrite_safetensors_shard(
     not already exist so a partial or accidental re-export cannot overwrite a
     checkpoint. Keys in ``drop_keys`` are removed; keys in ``dequant_map``
     (fp8 weight -> its weight_scale key) are dequantized to BF16 using
-    ``tensor_reader`` to fetch the scale (which may live in another shard).
+    ``tensor_reader`` to fetch the scale (which may live in another shard);
+    keys in ``quantize_keys`` are fp8-quantized per-channel with a new
+    ``<key>_scale`` BF16 tensor inserted directly after them.
     """
     dequant_map = dequant_map or {}
     if dequant_map and tensor_reader is None:
@@ -271,6 +346,27 @@ def rewrite_safetensors_shard(
             }
             plans.append(("dequant", name, begin, end - begin, meta["shape"]))
             cursor += new_length
+        elif name in quantize_keys:
+            numel = 1
+            for dim in meta["shape"]:
+                numel *= dim
+            rewritten[target_name] = {
+                "dtype": "F8_E4M3",
+                "shape": meta["shape"],
+                "data_offsets": [cursor, cursor + numel],
+            }
+            cursor += numel
+            scale_len = 2 * meta["shape"][0]  # BF16 [out, 1]
+            rewritten[target_name + "_scale"] = {
+                "dtype": "BF16",
+                "shape": [meta["shape"][0], 1],
+                "data_offsets": [cursor, cursor + scale_len],
+            }
+            cursor += scale_len
+            plans.append(
+                ("quantize:" + meta["dtype"], name, begin, end - begin,
+                 meta["shape"])
+            )
         else:
             length = end - begin
             rewritten[target_name] = {
@@ -298,7 +394,7 @@ def rewrite_safetensors_shard(
                         raise ValueError(f"short payload read for {name}")
                     dst.write(chunk)
                     remaining -= len(chunk)
-            else:
+            elif kind == "dequant":
                 weight_raw = src.read(length)
                 if len(weight_raw) != length:
                     raise ValueError(f"short payload read for {name}")
@@ -310,6 +406,15 @@ def rewrite_safetensors_shard(
                         weight_raw, shape, scale_raw, scale_dtype, scale_shape
                     )
                 )
+            else:  # quantize:<src dtype>
+                weight_raw = src.read(length)
+                if len(weight_raw) != length:
+                    raise ValueError(f"short payload read for {name}")
+                weight_bytes, scale_bytes = _quant_bf16_to_fp8_bytes(
+                    weight_raw, shape, kind.split(":", 1)[1]
+                )
+                dst.write(weight_bytes)
+                dst.write(scale_bytes)
     return renamed
 
 
@@ -332,16 +437,20 @@ def verify_reexport(
     *,
     drop_keys: frozenset[str] | set[str] = frozenset(),
     dequant_keys: frozenset[str] | set[str] = frozenset(),
+    quantize_keys: frozenset[str] | set[str] = frozenset(),
 ) -> dict[str, int]:
     """Statically verify index keys, shard headers, and payload sizes."""
     source_index = _load_index(source / "model.safetensors.index.json")
     output_index = _load_index(output / "model.safetensors.index.json")
     drop_keys = set(drop_keys)
+    quantize_keys = set(quantize_keys)
     expected_map = {}
     for name, shard in source_index["weight_map"].items():
         target = _expected_output_key(name, drop_keys)
         if target is not None:
             expected_map[target] = shard
+            if name in quantize_keys:
+                expected_map[target + "_scale"] = shard
     if expected_map != output_index["weight_map"]:
         raise ValueError("Output Safetensors index does not match renamed source keys")
 
@@ -367,6 +476,13 @@ def verify_reexport(
                 continue
             if name in dequant_keys:
                 expected_payload += 2 * (end - begin)  # F8_E4M3 -> BF16
+            elif name in quantize_keys:
+                itemsize = {"BF16": 2, "F16": 2, "F32": 4}[
+                    source_header[name]["dtype"]
+                ]
+                numel = (end - begin) // itemsize
+                out_ch = source_header[name]["shape"][0]
+                expected_payload += numel + 2 * out_ch  # fp8 weight + BF16 scale
             else:
                 expected_payload += end - begin
         output_payload = (output / shard).stat().st_size - 8 - output_header_length
@@ -386,10 +502,13 @@ def verify_reexport(
         "renamed": renamed,
         "dequantized": len(set(dequant_keys)),
         "dropped": len(drop_keys),
+        "quantized": len(quantize_keys),
     }
 
 
-def rewrite_quantization_config_for_serve(config: dict[str, Any]) -> dict[str, Any]:
+def rewrite_quantization_config_for_serve(
+    config: dict[str, Any], mode: str = "dequant-qkv"
+) -> dict[str, Any]:
     """Rewrite quant-layout FP8 targets/ignores to serve layout, in place."""
     qc = config.get("quantization_config")
     if not qc:
@@ -407,16 +526,27 @@ def rewrite_quantization_config_for_serve(config: dict[str, Any]) -> dict[str, A
         )
     float_group = float_groups[0]
     old_targets = list(float_group["targets"])
-    float_group["targets"] = list(_FP8_SERVE_TARGETS)
+    float_group["targets"] = list(
+        _FP8_SERVE_TARGETS_UNIFORM if mode == "uniform-qkv" else _FP8_SERVE_TARGETS
+    )
+
+    # In uniform-qkv mode the whole fused qkv+indexer GEMM is fp8-targeted,
+    # so the qkv/indexer ignore entries must not exist (both the ones this
+    # tool adds in dequant-qkv mode and any stale ones).
+    ignore_remove = set(_IGNORE_REMOVE)
+    ignore_add = list(_IGNORE_ADD)
+    if mode == "uniform-qkv":
+        ignore_remove |= set(_IGNORE_ADD)
+        ignore_add = []
 
     ignore = list(qc.get("ignore", []))
     removed = [
         entry
         for entry in ignore
-        if entry in _IGNORE_REMOVE or ".self_attn.indexer." in entry
+        if entry in ignore_remove or ".self_attn.indexer." in entry
     ]
     kept = [entry for entry in ignore if entry not in removed]
-    added = [entry for entry in _IGNORE_ADD if entry not in kept]
+    added = [entry for entry in ignore_add if entry not in kept]
     qc["ignore"] = kept + added
     return {"old_targets": old_targets, "removed_ignores": removed, "added_ignores": added}
 
@@ -534,7 +664,11 @@ def audit_serve_consistency(output: Path) -> dict[str, int]:
 
 
 def reexport_checkpoint(
-    source: Path, output: Path, *, fp8_serve_fix: bool = False
+    source: Path,
+    output: Path,
+    *,
+    fp8_serve_fix: bool = False,
+    fp8_serve_fix_mode: str = "dequant-qkv",
 ) -> dict[str, int]:
     """Create and statically verify a vLLM-compatible MiniMax-M3 checkpoint."""
     source = source.resolve()
@@ -554,10 +688,13 @@ def reexport_checkpoint(
 
     dequant_map: dict[str, str] = {}
     drop_keys: set[str] = set()
+    quantize_keys: set[str] = set()
     tensor_reader = None
     if fp8_serve_fix:
         tensor_metadata = _collect_tensor_metadata(source, weight_map)
-        dequant_map, drop_keys = plan_fp8_serve_fix(tensor_metadata)
+        dequant_map, drop_keys, quantize_keys = plan_fp8_serve_fix(
+            tensor_metadata, mode=fp8_serve_fix_mode
+        )
         tensor_reader = _build_tensor_reader(source, weight_map)
 
     output.mkdir(parents=True)
@@ -576,16 +713,21 @@ def reexport_checkpoint(
             output / shard,
             drop_keys=drop_keys,
             dequant_map=dequant_map,
+            quantize_keys=quantize_keys,
             tensor_reader=tensor_reader,
         )
         for shard in shards
     )
     rewritten_index = dict(source_index)
-    rewritten_index["weight_map"] = {
-        rename_routed_expert_key(name): shard
-        for name, shard in weight_map.items()
-        if name not in drop_keys
-    }
+    new_weight_map: dict[str, str] = {}
+    for name, shard in weight_map.items():
+        if name in drop_keys:
+            continue
+        target = rename_routed_expert_key(name)
+        new_weight_map[target] = shard
+        if name in quantize_keys:
+            new_weight_map[target + "_scale"] = shard
+    rewritten_index["weight_map"] = new_weight_map
     if fp8_serve_fix and isinstance(rewritten_index.get("metadata"), dict):
         total = 0
         for shard in shards:
@@ -605,16 +747,18 @@ def reexport_checkpoint(
     if fp8_serve_fix:
         config_path = output / "config.json"
         config = json.loads(config_path.read_text(encoding="utf-8"))
-        summary = rewrite_quantization_config_for_serve(config)
+        summary = rewrite_quantization_config_for_serve(
+            config, mode=fp8_serve_fix_mode
+        )
         config_path.write_text(
             json.dumps(config, indent=2) + "\n", encoding="utf-8"
         )
         print(
-            "[fp8-serve-fix] float targets rewritten "
-            f"({len(summary['old_targets'])} -> {len(_FP8_SERVE_TARGETS)}), "
+            f"[fp8-serve-fix:{fp8_serve_fix_mode}] float targets rewritten "
+            f"({len(summary['old_targets'])} rewritten), "
             f"ignores: -{len(summary['removed_ignores'])} "
             f"+{len(summary['added_ignores'])}, "
-            f"dequantized {len(dequant_map)} qkv weights"
+            f"dequantized {len(dequant_map)}, quantized {len(quantize_keys)}"
         )
 
     verified = verify_reexport(
@@ -622,6 +766,7 @@ def reexport_checkpoint(
         output,
         drop_keys=drop_keys,
         dequant_keys=set(dequant_map),
+        quantize_keys=quantize_keys,
     )
     if renamed != verified["renamed"]:
         raise ValueError("Shard/index routed-key rename counts disagree")
@@ -647,19 +792,34 @@ def main() -> int:
         action="store_true",
         help=(
             "repair a mixed int4+FP8 (r8-class) checkpoint for serving: "
-            "dequantize attention q/k/v to BF16, rewrite quantization_config "
-            "targets/ignores to serve layout, and audit the result"
+            "make the fused qkv+indexer GEMM scheme-uniform, rewrite "
+            "quantization_config targets/ignores to serve layout, and audit "
+            "the result"
+        ),
+    )
+    parser.add_argument(
+        "--fp8-serve-fix-mode",
+        choices=["dequant-qkv", "uniform-qkv"],
+        default="dequant-qkv",
+        help=(
+            "dequant-qkv: attention q/k/v back to BF16 (safe default). "
+            "uniform-qkv: keep q/k/v fp8 and fp8-quantize the indexer "
+            "projections per-channel (MXFP8 precedent)"
         ),
     )
     args = parser.parse_args()
     result = reexport_checkpoint(
-        args.source, args.output, fp8_serve_fix=args.fp8_serve_fix
+        args.source,
+        args.output,
+        fp8_serve_fix=args.fp8_serve_fix,
+        fp8_serve_fix_mode=args.fp8_serve_fix_mode,
     )
     print(
         "re-export verified: "
         f"{result['shards']} shards, {result['keys']} keys, "
         f"{result['renamed']} routed keys renamed, "
-        f"{result['dequantized']} dequantized, {result['dropped']} dropped"
+        f"{result['dequantized']} dequantized, {result['dropped']} dropped, "
+        f"{result['quantized']} quantized"
     )
     return 0
 

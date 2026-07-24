@@ -1022,6 +1022,58 @@ def _patch_fused_ar_mode_off(text: str) -> tuple[str, bool, bool]:
     return text.replace(v2_guard_tail, v3_guard, 1), True, True
 
 
+_SHARED_RS_MARK = "llmc M3 shared-experts record_stream capture guard v1"
+
+
+def _patch_shared_experts_record_stream(text: str) -> tuple[str, bool, bool]:
+    """Env-gated skip of ``record_stream`` during CUDA graph capture.
+
+    20260724-130708 fix matrix: the stream-on capture IMA persists with the
+    FlashInfer fused AR fully disabled (arm E: 4/6 IMA, failure point moved
+    43-45 -> 48/51), and every failing traceback surfaces in
+    torch._C._accelerator_emptyCache() — allocator class. Tensor.record_stream
+    under capture with multiple streams is a known-fragile torch area
+    (pytorch #155398/#175560; deferred frees). Under capture, the graph pool
+    owns capture-time allocations and the aux<->main wait_stream edges order
+    usage, so the record_stream bookkeeping is unnecessary there.
+
+    LLMC_M3_SHARED_RS_MODE=legacy (default) keeps upstream behavior;
+    LLMC_M3_SHARED_RS_MODE=skip_capture skips record_stream while capturing.
+    """
+    if _SHARED_RS_MARK in text:
+        return text, False, True
+
+    anchor = "            shared_experts_input.record_stream(self._stream)\n"
+    if anchor not in text:
+        return text, False, False
+
+    const = (
+        f"import os as _llmc_os  # {_SHARED_RS_MARK}\n"
+        "\n"
+        '_LLMC_RS_MODE = _llmc_os.environ.get("LLMC_M3_SHARED_RS_MODE", "legacy")\n'
+        "\n"
+        "\n"
+    )
+    class_anchor = "class SharedExpertsOrder(IntEnum):"
+    if class_anchor not in text:
+        return text, False, False
+
+    replacement = (
+        f"            # {_SHARED_RS_MARK}: under capture the graph pool owns\n"
+        "            # the allocation and the wait_stream edges order usage;\n"
+        "            # record_stream's deferred-free bookkeeping is the fragile\n"
+        "            # part (pytorch #155398/#175560).\n"
+        '            if _LLMC_RS_MODE != "skip_capture" or not (\n'
+        "                torch.cuda.is_available()\n"
+        "                and torch.cuda.is_current_stream_capturing()\n"
+        "            ):\n"
+        "                shared_experts_input.record_stream(self._stream)\n"
+    )
+    new_text = text.replace(class_anchor, const + class_anchor, 1)
+    new_text = new_text.replace(anchor, replacement, 1)
+    return new_text, True, True
+
+
 def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
     """Sanitize NaN router logits at the real MoE routing entry (cudagraph padding).
 
@@ -1519,6 +1571,7 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
         ("W4A8 SWIGLU clamp", vllm_dir / "model_executor/layers/fused_moe/activation.py", _patch_apply_activation),
         ("cudagraph fused AR", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_cudagraph),
         ("cudagraph fused AR off-mode", vllm_dir / "model_executor/layers/fused_allreduce_gemma_rms_norm.py", _patch_fused_ar_mode_off),
+        ("shared-experts record_stream guard", vllm_dir / "model_executor/layers/fused_moe/runner/shared_experts.py", _patch_shared_experts_record_stream),
         ("cudagraph MoE router", vllm_dir / "model_executor/layers/fused_moe/router/base_router.py", _patch_moe_router_cudagraph),
     ]
 

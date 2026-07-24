@@ -2106,8 +2106,8 @@ fragmentation resistance on long serves.
 **Validation tally (stream ON unless noted):** streamOFF-legacy 3/3 clean
 (prod baseline); legacy 2/3; nccl_graphs 5/6; pdl_off 1/6; fused-AR-off
 2/6; record_stream-skip 1/3; **G expSegOff 12/12; FG 3/3; H capture-sync
-6/6 (extension to 12 in flight)**. Legacy stream-on failure rate ≈1/3 →
-12 clean trials ≈ <1% false-pass.
+12/12**. Legacy stream-on failure rate ≈1/3 → 12 clean trials ≈ <1%
+false-pass; both fixes clear that bar independently.
 
 **Not yet done before any production default flip:** conc-1 TPOT A/B
 (stream-on+H vs stream-off prod) and a paired quality smoke — a capture

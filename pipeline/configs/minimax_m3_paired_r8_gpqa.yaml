@@ -56,3 +56,14 @@ scheduling:
 probe:
   enabled: false
   total_tokens: 8192
+  top_k: 20
+  max_overhead_seconds: 900
+
+gates:
+  # Smoke validates serving/setup; full production degeneration remains fail-closed.
+  max_smoke_empty_outputs: 1
+  max_task_drop: 0.02
+  min_macro_recovery: 0.98
+  max_conditional_regression: 0.05
+  max_perplexity_increase: null
+  max_degeneration_failures: 0

@@ -1963,3 +1963,38 @@ untouched-tensor sampling excludes any module with a weight_scale sibling.
 
 **Lesson:** never apply a global compression-format override to a
 multi-config-group model; formats are per-scheme state.
+
+## AWQ grid search hijacked by FP8-schemed balance layers (fixed, 2026-07-23)
+
+**Symptom:** r8a smoke (AWQ int4 experts + FP8_DYNAMIC attention/shared/dense,
+`minimax_m3_distributed_r8a_awq_smoke.yaml`) failed the in-pipeline verifier:
+"implausible column scales" on layer-3 experts — 27% of significant columns
+outside (0.2, 5.0), smoothing-scale median 0.33 with range 0.02–8.5, versus
+0.9 tight in the r6 full run. Only the FP8-carrying layers (3, 8) were
+affected; smoke layers 31/59 reproduced r6-full scales almost exactly, ruling
+out the 8-sample calibration. The smoke also grid-searched
+`input_layernorm` on layers 3/8 — a mapping r6 never smoothed.
+
+**Root cause:** all recipe modifiers attach quantization schemes at
+initialization, so when AWQ ran, the FP8 modules already carried
+`quantization_scheme`. AWQ used bare `hasattr(module, "quantization_scheme")`
+to decide (a) whether a mapping is "targeted" at all and (b) which balance
+layers join the grid-search pseudo-quant loss and duo-scaling weight means.
+FP8 weight quantization error is tiny and nearly scale-invariant, so
+including fp8 modules optimizes the smoothing ratio against a meaningless
+objective: the fp8 shared expert distorted the post-attention search, and
+fp8 q/k/v activated the previously-skipped input_layernorm mapping outright.
+
+**Fix:** `_is_grid_search_targeted` in
+`src/llmcompressor/modifiers/transform/awq/base.py`: a module counts as an
+AWQ target only if its weight scheme exists AND is not float-typed. Used for
+mapping eligibility (`any_targeted`), the grid-search patch list, and
+duo-scaling `w_mean`. Float-schemed balance layers still receive the
+apply-time compensation fold (verified by the smooth-fold gates), exactly
+like unquantized ones did in r6. Regression:
+`tests/llmcompressor/modifiers/transform/awq/test_fp8_mixed_recipe.py`.
+
+**Lesson:** "has a quantization scheme" is not "wants AWQ smoothing" — in
+mixed-precision recipes the scheme type must gate participation in
+smoothing objectives. The checkpoint verifier's column-scale plausibility
+band caught this before any eval GPU time.

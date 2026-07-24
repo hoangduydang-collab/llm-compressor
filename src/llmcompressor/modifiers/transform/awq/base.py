@@ -10,6 +10,7 @@ from compressed_tensors.modeling.kvcache import QuantizedKVCache
 from compressed_tensors.offload.dist_utils import as_broadcastable, is_distributed
 from compressed_tensors.quantization import (
     QuantizationStrategy,
+    QuantizationType,
     forward_quantize,
 )
 from compressed_tensors.utils import (
@@ -126,6 +127,25 @@ def _is_landscape_log_rank() -> bool:
     """True on the single rank that should emit landscape logs (stats are
     all-reduced, so every rank would log identical lines)."""
     return not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0
+
+
+def _is_grid_search_targeted(module: Module) -> bool:
+    """Whether AWQ's grid search should optimize for this module's weight quant.
+
+    AWQ smoothing exists to reduce low-bit INTEGER weight quantization error.
+    A float-quantized module (e.g. FP8_DYNAMIC attention/shared-experts in a
+    mixed int4+fp8 recipe) has near scale-invariant quantization error, so
+    letting it (a) activate a mapping as "targeted" or (b) participate in the
+    grid-search loss / duo-scaling weight means selects smoothing scales
+    against a meaningless objective (observed 2026-07-23 on MiniMax-M3 r8a:
+    fp8-carrying layers chose scale medians ~0.33 with 27% of columns outside
+    the plausibility band, and previously-skipped input_layernorm mappings
+    became active). Float-schemed modules are treated exactly like
+    unquantized ones here; they still receive the apply-time compensation
+    fold as balance layers, which the smooth-fold gates verify.
+    """
+    q_args = getattr_chain(module, "quantization_scheme.weights", None)
+    return q_args is not None and q_args.type != QuantizationType.FLOAT
 
 
 def _grid_search_scales(
@@ -462,9 +482,11 @@ class AWQModifier(Modifier):
                 ]
 
                 # Check if at least one layer is targeted for quantization
-                any_targeted = hasattr(smooth_layer, "quantization_scheme") or any(
+                # (float-schemed modules don't count — see
+                # _is_grid_search_targeted)
+                any_targeted = _is_grid_search_targeted(smooth_layer) or any(
                     [
-                        hasattr(balance_layer, "quantization_scheme")
+                        _is_grid_search_targeted(balance_layer)
                         for balance_layer in balance_layers
                     ]
                 )
@@ -802,17 +824,22 @@ class AWQModifier(Modifier):
             x_sum, count = _allreduce_data_sum([x_sum, count])
         x_mean = x_sum.to(device) / count.to(device)
 
+        # Only int-quantized balance layers participate in the search
+        # objective; float-schemed (fp8) and unquantized ones are
+        # compensated at apply time but must not shape the scales (see
+        # _is_grid_search_targeted).
+        grid_targeted_layers = [
+            balance_layer
+            for balance_layer in mapping.balance_layers
+            if _is_grid_search_targeted(balance_layer)
+        ]
+
         if self.duo_scaling:
-            w_mean = self._compute_layer_means(mapping.balance_layers).to(device)
+            w_mean = self._compute_layer_means(grid_targeted_layers).to(device)
 
         # Where appropriate, replace observers with memoryless_minmax
         # for duration of grid search
-        balance_layers_to_patch = [
-            balance_layer
-            for balance_layer in mapping.balance_layers
-            if hasattr(balance_layer, "quantization_scheme")
-            and hasattr(balance_layer.quantization_scheme, "weights")
-        ]
+        balance_layers_to_patch = grid_targeted_layers
         with patch_attrs(
             balance_layers_to_patch,
             "weight_observer",

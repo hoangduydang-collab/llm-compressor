@@ -1,0 +1,29 @@
+humming/schema/compressed_tensors.py: already patched
+sha256: 8e2ab300b595e98f9b66d76096c6a03272ffe948e11dd29844af701c1f6474c3
+humming/include/humming/scheduler.cuh: already patched
+sha256: befa01f9758df24e34be12022c86aec701de81d182e0bec713374d987df1839f
+humming/include/humming/utils/ptx/tma.cuh: already patched
+sha256: 2ad7d5339d730d4a1a9b176c120ea448ec7f6e0481569787cca9d6f952ef2717
+humming/include/humming/epilogue/gmem_writer.cuh: already patched
+sha256: 3e135b55f3753245a0477d6b2ad67db588d80b5508db4ee9aa179205e2a20deb
+
+bad_reps=0/96
+report: /mnt/nfs/hoangduy/results/m3-arm3-commit-verify/20260725T162957Z/forensics/tile-forensics.json
+reference weight reconstruction: frac_beyond_rounding=0.00e+00
+[ok] w2 tokens=   64 valid=   29 bm=  8 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0050
+[ok] w2 tokens=  128 valid=   64 bm= 16 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0052
+[ok] w2 tokens=  256 valid=  116 bm= 16 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0055
+[ok] w2 tokens=  512 valid=  241 bm= 32 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0055
+[ok] w2 tokens= 1024 valid=  488 bm= 56 bk=128 det=True full==exact=True bad_rows=0 max_rel=0.0064
+[ok] w2 tokens= 2048 valid= 1010 bm=104 bk=128 det=True full==exact=True bad_rows=0 max_rel=0.0061
+[ok] w2 tokens= 4096 valid= 2092 bm=184 bk=128 det=True full==exact=True bad_rows=0 max_rel=0.0064
+reference weight reconstruction: frac_beyond_rounding=0.00e+00
+[ok] w13 tokens=   64 valid=   27 bm=  8 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0041
+[ok] w13 tokens=  128 valid=   55 bm= 16 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0060
+[ok] w13 tokens=  256 valid=  113 bm= 16 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0050
+[ok] w13 tokens=  512 valid=  246 bm= 32 bk=256 det=True full==exact=True bad_rows=0 max_rel=0.0053
+[ok] w13 tokens= 1024 valid=  520 bm= 56 bk=128 det=True full==exact=True bad_rows=0 max_rel=0.0059
+[ok] w13 tokens= 2048 valid= 1055 bm=104 bk=128 det=True full==exact=True bad_rows=0 max_rel=0.0059
+[ok] w13 tokens= 4096 valid= 2046 bm=184 bk=128 det=True full==exact=True bad_rows=0 max_rel=0.0056
+
+any_fail=False  report: /mnt/nfs/hoangduy/results/m3-arm3-commit-verify/20260725T162957Z/sweep/scale-probe.json

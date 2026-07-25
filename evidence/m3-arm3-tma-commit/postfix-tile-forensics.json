@@ -1,0 +1,41 @@
+{
+  "counts": [
+    19,
+    20,
+    19,
+    23,
+    10,
+    15,
+    10,
+    15,
+    19,
+    15,
+    13,
+    15,
+    12,
+    13,
+    15,
+    13
+  ],
+  "tuning": {
+    "block_shape": [
+      32,
+      128,
+      256
+    ],
+    "warp_shape": [
+      32,
+      16,
+      128
+    ],
+    "use_stream_k": true,
+    "use_f16_accum": false,
+    "num_stages": 4,
+    "use_warp_spec": true,
+    "use_tma": true,
+    "use_mbarrier": true
+  },
+  "repeats": 96,
+  "events": [],
+  "bad_reps": 0
+}

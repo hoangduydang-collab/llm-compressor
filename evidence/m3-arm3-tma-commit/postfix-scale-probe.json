@@ -1,0 +1,500 @@
+{
+  "topk": 4,
+  "local_experts": 16,
+  "global_experts": 128,
+  "repeats": 5,
+  "rel_err_row_threshold": 0.05,
+  "cases": [
+    {
+      "geometry": "w2",
+      "num_tokens": 64,
+      "buffer_rows": 256,
+      "total_valid_rows": 29,
+      "valid_estimate_used_for_tuning": 32,
+      "tuning_config": {
+        "block_shape": [
+          8,
+          128,
+          256
+        ],
+        "warp_shape": [
+          8,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.004967998713254929,
+        "median_row_rel_err": 0.0027807343285530806,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w2",
+      "num_tokens": 128,
+      "buffer_rows": 512,
+      "total_valid_rows": 64,
+      "valid_estimate_used_for_tuning": 64,
+      "tuning_config": {
+        "block_shape": [
+          16,
+          128,
+          256
+        ],
+        "warp_shape": [
+          16,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.005206179339438677,
+        "median_row_rel_err": 0.0020766006782650948,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w2",
+      "num_tokens": 256,
+      "buffer_rows": 1024,
+      "total_valid_rows": 116,
+      "valid_estimate_used_for_tuning": 128,
+      "tuning_config": {
+        "block_shape": [
+          16,
+          128,
+          256
+        ],
+        "warp_shape": [
+          16,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.005454706493765116,
+        "median_row_rel_err": 0.0025129017885774374,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w2",
+      "num_tokens": 512,
+      "buffer_rows": 2048,
+      "total_valid_rows": 241,
+      "valid_estimate_used_for_tuning": 256,
+      "tuning_config": {
+        "block_shape": [
+          32,
+          128,
+          256
+        ],
+        "warp_shape": [
+          32,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.00545188132673502,
+        "median_row_rel_err": 0.0027524419128894806,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w2",
+      "num_tokens": 1024,
+      "buffer_rows": 4096,
+      "total_valid_rows": 488,
+      "valid_estimate_used_for_tuning": 512,
+      "tuning_config": {
+        "block_shape": [
+          56,
+          128,
+          128
+        ],
+        "warp_shape": [
+          56,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.0064215026795864105,
+        "median_row_rel_err": 0.0026710082311183214,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w2",
+      "num_tokens": 2048,
+      "buffer_rows": 8192,
+      "total_valid_rows": 1010,
+      "valid_estimate_used_for_tuning": 1024,
+      "tuning_config": {
+        "block_shape": [
+          104,
+          128,
+          128
+        ],
+        "warp_shape": [
+          104,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.006108916364610195,
+        "median_row_rel_err": 0.0026803782675415277,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w2",
+      "num_tokens": 4096,
+      "buffer_rows": 16384,
+      "total_valid_rows": 2092,
+      "valid_estimate_used_for_tuning": 2048,
+      "tuning_config": {
+        "block_shape": [
+          184,
+          128,
+          128
+        ],
+        "warp_shape": [
+          184,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.006361729931086302,
+        "median_row_rel_err": 0.0026560898404568434,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 64,
+      "buffer_rows": 256,
+      "total_valid_rows": 27,
+      "valid_estimate_used_for_tuning": 32,
+      "tuning_config": {
+        "block_shape": [
+          8,
+          128,
+          256
+        ],
+        "warp_shape": [
+          8,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.004118690732866526,
+        "median_row_rel_err": 0.002625246997922659,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 128,
+      "buffer_rows": 512,
+      "total_valid_rows": 55,
+      "valid_estimate_used_for_tuning": 64,
+      "tuning_config": {
+        "block_shape": [
+          16,
+          128,
+          256
+        ],
+        "warp_shape": [
+          16,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.005994518753141165,
+        "median_row_rel_err": 0.0026454890612512827,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 256,
+      "buffer_rows": 1024,
+      "total_valid_rows": 113,
+      "valid_estimate_used_for_tuning": 128,
+      "tuning_config": {
+        "block_shape": [
+          16,
+          128,
+          256
+        ],
+        "warp_shape": [
+          16,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.004997043404728174,
+        "median_row_rel_err": 0.0025512699503451586,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 512,
+      "buffer_rows": 2048,
+      "total_valid_rows": 246,
+      "valid_estimate_used_for_tuning": 256,
+      "tuning_config": {
+        "block_shape": [
+          32,
+          128,
+          256
+        ],
+        "warp_shape": [
+          32,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.005303522571921349,
+        "median_row_rel_err": 0.00256340391933918,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 1024,
+      "buffer_rows": 4096,
+      "total_valid_rows": 520,
+      "valid_estimate_used_for_tuning": 512,
+      "tuning_config": {
+        "block_shape": [
+          56,
+          128,
+          128
+        ],
+        "warp_shape": [
+          56,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.0059130024164915085,
+        "median_row_rel_err": 0.0025998526252806187,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 2048,
+      "buffer_rows": 8192,
+      "total_valid_rows": 1055,
+      "valid_estimate_used_for_tuning": 1024,
+      "tuning_config": {
+        "block_shape": [
+          104,
+          128,
+          128
+        ],
+        "warp_shape": [
+          104,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.005862012971192598,
+        "median_row_rel_err": 0.002592794131487608,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    },
+    {
+      "geometry": "w13",
+      "num_tokens": 4096,
+      "buffer_rows": 16384,
+      "total_valid_rows": 2046,
+      "valid_estimate_used_for_tuning": 2048,
+      "tuning_config": {
+        "block_shape": [
+          184,
+          128,
+          128
+        ],
+        "warp_shape": [
+          184,
+          16,
+          128
+        ],
+        "use_stream_k": true,
+        "use_f16_accum": false,
+        "num_stages": 4,
+        "use_warp_spec": true,
+        "use_tma": true,
+        "use_mbarrier": true
+      },
+      "deterministic_across_repeats": true,
+      "full_vs_exact_identical": true,
+      "vs_reference": {
+        "max_row_rel_err": 0.005615455564111471,
+        "median_row_rel_err": 0.002575223334133625,
+        "frac_rows_bad": 0.0,
+        "num_rows_bad": 0,
+        "finite": true,
+        "per_expert_bad": []
+      }
+    }
+  ],
+  "any_fail": false
+}

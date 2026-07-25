@@ -24,6 +24,12 @@ MAX_MODEL_LEN=${MAX_MODEL_LEN:-40960}
 C=$ROOT/perf-$ARM
 mkdir -p "$C"
 note() { echo "[perf-$ARM $(date -u +%H:%M:%S)] $1" | tee -a "$C/client.log"; }
+stop_local_serve() {
+  note "stop serve"
+  kill "$(cat "$C/serve.pid" 2>/dev/null)" 2>/dev/null || true
+  sleep 15
+  kill -9 -"$(cat "$C/serve.pid" 2>/dev/null)" 2>/dev/null || true
+}
 
 export HF_HOME=/mnt/nfs/hoangduy/cache/huggingface HF_DATASETS_OFFLINE=1 HF_HUB_OFFLINE=1
 export PATH="$PERF_VENV/bin:$PATH"
@@ -44,6 +50,22 @@ if [ "$MODE" = local ]; then
     sleep 10
   done
   [ "$ready" = 0 ] || { tail -60 "$C/serve.log" | tee -a "$C/client.log"; exit 1; }
+  if [ "${M3_W4A8_BACKEND:-cutlass}" = humming ]; then
+    note "attest Humming backend before benchmark"
+    (
+      cd "$REPO" &&
+      python -m pipeline.m3_humming_w4a8 attest \
+        --preflight "$C/serve.log.humming-preflight.json" \
+        --log "$C/serve.log" \
+        --out "$C/backend-attestation.json"
+    ) >>"$C/client.log" 2>&1
+    rc=$?
+    if [ "$rc" != 0 ]; then
+      note "Humming backend attestation failed rc=$rc"
+      stop_local_serve
+      exit 1
+    fi
+  fi
   export BASE_URL="http://localhost:$PORT"
 else
   note "waiting for BF16 endpoint (max 2h)"
@@ -77,9 +99,6 @@ tail -8 "$C/suite.log" | tee -a "$C/client.log"
 echo "$BENCH/results/$PROFILE/vllm/perf" > "$C/results.path"
 
 if [ "$MODE" = local ]; then
-  note "stop serve"
-  kill "$(cat "$C/serve.pid" 2>/dev/null)" 2>/dev/null || true
-  sleep 15
-  kill -9 -"$(cat "$C/serve.pid" 2>/dev/null)" 2>/dev/null || true
+  stop_local_serve
 fi
 exit "$rc"

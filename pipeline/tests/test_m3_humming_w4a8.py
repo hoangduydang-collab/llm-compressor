@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from pipeline import m3_humming_w4a8
 from pipeline.m3_checkpoint_diagnostics import classify_module
 from pipeline.m3_humming_w4a8 import (
     RuntimeFacts,
@@ -128,7 +129,11 @@ def test_accepts_exact_native_humming_w4a8_contract():
             "HUMMING_CACHE_NAMESPACE",
         ),
         ({"f16_accum": "1"}, "F16_ACCUM_ENABLED"),
-        ({"moe_gemm_type": "grouped_contiguous"}, "MOE_GEMM_TYPE_UNSUPPORTED"),
+        # grouped_masked exists in Humming's enum but is the batched-experts
+        # path, which we do not serve; anything unrecognised must fail closed
+        # rather than inherit vLLM's silent fallback to indexed.
+        ({"moe_gemm_type": "grouped_masked"}, "MOE_GEMM_TYPE_UNSUPPORTED"),
+        ({"moe_gemm_type": "nonsense"}, "MOE_GEMM_TYPE_UNSUPPORTED"),
         ({"normal_patch_status": "missing"}, "NORMAL_PATCH_INCOMPLETE"),
         ({"humming_patch_status": "missing"}, "HUMMING_PATCH_INCOMPLETE"),
     ],
@@ -407,9 +412,10 @@ def test_attests_indexed_humming_backend(quantization_line):
             "HUMMING_GEMM_MARKER_MISSING",
         ),
         (
+            # Indexed was requested but grouped ran: a real backend, wrong arm.
             "INFO quantization=humming\n"
             "INFO Using grouped_contiguous gemm for humming moe",
-            "GROUPED_GEMM_NOT_ALLOWED",
+            "UNEXPECTED_GEMM_TYPE_SELECTED",
         ),
         (
             "INFO quantization=humming\n"
@@ -442,6 +448,76 @@ def test_rejects_ambiguous_or_fallback_server_log(text, reason):
 
     assert report["valid"] is False
     assert report["reason_codes"] == [reason]
+
+
+def grouped_preflight() -> dict[str, object]:
+    preflight = valid_preflight()
+    preflight["details"] = {"gemm_type": "grouped_contiguous"}
+    return preflight
+
+
+def test_attests_grouped_humming_backend():
+    """Arm 3: grouped_contiguous is attested when it is the requested strategy."""
+    text = "\n".join(
+        [
+            "INFO quantization=humming",
+            "INFO Using grouped_contiguous gemm for humming moe",
+        ]
+    )
+
+    report = classify_backend_log(text, grouped_preflight())
+
+    assert report["valid"] is True
+    assert report["gemm_type"] == "grouped_contiguous"
+    assert report["reason_codes"] == []
+    assert report["details"]["grouped_marker"] is True
+    assert report["details"]["indexed_marker"] is False
+    assert report["details"]["expected_gemm_type"] == "grouped_contiguous"
+
+
+def test_grouped_request_that_silently_ran_indexed_is_rejected():
+    """vLLM falls back to indexed for values it does not recognise.
+
+    That fallback is the dangerous failure mode for arm 3: the server comes up,
+    serves correctly, and produces numbers attributed to the wrong kernel. The
+    requested strategy's marker must be present, not merely *some* Humming one.
+    """
+    text = "\n".join(
+        [
+            "INFO quantization=humming",
+            "INFO Using indexed gemm for humming moe",
+        ]
+    )
+
+    report = classify_backend_log(text, grouped_preflight())
+
+    assert report["valid"] is False
+    assert report["reason_codes"] == ["UNEXPECTED_GEMM_TYPE_SELECTED"]
+    assert report["gemm_type"] is None
+
+
+def test_grouped_request_with_no_gemm_marker_at_all_is_rejected():
+    report = classify_backend_log("INFO quantization=humming", grouped_preflight())
+
+    assert report["valid"] is False
+    assert report["reason_codes"] == ["HUMMING_GEMM_MARKER_MISSING"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", "indexed"),
+        ("indexed", "indexed"),
+        ("grouped", "grouped_contiguous"),
+        ("grouped_contiguous", "grouped_contiguous"),
+        ("GROUPED", "grouped_contiguous"),
+        (" indexed ", "indexed"),
+        ("grouped_masked", None),
+        ("dense", None),
+    ],
+)
+def test_normalize_gemm_type_matches_vllm_alias_mapping(raw, expected):
+    assert m3_humming_w4a8.normalize_gemm_type(raw) == expected
 
 
 def test_rejects_invalid_preflight_before_log_classification():

@@ -1,0 +1,25 @@
+=== resolved kernel config: indexed vs grouped_contiguous ===
+
+[w13] shape_n=6144 shape_k=6144
+  buckets: indexed=62 grouped=62
+  block_shape_m: 8..200
+  block_m=8: use_warp_spec False->True, use_tma False->True, use_tma_a False->True, use_tma_b False->True, use_tma_c False->True, use_tma_bs False->True, use_mbarrier False->True, num_threads 512->640, num_load_threads 512->128
+  block_m=160: use_warp_spec False->True, use_tma False->True, use_tma_a False->True, use_tma_b False->True, use_tma_c False->True, use_tma_bs False->True, use_mbarrier False->True, num_threads 256->384, num_load_threads 256->128
+  block_m=200: use_warp_spec False->True, use_tma False->True, use_tma_a False->True, use_tma_b False->True, use_tma_c False->True, use_tma_bs False->True, use_mbarrier False->True, num_threads 256->384, num_load_threads 256->128
+
+[w2] shape_n=6144 shape_k=3072
+  buckets: indexed=62 grouped=62
+  block_shape_m: 8..200
+  block_m=8: use_warp_spec False->True, use_tma False->True, use_tma_a False->True, use_tma_b False->True, use_tma_c False->True, use_tma_bs False->True, use_mbarrier False->True, num_threads 512->640, num_load_threads 512->128
+  block_m=160: use_warp_spec False->True, use_tma False->True, use_tma_a False->True, use_tma_b False->True, use_tma_c False->True, use_tma_bs False->True, use_mbarrier False->True, num_threads 256->384, num_load_threads 256->128
+  block_m=200: use_warp_spec False->True, use_tma False->True, use_tma_a False->True, use_tma_b False->True, use_tma_c False->True, use_tma_bs False->True, use_mbarrier False->True, num_threads 256->384, num_load_threads 256->128
+
+=== compile + cubin load ===
+  OK   w13 indexed                9.5s new_cache_entries=0
+  OK    w2 indexed               12.3s new_cache_entries=0
+  OK   w13 grouped_contiguous    18.3s new_cache_entries=26
+  OK    w2 grouped_contiguous    18.4s new_cache_entries=25
+
+  meta reproduces qualified indexed kernels: YES (0 new entries; 0 expected)
+
+report: /mnt/nfs/hoangduy/results/m3-arm3-gemm-probe/20260725T115515Z/probe-report.json

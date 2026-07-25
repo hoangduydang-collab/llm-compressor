@@ -40,6 +40,34 @@ _QUANTIZATION_PATTERNS = (
 )
 _INDEXED_MARKER = "Using indexed gemm for humming moe"
 _GROUPED_MARKER = "Using grouped_contiguous gemm for humming moe"
+
+# Humming MoE scheduling strategies we are prepared to attest.
+#
+# ``indexed`` was qualified first (arm 2 of
+# M3_HOPPER_W4A8_KERNEL_INVESTIGATION.md); ``grouped_contiguous`` is arm 3,
+# unblocked once arm 2 passed. The two are not interchangeable at the kernel
+# level: humming/tune/sm90.py grants TMA + warp specialization to every gemm
+# type EXCEPT indexed, so grouped compiles the warp-specialized kernel
+# (humming_ws.cuh) while indexed falls back to cp.async.
+GEMM_TYPE_INDEXED = "indexed"
+GEMM_TYPE_GROUPED = "grouped_contiguous"
+
+# vLLM's get_humming_moe_gemm_type() maps a bare "grouped" onto
+# "grouped_contiguous" and silently falls back to "indexed" for anything it does
+# not recognise. Mirror that mapping exactly so what we attest is what vLLM
+# selected -- an unrecognised value must never be reported as the requested one.
+_GEMM_TYPE_ALIASES = {
+    "": GEMM_TYPE_INDEXED,
+    "indexed": GEMM_TYPE_INDEXED,
+    "grouped": GEMM_TYPE_GROUPED,
+    "grouped_contiguous": GEMM_TYPE_GROUPED,
+}
+SUPPORTED_GEMM_TYPES = frozenset(_GEMM_TYPE_ALIASES)
+
+
+def normalize_gemm_type(raw: str) -> str | None:
+    """Resolve a ``VLLM_HUMMING_MOE_GEMM_TYPE`` value, or None if unsupported."""
+    return _GEMM_TYPE_ALIASES.get((raw or "").strip().lower())
 _CUTLASS_MARKER = "Using CUTLASS W4A8 MoE backend"
 _MARLIN_PATTERN = re.compile(r"\bUsing Marlin\b", re.IGNORECASE)
 _UNQUANTIZED_MARKER = "UnquantizedFusedMoEMethod"
@@ -133,7 +161,7 @@ def evaluate_preflight(
             "F16_ACCUM_ENABLED",
         ),
         (
-            runtime.moe_gemm_type in {"", "indexed"},
+            normalize_gemm_type(runtime.moe_gemm_type) is not None,
             "MOE_GEMM_TYPE_UNSUPPORTED",
         ),
         (
@@ -211,7 +239,7 @@ def evaluate_preflight(
             "humming_cache_dir": runtime.humming_cache_dir,
             "weight_group_size": weights.get("group_size"),
             "activation_strategy": activations.get("strategy"),
-            "gemm_type": runtime.moe_gemm_type or "indexed",
+            "gemm_type": normalize_gemm_type(runtime.moe_gemm_type),
             "abi_valid": abi_report.get("valid"),
         },
     }
@@ -221,10 +249,22 @@ def classify_backend_log(
     text: str,
     preflight: Mapping[str, object],
 ) -> dict[str, object]:
-    """Require positive Humming runtime evidence and reject fallback markers."""
+    """Require positive Humming runtime evidence and reject fallback markers.
+
+    The expected scheduling strategy comes from the preflight's ``gemm_type``
+    (itself derived from ``VLLM_HUMMING_MOE_GEMM_TYPE``). Attestation is
+    *positive and specific*: the requested strategy's marker must be present and
+    the other one's absent. A grouped run that silently fell back to indexed --
+    vLLM's behaviour for an unrecognised value -- therefore fails rather than
+    passing as "some Humming kernel ran".
+    """
 
     indexed = _INDEXED_MARKER in text
     grouped = _GROUPED_MARKER in text
+    expected = preflight.get("details", {}).get("gemm_type")
+    if not isinstance(expected, str):
+        expected = GEMM_TYPE_INDEXED
+    observed = {GEMM_TYPE_INDEXED: indexed, GEMM_TYPE_GROUPED: grouped}
     quantization = any(pattern.search(text) for pattern in _QUANTIZATION_PATTERNS)
     compile_cache_lines = [
         line
@@ -242,18 +282,25 @@ def classify_backend_log(
         (_UNQUANTIZED_MARKER not in text, "UNQUANTIZED_FALLBACK_DETECTED"),
         (quantization, "QUANTIZATION_MARKER_MISSING"),
         (not (indexed and grouped), "CONTRADICTORY_GEMM_MARKERS"),
-        (not grouped, "GROUPED_GEMM_NOT_ALLOWED"),
-        (indexed, "HUMMING_GEMM_MARKER_MISSING"),
+        (expected in observed, "MOE_GEMM_TYPE_UNSUPPORTED"),
+        # Checked before the missing-marker case so that a run which served the
+        # *wrong* strategy is named as such, rather than as a generic absence.
+        (
+            not any(seen for name, seen in observed.items() if name != expected),
+            "UNEXPECTED_GEMM_TYPE_SELECTED",
+        ),
+        (observed.get(expected, False), "HUMMING_GEMM_MARKER_MISSING"),
     )
     reason = _first_reason(checks)
     return {
         "schema_version": 1,
         "valid": reason is None,
         "backend": "humming",
-        "gemm_type": "indexed" if indexed and not grouped else None,
+        "gemm_type": expected if reason is None else None,
         "reason_codes": [] if reason is None else [reason],
         "details": {
             "quantization_marker": quantization,
+            "expected_gemm_type": expected,
             "indexed_marker": indexed,
             "grouped_marker": grouped,
             "compile_cache_lines": compile_cache_lines,

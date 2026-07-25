@@ -62,10 +62,17 @@ if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
       exit 2
       ;;
   esac
+  # indexed = investigation arm 2 (qualified 2026-07-25); grouped_contiguous =
+  # arm 3, unblocked by that pass. Normalise "grouped" the way vLLM's
+  # get_humming_moe_gemm_type() does, and keep rejecting everything else --
+  # vLLM silently falls back to indexed for unrecognised values, which would
+  # otherwise let a mislabelled arm serve the wrong kernel.
   case "${VLLM_HUMMING_MOE_GEMM_TYPE:-indexed}" in
     ""|indexed) export VLLM_HUMMING_MOE_GEMM_TYPE=indexed ;;
+    grouped|grouped_contiguous) export VLLM_HUMMING_MOE_GEMM_TYPE=grouped_contiguous ;;
     *)
-      echo "ERROR: first Humming qualification requires indexed MoE GEMM" >&2
+      echo "ERROR: unsupported Humming MoE GEMM type" \
+           "'${VLLM_HUMMING_MOE_GEMM_TYPE}' (want indexed|grouped_contiguous)" >&2
       exit 2
       ;;
   esac

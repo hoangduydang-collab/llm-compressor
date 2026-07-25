@@ -7,6 +7,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = REPO_ROOT / "pipeline/slurm/run_vllm_http_serve_smoke.sh"
 GIT_BASH = Path("C:/Program Files/Git/bin/bash.exe")
@@ -142,12 +144,27 @@ def test_rejects_humming_fp16_accumulation(tmp_path):
     assert "requires FP32 accumulation" in completed.stderr
 
 
-def test_rejects_grouped_humming_gemm_during_first_qualification(tmp_path):
+@pytest.mark.parametrize("requested", ["grouped", "grouped_contiguous"])
+def test_accepts_grouped_humming_gemm_for_arm_three(tmp_path, requested):
+    """Arm 3 is unblocked; "grouped" normalises the way vLLM normalises it."""
     completed = _run_launcher(
         tmp_path,
         M3_W4A8_BACKEND="humming",
-        VLLM_HUMMING_MOE_GEMM_TYPE="grouped_contiguous",
+        VLLM_HUMMING_MOE_GEMM_TYPE=requested,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "VLLM_HUMMING_MOE_GEMM_TYPE=grouped_contiguous" in completed.stdout
+
+
+@pytest.mark.parametrize("requested", ["grouped_masked", "dense", "nonsense"])
+def test_rejects_unsupported_humming_gemm_type(tmp_path, requested):
+    """vLLM would silently fall back to indexed; we must refuse instead."""
+    completed = _run_launcher(
+        tmp_path,
+        M3_W4A8_BACKEND="humming",
+        VLLM_HUMMING_MOE_GEMM_TYPE=requested,
     )
 
     assert completed.returncode != 0
-    assert "requires indexed MoE GEMM" in completed.stderr
+    assert "unsupported Humming MoE GEMM type" in completed.stderr

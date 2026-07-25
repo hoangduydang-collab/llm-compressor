@@ -37,6 +37,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+M3_W4A8_BACKEND="${M3_W4A8_BACKEND:-cutlass}"
+case "$M3_W4A8_BACKEND" in
+  cutlass) ;;
+  humming) ;;
+  *)
+    echo "ERROR: M3_W4A8_BACKEND must be cutlass or humming; got: $M3_W4A8_BACKEND" >&2
+    exit 2
+    ;;
+esac
+
+case " ${EXTRA_VLLM_ARGS:-} " in
+  *" --quantization "*|*" --quantization="*)
+    echo "ERROR: EXTRA_VLLM_ARGS must not set --quantization; use M3_W4A8_BACKEND" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
+  case "${VLLM_HUMMING_USE_F16_ACCUM:-0}" in
+    ""|0|false|False) export VLLM_HUMMING_USE_F16_ACCUM=0 ;;
+    *)
+      echo "ERROR: first Humming qualification requires FP32 accumulation" >&2
+      exit 2
+      ;;
+  esac
+  case "${VLLM_HUMMING_MOE_GEMM_TYPE:-indexed}" in
+    ""|indexed) export VLLM_HUMMING_MOE_GEMM_TYPE=indexed ;;
+    *)
+      echo "ERROR: first Humming qualification requires indexed MoE GEMM" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 # PRINT_EFFECTIVE_CONFIG dry-runs may run off-cluster (no NFS mounts). Skip
 # env/venv sourcing when those paths are absent so local DRY_RUN validation works.
 _PRINT_CFG=0
@@ -73,6 +107,10 @@ export FLASHINFER_USE_CUDA_NORM=1
 export FLASHINFER_WORKSPACE_DIR="${FLASHINFER_WORKSPACE_DIR:-${HOME}/cache/flashinfer}"
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
+  _HUMMING_M3_CACHE_ROOT="${HUMMING_M3_W4A8_CACHE_ROOT:-$HOME/.humming}"
+  export HUMMING_CACHE_DIR="$_HUMMING_M3_CACHE_ROOT/cache-m3-gptq-w4a8-v1"
+fi
 # MiniMax-M3 shared-expert aux-stream overlap: ON by default since 2026-07-24.
 # The old stream-off workaround masked a fork bug — BreakableCUDAGraph._capture
 # dropped torch.cuda.graph's pre-cleanup device synchronize, so warmup work on
@@ -88,7 +126,11 @@ unset VLLM_USE_FLASHINFER_MOE_FP4 2>/dev/null || true
 # Do NOT force VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 (Nemotron default).
 # Offline cyankiwi never set it; leave unset unless the caller exports it.
 if [[ "$_PRINT_CFG" -eq 0 ]]; then
-  mkdir -p "$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs
+  CACHE_DIRS=("$FLASHINFER_WORKSPACE_DIR" /mnt/nfs/hoangduy/logs)
+  if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
+    CACHE_DIRS+=("$HUMMING_CACHE_DIR")
+  fi
+  mkdir -p "${CACHE_DIRS[@]}"
 fi
 
 DEFAULT_CKPT="/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4"
@@ -194,8 +236,8 @@ fi
 # GPU kill/preflight and site-packages patch apply — we never launch.
 if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == "true" ]]; then
   SKIP_GPU_PREFLIGHT="${SKIP_GPU_PREFLIGHT:-1}"
-  APPLY_M3_PATCHES="${APPLY_M3_PATCHES:-0}"
-  PATCH_CKPT_CONFIG="${PATCH_CKPT_CONFIG:-0}"
+  APPLY_M3_PATCHES=0
+  PATCH_CKPT_CONFIG=0
 fi
 
 if [[ "${SKIP_GPU_PREFLIGHT:-0}" != "1" ]]; then
@@ -239,13 +281,17 @@ fi
 # Fail loud if patches are missing — otherwise we re-debug a "fixed" bug under
 # graphs-on while the real issue is an unpatched venv.
 if [[ "$APPLY_M3_PATCHES" == "1" || "$APPLY_M3_PATCHES" == "true" ]]; then
-  if ! python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --check; then
+  PATCH_ARGS=()
+  if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
+    PATCH_ARGS+=(--humming)
+  fi
+  if ! python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --check "${PATCH_ARGS[@]}"; then
     echo "[http-smoke] patches incomplete; applying..."
-    python "$SCRIPT_DIR/patch_vllm_m3_serve.py" || {
+    python "$SCRIPT_DIR/patch_vllm_m3_serve.py" "${PATCH_ARGS[@]}" || {
       echo "ERROR: patch_vllm_m3_serve.py failed"
       exit 1
     }
-    python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --check || {
+    python "$SCRIPT_DIR/patch_vllm_m3_serve.py" --check "${PATCH_ARGS[@]}" || {
       echo "ERROR: vLLM M3 patches still incomplete after apply"
       exit 1
     }
@@ -284,6 +330,10 @@ ARGS=(
   --enable-auto-tool-choice
 )
 
+if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
+  ARGS+=(--quantization humming)
+fi
+
 # Only pass batching knobs when explicitly set (empty = offline LLM defaults).
 if [[ -n "$MAX_NUM_SEQS" ]]; then
   ARGS+=(--max-num-seqs "$MAX_NUM_SEQS")
@@ -320,11 +370,22 @@ echo "  gpu-util:            $GPU_UTIL"
 echo "  max-num-seqs:        ${MAX_NUM_SEQS:-<vllm default>}"
 echo "  max-num-batched-tok: ${MAX_NUM_BATCHED_TOKENS:-<vllm default>}"
 echo "  language-model-only: $LANGUAGE_MODEL_ONLY"
+echo "  w4a8-backend:        $M3_W4A8_BACKEND"
 echo "  enforce_eager:       $ENFORCE_EAGER"
 echo "  debug_cudagraph:     $DEBUG_CUDAGRAPH"
 echo "  disable_shared_experts_stream: $VLLM_DISABLE_SHARED_EXPERTS_STREAM"
 echo "  capture_sync:        $LLMC_M3_CAPTURE_SYNC"
 echo "  log:                 $LOG"
+
+HUMMING_PREFLIGHT="${LOG}.humming-preflight.json"
+if [[ "$M3_W4A8_BACKEND" == "humming" && "$_PRINT_CFG" -eq 0 ]]; then
+  python -m pipeline.m3_humming_w4a8 preflight \
+    --checkpoint "$MODEL_CKPT" \
+    --out "$HUMMING_PREFLIGHT" || {
+      echo "ERROR: Humming W4A8 preflight failed: $HUMMING_PREFLIGHT"
+      exit 1
+    }
+fi
 
 # Read-only observability for the RCA matrix: print effective env + argv, then exit
 # without launching. Does not change default flags or patch behavior.
@@ -341,6 +402,7 @@ if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == 
   echo "  KV_CACHE_DTYPE=$KV_CACHE_DTYPE"
   echo "  BLOCK_SIZE=$BLOCK_SIZE"
   echo "  ENABLE_EP=$ENABLE_EP"
+  echo "  M3_W4A8_BACKEND=$M3_W4A8_BACKEND"
   echo "  DISABLE_CUSTOM_AR=$DISABLE_CUSTOM_AR"
   echo "  LANGUAGE_MODEL_ONLY=$LANGUAGE_MODEL_ONLY"
   echo "  ENFORCE_EAGER=$ENFORCE_EAGER"
@@ -352,6 +414,12 @@ if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == 
   echo "  VLLM_USE_BREAKABLE_CUDAGRAPH=${VLLM_USE_BREAKABLE_CUDAGRAPH:-<unset>}"
   echo "  APPLY_M3_PATCHES=$APPLY_M3_PATCHES"
   echo "  PATCH_CKPT_CONFIG=$PATCH_CKPT_CONFIG"
+  if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
+    echo "  VLLM_HUMMING_USE_F16_ACCUM=$VLLM_HUMMING_USE_F16_ACCUM"
+    echo "  VLLM_HUMMING_MOE_GEMM_TYPE=$VLLM_HUMMING_MOE_GEMM_TYPE"
+    echo "  HUMMING_CACHE_DIR=$HUMMING_CACHE_DIR"
+    echo "  HUMMING_PREFLIGHT=$HUMMING_PREFLIGHT"
+  fi
   echo "  LOG=$LOG"
   echo "  PID_FILE=$PID_FILE"
   echo "  EXTRA_VLLM_ARGS=${EXTRA_VLLM_ARGS:-}"

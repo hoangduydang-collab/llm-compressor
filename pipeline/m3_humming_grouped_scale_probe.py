@@ -138,8 +138,14 @@ def dequantize_weight_reference(
     scale broadcasting), and validate against the original bf16 weight.
 
     The reconstruction must sit within quantisation rounding of the
-    original (0.51 * scale per element, small slack for the bf16 scale);
+    original (0.51 * |scale| per element, small slack for the bf16 scale);
     anything structurally wrong is off by O(scale * 8) and cannot pass.
+
+    Note humming stores a SIGNED per-group scale for symmetric integer
+    quant (quant_weight.cuh flips the sign when max_val > |min_val| so the
+    8-deep side of the [-8, 7] code range covers the group's dominant
+    sign). dequantize_weight multiplies by the signed scale, so the
+    round-trip is exact; the rounding bound below must use |scale|.
     """
     from humming import dtypes
     from humming.utils.weight import dequantize_weight
@@ -155,7 +161,7 @@ def dequantize_weight_reference(
     ).float()
     assert w_deq.shape == original.shape, (w_deq.shape, original.shape)
 
-    s = scale.cuda().float().view(e, n, k // GROUP_SIZE, 1)
+    s = scale.cuda().float().abs().view(e, n, k // GROUP_SIZE, 1)
     bound = (s * 0.56).expand(e, n, k // GROUP_SIZE, GROUP_SIZE).reshape(e, n, k)
     frac_bad = (
         ((w_deq - original.cuda().float()).abs() > bound).float().mean().item()

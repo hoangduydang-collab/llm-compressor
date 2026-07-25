@@ -78,22 +78,26 @@ printf '%s\n' "$CKPT" >"$ROOT/checkpoint.txt"
 # $1 arm  $2 backend  $3 port  $4 quant-recipe label
 launch_arm() {
   local arm=$1 backend=$2 port=$3 recipe=$4
-  local extra_pythonpath=""
-  local -a env_extra=()
+  local pythonpath="$REPO"
+  # NOTE: these must go through `env`. Words produced by array expansion are
+  # NOT parsed as assignment prefixes -- bash would try to execute the first
+  # one as a command name ("VLLM_...=indexed: command not found").
+  local -a arm_env=(
+    "ROOT=$ROOT" "ARM=$arm" "MODE=local" "PROFILE=minimax-m3-inhouse"
+    "CKPT=$CKPT" "PORT=$port"
+    "M3_ARM=$arm" "MODEL_PATH=$CKPT" "ENDPOINT_PORT=$port"
+    "QUANT_RECIPE=$recipe" "M3_W4A8_BACKEND=$backend"
+  )
   if [ "$backend" = humming ]; then
-    extra_pythonpath="$HUMMING_SITE"
-    env_extra=(
-      VLLM_HUMMING_MOE_GEMM_TYPE=indexed
-      VLLM_HUMMING_USE_F16_ACCUM=0
-      HUMMING_M3_W4A8_CACHE_ROOT=/mnt/nfs/hoangduy/.humming
+    pythonpath="$HUMMING_SITE:$REPO"
+    arm_env+=(
+      "VLLM_HUMMING_MOE_GEMM_TYPE=indexed"
+      "VLLM_HUMMING_USE_F16_ACCUM=0"
+      "HUMMING_M3_W4A8_CACHE_ROOT=/mnt/nfs/hoangduy/.humming"
     )
   fi
-  ROOT="$ROOT" ARM="$arm" MODE=local PROFILE=minimax-m3-inhouse \
-  CKPT="$CKPT" PORT="$port" \
-  M3_ARM="$arm" MODEL_PATH="$CKPT" ENDPOINT_PORT="$port" QUANT_RECIPE="$recipe" \
-  M3_W4A8_BACKEND="$backend" \
-  PYTHONPATH="${extra_pythonpath:+$extra_pythonpath:}$REPO" \
-  "${env_extra[@]}" \
+  arm_env+=("PYTHONPATH=$pythonpath")
+  env "${arm_env[@]}" \
   srun --exclusive --nodes=1 --ntasks=1 --gres=gpu:8 --cpus-per-task=192 \
        --time=12:00:00 --kill-on-bad-exit=1 --job-name="m3-perf-$arm" \
        --export=ALL \

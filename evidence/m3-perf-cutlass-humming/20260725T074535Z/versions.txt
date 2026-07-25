@@ -1,0 +1,1 @@
+{'vllm': '0.24.0', 'humming': '0.1.10', 'humming_path': '/mnt/nfs/hoangduy/venvs/humming-0.1.10-site/humming/__init__.py'}

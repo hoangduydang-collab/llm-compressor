@@ -1,0 +1,19 @@
+perf-humming-w4afp8-indexed.rc CORRECTION
+=========================================
+The original controller run wrote 127 into this path at 09:32:42. That 127 is
+the exit code of the FIRST humming arm attempt, which never reached srun: the
+controller passed env vars via "${array[@]}" as an assignment prefix, bash
+tried to execute VLLM_HUMMING_MOE_GEMM_TYPE=indexed as a command name, and the
+arm died immediately (see humming-w4afp8-indexed-srun.log line 1 of that
+attempt). The controller then reaped that dead PID and recorded 127.
+
+The humming arm that actually ran was relaunched standalone into this same
+ROOT/RUN_TS (see humming-arm-relaunch.txt, humming-arm-command.txt). It served
+on gpu-h115, attested the backend, and completed the full suite:
+  perf-humming-w4afp8-indexed/client.log: "suite rc=0" at 09:24:25
+Two writers therefore raced this one path, and the controller's stale value won
+because it finished later.
+
+This file now contains 0, the true exit code of the arm that produced the
+measurements. controller.rc=1 is left untouched: it correctly records that the
+controller's own second arm failed.

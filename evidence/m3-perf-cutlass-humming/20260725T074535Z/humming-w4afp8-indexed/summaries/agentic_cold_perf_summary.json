@@ -1,0 +1,324 @@
+{
+  "run_dir": "/mnt/nfs/hoangduy/projects/benchmarks/results/minimax-m3-inhouse-humming-w4afp8-indexed/vllm/perf/agentic/20260725T074535Z/cold",
+  "mode": "cold",
+  "concurrency": {
+    "conc_1": {
+      "n_requests": 10,
+      "n_turns_observed": 1,
+      "ttft_ms": {
+        "n": 10,
+        "avg": 522.23,
+        "p50": 568.01,
+        "p90": 573.76,
+        "p95": 573.76,
+        "p99": 573.76,
+        "max": 573.76
+      },
+      "overall_cache_hit_rate": null,
+      "total_output_tokens": 1000,
+      "interactivity_tps": 138.73,
+      "out_tok_per_sec": 80.65167041997132,
+      "e2e": {
+        "n": 10,
+        "avg": 1235.83,
+        "p50": 1281.76,
+        "p90": 1283.78,
+        "p95": 1283.78,
+        "p99": 1283.78,
+        "max": 1283.78
+      },
+      "isl": 10600,
+      "osl": 100,
+      "num_req": 10,
+      "turn_curve": {
+        "0": {
+          "ttft_ms": {
+            "n": 10,
+            "avg": 522.23,
+            "p50": 568.01,
+            "p90": 573.76,
+            "p95": 573.76,
+            "p99": 573.76,
+            "max": 573.76
+          },
+          "latency_ms": {
+            "n": 10,
+            "avg": 1235.83,
+            "p50": 1281.76,
+            "p90": 1283.78,
+            "p95": 1283.78,
+            "p99": 1283.78,
+            "max": 1283.78
+          },
+          "mean_input_tokens": 10600,
+          "cache_hit_rate": null
+        }
+      },
+      "_records_per_turn_have_cache": false,
+      "out_tok_per_sec_per_gpu": 10.08
+    },
+    "conc_16": {
+      "n_requests": 160,
+      "n_turns_observed": 1,
+      "ttft_ms": {
+        "n": 160,
+        "avg": 2227.46,
+        "p50": 1779.49,
+        "p90": 4094.11,
+        "p95": 4832.32,
+        "p99": 6583.94,
+        "max": 7056.21
+      },
+      "overall_cache_hit_rate": null,
+      "total_output_tokens": 16000,
+      "interactivity_tps": 27.21,
+      "out_tok_per_sec": 235.7585288803524,
+      "e2e": {
+        "n": 160,
+        "avg": 6767.5,
+        "p50": 7101.61,
+        "p90": 9065.14,
+        "p95": 10376.28,
+        "p99": 11416.18,
+        "max": 12112.96
+      },
+      "isl": 10600.0,
+      "osl": 100,
+      "num_req": 160,
+      "turn_curve": {
+        "0": {
+          "ttft_ms": {
+            "n": 160,
+            "avg": 2227.46,
+            "p50": 1779.49,
+            "p90": 4094.11,
+            "p95": 4832.32,
+            "p99": 6583.94,
+            "max": 7056.21
+          },
+          "latency_ms": {
+            "n": 160,
+            "avg": 6767.5,
+            "p50": 7101.61,
+            "p90": 9065.14,
+            "p95": 10376.28,
+            "p99": 11416.18,
+            "max": 12112.96
+          },
+          "mean_input_tokens": 10600.0,
+          "cache_hit_rate": null
+        }
+      },
+      "_records_per_turn_have_cache": false,
+      "out_tok_per_sec_per_gpu": 29.47
+    },
+    "conc_32": {
+      "n_requests": 320,
+      "n_turns_observed": 1,
+      "ttft_ms": {
+        "n": 320,
+        "avg": 3522.25,
+        "p50": 3548.8,
+        "p90": 5700.3,
+        "p95": 6664.2,
+        "p99": 9188.78,
+        "max": 9458.85
+      },
+      "overall_cache_hit_rate": null,
+      "total_output_tokens": 32000,
+      "interactivity_tps": 10.05,
+      "out_tok_per_sec": 218.9133314989425,
+      "e2e": {
+        "n": 320,
+        "avg": 14586.91,
+        "p50": 15864.21,
+        "p90": 16403.98,
+        "p95": 16763.66,
+        "p99": 17170.85,
+        "max": 17256.52
+      },
+      "isl": 10600.0,
+      "osl": 100,
+      "num_req": 320,
+      "turn_curve": {
+        "0": {
+          "ttft_ms": {
+            "n": 320,
+            "avg": 3522.25,
+            "p50": 3548.8,
+            "p90": 5700.3,
+            "p95": 6664.2,
+            "p99": 9188.78,
+            "max": 9458.85
+          },
+          "latency_ms": {
+            "n": 320,
+            "avg": 14586.91,
+            "p50": 15864.21,
+            "p90": 16403.98,
+            "p95": 16763.66,
+            "p99": 17170.85,
+            "max": 17256.52
+          },
+          "mean_input_tokens": 10600.0,
+          "cache_hit_rate": null
+        }
+      },
+      "_records_per_turn_have_cache": false,
+      "out_tok_per_sec_per_gpu": 27.36
+    },
+    "conc_4": {
+      "n_requests": 40,
+      "n_turns_observed": 1,
+      "ttft_ms": {
+        "n": 40,
+        "avg": 905.84,
+        "p50": 647.94,
+        "p90": 1623.35,
+        "p95": 1929.29,
+        "p99": 1948.87,
+        "max": 1948.87
+      },
+      "overall_cache_hit_rate": null,
+      "total_output_tokens": 4000,
+      "interactivity_tps": 86.63,
+      "out_tok_per_sec": 183.15304719757256,
+      "e2e": {
+        "n": 40,
+        "avg": 2174.67,
+        "p50": 2356.54,
+        "p90": 2811.09,
+        "p95": 2814.39,
+        "p99": 2897.72,
+        "max": 2897.72
+      },
+      "isl": 10600,
+      "osl": 100,
+      "num_req": 40,
+      "turn_curve": {
+        "0": {
+          "ttft_ms": {
+            "n": 40,
+            "avg": 905.84,
+            "p50": 647.94,
+            "p90": 1623.35,
+            "p95": 1929.29,
+            "p99": 1948.87,
+            "max": 1948.87
+          },
+          "latency_ms": {
+            "n": 40,
+            "avg": 2174.67,
+            "p50": 2356.54,
+            "p90": 2811.09,
+            "p95": 2814.39,
+            "p99": 2897.72,
+            "max": 2897.72
+          },
+          "mean_input_tokens": 10600,
+          "cache_hit_rate": null
+        }
+      },
+      "_records_per_turn_have_cache": false,
+      "out_tok_per_sec_per_gpu": 22.89
+    }
+  },
+  "goodput_swept": {
+    "ttft_slo_250ms": {
+      "conc_1": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 573.76
+      },
+      "conc_16": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 4832.32
+      },
+      "conc_32": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 6664.2
+      },
+      "conc_4": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 1929.29
+      }
+    },
+    "ttft_slo_500ms": {
+      "conc_1": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 573.76
+      },
+      "conc_16": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 4832.32
+      },
+      "conc_32": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 6664.2
+      },
+      "conc_4": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 1929.29
+      }
+    },
+    "ttft_slo_1000ms": {
+      "conc_1": {
+        "meets_slo_p95": true,
+        "p95_ttft_ms": 573.76
+      },
+      "conc_16": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 4832.32
+      },
+      "conc_32": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 6664.2
+      },
+      "conc_4": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 1929.29
+      }
+    },
+    "ttft_slo_2000ms": {
+      "conc_1": {
+        "meets_slo_p95": true,
+        "p95_ttft_ms": 573.76
+      },
+      "conc_16": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 4832.32
+      },
+      "conc_32": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 6664.2
+      },
+      "conc_4": {
+        "meets_slo_p95": true,
+        "p95_ttft_ms": 1929.29
+      }
+    },
+    "ttft_slo_4000ms": {
+      "conc_1": {
+        "meets_slo_p95": true,
+        "p95_ttft_ms": 573.76
+      },
+      "conc_16": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 4832.32
+      },
+      "conc_32": {
+        "meets_slo_p95": false,
+        "p95_ttft_ms": 6664.2
+      },
+      "conc_4": {
+        "meets_slo_p95": true,
+        "p95_ttft_ms": 1929.29
+      }
+    }
+  },
+  "kv_collapse": {
+    "collapse_concurrency": 4,
+    "p95_ttft_ms": 1929.29,
+    "baseline_p95_ttft_ms": 573.76
+  },
+  "cache_hit_observed": false
+}

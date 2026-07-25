@@ -1,0 +1,49 @@
+checkpoint ok: architectures=['MiniMaxM3SparseForConditionalGeneration'] model_type=minimax_m3_vl
+host=h98-gpu-polaris.pod4.lab.bitdeer.ai starting HTTP vLLM smoke serve
+  checkpoint:          /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay
+  served-name:         MiniMaxAI/MiniMax-M3
+  port:                8000
+  max-model-len:       8192
+  gpu-util:            0.9
+  max-num-seqs:        <vllm default>
+  max-num-batched-tok: <vllm default>
+  language-model-only: 1
+  w4a8-backend:        humming
+  enforce_eager:       0
+  debug_cudagraph:     0
+  disable_shared_experts_stream: 0
+  capture_sync:        sync
+  log:                 /mnt/nfs/hoangduy/results/m3-humming-w4a8-qualification/20260725T072703Z-m3-humming-w4a8-qualification-r3/serve.log
+[http-smoke] PRINT_EFFECTIVE_CONFIG=1 — effective configuration (no launch)
+EFFECTIVE_ENV:
+  CKPT=/mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay
+  SERVED_NAME=MiniMaxAI/MiniMax-M3
+  HOST=0.0.0.0
+  PORT=8000
+  TP=8
+  MAX_MODEL_LEN=8192
+  GPU_UTIL=0.9
+  KV_CACHE_DTYPE=fp8
+  BLOCK_SIZE=128
+  ENABLE_EP=1
+  M3_W4A8_BACKEND=humming
+  DISABLE_CUSTOM_AR=1
+  LANGUAGE_MODEL_ONLY=1
+  ENFORCE_EAGER=0
+  DEBUG_CUDAGRAPH=0
+  CUDA_LAUNCH_BLOCKING=<unset>
+  TORCH_USE_CUDA_DSA=<unset>
+  VLLM_DISABLE_SHARED_EXPERTS_STREAM=0
+  LLMC_M3_CAPTURE_SYNC=sync
+  VLLM_USE_BREAKABLE_CUDAGRAPH=<unset>
+  APPLY_M3_PATCHES=0
+  PATCH_CKPT_CONFIG=0
+  VLLM_HUMMING_USE_F16_ACCUM=0
+  VLLM_HUMMING_MOE_GEMM_TYPE=indexed
+  HUMMING_CACHE_DIR=/mnt/nfs/hoangduy/.humming/cache-m3-gptq-w4a8-v1
+  HUMMING_NVRTC_LIB_DIR=/mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/nvidia/cu13/lib
+  HUMMING_PREFLIGHT=/mnt/nfs/hoangduy/results/m3-humming-w4a8-qualification/20260725T072703Z-m3-humming-w4a8-qualification-r3/serve.log.humming-preflight.json
+  LOG=/mnt/nfs/hoangduy/results/m3-humming-w4a8-qualification/20260725T072703Z-m3-humming-w4a8-qualification-r3/serve.log
+  PID_FILE=/mnt/nfs/hoangduy/results/m3-humming-w4a8-qualification/20260725T072703Z-m3-humming-w4a8-qualification-r3/serve.pid
+  EXTRA_VLLM_ARGS=
+EFFECTIVE_ARGV: vllm serve /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay --served-model-name MiniMaxAI/MiniMax-M3 --host 0.0.0.0 --port 8000 --trust-remote-code --tensor-parallel-size 8 --kv-cache-dtype fp8 --max-model-len 8192 --gpu-memory-utilization 0.9 --block-size 128 --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 --enable-auto-tool-choice --quantization humming --enable-expert-parallel --disable-custom-all-reduce --language-model-only

@@ -1,0 +1,26 @@
+{
+  "backend": "humming",
+  "details": {
+    "abi_valid": true,
+    "activation_strategy": "token",
+    "device_capability": [
+      9,
+      0
+    ],
+    "gemm_type": "indexed",
+    "humming_cache_dir": "/mnt/nfs/hoangduy/.humming/cache-m3-gptq-w4a8-v1",
+    "humming_declared_patches": [
+      "humming/schema/compressed_tensors.py"
+    ],
+    "humming_source_integrity": "record-matched-with-declared-patch",
+    "humming_source_mismatches": [],
+    "humming_unhashed_bytecode": 58,
+    "humming_version": "0.1.10",
+    "nvfp4_overlay_detected": false,
+    "vllm_version": "0.24.0",
+    "weight_group_size": 128
+  },
+  "reason_codes": [],
+  "schema_version": 1,
+  "valid": true
+}

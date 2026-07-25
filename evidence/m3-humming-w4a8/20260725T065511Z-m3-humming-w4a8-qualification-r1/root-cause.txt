@@ -1,0 +1,6 @@
+BLOCKER: humming CompressedTensorsInputSchema.__post_init__ rejects checkpoint format 'pack-quantized'
+file: humming/schema/compressed_tensors.py:269 (0.1.10); identical omission in 0.1.6 and 0.1.11
+checkpoint: format=pack-quantized, input_activations={dynamic:true,num_bits:8,type:float,strategy:token}
+note: same file's CompressedTensorsWeightSchema whitelist DOES include pack-quantized in all three versions
+note: 0.1.10 weight schema admits actorder='static' (0.1.6 did not); checkpoint has 0 g_idx tensors
+stage reached: model init (vision tower qkv_proj, first Linear constructed); MoE never reached

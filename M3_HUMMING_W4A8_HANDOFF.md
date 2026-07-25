@@ -1,7 +1,19 @@
 # Execution packet: MiniMax-M3 native Humming W4A8 qualification
 
+> **HISTORICAL — this packet has been executed and closed.** The qualification
+> passed on run r3 (2026-07-25). Read
+> [`M3_HUMMING_W4A8_QUALIFICATION_REPORT.md`](M3_HUMMING_W4A8_QUALIFICATION_REPORT.md)
+> instead; it is the single active document for this task and records two
+> defects that had to be fixed before Humming could serve this checkpoint at
+> all, plus the declared third-party patch now in the qualified stack.
+>
+> Do not re-run the procedure below as written: it predates the
+> `humming-kernels` 0.1.10 side-install, the `pack-quantized` admission patch,
+> and the NVRTC `LD_LIBRARY_PATH` requirement, and it was written for the
+> two-agent protocol rather than the full-stack configuration actually used.
+
 - Protocol version: 1
-- State: `READY_FOR_EXECUTOR`
+- State: `HISTORICAL` (was `READY_FOR_EXECUTOR`; executed as r1/r2/r3)
 - Packet revision: `2026-07-25-r1`
 - Planner owner: Codex planner
 - Intended executor: any authorized cluster executor

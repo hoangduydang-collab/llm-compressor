@@ -1,0 +1,44 @@
+GET http://127.0.0.1:8000/health
+health: ok
+POST http://127.0.0.1:8000/v1/chat/completions
+  model=MiniMaxAI/MiniMax-M3 max_tokens=256 temperature=0.0
+  chat_template_kwargs={"enable_thinking": false}
+  prompt="What is 2+2? Answer briefly."
+
+{
+    "id": "chatcmpl-997a1bb5d5448dff",
+    "object": "chat.completion",
+    "created": 1784964755,
+    "model": "MiniMaxAI/MiniMax-M3",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "4",
+                "refusal": null,
+                "annotations": null,
+                "audio": null,
+                "function_call": null,
+                "reasoning": "The user is asking a simple math question. 2+2 = 4."
+            },
+            "logprobs": null,
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "token_ids": null,
+            "routed_experts": null
+        }
+    ],
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.24.0-tp8-ep-b5241093",
+    "usage": {
+        "prompt_tokens": 186,
+        "total_tokens": 207,
+        "completion_tokens": 21,
+        "prompt_tokens_details": null
+    },
+    "prompt_logprobs": null,
+    "prompt_token_ids": null,
+    "prompt_text": null,
+    "kv_transfer_params": null
+}

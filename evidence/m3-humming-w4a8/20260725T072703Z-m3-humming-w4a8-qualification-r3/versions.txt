@@ -1,0 +1,7 @@
+vllm=0.24.0
+humming-kernels=0.1.10
+humming_path=/mnt/nfs/hoangduy/venvs/humming-0.1.10-site/humming/__init__.py
+torch=2.11.0+cu130
+cuda=13.0
+device_count=8
+device_capability=(9, 0)

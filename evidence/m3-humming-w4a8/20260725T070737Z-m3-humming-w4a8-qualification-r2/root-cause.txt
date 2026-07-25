@@ -1,0 +1,6 @@
+STAGE REACHED: past schema admission (r1 blocker fixed), past weight load, into process_weights_after_loading
+BLOCKER: humming JIT NVRTC cannot open libnvrtc-builtins.so.13.0
+path: humming.py:843 -> layer.py:428 transform_humming_layer -> utils/weight.py:238 -> ops/weight.py:153 repack_weight -> jit/compiler.py:72
+nvrtc error: NVRTC_ERROR_BUILTIN_OPERATION_FAILURE
+builtins present at: /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/nvidia/cu13/lib/libnvrtc-builtins.so.13.0
+classification: environment/linker, not checkpoint or numerical contract

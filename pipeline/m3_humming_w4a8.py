@@ -21,6 +21,19 @@ EXPECTED_DEVICE_CAPABILITY = (9, 0)
 EXPECTED_CACHE_BASENAME = "cache-m3-gptq-w4a8-v1"
 NVFP4_OVERLAY_MARKER = b"LLMC_NVFP4_W4A8_G16_V1"
 
+# Third-party Humming files we knowingly modify, pinned to the exact post-patch
+# SHA-256. A declared patch is reported, never silently tolerated; any other
+# content for these paths, and any modification of an undeclared path, is still
+# a hard mismatch. Applied by pipeline/slurm/patch_humming_ct_input_format.py.
+DECLARED_PATCH_SHA256: dict[str, str] = {
+    "humming/schema/compressed_tensors.py": (
+        "8e2ab300b595e98f9b66d76096c6a03272ffe948e11dd29844af701c1f6474c3"
+    ),
+}
+RECORD_MATCHED = "record-matched"
+RECORD_MATCHED_PATCHED = "record-matched-with-declared-patch"
+ACCEPTED_INTEGRITY = frozenset({RECORD_MATCHED, RECORD_MATCHED_PATCHED})
+
 _QUANTIZATION_PATTERNS = (
     re.compile(r"""["']quantization["']\s*:\s*["']humming["']"""),
     re.compile(r"\bquantization=humming\b"),
@@ -47,6 +60,7 @@ class RuntimeFacts:
     normal_patch_status: str
     humming_patch_status: str
     humming_unhashed_bytecode: int = 0
+    humming_declared_patches: tuple[str, ...] = ()
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -101,9 +115,14 @@ def evaluate_preflight(
         ),
         (not runtime.nvfp4_overlay_detected, "NVFP4_OVERLAY_PRESENT"),
         (
-            runtime.humming_source_integrity == "record-matched"
+            runtime.humming_source_integrity in ACCEPTED_INTEGRITY
             and not runtime.humming_source_mismatches,
             "HUMMING_SOURCE_INTEGRITY",
+        ),
+        (
+            set(runtime.humming_declared_patches)
+            <= set(DECLARED_PATCH_SHA256),
+            "HUMMING_UNDECLARED_PATCH",
         ),
         (
             cache_basename == EXPECTED_CACHE_BASENAME,
@@ -188,6 +207,7 @@ def evaluate_preflight(
             "humming_source_mismatches": runtime.humming_source_mismatches,
             "nvfp4_overlay_detected": runtime.nvfp4_overlay_detected,
             "humming_unhashed_bytecode": runtime.humming_unhashed_bytecode,
+            "humming_declared_patches": runtime.humming_declared_patches,
             "humming_cache_dir": runtime.humming_cache_dir,
             "weight_group_size": weights.get("group_size"),
             "activation_strategy": activations.get("strategy"),
@@ -247,7 +267,9 @@ def _is_derived_bytecode(relative_path: str) -> bool:
     return "__pycache__/" in relative_path and relative_path.endswith(".pyc")
 
 
-def _distribution_integrity() -> tuple[str, tuple[str, ...], bool, int]:
+def _distribution_integrity() -> (
+    tuple[str, tuple[str, ...], bool, int, tuple[str, ...]]
+):
     distribution = importlib.metadata.distribution("humming-kernels")
     files = list(distribution.files or [])
     package_files = [
@@ -255,9 +277,10 @@ def _distribution_integrity() -> tuple[str, tuple[str, ...], bool, int]:
     ]
     hashed_files = [file for file in package_files if file.hash is not None]
     if not hashed_files:
-        return "unverifiable", ("NO_HASHED_HUMMING_FILES",), False, 0
+        return "unverifiable", ("NO_HASHED_HUMMING_FILES",), False, 0, ()
 
     mismatches: list[str] = []
+    declared_patches: list[str] = []
     overlay_detected = False
     derived_unhashed = 0
     for file in package_files:
@@ -287,9 +310,24 @@ def _distribution_integrity() -> tuple[str, tuple[str, ...], bool, int]:
         digest = hashlib.new(file.hash.mode, payload).digest()
         encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         if encoded != file.hash.value:
+            declared = DECLARED_PATCH_SHA256.get(relative_path)
+            if declared and hashlib.sha256(payload).hexdigest() == declared:
+                declared_patches.append(relative_path)
+                continue
             mismatches.append(relative_path)
-    status = "record-matched" if not mismatches else "mismatch"
-    return status, tuple(sorted(mismatches)), overlay_detected, derived_unhashed
+    if mismatches:
+        status = "mismatch"
+    elif declared_patches:
+        status = RECORD_MATCHED_PATCHED
+    else:
+        status = RECORD_MATCHED
+    return (
+        status,
+        tuple(sorted(mismatches)),
+        overlay_detected,
+        derived_unhashed,
+        tuple(sorted(declared_patches)),
+    )
 
 
 def _patch_statuses() -> tuple[str, str]:
@@ -317,7 +355,13 @@ def _discover_runtime() -> RuntimeFacts:
     import torch
     import vllm
 
-    integrity, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
+    (
+        integrity,
+        mismatches,
+        overlay,
+        unhashed_bytecode,
+        declared_patches,
+    ) = _distribution_integrity()
     normal_patch, humming_patch = _patch_statuses()
     capability = torch.cuda.get_device_capability()
     return RuntimeFacts(
@@ -328,6 +372,7 @@ def _discover_runtime() -> RuntimeFacts:
         humming_source_mismatches=mismatches,
         nvfp4_overlay_detected=overlay,
         humming_unhashed_bytecode=unhashed_bytecode,
+        humming_declared_patches=declared_patches,
         humming_cache_dir=os.environ.get("HUMMING_CACHE_DIR", ""),
         f16_accum=os.environ.get("VLLM_HUMMING_USE_F16_ACCUM", "0"),
         moe_gemm_type=os.environ.get(

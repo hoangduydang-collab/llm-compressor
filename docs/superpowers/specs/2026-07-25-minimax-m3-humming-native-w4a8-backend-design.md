@@ -1,7 +1,7 @@
 # MiniMax-M3 Native Humming W4A8 Backend Design
 
 - Date: 2026-07-25
-- Status: DRAFT — PENDING USER SPEC REVIEW
+- Status: APPROVED — 2026-07-25
 - Workflow state: PLANNER_ANALYSIS
 - Owner: planner
 - Initial checkpoint scope: in-house GPTQ W4A8 only

@@ -6,7 +6,7 @@ handoffs (`*_HANDOFF.md`, `*_PLAN.md`) carry the current work; this file carries
 *why*. Keep the status markers current; do not delete a goal when it completes —
 mark it `DONE` with a pointer to the evidence.
 
-Last reviewed: 2026-07-20.
+Last reviewed: 2026-07-25.
 
 ## Long-term goals
 
@@ -57,8 +57,18 @@ Last reviewed: 2026-07-20.
    dense path passes correctness and target-workload throughput gates. See
    `docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md`.
 
+7. **Native Humming W4A8 serving on Hopper** — *Active: implementation planned.*
+   Qualify Humming's existing GPTQ W4A8 path as a possible faster backend for
+   the in-house MiniMax-M3 checkpoint on H100. Preserve packed INT4 group-128
+   weights, dynamic per-token E4M3 activations, TP8 plus expert parallelism,
+   graphs-on serving, and the existing production benchmark contract. CUTLASS
+   remains the default until Humming passes fail-closed backend attestation,
+   correctness, stability, and the paired performance decision. See
+   `docs/superpowers/specs/2026-07-25-minimax-m3-humming-native-w4a8-backend-design.md`.
+
 ## Current session focus
 
-**Goals 1 and 2.** Everything else is context, not the immediate objective.
-Goal 6 is an approved future project, but it remains benchmark-gated and does
-not displace the current session focus.
+**Goal 7.** Goals 1 and 2 remain active long-term work, while Goal 6 remains an
+approved benchmark-gated future project. The immediate objective is qualifying
+Humming as a native W4A8 serving backend without changing the checkpoint or
+benchmark contract.

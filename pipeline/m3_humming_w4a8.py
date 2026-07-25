@@ -38,6 +38,15 @@ DECLARED_PATCH_SHA256: dict[str, str] = {
     "humming/include/humming/scheduler.cuh": (
         "befa01f9758df24e34be12022c86aec701de81d182e0bec713374d987df1839f"
     ),
+    # Missing cross-proxy fence before TMA C stores: generic-proxy smem writes
+    # must be made async-proxy visible (fence.proxy.async.shared::cta, CUTLASS's
+    # tma_store_fence) before cp.async.bulk.tensor reads them. Unpatched, the
+    # grouped_contiguous TMA-C epilogue intermittently stores whole garbage
+    # tiles (~20% of launches at BM=32/BK=256; serving symptom: early-EOS OSL
+    # collapse). See pipeline/slurm/patch_humming_tma_store_fence.py.
+    "humming/include/humming/utils/ptx/tma.cuh": (
+        "2ad7d5339d730d4a1a9b176c120ea448ec7f6e0481569787cca9d6f952ef2717"
+    ),
 }
 RECORD_MATCHED = "record-matched"
 RECORD_MATCHED_PATCHED = "record-matched-with-declared-patch"

@@ -29,6 +29,15 @@ DECLARED_PATCH_SHA256: dict[str, str] = {
     "humming/schema/compressed_tensors.py": (
         "8e2ab300b595e98f9b66d76096c6a03272ffe948e11dd29844af701c1f6474c3"
     ),
+    # grouped_contiguous last-expert row count: derive it from the loaded
+    # expert offsets instead of shape_m (== a.size(0)), which vLLM oversizes to
+    # (M * topk, K). Unpatched, the final expert is assigned thousands of
+    # phantom rows, inflating m_blocks and corrupting the tail experts' tiles --
+    # measured as 100% of experts 13/14/15's rows wrong. See
+    # pipeline/slurm/patch_humming_grouped_expert_bounds.py.
+    "humming/include/humming/scheduler.cuh": (
+        "befa01f9758df24e34be12022c86aec701de81d182e0bec713374d987df1839f"
+    ),
 }
 RECORD_MATCHED = "record-matched"
 RECORD_MATCHED_PATCHED = "record-matched-with-declared-patch"

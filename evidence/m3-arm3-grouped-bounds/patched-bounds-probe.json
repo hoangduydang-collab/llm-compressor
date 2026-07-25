@@ -1,0 +1,113 @@
+{
+  "num_tokens": 512,
+  "topk": 4,
+  "buffer_rows": 2048,
+  "total_valid_rows": 261,
+  "oversize_factor": 7.85,
+  "last_expert_true_rows": 16,
+  "last_expert_rows_kernel_would_infer": 1803,
+  "identical": true,
+  "frac_elements_mismatched": 0.0,
+  "max_abs_diff": 0.0,
+  "out_full_finite": true,
+  "out_exact_finite": true,
+  "per_expert": [
+    {
+      "expert": 0,
+      "rows": 20,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 1,
+      "rows": 15,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 2,
+      "rows": 14,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 3,
+      "rows": 23,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 4,
+      "rows": 16,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 5,
+      "rows": 22,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 6,
+      "rows": 14,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 7,
+      "rows": 18,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 8,
+      "rows": 12,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 9,
+      "rows": 14,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 10,
+      "rows": 19,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 11,
+      "rows": 19,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 12,
+      "rows": 17,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 13,
+      "rows": 13,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 14,
+      "rows": 9,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    },
+    {
+      "expert": 15,
+      "rows": 16,
+      "max_abs_diff": 0.0,
+      "frac_rows_wrong": 0.0
+    }
+  ],
+  "valid_reference_norm": 896.5984497070312
+}

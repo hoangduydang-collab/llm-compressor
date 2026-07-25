@@ -1,0 +1,7 @@
+== Probe 1: basic chat ==
+== Probe 2: tool call (structured tool_calls expected) ==
+AssertionError: no tool_calls returned
+  FAIL: tool_calls missing/malformed
+{"id":"chatcmpl-995d23bf9ae72f42","object":"chat.completion","created":1784982426,"model":"MiniMaxAI/MiniMax-M3","choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":null,"annotations":null,"audio":null,"function_call":null,"reasoning":"The user is asking about the weather in \"Skik\" or \"Ski\" - this is ambiguous. Let me think about what \"Skik\" could mean. It might be a== Probe 3: skipped (model is single-mode, not hybrid) ==
+== Probe 4: prefix-cache reuse (identical long prompt sent twice) ==
+PREFLIGHT: FAIL — fix config before benchmarking

@@ -198,6 +198,118 @@ PY
   [ $? = 0 ] || fail "smoke $index content gate failed"
 done
 
+# --- comprehension gate ----------------------------------------------------
+# The ten "2+2" smokes above are a liveness gate and nothing more. Arm 3 proved
+# how weak that is: grouped_contiguous passed all ten, then in the perf window
+# read "What is the weather in Paris?" as being about "Skik" at temperature 0
+# (root cause: pipeline/slurm/patch_humming_grouped_expert_bounds.py). "2+2=4" is
+# too overdetermined to notice a kernel that corrupts a subset of experts.
+#
+# These probes fail if the model is not actually reading its input: an exact echo
+# (token-level fidelity), a closed-book fact, and a structured tool call -- the
+# last being the one that empirically caught the bug. max_tokens is deliberately
+# generous: M3 always emits reasoning, and a tight budget would fail on
+# exhaustion rather than on comprehension.
+python - "$SERVED_NAME" "$PORT" "$ROOT/comprehension.json" <<'PY' >"$ROOT/comprehension.log" 2>&1
+import json
+import sys
+import urllib.request
+
+served_name, port, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+url = f"http://127.0.0.1:{port}/v1/chat/completions"
+
+
+def post(body):
+    request = urllib.request.Request(
+        url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(request, timeout=600) as response:
+        return json.loads(response.read())
+
+
+def text_of(message):
+    return " ".join(
+        part for part in (message.get("content"), message.get("reasoning")) if part
+    )
+
+
+results = []
+failures = []
+
+# 1. exact echo -- token-level fidelity, no world knowledge involved.
+body = post({
+    "model": served_name,
+    "messages": [{"role": "user", "content": "Repeat exactly this word and nothing else: Absquatulate"}],
+    "temperature": 0,
+    "max_tokens": 512,
+})
+echo_text = text_of(body["choices"][0]["message"])
+ok = "absquatulate" in echo_text.lower()
+results.append({"probe": "echo", "ok": ok, "finish": body["choices"][0].get("finish_reason")})
+if not ok:
+    failures.append(f"echo: {echo_text[:200]!r}")
+
+# 2. closed-book fact stated in the prompt's own terms.
+body = post({
+    "model": served_name,
+    "messages": [{"role": "user", "content": "What is the capital of France? Answer with one word."}],
+    "temperature": 0,
+    "max_tokens": 512,
+})
+capital_text = text_of(body["choices"][0]["message"])
+ok = "paris" in capital_text.lower()
+results.append({"probe": "capital", "ok": ok, "finish": body["choices"][0].get("finish_reason")})
+if not ok:
+    failures.append(f"capital: {capital_text[:200]!r}")
+
+# 3. structured tool call -- the probe that exposed the grouped defect.
+body = post({
+    "model": served_name,
+    "messages": [{"role": "user", "content": "What is the weather in Paris? Use the tool."}],
+    "temperature": 0,
+    "max_tokens": 512,
+    "tools": [{
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current weather for a city",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        },
+    }],
+    "tool_choice": "auto",
+})
+message = body["choices"][0]["message"]
+tool_calls = message.get("tool_calls") or []
+city = ""
+if tool_calls:
+    try:
+        city = json.loads(tool_calls[0]["function"]["arguments"]).get("city", "")
+    except (KeyError, ValueError, TypeError):
+        city = ""
+ok = bool(tool_calls) and "paris" in city.lower()
+results.append({
+    "probe": "tool_call",
+    "ok": ok,
+    "num_tool_calls": len(tool_calls),
+    "city": city,
+    "finish": body["choices"][0].get("finish_reason"),
+    "reasoning_head": (message.get("reasoning") or "")[:200],
+})
+if not ok:
+    failures.append(f"tool_call: calls={len(tool_calls)} city={city!r}")
+
+report = {"valid": not failures, "results": results, "failures": failures}
+open(out_path, "w").write(json.dumps(report, indent=2) + "\n")
+print(json.dumps(report, indent=2))
+if failures:
+    raise SystemExit("comprehension gate failed: " + "; ".join(failures))
+PY
+[ $? = 0 ] || fail "comprehension gate failed (see $ROOT/comprehension.log)"
+
 grep -q "Capturing CUDA graphs" "$LOG" || fail "CUDA graph capture marker missing"
 grep -q "M3_LOAD_AUDIT#" "$LOG" || fail "load-audit marker missing"
 grep -q "M3_MOE_PROBE#" "$LOG" || fail "MoE-probe marker missing"

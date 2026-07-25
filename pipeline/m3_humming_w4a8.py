@@ -47,6 +47,15 @@ DECLARED_PATCH_SHA256: dict[str, str] = {
     "humming/include/humming/utils/ptx/tma.cuh": (
         "2ad7d5339d730d4a1a9b176c120ea448ec7f6e0481569787cca9d6f952ef2717"
     ),
+    # TMA C stores were never committed into bulk async-groups, so every
+    # tma_wait_store_group in the kernel was a no-op (PTX: wait_group only
+    # tracks committed groups). The producer then overwrites the union-aliased
+    # reduce smem while the C store is still reading it -- whole-tile
+    # intermittent corruption; and stream-K slice 0 released its lock before
+    # its store completed. See pipeline/slurm/patch_humming_tma_store_commit.py.
+    "humming/include/humming/epilogue/gmem_writer.cuh": (
+        "3e135b55f3753245a0477d6b2ad67db588d80b5508db4ee9aa179205e2a20deb"
+    ),
 }
 RECORD_MATCHED = "record-matched"
 RECORD_MATCHED_PATCHED = "record-matched-with-declared-patch"

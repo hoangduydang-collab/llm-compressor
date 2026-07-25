@@ -80,6 +80,29 @@ def test_humming_backend_adds_structured_quantization_and_policy(tmp_path):
     assert effective.count("--quantization humming") == 1
 
 
+def test_humming_puts_nvrtc_builtins_dir_on_ld_library_path(tmp_path):
+    """Humming JIT dies with NVRTC_ERROR_BUILTIN_OPERATION_FAILURE without it."""
+
+    completed = _run_launcher(tmp_path, M3_W4A8_BACKEND="humming")
+
+    assert completed.returncode == 0, completed.stderr
+    line = next(
+        line
+        for line in completed.stdout.splitlines()
+        if line.strip().startswith("HUMMING_NVRTC_LIB_DIR=")
+    )
+    lib_dir = Path(line.split("=", 1)[1].strip())
+    assert lib_dir.is_dir(), lib_dir
+    assert list(lib_dir.glob("libnvrtc-builtins.so*")), lib_dir
+
+
+def test_cutlass_backend_does_not_touch_ld_library_path(tmp_path):
+    completed = _run_launcher(tmp_path)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "HUMMING_NVRTC_LIB_DIR=" not in completed.stdout
+
+
 def test_rejects_unknown_backend_before_effective_command(tmp_path):
     completed = _run_launcher(tmp_path, M3_W4A8_BACKEND="unknown")
 

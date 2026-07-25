@@ -110,6 +110,34 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 if [[ "$M3_W4A8_BACKEND" == "humming" ]]; then
   _HUMMING_M3_CACHE_ROOT="${HUMMING_M3_W4A8_CACHE_ROOT:-$HOME/.humming}"
   export HUMMING_CACHE_DIR="$_HUMMING_M3_CACHE_ROOT/cache-m3-gptq-w4a8-v1"
+  # Humming JIT builds a helper binary that links libnvrtc with -Wl,-rpath, but
+  # NVRTC dlopen()s libnvrtc-builtins.so.<ver> at runtime by plain soname, which
+  # does not consult that rpath. Without the lib dir on LD_LIBRARY_PATH every
+  # kernel compile dies with NVRTC_ERROR_BUILTIN_OPERATION_FAILURE during
+  # process_weights_after_loading. Derived from the installed nvidia wheel so it
+  # tracks the CUDA major in use rather than hardcoding a version.
+  _NVRTC_LIB_DIR="$(python - <<'PY' 2>/dev/null || true
+import glob
+import os
+import site
+
+for base in site.getsitepackages():
+    for hit in sorted(glob.glob(os.path.join(base, "nvidia", "*", "lib"))):
+        if glob.glob(os.path.join(hit, "libnvrtc-builtins.so*")):
+            print(hit)
+            raise SystemExit(0)
+PY
+)"
+  if [[ -n "$_NVRTC_LIB_DIR" ]]; then
+    case ":${LD_LIBRARY_PATH:-}:" in
+      *":$_NVRTC_LIB_DIR:"*) ;;
+      *) export LD_LIBRARY_PATH="$_NVRTC_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+    esac
+  else
+    echo "ERROR: humming backend selected but libnvrtc-builtins.so was not found;" >&2
+    echo "       NVRTC JIT would fail at weight repack. Aborting." >&2
+    exit 1
+  fi
 fi
 # MiniMax-M3 shared-expert aux-stream overlap: ON by default since 2026-07-24.
 # The old stream-off workaround masked a fork bug — BreakableCUDAGraph._capture
@@ -418,6 +446,7 @@ if [[ "${PRINT_EFFECTIVE_CONFIG:-0}" == "1" || "${PRINT_EFFECTIVE_CONFIG:-}" == 
     echo "  VLLM_HUMMING_USE_F16_ACCUM=$VLLM_HUMMING_USE_F16_ACCUM"
     echo "  VLLM_HUMMING_MOE_GEMM_TYPE=$VLLM_HUMMING_MOE_GEMM_TYPE"
     echo "  HUMMING_CACHE_DIR=$HUMMING_CACHE_DIR"
+    echo "  HUMMING_NVRTC_LIB_DIR=$_NVRTC_LIB_DIR"
     echo "  HUMMING_PREFLIGHT=$HUMMING_PREFLIGHT"
   fi
   echo "  LOG=$LOG"

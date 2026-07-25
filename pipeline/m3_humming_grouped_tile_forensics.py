@@ -222,6 +222,7 @@ def main() -> int:
                 cands.append((f"store-misroute-n:n{j2}", ref[lo:hi, cols2]))
         cands.append(("no-a-scale", a_q32[lo:hi] @ w_deq[e_bad][cols].T))
         cands.append(("stale-plus-ref", 2.0 * ref[lo:hi, cols]))
+        cands.append(("sentinel-plus-ref", 30000.0 + ref[lo:hi, cols]))
         # garbage-region A rows at BM-aligned offsets in the tail
         for gofs in range(total_valid, buffer_rows - rows + 1, BM):
             aq2 = a_q32[gofs : gofs + rows]
@@ -237,15 +238,32 @@ def main() -> int:
             r = min(cand.size(0), rows)
             scored.append((rel_residual(t[:r], cand[:r].float()), name))
         scored.sort()
+
+        # Scale-corruption test: if the tile is the CORRECT product scaled by
+        # a wrong per-row factor (e.g. a raced input-scale buffer), then
+        # T[r,:] / ref[r,:] is constant within each row. Report the per-row
+        # coefficient of variation of that ratio and the row factors.
+        rtile = ref[lo:hi, cols]
+        mask = rtile.abs() > rtile.abs().amax() * 1e-3
+        ratio = torch.where(mask, t / rtile, torch.nan)
+        row_mean = ratio.nanmean(dim=1)
+        row_cv = (
+            ((ratio - row_mean.view(-1, 1)) ** 2).nanmean(dim=1).sqrt()
+            / row_mean.abs().clamp_min(1e-12)
+        )
         return {
             "expert": e_bad,
             "n_block": j,
             "rows": rows,
             "tile_absmax": float(t.abs().amax().item()),
-            "ref_absmax": float(ref[lo:hi, cols].abs().amax().item()),
+            "ref_absmax": float(rtile.abs().amax().item()),
+            "row_ratio_factors": [round(float(v), 4) for v in row_mean.tolist()],
+            "row_ratio_cv": [round(float(v), 4) for v in row_cv.tolist()],
+            "rows_proportional_to_ref": int((row_cv < 0.05).sum().item()),
             "best_matches": [
                 {"residual": s, "candidate": n} for s, n in scored[:5]
             ],
+            "tile_dump": t.cpu().tolist(),
         }
 
     n_bad_reps = 0
@@ -298,8 +316,11 @@ def main() -> int:
             best = fp["best_matches"][0]
             print(
                 f"rep={rep} BAD TILE expert={e} n_block={j} rows={fp['rows']} "
-                f"tile_absmax={fp['tile_absmax']:.3g} ref_absmax={fp['ref_absmax']:.3g}"
+                f"tile_absmax={fp['tile_absmax']:.3g} ref_absmax={fp['ref_absmax']:.3g} "
+                f"rows_prop_to_ref={fp['rows_proportional_to_ref']}/{fp['rows']}"
             )
+            print(f"    row_factors={fp['row_ratio_factors']}")
+            print(f"    row_cv={fp['row_ratio_cv']}")
             for m in fp["best_matches"]:
                 print(f"    residual={m['residual']:.4f}  {m['candidate']}")
             verdict = (

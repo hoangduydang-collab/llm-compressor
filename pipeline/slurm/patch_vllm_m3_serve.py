@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# ruff: noqa: E501
 """Persistently patch the installed vLLM to serve MiniMax-M3 W4AFP8 (W4A8 MoE).
 
 Unlike ``pipeline/vllm_m3_patches.py`` (an in-process monkeypatch used by

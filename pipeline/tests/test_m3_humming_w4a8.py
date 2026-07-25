@@ -496,11 +496,120 @@ def test_distribution_integrity_rejects_unhashed_humming_file(
         lambda name: FakeDistribution(),
     )
 
-    status, mismatches, overlay = _distribution_integrity()
+    status, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
 
     assert status == "mismatch"
     assert mismatches == ("humming/local_override.py",)
     assert overlay is False
+    assert unhashed_bytecode == 0
+
+
+def test_distribution_integrity_tolerates_unhashed_cached_bytecode(
+    monkeypatch,
+    tmp_path,
+):
+    """humming-kernels 0.1.10 lists unhashed __pycache__ entries in RECORD."""
+
+    package = tmp_path / "humming"
+    (package / "__pycache__").mkdir(parents=True)
+    hashed = package / "layer.py"
+    hashed.write_text("pristine\n", encoding="utf-8")
+    present_pyc = package / "__pycache__" / "layer.cpython-312.pyc"
+    present_pyc.write_bytes(b"\x00compiled")
+    digest = hashlib.sha256(hashed.read_bytes()).digest()
+    encoded = (
+        __import__("base64")
+        .urlsafe_b64encode(digest)
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+    class FakeDistribution:
+        files = [
+            SimpleNamespace(
+                parts=PurePosixPath("humming/layer.py").parts,
+                hash=SimpleNamespace(mode="sha256", value=encoded),
+                path="humming/layer.py",
+            ),
+            SimpleNamespace(
+                parts=PurePosixPath(
+                    "humming/__pycache__/layer.cpython-312.pyc"
+                ).parts,
+                hash=None,
+                path="humming/__pycache__/layer.cpython-312.pyc",
+            ),
+            SimpleNamespace(
+                parts=PurePosixPath(
+                    "humming/__pycache__/dtypes.cpython-312.pyc"
+                ).parts,
+                hash=None,
+                path="humming/__pycache__/dtypes.cpython-312.pyc",
+            ),
+        ]
+
+        def locate_file(self, file):
+            return tmp_path / file.path
+
+    monkeypatch.setattr(
+        "pipeline.m3_humming_w4a8.importlib.metadata.distribution",
+        lambda name: FakeDistribution(),
+    )
+
+    status, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
+
+    assert status == "record-matched"
+    assert mismatches == ()
+    assert overlay is False
+    assert unhashed_bytecode == 2
+
+
+def test_overlay_marker_in_unhashed_bytecode_is_still_detected(
+    monkeypatch,
+    tmp_path,
+):
+    package = tmp_path / "humming"
+    (package / "__pycache__").mkdir(parents=True)
+    hashed = package / "layer.py"
+    hashed.write_text("pristine\n", encoding="utf-8")
+    tainted = package / "__pycache__" / "layer.cpython-312.pyc"
+    tainted.write_bytes(b"\x00LLMC_NVFP4_W4A8_G16_V1")
+    digest = hashlib.sha256(hashed.read_bytes()).digest()
+    encoded = (
+        __import__("base64")
+        .urlsafe_b64encode(digest)
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+
+    class FakeDistribution:
+        files = [
+            SimpleNamespace(
+                parts=PurePosixPath("humming/layer.py").parts,
+                hash=SimpleNamespace(mode="sha256", value=encoded),
+                path="humming/layer.py",
+            ),
+            SimpleNamespace(
+                parts=PurePosixPath(
+                    "humming/__pycache__/layer.cpython-312.pyc"
+                ).parts,
+                hash=None,
+                path="humming/__pycache__/layer.cpython-312.pyc",
+            ),
+        ]
+
+        def locate_file(self, file):
+            return tmp_path / file.path
+
+    monkeypatch.setattr(
+        "pipeline.m3_humming_w4a8.importlib.metadata.distribution",
+        lambda name: FakeDistribution(),
+    )
+
+    status, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
+
+    assert overlay is True
+    assert status == "record-matched"
+    assert unhashed_bytecode == 1
 
 
 def test_preflight_cli_writes_valid_report(monkeypatch, tmp_path):

@@ -46,6 +46,7 @@ class RuntimeFacts:
     moe_gemm_type: str
     normal_patch_status: str
     humming_patch_status: str
+    humming_unhashed_bytecode: int = 0
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -186,6 +187,7 @@ def evaluate_preflight(
             "humming_source_integrity": runtime.humming_source_integrity,
             "humming_source_mismatches": runtime.humming_source_mismatches,
             "nvfp4_overlay_detected": runtime.nvfp4_overlay_detected,
+            "humming_unhashed_bytecode": runtime.humming_unhashed_bytecode,
             "humming_cache_dir": runtime.humming_cache_dir,
             "weight_group_size": weights.get("group_size"),
             "activation_strategy": activations.get("strategy"),
@@ -239,7 +241,13 @@ def classify_backend_log(
     }
 
 
-def _distribution_integrity() -> tuple[str, tuple[str, ...], bool]:
+def _is_derived_bytecode(relative_path: str) -> bool:
+    """Cached bytecode is regenerated from source, so RECORD may not hash it."""
+
+    return "__pycache__/" in relative_path and relative_path.endswith(".pyc")
+
+
+def _distribution_integrity() -> tuple[str, tuple[str, ...], bool, int]:
     distribution = importlib.metadata.distribution("humming-kernels")
     files = list(distribution.files or [])
     package_files = [
@@ -247,21 +255,33 @@ def _distribution_integrity() -> tuple[str, tuple[str, ...], bool]:
     ]
     hashed_files = [file for file in package_files if file.hash is not None]
     if not hashed_files:
-        return "unverifiable", ("NO_HASHED_HUMMING_FILES",), False
+        return "unverifiable", ("NO_HASHED_HUMMING_FILES",), False, 0
 
     mismatches: list[str] = []
     overlay_detected = False
+    derived_unhashed = 0
     for file in package_files:
         relative_path = str(getattr(file, "path", file)).replace("\\", "/")
+        # Some wheels list unhashed __pycache__ entries. They carry no source
+        # authority, so they are counted and reported but never verified.
+        unverifiable_bytecode = file.hash is None and _is_derived_bytecode(
+            relative_path
+        )
         path = Path(distribution.locate_file(file))
         try:
             payload = path.read_bytes()
         except OSError:
+            if unverifiable_bytecode:
+                derived_unhashed += 1
+                continue
             mismatches.append(relative_path)
             continue
         if NVFP4_OVERLAY_MARKER in payload:
             overlay_detected = True
         if file.hash is None:
+            if unverifiable_bytecode:
+                derived_unhashed += 1
+                continue
             mismatches.append(relative_path)
             continue
         digest = hashlib.new(file.hash.mode, payload).digest()
@@ -269,7 +289,7 @@ def _distribution_integrity() -> tuple[str, tuple[str, ...], bool]:
         if encoded != file.hash.value:
             mismatches.append(relative_path)
     status = "record-matched" if not mismatches else "mismatch"
-    return status, tuple(sorted(mismatches)), overlay_detected
+    return status, tuple(sorted(mismatches)), overlay_detected, derived_unhashed
 
 
 def _patch_statuses() -> tuple[str, str]:
@@ -297,7 +317,7 @@ def _discover_runtime() -> RuntimeFacts:
     import torch
     import vllm
 
-    integrity, mismatches, overlay = _distribution_integrity()
+    integrity, mismatches, overlay, unhashed_bytecode = _distribution_integrity()
     normal_patch, humming_patch = _patch_statuses()
     capability = torch.cuda.get_device_capability()
     return RuntimeFacts(
@@ -307,6 +327,7 @@ def _discover_runtime() -> RuntimeFacts:
         humming_source_integrity=integrity,
         humming_source_mismatches=mismatches,
         nvfp4_overlay_detected=overlay,
+        humming_unhashed_bytecode=unhashed_bytecode,
         humming_cache_dir=os.environ.get("HUMMING_CACHE_DIR", ""),
         f16_accum=os.environ.get("VLLM_HUMMING_USE_F16_ACCUM", "0"),
         moe_gemm_type=os.environ.get(

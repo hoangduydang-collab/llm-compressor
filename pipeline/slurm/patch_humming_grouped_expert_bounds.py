@@ -84,6 +84,28 @@ PATCHED = (
     "smem.expert_offset[kNumExperts] - smem.expert_offset[kNumExperts - 1];"
 )
 
+# 0.1.11's Ctx refactor renamed the accessors (smem -> ctx.smem,
+# shape_m -> ctx.params.shape_m); the defect and the fix are otherwise
+# identical, and expert_offset is still loaded with kNumExperts + 1 entries.
+ANCHOR_0111 = (
+    "        ctx.smem.expert_tokens[kNumExperts - 1] = "
+    "ctx.params.shape_m - ctx.smem.expert_offset[kNumExperts - 1];"
+)
+
+PATCHED_0111 = (
+    "        // llmc M3 Humming grouped_contiguous exact-total patch: derive the\n"
+    "        // last expert's row count from the loaded offsets rather than from\n"
+    "        // shape_m (== a.size(0)), which vLLM oversizes to (M * topk, K).\n"
+    "        ctx.smem.expert_tokens[kNumExperts - 1] = "
+    "ctx.smem.expert_offset[kNumExperts] - ctx.smem.expert_offset[kNumExperts - 1];"
+)
+
+# One (label, anchor, patched) entry per supported upstream content generation.
+VARIANTS = [
+    ("0.1.10", ANCHOR, PATCHED),
+    ("0.1.11", ANCHOR_0111, PATCHED_0111),
+]
+
 
 def target_path(site: Path) -> Path:
     return site / RELATIVE_TARGET
@@ -96,9 +118,9 @@ def sha256(path: Path) -> str:
 def classify(source: str) -> str:
     """Return ``patched``, ``unpatched``, or ``unknown`` for one file body."""
 
-    if PATCHED in source:
+    if any(patched in source for _, _, patched in VARIANTS):
         return "patched"
-    if ANCHOR in source:
+    if any(anchor in source for _, anchor, _ in VARIANTS):
         return "unpatched"
     return "unknown"
 
@@ -122,12 +144,16 @@ def apply_patch(site: Path, apply: bool) -> tuple[str, str]:
     if not apply:
         return "NOT patched", sha256(path)
 
-    if source.count(ANCHOR) != 1:
+    label, anchor, patched = next(
+        (v for v in VARIANTS if v[1] in source),
+    )
+    if source.count(anchor) != 1:
         raise SystemExit(
-            f"expected exactly one anchor in {path}, found {source.count(ANCHOR)}"
+            f"expected exactly one {label} anchor in {path}, "
+            f"found {source.count(anchor)}"
         )
-    path.write_text(source.replace(ANCHOR, PATCHED), encoding="utf-8")
-    return "patched", sha256(path)
+    path.write_text(source.replace(anchor, patched), encoding="utf-8")
+    return f"patched ({label} content)", sha256(path)
 
 
 def main(argv: list[str] | None = None) -> int:

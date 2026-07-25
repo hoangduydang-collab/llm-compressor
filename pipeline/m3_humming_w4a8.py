@@ -22,12 +22,16 @@ EXPECTED_CACHE_BASENAME = "cache-m3-gptq-w4a8-v1"
 NVFP4_OVERLAY_MARKER = b"LLMC_NVFP4_W4A8_G16_V1"
 
 # Third-party Humming files we knowingly modify, pinned to the exact post-patch
-# SHA-256. A declared patch is reported, never silently tolerated; any other
-# content for these paths, and any modification of an undeclared path, is still
-# a hard mismatch. Applied by pipeline/slurm/patch_humming_ct_input_format.py.
-DECLARED_PATCH_SHA256: dict[str, str] = {
+# SHA-256 (one allowed hash per supported upstream release -- 0.1.10 and, where
+# the upstream file changed, 0.1.11). A declared patch is reported, never
+# silently tolerated; any other content for these paths, and any modification
+# of an undeclared path, is still a hard mismatch. Applied by
+# pipeline/slurm/patch_humming_ct_input_format.py and siblings.
+DECLARED_PATCH_SHA256: dict[str, tuple[str, ...]] = {
+    # Identical upstream in 0.1.10 and 0.1.11, so one post-patch hash covers
+    # both.
     "humming/schema/compressed_tensors.py": (
-        "8e2ab300b595e98f9b66d76096c6a03272ffe948e11dd29844af701c1f6474c3"
+        "8e2ab300b595e98f9b66d76096c6a03272ffe948e11dd29844af701c1f6474c3",
     ),
     # grouped_contiguous last-expert row count: derive it from the loaded
     # expert offsets instead of shape_m (== a.size(0)), which vLLM oversizes to
@@ -36,7 +40,8 @@ DECLARED_PATCH_SHA256: dict[str, str] = {
     # measured as 100% of experts 13/14/15's rows wrong. See
     # pipeline/slurm/patch_humming_grouped_expert_bounds.py.
     "humming/include/humming/scheduler.cuh": (
-        "befa01f9758df24e34be12022c86aec701de81d182e0bec713374d987df1839f"
+        "befa01f9758df24e34be12022c86aec701de81d182e0bec713374d987df1839f",  # 0.1.10
+        "81cffab33ff5ea14d325f1d5d0015920a68e5ba7e0b6bf55abd49850a54be9dc",  # 0.1.11
     ),
     # Missing cross-proxy fence before TMA C stores: generic-proxy smem writes
     # must be made async-proxy visible (fence.proxy.async.shared::cta, CUTLASS's
@@ -44,8 +49,9 @@ DECLARED_PATCH_SHA256: dict[str, str] = {
     # grouped_contiguous TMA-C epilogue intermittently stores whole garbage
     # tiles (~20% of launches at BM=32/BK=256; serving symptom: early-EOS OSL
     # collapse). See pipeline/slurm/patch_humming_tma_store_fence.py.
+    # Identical upstream in 0.1.10 and 0.1.11.
     "humming/include/humming/utils/ptx/tma.cuh": (
-        "2ad7d5339d730d4a1a9b176c120ea448ec7f6e0481569787cca9d6f952ef2717"
+        "2ad7d5339d730d4a1a9b176c120ea448ec7f6e0481569787cca9d6f952ef2717",
     ),
     # TMA C stores were never committed into bulk async-groups, so every
     # tma_wait_store_group in the kernel was a no-op (PTX: wait_group only
@@ -54,7 +60,8 @@ DECLARED_PATCH_SHA256: dict[str, str] = {
     # intermittent corruption; and stream-K slice 0 released its lock before
     # its store completed. See pipeline/slurm/patch_humming_tma_store_commit.py.
     "humming/include/humming/epilogue/gmem_writer.cuh": (
-        "3e135b55f3753245a0477d6b2ad67db588d80b5508db4ee9aa179205e2a20deb"
+        "3e135b55f3753245a0477d6b2ad67db588d80b5508db4ee9aa179205e2a20deb",  # 0.1.10
+        "04ed8dc7f8fbd76bb2a193618e834d11ae21aa515e3b0905e4c8d8e9a206c577",  # 0.1.11
     ),
 }
 RECORD_MATCHED = "record-matched"
@@ -384,8 +391,8 @@ def _distribution_integrity() -> (
         digest = hashlib.new(file.hash.mode, payload).digest()
         encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         if encoded != file.hash.value:
-            declared = DECLARED_PATCH_SHA256.get(relative_path)
-            if declared and hashlib.sha256(payload).hexdigest() == declared:
+            declared = DECLARED_PATCH_SHA256.get(relative_path, ())
+            if hashlib.sha256(payload).hexdigest() in declared:
                 declared_patches.append(relative_path)
                 continue
             mismatches.append(relative_path)

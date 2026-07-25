@@ -6,17 +6,20 @@ import pytest
 
 from pipeline.m3_humming_w4a8 import DECLARED_PATCH_SHA256
 from pipeline.slurm.patch_humming_grouped_expert_bounds import (
-    ANCHOR,
-    PATCHED,
     RELATIVE_TARGET,
+    VARIANTS,
     apply_patch,
     classify,
     main,
 )
 
-PRISTINE_BODY = f"""      if constexpr (
+VARIANT_IDS = [label for label, _, _ in VARIANTS]
+
+
+def pristine_body(anchor: str) -> str:
+    return f"""      if constexpr (
           ComputeConfig::kGemmType == GemmType::GROUPED_CONTIGUOUS) {{
-{ANCHOR}
+{anchor}
         PRAGMA_UNROLL
         for (uint32_t i = 0; i < CEIL_DIV(kNumExperts - 1, kNumThreads); i++) {{
           uint32_t index = kNumThreads * i + threadIdx.x;
@@ -32,36 +35,39 @@ def write_site(tmp_path, body):
     return tmp_path
 
 
-def test_classify_distinguishes_the_three_states():
-    assert classify(PRISTINE_BODY) == "unpatched"
-    assert classify(PRISTINE_BODY.replace(ANCHOR, PATCHED)) == "patched"
+@pytest.mark.parametrize("label,anchor,patched", VARIANTS, ids=VARIANT_IDS)
+def test_classify_distinguishes_the_three_states(label, anchor, patched):
+    body = pristine_body(anchor)
+    assert classify(body) == "unpatched"
+    assert classify(body.replace(anchor, patched)) == "patched"
     assert classify("__global__ void unrelated() {}\n") == "unknown"
 
 
-def test_apply_uses_expert_offsets_and_is_idempotent(tmp_path):
-    site = write_site(tmp_path, PRISTINE_BODY)
+@pytest.mark.parametrize("label,anchor,patched", VARIANTS, ids=VARIANT_IDS)
+def test_apply_uses_expert_offsets_and_is_idempotent(tmp_path, label, anchor, patched):
+    site = write_site(tmp_path, pristine_body(anchor))
 
     status, first_digest = apply_patch(site, apply=True)
-    assert status == "patched"
+    assert status == f"patched ({label} content)"
 
     body = (site / RELATIVE_TARGET).read_text(encoding="utf-8")
     # The whole point: the last expert's count no longer depends on shape_m.
-    assert "shape_m - smem.expert_offset[kNumExperts - 1]" not in body
-    assert (
-        "smem.expert_offset[kNumExperts] - smem.expert_offset[kNumExperts - 1]" in body
-    )
+    assert "shape_m - " not in body
+    assert "expert_offset[kNumExperts] - " in body
 
     status, second_digest = apply_patch(site, apply=True)
     assert status == "already patched"
     assert second_digest == first_digest
 
 
-def test_check_reports_unpatched_without_writing(tmp_path):
-    site = write_site(tmp_path, PRISTINE_BODY)
+@pytest.mark.parametrize("label,anchor,patched", VARIANTS, ids=VARIANT_IDS)
+def test_check_reports_unpatched_without_writing(tmp_path, label, anchor, patched):
+    body = pristine_body(anchor)
+    site = write_site(tmp_path, body)
 
     status, _ = apply_patch(site, apply=False)
     assert status == "NOT patched"
-    assert (site / RELATIVE_TARGET).read_text(encoding="utf-8") == PRISTINE_BODY
+    assert (site / RELATIVE_TARGET).read_text(encoding="utf-8") == body
 
 
 def test_unknown_content_refuses_to_guess(tmp_path):
@@ -77,7 +83,7 @@ def test_missing_target_is_an_error(tmp_path):
 
 
 def test_main_check_exit_codes(tmp_path, capsys):
-    site = write_site(tmp_path, PRISTINE_BODY)
+    site = write_site(tmp_path, pristine_body(VARIANTS[0][1]))
 
     assert main(["--site", str(site), "--check"]) == 1
     assert main(["--site", str(site)]) == 0
@@ -92,4 +98,8 @@ def test_patched_file_is_declared_in_the_integrity_gate():
     preflight would report the side-install as tampered and abort.
     """
     assert RELATIVE_TARGET in DECLARED_PATCH_SHA256
-    assert len(DECLARED_PATCH_SHA256[RELATIVE_TARGET]) == 64
+    declared = DECLARED_PATCH_SHA256[RELATIVE_TARGET]
+    # One post-patch hash per supported upstream release (0.1.10 and 0.1.11,
+    # whose pristine scheduler.cuh differ).
+    assert len(declared) == len(VARIANTS)
+    assert all(len(digest) == 64 for digest in declared)

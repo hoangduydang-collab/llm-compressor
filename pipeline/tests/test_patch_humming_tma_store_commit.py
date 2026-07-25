@@ -6,21 +6,24 @@ import pytest
 
 from pipeline.m3_humming_w4a8 import DECLARED_PATCH_SHA256
 from pipeline.slurm.patch_humming_tma_store_commit import (
-    ANCHOR,
-    PATCHED,
     RELATIVE_TARGET,
+    VARIANTS,
     apply_patch,
     classify,
     main,
 )
 
-PRISTINE_BODY = (
-    "  CUDA_INLINE\n"
-    "  void write_tma(uint32_t slice_id, uint32_t slice_count) {\n"
-    "    if (block_idx < count) {\n"
-    + ANCHOR
-    + "\n    }\n  }\n"
-)
+VARIANT_IDS = [label for label, _, _ in VARIANTS]
+
+
+def pristine_body(anchor: str) -> str:
+    return (
+        "  CUDA_INLINE\n"
+        "  void write_tma(uint32_t slice_id, uint32_t slice_count) {\n"
+        "    if (block_idx < count) {\n"
+        + anchor
+        + "\n    }\n  }\n"
+    )
 
 
 def write_site(tmp_path, body):
@@ -30,17 +33,22 @@ def write_site(tmp_path, body):
     return tmp_path
 
 
-def test_classify_distinguishes_the_three_states():
-    assert classify(PRISTINE_BODY) == "unpatched"
-    assert classify(PRISTINE_BODY.replace(ANCHOR, PATCHED)) == "patched"
+@pytest.mark.parametrize("label,anchor,patched", VARIANTS, ids=VARIANT_IDS)
+def test_classify_distinguishes_the_three_states(label, anchor, patched):
+    body = pristine_body(anchor)
+    assert classify(body) == "unpatched"
+    assert classify(body.replace(anchor, patched)) == "patched"
     assert classify("__global__ void unrelated() {}\n") == "unknown"
 
 
-def test_apply_commits_every_store_issue_and_is_idempotent(tmp_path):
-    site = write_site(tmp_path, PRISTINE_BODY)
+@pytest.mark.parametrize("label,anchor,patched", VARIANTS, ids=VARIANT_IDS)
+def test_apply_commits_every_store_issue_and_is_idempotent(
+    tmp_path, label, anchor, patched
+):
+    site = write_site(tmp_path, pristine_body(anchor))
 
     status, first_digest = apply_patch(site, apply=True)
-    assert status == "patched"
+    assert status == f"patched ({label} content)"
 
     body = (site / RELATIVE_TARGET).read_text(encoding="utf-8")
     # The whole point: each of the three TMA store/reduce issuances is now
@@ -69,12 +77,14 @@ def test_apply_commits_every_store_issue_and_is_idempotent(tmp_path):
     assert second_digest == first_digest
 
 
-def test_check_reports_unpatched_without_writing(tmp_path):
-    site = write_site(tmp_path, PRISTINE_BODY)
+@pytest.mark.parametrize("label,anchor,patched", VARIANTS, ids=VARIANT_IDS)
+def test_check_reports_unpatched_without_writing(tmp_path, label, anchor, patched):
+    body = pristine_body(anchor)
+    site = write_site(tmp_path, body)
 
     status, _ = apply_patch(site, apply=False)
     assert status == "NOT patched"
-    assert (site / RELATIVE_TARGET).read_text(encoding="utf-8") == PRISTINE_BODY
+    assert (site / RELATIVE_TARGET).read_text(encoding="utf-8") == body
 
 
 def test_unknown_content_refuses_to_guess(tmp_path):
@@ -90,7 +100,7 @@ def test_missing_target_is_an_error(tmp_path):
 
 
 def test_main_check_exit_codes(tmp_path, capsys):
-    site = write_site(tmp_path, PRISTINE_BODY)
+    site = write_site(tmp_path, pristine_body(VARIANTS[0][1]))
 
     assert main(["--site", str(site), "--check"]) == 1
     assert main(["--site", str(site)]) == 0
@@ -101,4 +111,8 @@ def test_main_check_exit_codes(tmp_path, capsys):
 def test_patched_file_is_declared_in_the_integrity_gate():
     """A patch the integrity gate does not know about must fail closed."""
     assert RELATIVE_TARGET in DECLARED_PATCH_SHA256
-    assert len(DECLARED_PATCH_SHA256[RELATIVE_TARGET]) == 64
+    declared = DECLARED_PATCH_SHA256[RELATIVE_TARGET]
+    # One post-patch hash per supported upstream release (0.1.10 and 0.1.11,
+    # whose pristine gmem_writer.cuh differ).
+    assert len(declared) == len(VARIANTS)
+    assert all(len(digest) == 64 for digest in declared)

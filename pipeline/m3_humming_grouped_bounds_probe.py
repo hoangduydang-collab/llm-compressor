@@ -159,6 +159,13 @@ def main() -> int:
         zero_point=None,
         use_wgmma=True,
         packed=True,
+        # humming 0.1.11 auto-enables a packed-K weight layout for this exact
+        # config; the repack must mirror the kernel's flag (absent on 0.1.10).
+        **(
+            {"use_packed_k_layout": meta.use_packed_k_layout}
+            if hasattr(meta, "use_packed_k_layout")
+            else {}
+        ),
     )
     weight_scale = prepare_humming_weight_scale(
         weight_scale,

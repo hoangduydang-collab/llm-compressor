@@ -75,33 +75,51 @@ COMMIT_NOTE = (
     "        // overwrites the union-aliased reduce smem mid-store.\n"
 )
 
-ANCHOR = (
-    "      if constexpr (!kUseStreamK) {\n"
-    "        tma_store_2d(smem_ptr + smem_offset, tensor_map_ptr, col_offset2, row_offset);\n"
-    "      } else if (slice_count == 1 || slice_id == 0) {\n"
-    "        tma_store_2d(smem_ptr + smem_offset, tensor_map_ptr, col_offset2, row_offset);\n"
-    "        if (slice_count > 1) tma_wait_store_group<0>();\n"
-    "      } else {\n"
-    "        tma_reduce_add_2d(smem_ptr + smem_offset, tensor_map_ptr, col_offset2, row_offset);\n"
-    "        if (slice_id != slice_count - 1) tma_wait_store_group<0>();\n"
-    "      }"
-)
+def _anchor(smem_expr: str) -> str:
+    return (
+        "      if constexpr (!kUseStreamK) {\n"
+        f"        tma_store_2d({smem_expr}, tensor_map_ptr, col_offset2, row_offset);\n"
+        "      } else if (slice_count == 1 || slice_id == 0) {\n"
+        f"        tma_store_2d({smem_expr}, tensor_map_ptr, col_offset2, row_offset);\n"
+        "        if (slice_count > 1) tma_wait_store_group<0>();\n"
+        "      } else {\n"
+        f"        tma_reduce_add_2d({smem_expr}, tensor_map_ptr, col_offset2, row_offset);\n"
+        "        if (slice_id != slice_count - 1) tma_wait_store_group<0>();\n"
+        "      }"
+    )
 
-PATCHED = (
-    "      if constexpr (!kUseStreamK) {\n"
-    "        tma_store_2d(smem_ptr + smem_offset, tensor_map_ptr, col_offset2, row_offset);\n"
-    + COMMIT_NOTE
-    + "        tma_commit_store_group();\n"
-    "      } else if (slice_count == 1 || slice_id == 0) {\n"
-    "        tma_store_2d(smem_ptr + smem_offset, tensor_map_ptr, col_offset2, row_offset);\n"
-    "        tma_commit_store_group();\n"
-    "        if (slice_count > 1) tma_wait_store_group<0>();\n"
-    "      } else {\n"
-    "        tma_reduce_add_2d(smem_ptr + smem_offset, tensor_map_ptr, col_offset2, row_offset);\n"
-    "        tma_commit_store_group();\n"
-    "        if (slice_id != slice_count - 1) tma_wait_store_group<0>();\n"
-    "      }"
-)
+
+def _patched(smem_expr: str) -> str:
+    return (
+        "      if constexpr (!kUseStreamK) {\n"
+        f"        tma_store_2d({smem_expr}, tensor_map_ptr, col_offset2, row_offset);\n"
+        + COMMIT_NOTE
+        + "        tma_commit_store_group();\n"
+        "      } else if (slice_count == 1 || slice_id == 0) {\n"
+        f"        tma_store_2d({smem_expr}, tensor_map_ptr, col_offset2, row_offset);\n"
+        "        tma_commit_store_group();\n"
+        "        if (slice_count > 1) tma_wait_store_group<0>();\n"
+        "      } else {\n"
+        f"        tma_reduce_add_2d({smem_expr}, tensor_map_ptr, col_offset2, row_offset);\n"
+        "        tma_commit_store_group();\n"
+        "        if (slice_id != slice_count - 1) tma_wait_store_group<0>();\n"
+        "      }"
+    )
+
+
+# 0.1.10 passes the tile smem pointer as a local (smem_ptr); 0.1.11's Ctx
+# refactor reads it straight off the shared-storage union (ctx.smem.reduce).
+# The store/wait structure -- and the missing commit -- are identical.
+ANCHOR = _anchor("smem_ptr + smem_offset")
+PATCHED = _patched("smem_ptr + smem_offset")
+ANCHOR_0111 = _anchor("ctx.smem.reduce + smem_offset")
+PATCHED_0111 = _patched("ctx.smem.reduce + smem_offset")
+
+# One (label, anchor, patched) entry per supported upstream content generation.
+VARIANTS = [
+    ("0.1.10", ANCHOR, PATCHED),
+    ("0.1.11", ANCHOR_0111, PATCHED_0111),
+]
 
 
 def target_path(site: Path) -> Path:
@@ -115,9 +133,9 @@ def sha256(path: Path) -> str:
 def classify(source: str) -> str:
     """Return ``patched``, ``unpatched``, or ``unknown`` for one file body."""
 
-    if PATCHED in source:
+    if any(patched in source for _, _, patched in VARIANTS):
         return "patched"
-    if ANCHOR in source:
+    if any(anchor in source for _, anchor, _ in VARIANTS):
         return "unpatched"
     return "unknown"
 
@@ -141,12 +159,16 @@ def apply_patch(site: Path, apply: bool) -> tuple[str, str]:
     if not apply:
         return "NOT patched", sha256(path)
 
-    if source.count(ANCHOR) != 1:
+    label, anchor, patched = next(
+        (v for v in VARIANTS if v[1] in source),
+    )
+    if source.count(anchor) != 1:
         raise SystemExit(
-            f"expected exactly one anchor in {path}, found {source.count(ANCHOR)}"
+            f"expected exactly one {label} anchor in {path}, "
+            f"found {source.count(anchor)}"
         )
-    path.write_text(source.replace(ANCHOR, PATCHED), encoding="utf-8")
-    return "patched", sha256(path)
+    path.write_text(source.replace(anchor, patched), encoding="utf-8")
+    return f"patched ({label} content)", sha256(path)
 
 
 def main(argv: list[str] | None = None) -> int:

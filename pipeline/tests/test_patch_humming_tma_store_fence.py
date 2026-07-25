@@ -98,4 +98,8 @@ def test_main_check_exit_codes(tmp_path, capsys):
 def test_patched_file_is_declared_in_the_integrity_gate():
     """A patch the integrity gate does not know about must fail closed."""
     assert RELATIVE_TARGET in DECLARED_PATCH_SHA256
-    assert len(DECLARED_PATCH_SHA256[RELATIVE_TARGET]) == 64
+    declared = DECLARED_PATCH_SHA256[RELATIVE_TARGET]
+    # tma.cuh is byte-identical upstream in 0.1.10 and 0.1.11, so a single
+    # post-patch hash covers both releases.
+    assert len(declared) == 1
+    assert all(len(digest) == 64 for digest in declared)

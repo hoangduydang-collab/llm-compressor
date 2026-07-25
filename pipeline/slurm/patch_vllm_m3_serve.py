@@ -68,6 +68,9 @@ _PROBE_MARK = "llmc M3 MoE quality probe"
 _LOAD_AUDIT_MARK = "llmc M3 load audit"
 _BOUNDARY_MARK = "llmc M3 layer boundary probe"
 _GATE_ALPHA_MARK = "llmc M3 r7 gate-alpha per-channel swiglu"
+_HUMMING_SWIGLU_MARK = (
+    "llmc M3 Humming W4A8 SWIGLUOAI_UNINTERLEAVE admission patch"
+)
 
 # Optional, env-gated (M3_MOE_PROBE=1) diagnostic appended to the vLLM M3 model
 # module so it runs inside the spawned Worker_TP* processes (in-process
@@ -885,6 +888,63 @@ def _patch_supports_activation(text: str) -> tuple[str, bool, bool]:
     return text[: m.start()] + injected + text[m.end() :], True, True
 
 
+def _patch_humming_supports_activation(
+    text: str,
+) -> tuple[str, bool, bool]:
+    """Admit M3's activation only in HummingExpertsBase."""
+
+    class_match = re.search(
+        r"^class\s+HummingExpertsBase\b[^\n]*:\s*$",
+        text,
+        re.MULTILINE,
+    )
+    if class_match is None:
+        return text, False, False
+
+    next_class = re.search(
+        r"^class\s+\w+\b[^\n]*:\s*$",
+        text[class_match.end() :],
+        re.MULTILINE,
+    )
+    class_end = (
+        class_match.end() + next_class.start()
+        if next_class is not None
+        else len(text)
+    )
+    class_body = text[class_match.start() : class_end]
+    method_match = re.search(
+        r"^[ \t]+def\s+_supports_activation\b[^\n]*:\s*\n"
+        r".*?^[ \t]+return\s+activation\s+in\s+\[\s*\n"
+        r"(?P<items>.*?)"
+        r"^[ \t]+\]\s*$",
+        class_body,
+        re.MULTILINE | re.DOTALL,
+    )
+    if method_match is None:
+        return text, False, False
+
+    items = method_match.group("items")
+    if "MoEActivation.SWIGLUOAI_UNINTERLEAVE" in items:
+        return text, False, True
+
+    swiglu = re.search(
+        r"^(?P<indent>[ \t]+)MoEActivation\.SWIGLUOAI,[ \t]*$",
+        items,
+        re.MULTILINE,
+    )
+    if swiglu is None:
+        return text, False, False
+
+    insertion = (
+        f"\n{swiglu.group('indent')}"
+        "MoEActivation.SWIGLUOAI_UNINTERLEAVE,  "
+        f"# {_HUMMING_SWIGLU_MARK}"
+    )
+    items_end = class_match.start() + method_match.start("items")
+    insert_at = items_end + swiglu.end()
+    return text[:insert_at] + insertion + text[insert_at:], True, True
+
+
 def _patch_apply_activation(text: str) -> tuple[str, bool, bool]:
     """Replace the SWIGLUOAI_UNINTERLEAVE assert with a clamp-scalar default."""
     assert_line = re.compile(
@@ -1633,6 +1693,17 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
     ]
 
 
+def _humming_patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
+    return [
+        (
+            "Humming W4A8 SWIGLU support",
+            vllm_dir
+            / "model_executor/layers/fused_moe/experts/fused_humming_moe.py",
+            _patch_humming_supports_activation,
+        )
+    ]
+
+
 def ensure_vllm_m3_patches(*, apply: bool = True) -> None:
     """Apply (if needed) and verify all four persistent vLLM M3 serve patches.
 
@@ -1666,6 +1737,33 @@ def ensure_vllm_m3_patches(*, apply: bool = True) -> None:
         )
 
 
+def ensure_vllm_m3_humming_patch(*, apply: bool = True) -> None:
+    """Apply or verify the optional Humming activation-admission patch."""
+
+    vllm_dir = _vllm_dir()
+    missing_files: list[str] = []
+    unpatched: list[str] = []
+    for label, path, patch_fn in _humming_patch_targets(vllm_dir):
+        if not path.exists():
+            missing_files.append(str(path))
+            continue
+        ok = _apply(path, patch_fn, check_only=not apply, fatal=False)
+        if not ok:
+            unpatched.append(label)
+
+    if missing_files:
+        raise RuntimeError(
+            "vLLM Humming serve file not found (wrong vLLM build?). Missing:\n  "
+            + "\n  ".join(missing_files)
+        )
+    if unpatched:
+        raise RuntimeError(
+            "vLLM Humming patch missing in site-packages: "
+            + ", ".join(unpatched)
+            + ". Run: python pipeline/slurm/patch_vllm_m3_serve.py --humming"
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="report only; exit 1 if unpatched")
@@ -1680,10 +1778,18 @@ def main() -> int:
         help="also inject the env-gated r7 gate-alpha serve support "
         "(M3_GATE_ALPHA_SIDECAR=<sidecar.pt> at serve)",
     )
+    ap.add_argument(
+        "--humming",
+        action="store_true",
+        help="also apply/check the Humming W4A8 activation-admission patch",
+    )
     args = ap.parse_args()
 
     vllm_dir = _vllm_dir()
-    for label, path, _ in _patch_targets(vllm_dir):
+    targets = _patch_targets(vllm_dir)
+    if args.humming:
+        targets += _humming_patch_targets(vllm_dir)
+    for label, path, _ in targets:
         if not path.exists():
             print(f"ERROR: {path} not found ({label}); is this the W4A8-MoE vLLM build?")
             return 2
@@ -1694,7 +1800,7 @@ def main() -> int:
     _report_flashinfer_version()
     results = [
         _apply(path, patch_fn, args.check)
-        for _, path, patch_fn in _patch_targets(vllm_dir)
+        for _, path, patch_fn in targets
     ]
 
     if args.check:

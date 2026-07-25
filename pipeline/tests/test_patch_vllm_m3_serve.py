@@ -5,7 +5,101 @@ from pipeline.slurm.patch_vllm_m3_serve import (
     _LOAD_AUDIT_BLOCK,
     _PROBE_BLOCK,
     _patch_append_load_audit,
+    _patch_humming_supports_activation,
 )
+
+HUMMING_EXPERTS_SOURCE = """
+class HummingExpertsBase(FusedMoEExperts):
+    @classmethod
+    def _supports_activation(cls, activation: MoEActivation) -> bool:
+        return activation in [
+            MoEActivation.SILU,
+            MoEActivation.GELU,
+            MoEActivation.GELU_TANH,
+            MoEActivation.SWIGLUOAI,
+            MoEActivation.SWIGLUSTEP,
+        ]
+
+
+class OtherExperts(FusedMoEExperts):
+    pass
+"""
+
+
+def test_humming_activation_patch_targets_humming_experts_base():
+    patched, changed, found = _patch_humming_supports_activation(
+        HUMMING_EXPERTS_SOURCE
+    )
+
+    assert found
+    assert changed
+    class_body = patched.split("class OtherExperts", 1)[0]
+    assert class_body.count("MoEActivation.SWIGLUOAI_UNINTERLEAVE") == 1
+    assert (
+        class_body.index("MoEActivation.SWIGLUOAI_UNINTERLEAVE")
+        > class_body.index("MoEActivation.SWIGLUOAI,")
+    )
+
+
+def test_humming_activation_patch_is_idempotent():
+    patched, _, _ = _patch_humming_supports_activation(HUMMING_EXPERTS_SOURCE)
+    repatched, changed, found = _patch_humming_supports_activation(patched)
+
+    assert found
+    assert not changed
+    assert repatched == patched
+
+
+def test_humming_activation_patch_ignores_enum_in_another_class():
+    source = (
+        HUMMING_EXPERTS_SOURCE
+        + """
+class UnrelatedExperts(FusedMoEExperts):
+    supported = [MoEActivation.SWIGLUOAI_UNINTERLEAVE]
+"""
+    )
+
+    patched, changed, found = _patch_humming_supports_activation(source)
+
+    assert found
+    assert changed
+    humming_body = patched.split("class OtherExperts", 1)[0]
+    assert "MoEActivation.SWIGLUOAI_UNINTERLEAVE" in humming_body
+
+
+def test_humming_activation_patch_rejects_changed_layout():
+    source = HUMMING_EXPERTS_SOURCE.replace(
+        "return activation in [",
+        "return activation in cls.supported_activations",
+    )
+
+    patched, changed, found = _patch_humming_supports_activation(source)
+
+    assert not found
+    assert not changed
+    assert patched == source
+
+
+def test_humming_activation_patch_output_compiles():
+    stubs = """
+class FusedMoEExperts:
+    pass
+
+
+class MoEActivation:
+    SILU = 1
+    GELU = 2
+    GELU_TANH = 3
+    SWIGLUOAI = 4
+    SWIGLUSTEP = 5
+    SWIGLUOAI_UNINTERLEAVE = 6
+"""
+    patched, changed, found = _patch_humming_supports_activation(
+        HUMMING_EXPERTS_SOURCE
+    )
+
+    assert found and changed
+    compile(stubs + patched, "<humming-experts>", "exec")
 
 
 def test_load_audit_patch_is_env_gated_and_covers_both_expert_layouts():

@@ -129,40 +129,43 @@ def production_valid_estimate(num_tokens: int) -> int:
 
 
 def dequantize_weight_reference(
-    quanted: torch.Tensor,
+    packed_weight: torch.Tensor,
     scale: torch.Tensor,
     original: torch.Tensor,
 ) -> torch.Tensor:
-    """Reconstruct the fp values the kernel dequantizes to, and validate the
-    uint4 convention against the original bf16 weight.
+    """Reconstruct the fp values the kernel dequantizes to, using humming's
+    own dequantize_weight (authoritative for code layout, zero point and
+    scale broadcasting), and validate against the original bf16 weight.
 
-    Symmetric uint4 normally stores q in [0, 15] with an implicit zero point
-    of 8, but rather than bet a GPU round-trip on that, try the plausible
-    conventions and keep the one whose reconstruction error stays within
-    quantisation rounding (0.51 * scale). A wrong convention is off by
-    O(scale * 8) and cannot pass the bound by accident.
+    The reconstruction must sit within quantisation rounding of the
+    original (0.51 * scale per element, small slack for the bf16 scale);
+    anything structurally wrong is off by O(scale * 8) and cannot pass.
     """
-    e, n, k = original.shape
-    q = quanted.to(torch.float32).view(e, n, k // GROUP_SIZE, GROUP_SIZE)
-    s = scale.to(torch.float32).view(e, n, k // GROUP_SIZE, 1)
-    bound = (s * 0.51).expand_as(q).reshape(e, n, k)
-    orig = original.to(torch.float32)
+    from humming import dtypes
+    from humming.utils.weight import dequantize_weight
 
-    best: tuple[float, float, torch.Tensor] | None = None
-    for zero_point in (8.0, 0.0, 7.5):
-        w_deq = ((q - zero_point) * s).view(e, n, k)
-        frac_bad = ((w_deq - orig).abs() > bound).float().mean().item()
-        if best is None or frac_bad < best[1]:
-            best = (zero_point, frac_bad, w_deq)
-        if frac_bad < 1e-4:
-            break
-    assert best is not None and best[1] < 1e-4, (
-        f"no uint4 dequant convention matched (best zp={best[0]}, "
-        f"{best[1]:.2%} weights beyond rounding bound) -- the fp32 "
-        "reference would be meaningless"
+    e, n, k = original.shape
+    w_deq = dequantize_weight(
+        weight=packed_weight,
+        weight_scale=scale,
+        zero_point=None,
+        global_scale=None,
+        dtype=dtypes.uint4,
+        packed=True,
+    ).float()
+    assert w_deq.shape == original.shape, (w_deq.shape, original.shape)
+
+    s = scale.cuda().float().view(e, n, k // GROUP_SIZE, 1)
+    bound = (s * 0.56).expand(e, n, k // GROUP_SIZE, GROUP_SIZE).reshape(e, n, k)
+    frac_bad = (
+        ((w_deq - original.cuda().float()).abs() > bound).float().mean().item()
     )
-    print(f"uint4 dequant convention: zero_point={best[0]} frac_bad={best[1]:.2e}")
-    return best[2]
+    assert frac_bad < 1e-3, (
+        f"humming dequantize_weight reconstruction off for {frac_bad:.2%} of "
+        "weights -- reference construction is wrong, refusing to compare"
+    )
+    print(f"reference weight reconstruction: frac_beyond_rounding={frac_bad:.2e}")
+    return w_deq
 
 
 def reference_output(
@@ -285,15 +288,8 @@ def main() -> int:
             group_size=GROUP_SIZE,
             pack=True,
         )
-        unpacked_weight, unpacked_scale, _zp2, _gs2 = quantize_weight(
-            weight=weight_bf16,
-            dtype=dtypes.uint4,
-            scale_dtype=dtypes.bfloat16,
-            group_size=GROUP_SIZE,
-            pack=False,
-        )
         w_deq = dequantize_weight_reference(
-            unpacked_weight.cuda(), unpacked_scale.cuda(), weight_bf16.cuda()
+            packed_weight, weight_scale_raw, weight_bf16
         )
 
         weight = prepare_humming_weight(

@@ -224,10 +224,14 @@
       commercial MiniMax-M3 provider band, and BF16-class agentic latency to concurrency 16 — while the
       vendor MXFP8 and community AWQ arms degrade sharply under load. Quality verdicts live in the
       companion report, <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
+      <strong>Updated 2026-07-26:</strong> the serving stack itself has since moved — the
+      <a href="#kernel-evolution">kernel-evolution section</a> tracks single-user decode from
+      95 → 137 tok/s on the same checkpoint, with zero requantization.
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf 0.8.0)</span>
       <span><b>Runs:</b> reasoning 07-22 · agentic (M3-calibrated shape) 07-22 · tau2 calibration 07-22</span>
+      <span><b>Update:</b> W4A8 kernel evolution 07-24 → 07-26</span>
       <span><b>Engine:</b> vLLM 0.24.0, flags held fixed · FP8 KV cache</span>
       <span><b>Baseline:</b> MiniMax-M3 BF16 (TP16, 2 nodes)</span>
     </div>
@@ -274,6 +278,22 @@
         <p class="v">conc 4</p>
         <p class="d">Agentic p95 TTFT &gt;1.7s by conc 32; MXFP8 TTFT 3.5s at reasoning conc 64.</p>
       </div>
+      <div class="tile good">
+        <p class="k">Since 07-26 · Humming kernel</p>
+        <p class="v">137<small> tok/s</small></p>
+        <p class="d">Single-user decode +41% over the tables below — same checkpoint. <a href="#kernel-evolution">Details</a>.</p>
+      </div>
+    </div>
+    <div class="note good">
+      <p class="t">2026-07-26 update — the numbers below are the 07-22 windows; the stack has moved since</p>
+      <p>
+        The five-arm comparison in this report (frozen, still valid arm-vs-arm) ran on the original
+        CUTLASS W4A8 MoE path. Two serving-stack changes since — re-enabling the shared-expert stream
+        and switching the MoE GEMM to the Humming kernel — took the in-house W4AFP8 single-user decode
+        from 95–97 to <strong>137 tok/s</strong> and cut reasoning TPOT 30%, moving us from mid-pack in
+        the provider band to <strong>second only to Nebius</strong>. Full story in
+        <a href="#kernel-evolution">the kernel-evolution section</a>.
+      </p>
     </div>
   </section>
 
@@ -361,6 +381,7 @@
         </thead>
         <tbody>
           <tr><td class="arm">Nebius (FP8)</td><td>197</td></tr>
+          <tr><td class="arm"><strong>ours · in-house W4AFP8 + Humming kernel (07-25 update)</strong></td><td class="cell-good"><strong>137</strong></td></tr>
           <tr><td class="arm"><strong>ours · cyankiwi W4A16</strong></td><td><strong>116</strong></td></tr>
           <tr><td class="arm"><strong>ours · in-house W4AFP8 (GPTQ / AWQ)</strong></td><td><strong>97</strong></td></tr>
           <tr><td class="arm">Together AI</td><td>97</td></tr>
@@ -375,10 +396,12 @@
     <div class="col">
       <p style="margin-top:16px">
         Same measurement regime on both sides (single request in flight, 1k-token prompt, decode rate after
-        first token). Our W4AFP8 lands <strong>inside the mainstream provider band</strong> — level with
-        Together AI and ahead of MiniMax's own endpoint — on H100s with a stock vLLM. Nebius's 197 is a
-        serving-stack tier (FP8 + speculative decoding on newer silicon) that would stack on our checkpoint
-        too. Independent corroboration in both directions: Parasail serves the same MXFP8 checkpoint and is
+        first token). At this report's original window our W4AFP8 landed <strong>inside the mainstream
+        provider band</strong> — level with Together AI and ahead of MiniMax's own endpoint — on H100s with
+        a stock vLLM. The 07-25 Humming-kernel update (<a href="#kernel-evolution">below</a>, same checkpoint
+        and measurement recipe, window <code>20260725T122256Z</code>) lifts that to <strong>137 tok/s —
+        above every provider except Nebius</strong>. Nebius's 197 is a serving-stack tier (FP8 + speculative
+        decoding on newer silicon) that would stack on our checkpoint too. Independent corroboration in both directions: Parasail serves the same MXFP8 checkpoint and is
         the slowest provider on AA, just as MXFP8 was our weakest quant arm. TTFT is <em>not</em> comparable
         across the two sides (AA's "latency" includes the full thinking phase; ours is prefill-only), AA
         medians drift with their 72-hour window, and provider endpoints carry live multi-tenant load while
@@ -456,6 +479,95 @@
     </div>
   </section>
 
+  <!-- ============ KERNEL EVOLUTION (added 2026-07-26) ============ -->
+  <section id="kernel-evolution">
+    <h2>Kernel evolution · 07-22 → 07-26</h2>
+    <div class="h2sub">Same checkpoint, −30% TPOT: how the W4A8 serving stack moved</div>
+    <div class="col">
+      <p>
+        Everything above compares <em>checkpoints</em> on a fixed serving stack. This section tracks the
+        opposite axis: the GPTQ checkpoint never changed, and four serving-stack stages took reasoning
+        single-user decode from 95 to 137 tok/s. Every number is from a recorded suite window under the
+        same recipe as the tables above (reasoning ISL 1k / pinned 8k decode; per-user decode rate at
+        concurrency 1).
+      </p>
+    </div>
+
+    <div class="bars" role="img" aria-label="Single-user decode by stage: CUTLASS stream off 95, CUTLASS stream on 103, Humming indexed 137, Humming packed-K 131 tokens per second">
+      <div class="bar-row"><span class="lab">CUTLASS · stream off</span>
+        <span class="track"><span class="fill f-ok" style="width:68%"></span></span><span class="num">95 tok/s</span></div>
+      <div class="bar-row"><span class="lab">CUTLASS · stream on</span>
+        <span class="track"><span class="fill f-ok" style="width:74%"></span></span><span class="num">103 tok/s</span></div>
+      <div class="bar-row"><span class="lab">Humming indexed</span>
+        <span class="track"><span class="fill f-ok" style="width:98%"></span></span><span class="num">137 tok/s</span></div>
+      <div class="bar-row"><span class="lab">+ 0.1.11 packed-K</span>
+        <span class="track"><span class="fill f-ok" style="width:94%"></span></span><span class="num">131 tok/s</span></div>
+    </div>
+    <p class="legend"><span>Reasoning conc-1 per-user decode · same GPTQ checkpoint, 8×H100 TP8/EP8 · packed-K trades this point for high-load gains (below)</span></p>
+
+    <div class="scroll" style="margin-top:18px">
+      <table>
+        <thead>
+          <tr><th class="arm">Stage</th><th>Window</th><th>conc-1 TPOT</th><th>conc-1 decode</th><th>What changed</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td class="muted">07-22 / 07-24 am</td><td>10.3–10.5 ms</td><td>95–97 tok/s</td><td class="muted" style="white-space:normal;text-align:left">The stack behind every table above</td></tr>
+          <tr><td class="arm">1 · shared-expert stream re-enabled</td><td class="muted">07-24 pm</td><td>9.7 ms</td><td>103 tok/s</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); the aux-stream overlap workaround retired</td></tr>
+          <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="muted">07-25</td><td class="cell-good">7.29 ms</td><td class="cell-good">137 tok/s</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects</td></tr>
+          <tr><td class="arm">3 · Humming 0.1.11 packed-K</td><td class="muted">07-26</td><td>7.59 ms</td><td>131 tok/s</td><td style="white-space:normal;text-align:left">Upstream dequant-layout optimization — a trade, not a win (next note)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <h3>Stage 1 — the free 7%</h3>
+      <p>
+        Production serves had been running with the shared-expert auxiliary stream disabled — a workaround
+        for a flaky illegal-memory-access during CUDA-graph capture. The IMA was root-caused to the fork's
+        graph capture dropping upstream's pre-cleanup <code>torch.cuda.synchronize()</code>; with the sync
+        restored (<code>LLMC_M3_CAPTURE_SYNC=sync</code>), the overlap is on by default. Measured twice:
+        interleaved A/B on one node (TPOT 8.45 → 7.83 ms, −7.4%) and same-profile suite windows
+        (95.3 → 103.3 tok/s). Concurrency-64 barely moved — the shared expert is TP8-sliced and short, so
+        overlap matters most at small batch.
+      </p>
+      <h3>Stage 2 — the kernel switch</h3>
+      <p>
+        Humming is a Hopper-native WGMMA/TMA W4A8-FP8 MoE kernel with direct GPTQ loading. Qualifying it
+        required a patched side-install carrying <strong>four SHA-pinned fixes</strong> we made to the
+        upstream kernel — a missing input-schema entry, a grouped-mode expert-bound bug, a missing PTX
+        fence, and (the hard one) TMA stores that were never committed to an async group, so every
+        store-wait was a no-op and the epilogue memory was overwritten mid-store. All four are still
+        unfixed upstream; every serve attests the patched kernel fail-closed before benchmarking. Result:
+        <strong>decode 23–35% faster than CUTLASS at every operating point</strong>, in exchange for worse
+        loaded prefill (TTFT +12–29% at concurrency ≥16). The grouped scheduling variant never beats
+        indexed on decode; CUTLASS keeps the loaded-TTFT crown.
+      </p>
+      <h3>Stage 3 — packed-K is a trade, and its adoption is an open call</h3>
+      <p>
+        Humming 0.1.11 auto-enables a packed-K dequant layout for exactly our config. Measured two
+        independent ways (paired suite window + AA-style sweep) against a ±0.2% run-to-run noise floor:
+        it <strong>costs ~4% at concurrency 1</strong> (indexed; −1% grouped) and
+        <strong>gains 1–3% TPOT at concurrency 16–64</strong>, up to +7–10% in the most weight-bound
+        cells. Adopt for throughput-oriented serving, hold 0.1.10 for interactive latency, or adopt
+        per-gemm — the decision is deliberately not made here.
+      </p>
+    </div>
+    <div class="note">
+      <p class="t">Scope of this section</p>
+      <p>
+        Kernel-evolution windows use the in-house GPTQ checkpoint only (conc-1 decode is
+        kernel-time-bound, and where windows span checkpoints the CUTLASS arms agree within ~1 tok/s).
+        The five-arm tables above remain the reference for checkpoint-vs-checkpoint claims. Detail docs:
+        <a href="M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md"><code>M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md</code></a>
+        (full evolution narrative + CUTLASS-vs-Humming window),
+        <code>docs/m3-w4a8-three-arm-perf.md</code> (CUTLASS / indexed / grouped),
+        <code>docs/m3-w4a8-packedk-ab-perf.md</code> and <code>docs/m3-w4a8-packedk-aa-sweep.md</code>
+        (packed-K A/B + AA-style sweep),
+        <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code> (the four kernel fixes and attestation).
+      </p>
+    </div>
+  </section>
+
   <!-- ============ SOURCES ============ -->
   <section id="sources">
     <h2>Context &amp; sources</h2>
@@ -469,6 +581,7 @@
     <ul class="sources col">
       <li><code>benchmarks/results/&lt;profile&gt;/vllm/perf/</code> — aiperf runs: reasoning <code>20260722T083736Z</code>, agentic (M3-calibrated shape) <code>20260722T131810Z</code>; each with <code>*perf_summary.json</code> (goodput sweep + collapse point) next to the raw <code>conc_*</code> exports.</li>
       <li><code>results/m3-calibration/20260722T091007Z/</code> — tau2 calibration run + extracted <code>AG_*</code> shape (<code>calib/ag_block.txt</code>); sim traces in <code>tau2-bench/data/simulations/m3_calib_base_20260722T091007Z/</code>.</li>
+      <li><strong>Kernel evolution (added 07-26)</strong> — stream fix A/B: <code>logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/</code>; CUTLASS vs Humming: windows <code>20260725T074535Z</code> / <code>20260725T122256Z</code>; packed-K A/B: <code>20260726T033158Z</code>; AA-style sweep: <code>benchmarks/results/minimax-m3-inhouse-humming-w4afp8-*/self-hosted/perf/aa-sweep/20260726T040130Z/</code>.</li>
     </ul>
   </section>
 

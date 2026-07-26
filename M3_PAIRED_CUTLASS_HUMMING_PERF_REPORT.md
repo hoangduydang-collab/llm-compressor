@@ -2,6 +2,12 @@
 
 **Status:** measured; **no adoption decision applied by design**
 
+> **This report continues below** — see
+> [Continuation: the W4A8 serving-performance evolution](#continuation-the-w4a8-serving-performance-evolution-2026-07-22--2026-07-26)
+> (2026-07-26) for the full four-stage story: original CUTLASS → CUTLASS with
+> shared-expert stream → Humming indexed vs grouped → Humming with the 0.1.11
+> packed-K dequant layout.
+
 **Date:** 2026-07-25 · `RUN_TS=20260725T074535Z`
 
 **Configuration:** full-stack agent (`FULL_STACK_AGENT_PROTOCOL.md`)
@@ -159,3 +165,137 @@ rather than trusted from the controller log.
   real regression from noise.
 - **Marlin W4A8-INT8** (arm 4) remains untested and is a different activation
   format, not an FP8 comparison.
+
+---
+
+# Continuation: the W4A8 serving-performance evolution (2026-07-22 → 2026-07-26)
+
+**Added 2026-07-26.** The sections above froze one window (CUTLASS vs Humming
+indexed). This continuation is the full story for collaborators: how M3 W4A8
+decode performance moved through four stages, what each stage changed, and what
+the current numbers are. Every number is from a recorded suite window
+(`benchmarks/results/...`); links to the per-stage detail docs are inline.
+
+**Serving envelope for all stages:** in-house GPTQ/AWQ W4A8 checkpoints,
+1 node 8×H100, TP8/EP8, vLLM 0.24.0, CUDA graphs on, suite-native perf
+workflows (`performance/scripts/run_performance.sh`, pinned OSL,
+`PERF_STRICT=1`). "TPOT" = time-per-output-token p50 at reasoning
+(ISL 1000 / OSL ~8000); "decode tok/s" = per-user decode rate.
+
+## The headline: reasoning conc-1 decode, stage by stage
+
+| stage | date | window | conc-1 TPOT | conc-1 decode tok/s | vs previous stage |
+| --- | --- | --- | --- | --- | --- |
+| 0. CUTLASS, shared-expert stream **disabled** | 07-22 / 07-24 | `20260722T083736Z`, `20260724T052028Z` | 10.32–10.47 ms | 95.3–96.6 | (baseline) |
+| 1. CUTLASS, shared-expert stream **enabled** | 07-24 | `20260724T160842Z`, `20260725T*` | 9.65–9.73 ms | 102.5–103.3 | **−7.4% TPOT** |
+| 2. Humming 0.1.10 **indexed** (four patches) | 07-25 | `20260725T074535Z`, `20260725T122256Z` | 7.29 ms | 136.6 | **−25% TPOT** |
+| 2b. Humming 0.1.10 **grouped** (same window) | 07-25 | `20260725T122256Z` | 8.49 ms | 117.5 | (slower arm) |
+| 3. Humming 0.1.11 **packed-K** (indexed) | 07-26 | `20260726T033158Z` | 7.59 ms | 131.2 | **+4% TPOT at conc-1, −1–3% at conc-16/64** |
+
+Net effect stage 0 → stage 2: conc-1 TPOT −30%, per-user decode +43%
+(95.3 → 136.6 tok/s), with zero requantization — the checkpoint never changed;
+only the serving stack did. Stage 3 is a trade, not a straight win (details
+below); its adoption is an open decision.
+
+## Stage 0 → 1: re-enabling the shared-expert auxiliary stream (2026-07-24)
+
+Production serves had been running with `VLLM_DISABLE_SHARED_EXPERTS_STREAM=1`
+— a workaround for a flaky illegal-memory-access during CUDA-graph capture that
+forced the shared expert to run sequentially on the main stream. The IMA was
+root-caused to the fork's `BreakableCUDAGraph._capture` dropping upstream's
+pre-cleanup `torch.cuda.synchronize()`: `empty_cache()` unmapped expandable
+segments while aux-stream kernels from the capture warmup were still in flight.
+Fix: `LLMC_M3_CAPTURE_SYNC=sync` (restores upstream ordering, startup-only
+cost). `run_vllm_http_serve_smoke.sh` has defaulted to stream ON + capture-sync
+since commit `6e074b48`.
+
+Measured effect (CUTLASS backend):
+
+- Interleaved aiperf A/B on one node: conc-1 TPOT 8.454 → 7.828 ms (**−7.4%**),
+  TTFT unaffected (`logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/`).
+- Same-profile suite windows before/after (gptq-r8, `20260724T052028Z` →
+  `20260724T160842Z`): conc-1 decode 95.3 → 103.3 tok/s, TPOT 10.47 → 9.65 ms.
+- conc-64 barely moved (23.08 → 22.38 ms) — the shared expert is TP8-sliced and
+  short; overlap matters most when the batch is small.
+
+Evidence trail: `BUGS_AND_FIXES.md` (shared-experts aux-stream entry),
+`CLUSTER_SHARED_EXPERT_STREAM_RCA_PLAN.md` (the RCA design).
+
+Stage-0/1 numbers span two checkpoints (awq-inhouse on 07-22, gptq-r8 variants
+on 07-24); their CUTLASS decode rates agree within ~1 tok/s because conc-1
+decode is kernel-time-bound, not weights-bound. From stage 1 on, every window
+uses the same checkpoint
+(`artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay`).
+
+## Stage 1 → 2: CUTLASS → Humming (2026-07-25)
+
+Humming is a Hopper-native WGMMA/TMA W4A8-FP8 MoE kernel with direct GPTQ
+loading (selected from the landscape audit in
+`M3_HOPPER_W4A8_KERNEL_INVESTIGATION.md`). Getting it serving-qualified
+required a patched side-install carrying **four declared, SHA-pinned fixes**
+(`M3_HUMMING_W4A8_QUALIFICATION_REPORT.md`):
+
+1. `pack-quantized` input-schema entry (model init dies without it);
+2. grouped_contiguous last-expert row bound derived from expert offsets, not
+   the padded `shape_m` (tail experts read phantom rows);
+3. missing `fence.proxy.async` before TMA C stores (PTX requirement);
+4. missing `cp.async.bulk.commit_group` — humming defines
+   `tma_commit_store_group` but never calls it, so every store-wait was a
+   no-op; the epilogue smem was overwritten mid-store → intermittent
+   whole-tile corruption. **This was the grouped arm's early-EOS collapse**
+   and the hardest of the three kernel defects to isolate.
+
+Results (three-arm window `20260725T122256Z`, full tables in
+`docs/m3-w4a8-three-arm-perf.md`; the CUTLASS-vs-indexed section at the top of
+this file is the same picture one window earlier):
+
+- **Decode: Humming wins big.** Reasoning TPOT (CUTLASS / indexed / grouped):
+  conc-1 9.73 / **7.29** / 8.49 ms; conc-64 22.28 / **19.42** / 20.63 ms.
+  Agentic interactivity +23–35% for indexed over CUTLASS at every point.
+- **Prefill under load: Humming pays.** TTFT worsens with concurrency
+  (reasoning conc-16 +12%; agentic warm conc-32 +29% vs CUTLASS). One
+  crossover: agentic cold conc-32 throughput −1.2%.
+- **Indexed beats grouped everywhere.** Grouped's one bright spot is loaded
+  reasoning TTFT (conc-64 1036 ms vs indexed 1332); it never wins decode.
+
+## Stage 2 → 3: the 0.1.11 packed-K dequant layout (2026-07-26)
+
+Upstream humming 0.1.11 auto-enables a packed-K weight layout for exactly our
+config (WGMMA + 8-bit activations + group-128 weight scales) — a
+dequant-throughput optimization. A patched 0.1.11 side-install (same four
+fixes; none were fixed upstream) passed correctness qualification, including
+root-causing a 1-ulp stream-K reduce-order nondeterminism as upstream design,
+not a defect (`pipeline/m3_humming_packedk_det_probe.py`).
+
+Two independent measurements agree (`docs/m3-w4a8-packedk-ab-perf.md` — paired
+4-arm suite window `20260726T033158Z`; `docs/m3-w4a8-packedk-aa-sweep.md` —
+AA-style sweep `20260726T040130Z`):
+
+- **Low concurrency: packed-K is slower.** Reasoning conc-1 TPOT
+  indexed 7.29 → 7.59 ms (+4.1%), grouped 8.48 → 8.58 (+1.2%); agentic conc-1
+  interactivity −4% on indexed. Direction and size identical in the AA sweep.
+- **High load: packed-K is faster.** Reasoning conc-64 TPOT indexed −1.1%,
+  grouped −2.6%; aggregate tok/s +1–3%; the most weight-bound cells gain most
+  (agentic cold conc-16 grouped +7.5%; AA 10k-input conc-10 +7–10%).
+- **The deltas are real:** the re-run 0.1.10 arms reproduced yesterday's TPOT
+  to ±0.02 ms (≤0.2%), which is the measured run-to-run noise floor.
+
+Mechanism (consistent, unprofiled): packed-K's sm90 tuner caps `block_m` at
+128 where 0.1.10 picked BM=184 for small-m decode, costing conc-1; the packed
+B-loader raises dequant throughput where weight-loading dominates.
+
+## Where this leaves us
+
+| question | answer |
+| --- | --- |
+| Fastest arm today | Humming 0.1.10 **indexed** at low concurrency; 0.1.11 indexed edges it at conc-64 |
+| CUTLASS's remaining role | Best loaded-prefill TTFT; throughput anchor; vLLM-native fallback |
+| Grouped's role | Never decode-optimal; best loaded reasoning TTFT; benefits most from packed-K |
+| Packed-K (0.1.11) adoption | **Open decision** — trades ~4% conc-1 decode (indexed) for +1–3% high-load TPOT and +7–10% in weight-bound cells. Per-gemm adoption (grouped-only) is a viable middle path. |
+| Upstream debt | The four humming defects are still unfixed upstream; issues not yet filed (outward-facing, needs sign-off) |
+
+All stage-3 arms remain correctness-attested at serve time (fail-closed
+preflight: four patch SHAs, version allowlist `0.1.10`/`0.1.11`, cache
+namespace, gemm-type marker). No pass/fail threshold was applied to any
+performance number in any stage — measurement and adoption remain separate
+decisions throughout.

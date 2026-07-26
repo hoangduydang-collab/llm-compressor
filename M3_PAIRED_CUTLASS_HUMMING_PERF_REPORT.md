@@ -7,6 +7,11 @@
 > (2026-07-26) for the full four-stage story: original CUTLASS → CUTLASS with
 > shared-expert stream → Humming indexed vs grouped → Humming with the 0.1.11
 > packed-K dequant layout.
+>
+> **The current organized view of all perf results is the two-axis layout**
+> (axis 1 kernel, axis 2 quantization): `docs/m3-two-axis-perf.md` (data +
+> validity, window `20260726T132617Z`) and `M3_OFFICIAL_PERF_RESULTS.html`
+> (collaborator narrative).
 
 **Date:** 2026-07-25 · `RUN_TS=20260725T074535Z`
 

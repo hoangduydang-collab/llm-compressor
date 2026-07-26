@@ -1,6 +1,9 @@
 # M3 two-axis performance report — data-completion plan (design packet)
 
-**Status:** PROPOSED — awaiting user sign-off before cluster launch.
+**Status:** EXECUTED 2026-07-26 (user-signed). Window
+`m3-two-axis-perf/20260726T132617Z` — all ten arms rc=0, no fallbacks
+(every serve incl. BF16/MXFP8 booted at 131072). Results:
+`docs/m3-two-axis-perf.md`; narrative: `M3_OFFICIAL_PERF_RESULTS.html`.
 **Date:** 2026-07-26. Owner: full-stack agent per `FULL_STACK_AGENT_PROTOCOL.md`.
 
 ## Objective

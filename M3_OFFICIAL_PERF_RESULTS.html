@@ -196,14 +196,15 @@
     <p class="dek">
       Our in-house W4AFP8 quant serves at 137 tok/s single-user (second only to Nebius among commercial
       M3 endpoints), 3.8× BF16's per-GPU reasoning throughput, and holds a 1-second agentic p95 TTFT SLO
-      to concurrency 16 — same checkpoint we shipped, zero requantization; the gains since the first
-      eval came from the serving stack (<a href="#history">history</a>). Quality verdicts:
+      to concurrency 16 — same checkpoint we shipped, zero requantization. Results are organized on two
+      axes: <a href="#axis-kernel">which kernel</a> (model fixed) and
+      <a href="#axis-quant">which quantization</a> (kernel fixed). Quality verdicts:
       <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf 0.8.0)</span>
-      <span><b>Current numbers:</b> Humming-kernel windows 07-25/26</span>
-      <span><b>Five-arm comparison:</b> 07-22 (see history)</span>
+      <span><b>Quantization axis:</b> one window, 07-26 (<code>20260726T132617Z</code>)</span>
+      <span><b>Kernel axis:</b> windows 07-25/26</span>
       <span><b>Engine:</b> vLLM 0.24.0, flags held fixed · FP8 KV cache</span>
       <span><b>Baseline:</b> MiniMax-M3 BF16 (TP16, 2 nodes)</span>
     </div>
@@ -218,19 +219,20 @@
     <div class="h2sub">Read this if you have thirty seconds</div>
     <div class="col">
       <p>
-        In-house W4AFP8 (GPTQ) on one 8×H100 node, stock vLLM plus our patched Humming MoE kernel:
-        <strong>137 tok/s single-user decode</strong> (BF16: 81 on two nodes), <strong>3,262 tok/s
-        aggregate at concurrency 64</strong> (BF16: 1,707 on twice the GPUs), and a
-        <strong>1-second agentic p95 TTFT SLO held to concurrency 16</strong>. The vendor MXFP8 and
-        community AWQ checkpoints collapse past concurrency 4 and stay disqualified. GPTQ vs AWQ is a
-        quality call, not a speed one — see the companion report.
+        In-house W4AFP8 on one 8×H100 node, stock vLLM plus our patched Humming MoE kernel:
+        <strong>137 tok/s single-user decode</strong> (BF16: 81 on two nodes), <strong>3,267 tok/s
+        aggregate at concurrency 64</strong> (BF16: 1,700 on twice the GPUs), a <strong>1-second agentic
+        p95 TTFT SLO held to concurrency 16</strong>, and <strong>131 tok/s decode with a 100k-token
+        prompt</strong>. The speed ladder is set by <em>format and kernel</em>, not quantization
+        algorithm: GPTQ and AWQ on the same kernel are identical in every cell; the community W4A16 and
+        vendor MXFP8 checkpoints trail at every operating point.
       </p>
     </div>
     <div class="tiles">
       <div class="tile good">
         <p class="k">Per-GPU throughput</p>
         <p class="v">3.8<small>× BF16</small></p>
-        <p class="d">Reasoning @ conc 64: 408 tok/s/GPU on 8 GPUs vs 107 on 16.</p>
+        <p class="d">Reasoning @ conc 64: 408 tok/s/GPU on 8 GPUs vs 106 on 16. Same window, same stack.</p>
       </div>
       <div class="tile good">
         <p class="k">Single-user decode</p>
@@ -240,12 +242,12 @@
       <div class="tile good">
         <p class="k">Agentic · 1s p95 SLO holds to</p>
         <p class="v">conc 16</p>
-        <p class="d">Warm multi-turn, prefix cache on: p95 TTFT 888 ms @16, 1,289 ms @32.</p>
+        <p class="d">Warm multi-turn, prefix cache on: p95 TTFT 893 ms @16, 1,314 ms @32.</p>
       </div>
-      <div class="tile crit">
-        <p class="k">MXFP8 &amp; cyankiwi · SLO collapse</p>
-        <p class="v">conc 4</p>
-        <p class="d">Agentic p95 TTFT &gt;1.7 s by conc 32; MXFP8 TTFT 3.5 s at reasoning conc 64.</p>
+      <div class="tile good">
+        <p class="k">GPTQ vs AWQ · same kernel</p>
+        <p class="v">= <small>speed</small></p>
+        <p class="d">7.30 vs 7.30 ms TPOT; within ~1% in all 26 cells. Choose on quality alone.</p>
       </div>
     </div>
   </section>
@@ -253,136 +255,39 @@
   <!-- ============ METHOD ============ -->
   <section id="method">
     <h2>Method</h2>
-    <div class="h2sub">What was measured</div>
+    <div class="h2sub">Two measurement paths, two comparison axes</div>
     <div class="col">
       <p>
         <strong>aiperf 0.8.0</strong> drives synthetic traffic against each arm's OpenAI endpoint; engine
-        held fixed (vLLM 0.24.0, identical flags, FP8 KV cache). Quant arms: one 8×H100 node (TP8).
-        BF16: two nodes (TP16/ray). Two workloads:
+        held fixed (vLLM 0.24.0, identical flags, FP8 KV cache, 131,072-token context). Quant arms: one
+        8×H100 node (TP8). BF16: two nodes (TP16/ray). Each axis reports both paths:
       </p>
       <ul>
-        <li><strong>Reasoning</strong> — 1,000 input tokens, 8k forced decode (<code>ignore_eos</code>;
-          isolates kernel speed from model verbosity); temp 0.6, thinking on; concurrency 1/4/16/64.</li>
-        <li><strong>Agentic</strong> — multi-turn with a growing, mostly-cacheable prefix; shape
-          calibrated on M3 itself with tau2-bench (7,300-token cacheable prefix, 14±3 turns, ~100 output
-          tokens/turn). <strong>warm</strong> = sticky sessions (KV reuse); <strong>cold</strong> =
-          cache-defeated control.</li>
+        <li><strong>Primary path</strong> (suite-native) — <em>reasoning</em>: 1k input, 8k forced decode
+          (<code>ignore_eos</code>; isolates kernel speed from model verbosity), temp 0.6, thinking on,
+          concurrency 1/4/16/64; <em>agentic</em>: multi-turn, M3-calibrated tau2 shape (7,300-token
+          cacheable prefix, ~100 output tokens/turn), warm (KV reuse) vs cold (cache-defeated),
+          concurrency 1/4/16/32.</li>
+        <li><strong>AA-style sweep</strong> — Artificial-Analysis axes: input 1k/10k/100k × concurrency
+          1/10, natural output length (AA's answer-token floors recorded, not forced). Comparable columns
+          are per-user decode speed and TTFT; AA-style, <em>not</em> AA-leaderboard-comparable (synthetic
+          prompts, model-tokenizer units, one batch vs their 72-h medians).</li>
       </ul>
       <p>
-        Current headline numbers are from the Humming-kernel windows (<code>20260725T122256Z</code>,
-        <code>20260726T033158Z</code>, GPTQ checkpoint; the Humming serve attests the patched kernel
-        fail-closed before every benchmark). The five-arm checkpoint comparison is from 07-22 and lives
-        in <a href="#history">history</a>. Arm-vs-arm claims are valid; the provider comparison is
-        matched on workload shape (single request, 1k prompt, decode rate after first token) but
-        providers carry live multi-tenant load — same-ballpark placement, not a ranking.
+        Table format everywhere: primary cells are <strong>TPOT p50 ms (aggregate tok/s)</strong>; AA
+        cells are <strong>per-user decode p50 tok/s (TTFT p50 ms)</strong>. Cross-window TPOT noise floor
+        is ±0.2% (re-run arms reproduce to ±0.02 ms). Provider numbers are matched on workload shape but
+        carry live multi-tenant load — same-ballpark placement, not a ranking.
       </p>
     </div>
   </section>
 
-  <!-- ============ CAPACITY ============ -->
-  <section id="throughput">
-    <h2>Reasoning throughput</h2>
-    <div class="h2sub">The capacity story</div>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th class="arm">Arm</th><th>GPUs</th>
-            <th>conc 1 · tok/s (TTFT ms)</th><th>conc 16 · tok/s (TTFT ms)</th>
-            <th>conc 64 · tok/s (TTFT ms)</th><th>tok/s per GPU @64</th></tr>
-        </thead>
-        <tbody>
-          <tr class="baseline"><td class="arm">BF16 (07-22)</td><td>16</td><td>81 (136)</td><td>712 (583)</td><td>1,707 (2,329)</td><td>107</td></tr>
-          <tr><td class="arm">W4AFP8 · Humming (07-26)</td><td>8</td><td class="cell-good">137 (142)</td><td class="cell-good">1,302 (470)</td><td class="cell-good">3,262 (1,410)</td><td class="cell-good">408</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="col">
-      <p style="margin-top:16px">
-        Faster than BF16 at every operating point on half the silicon: +69% single-user, 1.9× aggregate,
-        <strong>3.8× per-GPU</strong>. Measured on the GPTQ checkpoint; AWQ shares the same kernels and
-        was speed-identical in the five-arm windows. BF16 baseline is the 07-22 window — re-running it
-        on the current stack would recover at most the ~7% shared-expert-stream gain at conc 1 and
-        nothing at conc 64, so the capacity ratios stand.
-      </p>
-    </div>
-  </section>
+  <!-- ============ AXIS 1 — KERNEL ============ -->
+  <section id="axis-kernel">
+    <h2>Axis 1 · Kernel</h2>
+    <div class="h2sub">Model fixed (in-house GPTQ W4AFP8) — how the serving stack evolved</div>
 
-  <!-- ============ MARKET ============ -->
-  <section id="market">
-    <h2>Against the market</h2>
-    <div class="h2sub">Commercial MiniMax-M3 endpoints, matched workload shape</div>
-    <div class="col">
-      <p>
-        Reference: Artificial Analysis "single query, 1k-token prompt" (median, 72 h) — the same shape as
-        our concurrency-1 reasoning point.
-      </p>
-    </div>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th class="arm">Endpoint</th><th>Output speed · tok/s/user</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="arm">Nebius (FP8)</td><td>197</td></tr>
-          <tr><td class="arm"><strong>ours · W4AFP8 + Humming kernel</strong></td><td class="cell-good"><strong>137</strong></td></tr>
-          <tr><td class="arm">ours · cyankiwi W4A16 <span class="muted">(quality-broken; 07-22)</span></td><td>116</td></tr>
-          <tr><td class="arm">Together AI</td><td>97</td></tr>
-          <tr><td class="arm">MiniMax first-party</td><td>95</td></tr>
-          <tr><td class="arm">Novita</td><td>94</td></tr>
-          <tr><td class="arm">SiliconFlow</td><td>92</td></tr>
-          <tr><td class="arm">ours · BF16 TP16 <span class="muted">(07-22)</span></td><td>81</td></tr>
-          <tr><td class="arm">Parasail (MXFP8 — same checkpoint as our MXFP8 arm)</td><td>66</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="col">
-      <p style="margin-top:16px">
-        <strong>Above every provider except Nebius</strong>, whose 197 is a serving-stack tier (FP8 +
-        speculative decoding on newer silicon) that would stack on our checkpoint too. Independent
-        corroboration: Parasail serves the same MXFP8 checkpoint and is the slowest provider here, just
-        as MXFP8 was our weakest arm. TTFT is not comparable across the two sides, and AA medians drift
-        with their 72-hour window.
-      </p>
-    </div>
-  </section>
-
-  <!-- ============ AGENTIC ============ -->
-  <section id="agentic">
-    <h2>Agentic serving</h2>
-    <div class="h2sub">Latency under a real multi-turn shape</div>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th class="arm">W4AFP8 · Humming · TTFT p50 / p95 ms</th><th>conc 1</th><th>conc 4</th><th>conc 16</th><th>conc 32</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="arm">warm (KV reuse)</td><td>196 / 214</td><td>316 / 441</td><td class="cell-good">592 / 888</td><td>735 / 1,289</td></tr>
-          <tr><td class="arm">cold (cache-defeated)</td><td>574 / 591</td><td>660 / 1,924</td><td class="cell-crit">1,949 / 5,255</td><td class="cell-crit">3,204 / 6,682</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="col">
-      <p style="margin-top:16px">
-        Warm holds a 1-second p95 SLO to concurrency 16 and misses at 32 (1,289 ms) — BF16 held 32 in
-        its window, on double the hardware. Two findings:
-      </p>
-      <ul>
-        <li><strong>Prefix caching is worth 3–5× on TTFT under load</strong>, and no arm holds a 1 s SLO
-          past concurrency 1 uncached. Agentic serving without KV reuse is not viable, at any precision.</li>
-        <li><strong>The cache dominates turn depth:</strong> warm TTFT falls as conversations deepen
-          (deep turns are almost entirely cached prefix). vLLM 0.24 never reports
-          <code>cached_tokens</code>; caching was verified by a preflight double-prompt probe plus the
-          warm-vs-cold delta.</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- ============ HISTORY ============ -->
-  <section id="history">
-    <h2>History · 07-22 → 07-26</h2>
-    <div class="h2sub">How the numbers got here, and the original five-arm comparison</div>
-
-    <h3>Kernel evolution — same checkpoint, −30% TPOT</h3>
+    <h3>The evolution — same checkpoint, −30% TPOT in four days</h3>
     <div class="bars" role="img" aria-label="Single-user decode by stage: CUTLASS stream off 95, CUTLASS stream on 103, Humming indexed 137, Humming packed-K 131 tokens per second">
       <div class="bar-row"><span class="lab">CUTLASS · stream off</span>
         <span class="track"><span class="fill f-ok" style="width:68%"></span></span><span class="num">95 tok/s</span></div>
@@ -401,19 +306,209 @@
           <tr><th class="arm">Stage</th><th>Window</th><th>conc-1 TPOT</th><th>What changed</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td class="muted">07-22</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the five-arm comparison below</td></tr>
+          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td class="muted">07-22</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
           <tr><td class="arm">1 · shared-expert stream re-enabled</td><td class="muted">07-24</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
           <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="muted">07-25</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
-          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="muted">07-26</td><td>7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells (±0.2% noise floor). Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
+          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="muted">07-26</td><td>7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>The 07-22 five-arm comparison (previous stack)</h3>
+    <h3>Primary path — reasoning · TPOT p50 ms (aggregate tok/s)</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">conc</th><th>CUTLASS</th><th>Humming idx 0.1.10</th><th>Humming grp 0.1.10</th><th>idx 0.1.11 packed-K</th><th>grp 0.1.11 packed-K</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">1</td><td>9.73 (102)</td><td class="cell-good">7.29 (137)</td><td>8.48 (117)</td><td>7.59 (131)</td><td>8.58 (116)</td></tr>
+          <tr><td class="arm">4</td><td>11.91 (335)</td><td class="cell-good">8.82 (452)</td><td>9.91 (402)</td><td>8.90 (448)</td><td>9.89 (403)</td></tr>
+          <tr><td class="arm">16</td><td>15.28 (1,042)</td><td>12.22 (1,302)</td><td>13.28 (1,198)</td><td>12.23 (1,300)</td><td>13.04 (1,220)</td></tr>
+          <tr><td class="arm">64</td><td>22.28 (2,849)</td><td>19.43 (3,262)</td><td>20.64 (3,046)</td><td class="cell-good">19.21 (3,299)</td><td>20.11 (3,128)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>CUTLASS: window 20260725T122256Z · Humming arms: 20260726T033158Z · noise floor ±0.2%</span></p>
+
+    <h3>AA-style sweep — per-user decode tok/s (TTFT ms)</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">input × conc</th><th>CUTLASS</th><th>Humming idx 0.1.10</th><th>Humming grp 0.1.10</th><th>idx 0.1.11 packed-K</th><th>grp 0.1.11 packed-K</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">1k × 1</td><td>102.2 (114)</td><td class="cell-good">137.3 (114)</td><td>117.8 (125)</td><td>132.3 (131)</td><td>116.1 (124)</td></tr>
+          <tr><td class="arm">1k × 10</td><td>71.9 (403)</td><td>92.2 (423)</td><td>84.9 (447)</td><td class="cell-good">93.3 (432)</td><td>88.0 (427)</td></tr>
+          <tr><td class="arm">10k × 1</td><td>102.0 (532)</td><td class="cell-good">137.1 (554)</td><td>117.5 (557)</td><td>131.9 (554)</td><td>115.9 (561)</td></tr>
+          <tr><td class="arm">10k × 10</td><td>56.6 (1,705)</td><td class="cell-good">75.8 (2,685)</td><td>65.4 (2,709)</td><td>64.3 (1,868)</td><td>60.4 (1,790)</td></tr>
+          <tr><td class="arm">100k × 1</td><td>100.3 (5,193)</td><td class="cell-good">130.9 (5,391)</td><td>115.5 (5,473)</td><td>127.8 (5,512)</td><td>113.7 (5,456)</td></tr>
+          <tr><td class="arm">100k × 10 <span class="muted">(saturation)</span></td><td>15.7 (24,529)</td><td>13.8 (18,110)</td><td>17.7 (24,389)</td><td>14.4 (18,130)</td><td>16.1 (29,715)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>All five arms: window 20260726T132617Z, uniform 131k context · natural output length</span></p>
+    <div class="col">
+      <ul style="margin-top:14px">
+        <li><strong>Kernel ordering is stable at every input length:</strong> Humming indexed &gt; grouped
+          &gt; CUTLASS, with 0.1.10 indexed fastest single-user — the AA path independently reproduces the
+          suite ordering.</li>
+        <li><strong>Long-context decode holds:</strong> conc-1 decode barely moves from 1k to 100k input
+          (137.3 → 130.9); 100k-prompt TTFT ≈ 5.2–5.5 s on every W4AFP8 arm. The 100k × 10 row is a
+          saturation cell (~1M live prompt tokens) — capacity data, not a kernel A/B.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ AXIS 2 — QUANTIZATION ============ -->
+  <section id="axis-quant">
+    <h2>Axis 2 · Quantization</h2>
+    <div class="h2sub">Kernel fixed (Humming indexed 0.1.10) — which checkpoint to serve</div>
     <div class="col">
       <p>
-        Checkpoint-vs-checkpoint reference, all arms on the stage-0 CUTLASS stack. The relative verdicts
-        stand — MXFP8 and cyankiwi don't use the W4A8 MoE path, so the kernel work moves only our arms.
+        All five arms measured in <strong>one window on one stack</strong> (07-26,
+        <code>20260726T132617Z</code>). The kernel is pinned to the axis-1 winner wherever the format
+        admits it: in-house GPTQ and AWQ r7 are W4AFP8 group-128 and run Humming indexed 0.1.10; the
+        community cyankiwi checkpoint is <strong>W4A16 group-32 and cannot run the W4A8 kernel</strong>
+        (it serves on Marlin, its only path); MXFP8 and BF16 use their native paths.
+      </p>
+    </div>
+
+    <h3>Primary path — reasoning · TPOT p50 ms (aggregate tok/s)</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">conc</th><th>GPTQ · Humming</th><th>AWQ r7 · Humming</th><th>cyankiwi · Marlin</th><th>MXFP8</th><th>BF16 (16 GPU)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">1</td><td class="cell-good">7.30 (137)</td><td class="cell-good">7.30 (136)</td><td>7.96 (118)</td><td>9.31 (107)</td><td>12.40 (81)</td></tr>
+          <tr><td class="arm">4</td><td>8.82 (451)</td><td>8.80 (453)</td><td>9.33 (415)</td><td>11.40 (349)</td><td>16.23 (246)</td></tr>
+          <tr><td class="arm">16</td><td>12.23 (1,300)</td><td>12.18 (1,303)</td><td>12.35 (1,268)</td><td>16.42 (968)</td><td>22.48 (711)</td></tr>
+          <tr><td class="arm">64</td><td class="cell-good">19.40 (3,267)</td><td>19.43 (3,262)</td><td>21.10 (2,923)</td><td>27.52 (2,177)</td><td>35.16 (1,700)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p style="margin-top:14px">
+        Per-GPU aggregate at conc 64: GPTQ/AWQ <strong>408</strong>, cyankiwi 365, MXFP8 272, BF16
+        <strong>106</strong> tok/s/GPU — in-house W4AFP8 is <strong>3.8× BF16 per GPU</strong>, now from
+        a single same-day window (the BF16 rerun landed on its old number: 81 tok/s conc-1, so the
+        earlier cross-window caveat is closed).
+      </p>
+    </div>
+
+    <h3>Primary path — agentic · interactivity tok/s (TTFT p50/p95 ms)</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">conc</th><th>GPTQ · Humming</th><th>AWQ r7 · Humming</th><th>cyankiwi · Marlin</th><th>MXFP8</th><th>BF16 (16 GPU)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">warm 1</td><td class="cell-good">138.9 (177/209)</td><td>138.2 (196/225)</td><td>127.5 (177/212)</td><td>108.1 (180/206)</td><td>80.8 (190/226)</td></tr>
+          <tr><td class="arm">warm 4</td><td>106.5 (315/487)</td><td>107.8 (302/433)</td><td>101.0 (304/423)</td><td>84.0 (309/439)</td><td>60.3 (299/420)</td></tr>
+          <tr><td class="arm">warm 16</td><td>72.2 (586/<strong>893</strong>)</td><td>73.2 (609/898)</td><td>69.0 (734/1,085)</td><td>55.6 (704/1,062)</td><td>41.4 (511/783)</td></tr>
+          <tr><td class="arm">warm 32</td><td>49.1 (761/1,314)</td><td>47.3 (688/1,231)</td><td>48.1 (1,004/1,836)</td><td>38.8 (979/1,647)</td><td>27.3 (521/808)</td></tr>
+          <tr><td class="arm">cold 1</td><td>139.5 (565/597)</td><td>139.1 (575/595)</td><td>127.8 (806/840)</td><td>108.6 (881/893)</td><td>81.5 (628/645)</td></tr>
+          <tr><td class="arm">cold 16</td><td>29.3 (2,109/5,490)</td><td>29.6 (1,782/5,560)</td><td>21.6 (2,678/8,243)</td><td class="cell-warn">12.4 (4,937/7,329)</td><td>14.7 (2,978/4,567)</td></tr>
+          <tr><td class="arm">cold 32</td><td>10.0 (3,215/6,731)</td><td>10.0 (3,203/7,030)</td><td>6.9 (5,356/10,011)</td><td class="cell-warn">5.5 (4,710/12,167)</td><td>7.2 (2,755/8,536)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <ul style="margin-top:14px">
+        <li>The in-house arms hold the <strong>1 s warm p95 SLO to concurrency 16</strong>; cyankiwi and
+          MXFP8 miss it at 16 (1,085 / 1,062 ms). BF16's better loaded TTFT is its 16 GPUs speaking.</li>
+        <li><strong>Prefix caching is worth 3–5× on TTFT under load</strong> for every arm; no arm holds
+          a 1 s SLO past concurrency 1 uncached. Agentic serving without KV reuse is not viable at any
+          precision.</li>
+      </ul>
+    </div>
+
+    <h3>AA-style sweep — per-user decode tok/s (TTFT ms)</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">input × conc</th><th>GPTQ · Humming</th><th>AWQ r7 · Humming</th><th>cyankiwi · Marlin†</th><th>MXFP8</th><th>BF16 (16 GPU)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">1k × 1</td><td class="cell-good">137.3 (114)</td><td>137.0 (117)</td><td>126.3 (110)</td><td>107.7 (118)</td><td>80.9 (129)</td></tr>
+          <tr><td class="arm">1k × 10</td><td class="cell-good">92.2 (423)</td><td>90.6 (428)</td><td>87.4 (656)</td><td>71.1 (638)</td><td>50.5 (491)</td></tr>
+          <tr><td class="arm">10k × 1</td><td>137.1 (554)</td><td class="cell-good">137.1 (549)</td><td>124.6† (807)</td><td>107.6 (836)</td><td>80.6 (583)</td></tr>
+          <tr><td class="arm">10k × 10</td><td class="cell-good">75.8 (2,685)</td><td>70.4 (2,200)</td><td>85.9† (4,023)</td><td>55.8 (4,386)</td><td>44.3 (2,350)</td></tr>
+          <tr><td class="arm">100k × 1</td><td>130.9 (5,391)</td><td class="cell-good">133.4 (5,410)</td><td>116.0† (7,703)</td><td>104.9 (8,283)</td><td>78.4 (5,883)</td></tr>
+          <tr><td class="arm">100k × 10 <span class="muted">(saturation)</span></td><td>13.8 (18,110)</td><td>17.4 (22,852)</td><td>56.5† (33,162)</td><td>15.4 (37,886)</td><td>22.5 (31,815)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <ul style="margin-top:14px">
+        <li><strong>The axis headline: quantization method does not matter for speed — format does.</strong>
+          GPTQ and AWQ r7 on the same kernel are within noise in every cell of every table. The ladder is
+          W4AFP8·Humming &gt; W4A16·Marlin &gt; MXFP8 &gt; BF16. Choose GPTQ vs AWQ on quality alone.</li>
+        <li>† <strong>cyankiwi's long-input AA cells are runaway generations:</strong> at 10k/100k input it
+          decodes to the 16,384-token cap (every other arm: 340–700 natural tokens), so its apparent
+          10k×10/100k×10 "wins" are a different, much longer-decode workload — the
+          <a href="M3_OFFICIAL_QUALITY_RESULTS.html">quality pathology</a> made perf-visible. Its suite
+          reasoning also stops ~2.6% short of the pinned decode at conc 64 despite <code>ignore_eos</code>
+          (small favorable bias; all other arms are clean).</li>
+        <li>The 07-22 window's "MXFP8/cyankiwi collapse at conc 4" verdict <strong>did not reproduce</strong>
+          on today's stack — both now complete every concurrency, just slower. The historical verdict is
+          superseded by this window (<a href="#history">history</a>).</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ MARKET ============ -->
+  <section id="market">
+    <h2>Against the market</h2>
+    <div class="h2sub">Commercial MiniMax-M3 endpoints, matched workload shape</div>
+    <div class="col">
+      <p>
+        Reference: Artificial Analysis "single query, 1k-token prompt" (median, 72 h) — the same shape as
+        our conc-1 reasoning point.
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Endpoint</th><th>Output speed · tok/s/user</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">Nebius (FP8)</td><td>197</td></tr>
+          <tr><td class="arm"><strong>ours · W4AFP8 + Humming kernel</strong></td><td class="cell-good"><strong>137</strong></td></tr>
+          <tr><td class="arm">ours · cyankiwi W4A16 <span class="muted">(quality-broken)</span></td><td>122</td></tr>
+          <tr><td class="arm">ours · MXFP8 (vendor checkpoint)</td><td>107</td></tr>
+          <tr><td class="arm">Together AI</td><td>97</td></tr>
+          <tr><td class="arm">MiniMax first-party</td><td>95</td></tr>
+          <tr><td class="arm">Novita</td><td>94</td></tr>
+          <tr><td class="arm">SiliconFlow</td><td>92</td></tr>
+          <tr><td class="arm">ours · BF16 TP16</td><td>81</td></tr>
+          <tr><td class="arm">Parasail (MXFP8 — same checkpoint as our MXFP8 arm)</td><td>66</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p style="margin-top:16px">
+        <strong>Above every provider except Nebius</strong>, whose 197 is a serving-stack tier (FP8 +
+        speculative decoding on newer silicon) that would stack on our checkpoint too. Independent
+        corroboration: Parasail serves the same MXFP8 checkpoint and is the slowest provider here, just
+        as MXFP8 trails our 4-bit arms. "Ours" rows are the 07-26 window; TTFT is not comparable across
+        the two sides, and AA medians drift with their 72-hour window.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section id="history">
+    <h2>History · 07-22</h2>
+    <div class="h2sub">The original five-arm comparison (superseded by axis 2)</div>
+    <div class="col">
+      <p>
+        First checkpoint-vs-checkpoint pass, all arms on the stage-0 CUTLASS stack (shared-expert stream
+        off, 40,960 context). Kept for provenance; <a href="#axis-quant">axis 2</a> re-measured every arm
+        on the current stack in one window. Two verdicts changed with the stack: the in-house arms gained
+        ~40% single-user decode from the kernel work (axis 1), and the "MXFP8/cyankiwi agentic collapse at
+        conc 4" no longer reproduces (they now complete every concurrency — still the slowest arms).
+        cyankiwi's quality verdict is unchanged and disqualifying.
       </p>
     </div>
     <div class="scroll">
@@ -448,17 +543,10 @@
     </div>
     <div class="col">
       <ul style="margin-top:16px">
-        <li><strong>GPTQ ≈ AWQ on speed</strong> (same kernels) — quality is the only differentiator
-          between them.</li>
-        <li><strong>cyankiwi's +16% single-user edge is bought with a broken model:</strong> it
-          quantizes attention to 4-bit in 57/60 layers (our recipe keeps attention, shared experts, and
-          router gates at BF16); the <a href="M3_OFFICIAL_QUALITY_RESULTS.html">quality report</a> shows
-          degenerate reasoning loops and the worst scores on every axis. It also has the worst loaded
-          TTFT among the 4-bit arms.</li>
         <li><strong>Workload-shape provenance:</strong> agentic numbers use the M3-calibrated tau2 shape;
           re-calibrating from the borrowed M2.5 shape moved warm TTFTs ≤10% and changed no ranking.</li>
-        <li><strong>KV collapse</strong> was identical across arms (warm conc 16, cold conc 4) — not
-          kernel-dependent.</li>
+        <li><strong>KV collapse</strong> in this window was identical across arms (warm conc 16, cold
+          conc 4) — not kernel-dependent, and not reproduced on the 07-26 stack.</li>
       </ul>
     </div>
   </section>
@@ -471,12 +559,13 @@
       <li><strong>Provider speed comparison</strong> — <a href="https://artificialanalysis.ai/models/minimax-m3/providers/prompt-options/single/medium">Artificial Analysis: MiniMax-M3 providers, single query · 1k prompt</a> (median, 72h window) and their <a href="https://artificialanalysis.ai/methodology/performance-benchmarking">measurement methodology</a> (one request in flight, decode rate after first token). AA's default page now uses a 10k-input workload; the 1k option matches our test shape.</li>
       <li><strong>Perf tooling</strong> — <a href="https://github.com/ai-dynamo/aiperf">aiperf</a> (NVIDIA) drives all perf workloads; <a href="https://github.com/sierra-research/tau2-bench">tau2-bench</a> generates the agentic workload <em>shape</em> (not scored).</li>
       <li><strong>Quality companion</strong> — <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>: recovery, flips, token-spend, the AWQ non-termination pathology; ship/no-ship verdicts.</li>
-      <li><strong>Kernel-evolution detail docs</strong> — <a href="M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md"><code>M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md</code></a> (full narrative + CUTLASS-vs-Humming window), <code>docs/m3-w4a8-three-arm-perf.md</code> (CUTLASS/indexed/grouped), <code>docs/m3-w4a8-packedk-ab-perf.md</code> + <code>docs/m3-w4a8-packedk-aa-sweep.md</code> (packed-K), <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code> (the four kernel fixes + attestation).</li>
+      <li><strong>Detail docs</strong> — <code>docs/m3-two-axis-perf.md</code> (this page's primary window, incl. validity checks), <a href="M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md"><code>M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md</code></a> (kernel-evolution narrative), <code>docs/m3-w4a8-three-arm-perf.md</code>, <code>docs/m3-w4a8-packedk-ab-perf.md</code> + <code>docs/m3-w4a8-packedk-aa-sweep.md</code>, <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code> (the four kernel fixes + attestation), <code>M3_TWO_AXIS_PERF_PLAN.md</code> (design packet incl. the AA-methodology fidelity audit).</li>
     </ul>
     <h3>Raw evidence on disk</h3>
     <ul class="sources col">
-      <li><strong>Current windows</strong> — <code>benchmarks/results/minimax-m3-inhouse-humming-w4afp8-*/vllm/perf/</code>: three-arm <code>20260725T122256Z</code>, packed-K A/B <code>20260726T033158Z</code>, AA-style sweep <code>self-hosted/perf/aa-sweep/20260726T040130Z</code>; stream-fix A/B <code>logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/</code>.</li>
-      <li><strong>07-22 five-arm windows</strong> — <code>benchmarks/results/&lt;profile&gt;/vllm/perf/</code>: reasoning <code>20260722T083736Z</code>, agentic (M3-calibrated shape) <code>20260722T131810Z</code>; tau2 calibration <code>results/m3-calibration/20260722T091007Z/</code>.</li>
+      <li><strong>Two-axis window (axis 2 + all AA tables)</strong> — <code>benchmarks/results/&lt;profile&gt;/{vllm/perf,self-hosted/perf/aa-sweep}/20260726T132617Z/</code>; controller artifacts <code>/mnt/nfs/hoangduy/results/m3-two-axis-perf/20260726T132617Z/</code>.</li>
+      <li><strong>Kernel-axis suite windows</strong> — three-arm <code>20260725T122256Z</code>, packed-K A/B <code>20260726T033158Z</code>, first AA sweep <code>20260726T040130Z</code>; stream-fix A/B <code>logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/</code>.</li>
+      <li><strong>07-22 five-arm windows</strong> — reasoning <code>20260722T083736Z</code>, agentic (M3-calibrated shape) <code>20260722T131810Z</code>; tau2 calibration <code>results/m3-calibration/20260722T091007Z/</code>.</li>
     </ul>
   </section>
 

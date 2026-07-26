@@ -98,6 +98,21 @@ def main() -> int:
     parser.add_argument("--tokens", type=int, default=4096)
     parser.add_argument("--repeats", type=int, default=16)
     parser.add_argument("--garbage-scale", type=float, default=100.0)
+    parser.add_argument(
+        "--counts",
+        default=None,
+        help="comma-separated per-expert token counts; overrides the seeded "
+        "routing draw (use to replay a specific failing case, e.g. the "
+        "sweep's w13/4096: replay its RNG walk to recover the counts)",
+    )
+    parser.add_argument(
+        "--data-draws",
+        type=int,
+        default=1,
+        help="independent activation draws; nondeterminism from fp reduce "
+        "ordering only turns into bit flips for some data, so one draw can "
+        "miss it",
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.out)
@@ -126,7 +141,16 @@ def main() -> int:
 
     n_block = 128  # tile-attribution granularity only
 
-    offsets, total_valid = realistic_offsets(args.tokens, generator)
+    if args.counts is not None:
+        counts = torch.tensor(
+            [int(x) for x in args.counts.split(",")], dtype=torch.int64
+        )
+        assert counts.numel() == LOCAL_EXPERTS
+        offsets = torch.zeros(LOCAL_EXPERTS + 1, dtype=torch.int64)
+        offsets[1:] = torch.cumsum(counts, dim=0)
+        total_valid = int(offsets[-1].item())
+    else:
+        offsets, total_valid = realistic_offsets(args.tokens, generator)
     buffer_rows = args.tokens * TOPK
     estimate = production_valid_estimate(args.tokens)
 
@@ -162,19 +186,22 @@ def main() -> int:
         is_blockwise=False,
     )
 
-    a_full = torch.empty(buffer_rows, shape_k, dtype=torch.bfloat16, device="cuda")
-    a_full.normal_(0.0, 1.0, generator=None)
-    a_full[total_valid:] *= args.garbage_scale
-    quant_full, scale_full = ops.quant_input(
-        inputs=a_full, dtype=str(meta.a_dtype), group_size=None
-    )
-    quant_exact, scale_exact = ops.quant_input(
-        inputs=a_full[:total_valid].contiguous(),
-        dtype=str(meta.a_dtype),
-        group_size=None,
-    )
-
-    ref = reference_output(quant_full, scale_full, w_deq, offsets.cuda())
+    def draw_data():
+        a_full = torch.empty(
+            buffer_rows, shape_k, dtype=torch.bfloat16, device="cuda"
+        )
+        a_full.normal_(0.0, 1.0, generator=None)
+        a_full[total_valid:] *= args.garbage_scale
+        quant_full, scale_full = ops.quant_input(
+            inputs=a_full, dtype=str(meta.a_dtype), group_size=None
+        )
+        quant_exact, scale_exact = ops.quant_input(
+            inputs=a_full[:total_valid].contiguous(),
+            dtype=str(meta.a_dtype),
+            group_size=None,
+        )
+        ref = reference_output(quant_full, scale_full, w_deq, offsets.cuda())
+        return quant_full, scale_full, quant_exact, scale_exact, ref
 
     buckets = get_heuristics_config(
         meta=meta,
@@ -207,10 +234,12 @@ def main() -> int:
         (
             "packedk-bn128",
             True,
+            # packed-K statically requires warp-N >= 32 (s2r loader_b
+            # static_assert WarpShape::N / 16 >= 2), so keep warp-N at 32.
             {
                 **heuristic,
                 "block_shape": [128, 128, 128],
-                "warp_shape": [128, 16, 128],
+                "warp_shape": [128, 32, 128],
             },
         ),
         ("classic-same-tuning", False, dict(heuristic)),
@@ -260,47 +289,60 @@ def main() -> int:
             torch.cuda.synchronize()
             return out
 
-        try:
-            runs = [
-                run(quant_full, scale_full)[:total_valid].clone()
-                for _ in range(args.repeats)
-            ]
-            out_exact = run(quant_exact, scale_exact)[:total_valid].clone()
-        except Exception as exc:  # config invalid for this kernel family
-            entry["error"] = f"{type(exc).__name__}: {exc}"
-            report["variants"].append(entry)
-            print(f"[err] {name}: {entry['error']}")
-            continue
+        entry["draws"] = []
+        for draw in range(args.data_draws):
+            data = draw_data()
+            quant_full, scale_full, quant_exact, scale_exact, ref = data
+            try:
+                runs = [
+                    run(quant_full, scale_full)[:total_valid].clone()
+                    for _ in range(args.repeats)
+                ]
+                out_exact = run(quant_exact, scale_exact)[:total_valid].clone()
+            except Exception as exc:  # config invalid for this kernel family
+                entry["error"] = f"{type(exc).__name__}: {exc}"
+                print(f"[err] {name}: {entry['error']}")
+                break
 
-        deterministic = all(torch.equal(runs[0], r) for r in runs[1:])
-        entry["deterministic_across_repeats"] = deterministic
-        entry["full_vs_exact_identical"] = torch.equal(runs[0], out_exact)
-        rel = (runs[0].float() - ref).abs() / ref.abs().amax(dim=1).clamp_min(
-            1e-6
-        ).view(-1, 1)
-        entry["max_row_rel_err"] = float(rel.amax().item())
-        entry["rows_beyond_threshold"] = int(
-            (rel > REL_ERR_ROW_THRESHOLD).any(dim=1).sum().item()
-        )
-
-        if not deterministic:
-            other = next(r for r in runs[1:] if not torch.equal(runs[0], r))
-            entry["repeat_diff"] = diff_fingerprint(
-                runs[0], other, offsets, n_block
-            )
-        if not entry["full_vs_exact_identical"]:
-            entry["full_exact_diff"] = diff_fingerprint(
-                runs[0], out_exact, offsets, n_block
+            deterministic = all(torch.equal(runs[0], r) for r in runs[1:])
+            d: dict[str, Any] = {
+                "draw": draw,
+                "deterministic_across_repeats": deterministic,
+                "full_vs_exact_identical": torch.equal(runs[0], out_exact),
+            }
+            rel = (runs[0].float() - ref).abs() / ref.abs().amax(
+                dim=1
+            ).clamp_min(1e-6).view(-1, 1)
+            d["max_row_rel_err"] = float(rel.amax().item())
+            d["rows_beyond_threshold"] = int(
+                (rel > REL_ERR_ROW_THRESHOLD).any(dim=1).sum().item()
             )
 
+            if not deterministic:
+                other = next(
+                    r for r in runs[1:] if not torch.equal(runs[0], r)
+                )
+                d["repeat_diff"] = diff_fingerprint(
+                    runs[0], other, offsets, n_block
+                )
+            if not d["full_vs_exact_identical"]:
+                d["full_exact_diff"] = diff_fingerprint(
+                    runs[0], out_exact, offsets, n_block
+                )
+
+            entry["draws"].append(d)
+            print(
+                f"[{'ok' if deterministic else 'NONDET'}] {name} draw={draw} "
+                f"packed_k={packed_k} det={deterministic} "
+                f"full==exact={d['full_vs_exact_identical']} "
+                f"max_rel={d['max_row_rel_err']:.4f} "
+                f"bad_rows={d['rows_beyond_threshold']}"
+            )
+
+        entry["deterministic_all_draws"] = all(
+            d["deterministic_across_repeats"] for d in entry["draws"]
+        ) if entry["draws"] else None
         report["variants"].append(entry)
-        print(
-            f"[{'ok' if deterministic else 'NONDET'}] {name} "
-            f"packed_k={packed_k} det={deterministic} "
-            f"full==exact={entry['full_vs_exact_identical']} "
-            f"max_rel={entry['max_row_rel_err']:.4f} "
-            f"bad_rows={entry['rows_beyond_threshold']}"
-        )
 
     path = out_dir / "packedk-det-probe.json"
     path.write_text(json.dumps(report, indent=1))

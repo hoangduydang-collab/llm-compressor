@@ -397,6 +397,25 @@ def main() -> int:
             ref = reference_output(quant_full, scale_full, w_deq, offsets_cuda)
             metrics = row_metrics(runs[0], ref, offsets)
 
+            # Humming's TMA-C stream-K releases ALL reducer slices of a tile
+            # at once (barrier_acquire2 passes on lock <= -1); with >= 2
+            # reducers their tma_reduce_add order races, so bitwise output
+            # varies run to run BY UPSTREAM DESIGN while staying within fp
+            # accumulation noise (root-caused via
+            # pipeline/m3_humming_packedk_det_probe.py: diffs are 1 bf16 ulp,
+            # confined to the stream-K tail tiles). Tolerate exactly that --
+            # nondeterminism whose worst absolute wobble is ulp-scale relative
+            # to the output magnitude -- and still hard-fail anything larger,
+            # which is how the missing-commit-group corruption (whole tiles at
+            # absmax ~1e7) presented.
+            nondet_max_abs = 0.0
+            for other in [r for r in runs[1:]] + [out_exact[:total_valid]]:
+                if not torch.equal(runs[0], other):
+                    d = (runs[0].float() - other.float()).abs().amax().item()
+                    nondet_max_abs = max(nondet_max_abs, d)
+            ulp_bound = float(ref.abs().amax().item()) * 2**-7  # ~2 bf16 ulp
+            nondet_is_fp_noise = nondet_max_abs <= ulp_bound
+
             case = {
                 "geometry": geom_name,
                 "num_tokens": num_tokens,
@@ -406,23 +425,33 @@ def main() -> int:
                 "tuning_config": tuning,
                 "deterministic_across_repeats": deterministic,
                 "full_vs_exact_identical": full_vs_exact_identical,
+                "nondet_max_abs_diff": nondet_max_abs,
+                "nondet_ulp_bound": ulp_bound,
+                "nondet_is_fp_noise": nondet_is_fp_noise,
                 "vs_reference": metrics,
             }
             report["cases"].append(case)
 
+            bitwise_stable = deterministic and full_vs_exact_identical
             failed = (
-                not deterministic
-                or not full_vs_exact_identical
+                (not bitwise_stable and not nondet_is_fp_noise)
                 or metrics["frac_rows_bad"] > 0
                 or not metrics["finite"]
             )
             any_fail = any_fail or failed
             status = "FAIL" if failed else "ok"
+            det_note = (
+                "det=True"
+                if bitwise_stable
+                else f"det=False(fp-noise,{nondet_max_abs:.4f})"
+                if nondet_is_fp_noise
+                else f"det=False(EXCESS,{nondet_max_abs:.4f})"
+            )
             print(
                 f"[{status}] {geom_name} tokens={num_tokens:>5} "
                 f"valid={total_valid:>5} bm={tuning['block_shape'][0]:>3} "
                 f"bk={tuning['block_shape'][2]:>3} "
-                f"det={deterministic} full==exact={full_vs_exact_identical} "
+                f"{det_note} full==exact={full_vs_exact_identical} "
                 f"bad_rows={metrics['num_rows_bad']} "
                 f"max_rel={metrics['max_row_rel_err']:.4f}"
             )

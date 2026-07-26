@@ -163,21 +163,6 @@
   .note .t { font-weight: 640; margin: 0 0 6px; }
   .note p:last-child { margin-bottom: 0; }
 
-  /* transcript example cards */
-  .xcards { display: grid; gap: 14px; margin: 6px 0 4px; }
-  .xcard { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
-  .xhead { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 11px 14px;
-    background: var(--surface-2); border-bottom: 1px solid var(--line); }
-  .xhead .qt { font-weight: 640; font-size: 14px; }
-  .xhead .st { font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: .01em; }
-  .xbody { padding: 12px 15px; font-family: var(--mono); font-size: 12px; line-height: 1.6;
-    white-space: pre-wrap; color: var(--ink-2); word-break: break-word; }
-  .xbody .ok { color: var(--good); font-weight: 700; }
-  .xbody .stop { color: var(--crit); font-weight: 700; }
-  .xbody .cut { background: var(--crit-bg); color: var(--crit); padding: 0 5px; border-radius: 3px; font-weight: 600; }
-  .xbody .el { color: var(--ink-3); font-style: italic; }
-  .xcap { padding: 0 15px 13px; font-size: 12.5px; color: var(--ink-2); }
-
   .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin: 10px 2px 0; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
@@ -187,16 +172,6 @@
 
   .sources { font-size: 14px; }
   .sources li { margin: 7px 0; }
-  .verdict-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 12px; }
-  .verdict {
-    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
-  }
-  .verdict .tag { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
-    text-transform: uppercase; padding: 2px 8px; border-radius: 5px; margin-bottom: 8px; font-weight: 600; }
-  .tag.ship { background: var(--good-bg); color: var(--good); }
-  .tag.caveat { background: var(--crit-bg); color: var(--crit); }
-  .verdict h4 { margin: 0 0 6px; font-size: 16px; }
-  .verdict p { font-size: 13.5px; color: var(--ink-2); margin: 0; }
 
   footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
 
@@ -217,21 +192,18 @@
 <header>
   <div class="head-inner">
     <p class="eyebrow">MiniMax-M3 · Quantization performance · aiperf</p>
-    <h1>W4AFP8 serves at provider-band speed on half the hardware</h1>
+    <h1>W4AFP8 decodes faster than every M3 provider but one — on half the hardware</h1>
     <p class="dek">
-      Serving-speed evaluation of the same five arms as the quality report, plus the serving-stack work
-      since: our in-house W4AFP8 quants (GPTQ, AWQ) deliver ~3.3× BF16's per-GPU reasoning throughput
-      and BF16-class agentic latency to concurrency 16, and the 07-24→07-26
-      <a href="#kernel-evolution">kernel evolution</a> lifted single-user decode to 137 tok/s — above
-      every commercial MiniMax-M3 provider except Nebius — on the same checkpoint, with zero
-      requantization. The vendor MXFP8 and community AWQ arms degrade sharply under load. Quality
-      verdicts live in the companion report,
+      Our in-house W4AFP8 quant serves at 137 tok/s single-user (second only to Nebius among commercial
+      M3 endpoints), 3.8× BF16's per-GPU reasoning throughput, and holds a 1-second agentic p95 TTFT SLO
+      to concurrency 16 — same checkpoint we shipped, zero requantization; the gains since the first
+      eval came from the serving stack (<a href="#history">history</a>). Quality verdicts:
       <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf 0.8.0)</span>
-      <span><b>Runs:</b> reasoning 07-22 · agentic (M3-calibrated shape) 07-22 · tau2 calibration 07-22</span>
-      <span><b>Update:</b> W4A8 kernel evolution 07-24 → 07-26</span>
+      <span><b>Current numbers:</b> Humming-kernel windows 07-25/26</span>
+      <span><b>Five-arm comparison:</b> 07-22 (see history)</span>
       <span><b>Engine:</b> vLLM 0.24.0, flags held fixed · FP8 KV cache</span>
       <span><b>Baseline:</b> MiniMax-M3 BF16 (TP16, 2 nodes)</span>
     </div>
@@ -246,40 +218,34 @@
     <div class="h2sub">Read this if you have thirty seconds</div>
     <div class="col">
       <p>
-        The case for W4AFP8 serving is unambiguous. Both in-house arms deliver
-        <strong>~1.6× BF16's aggregate reasoning throughput on half the GPUs</strong> (~3.3× per-GPU),
-        and since the 07-24→07-26 kernel work their single-user decode is
-        <strong>137 tok/s — above every commercial MiniMax-M3 provider except Nebius</strong> — on
-        stock vLLM plus our patched Humming MoE kernel, same checkpoint, zero requantization (97 tok/s
-        at this report's original CUTLASS window; the
-        <a href="#kernel-evolution">kernel-evolution section</a> has the stage-by-stage story). Under an
-        agentic multi-turn shape calibrated on M3 itself, they hold a 1-second p95 TTFT SLO to
-        concurrency 16 (BF16 holds 32, on double the hardware). The vendor MXFP8 checkpoint and the
-        community AWQ collapse past concurrency 4. GPTQ and AWQ are statistically identical here (same
-        kernels) — <strong>quality is the only differentiator between them</strong>, and that verdict is
-        in the companion report.
+        In-house W4AFP8 (GPTQ) on one 8×H100 node, stock vLLM plus our patched Humming MoE kernel:
+        <strong>137 tok/s single-user decode</strong> (BF16: 81 on two nodes), <strong>3,262 tok/s
+        aggregate at concurrency 64</strong> (BF16: 1,707 on twice the GPUs), and a
+        <strong>1-second agentic p95 TTFT SLO held to concurrency 16</strong>. The vendor MXFP8 and
+        community AWQ checkpoints collapse past concurrency 4 and stay disqualified. GPTQ vs AWQ is a
+        quality call, not a speed one — see the companion report.
       </p>
     </div>
     <div class="tiles">
       <div class="tile good">
-        <p class="k">W4AFP8 · per-GPU throughput</p>
-        <p class="v">3.3<small>× BF16</small></p>
-        <p class="d">Reasoning @ conc 64: 2.8k tok/s on 8 GPUs vs 1.7k on 16.</p>
+        <p class="k">Per-GPU throughput</p>
+        <p class="v">3.8<small>× BF16</small></p>
+        <p class="d">Reasoning @ conc 64: 408 tok/s/GPU on 8 GPUs vs 107 on 16.</p>
       </div>
       <div class="tile good">
-        <p class="k">W4AFP8 · single-user decode</p>
+        <p class="k">Single-user decode</p>
         <p class="v">137<small> tok/s</small></p>
-        <p class="d">With the 07-26 Humming kernel (was 97 on CUTLASS). Second only to Nebius (197) among providers.</p>
+        <p class="d">Above Together (97), MiniMax (95), Novita (94); second only to Nebius (197).</p>
       </div>
       <div class="tile good">
         <p class="k">Agentic · 1s p95 SLO holds to</p>
         <p class="v">conc 16</p>
-        <p class="d">BF16 holds 32 — on 2× the GPUs. Warm multi-turn, prefix cache on.</p>
+        <p class="d">Warm multi-turn, prefix cache on: p95 TTFT 888 ms @16, 1,289 ms @32.</p>
       </div>
       <div class="tile crit">
         <p class="k">MXFP8 &amp; cyankiwi · SLO collapse</p>
         <p class="v">conc 4</p>
-        <p class="d">Agentic p95 TTFT &gt;1.7s by conc 32; MXFP8 TTFT 3.5s at reasoning conc 64.</p>
+        <p class="d">Agentic p95 TTFT &gt;1.7 s by conc 32; MXFP8 TTFT 3.5 s at reasoning conc 64.</p>
       </div>
     </div>
   </section>
@@ -287,43 +253,36 @@
   <!-- ============ METHOD ============ -->
   <section id="method">
     <h2>Method</h2>
-    <div class="h2sub">What was measured, and what the numbers do and don't mean</div>
+    <div class="h2sub">What was measured</div>
     <div class="col">
       <p>
-        Speed was measured with the benchmarks repo's performance layer: <strong>aiperf 0.8.0</strong> driving
-        synthetic traffic against each arm's OpenAI endpoint, engine held fixed (vLLM 0.24.0, identical serving
-        flags, FP8 KV cache). The quant arms fit <strong>one 8×H100 node (TP8)</strong>; BF16 requires
-        <strong>two nodes (TP16/ray)</strong> — so equal throughput would already mean half the hardware cost.
-        Two workloads:
+        <strong>aiperf 0.8.0</strong> drives synthetic traffic against each arm's OpenAI endpoint; engine
+        held fixed (vLLM 0.24.0, identical flags, FP8 KV cache). Quant arms: one 8×H100 node (TP8).
+        BF16: two nodes (TP16/ray). Two workloads:
       </p>
       <ul>
-        <li><strong>Reasoning</strong> — 1,000 synthetic input tokens, 8k forced decode via
-          <code>ignore_eos</code> (arms compared on identical decode lengths, isolating kernel speed from
-          model verbosity); temp 0.6, thinking on; concurrency sweep 1 / 4 / 16 / 64.</li>
-        <li><strong>Agentic</strong> — multi-turn with a growing, mostly-cacheable prefix, shape calibrated
-          on M3 itself with tau2-bench (details below).</li>
+        <li><strong>Reasoning</strong> — 1,000 input tokens, 8k forced decode (<code>ignore_eos</code>;
+          isolates kernel speed from model verbosity); temp 0.6, thinking on; concurrency 1/4/16/64.</li>
+        <li><strong>Agentic</strong> — multi-turn with a growing, mostly-cacheable prefix; shape
+          calibrated on M3 itself with tau2-bench (7,300-token cacheable prefix, 14±3 turns, ~100 output
+          tokens/turn). <strong>warm</strong> = sticky sessions (KV reuse); <strong>cold</strong> =
+          cache-defeated control.</li>
       </ul>
-    </div>
-    <div class="note">
-      <p class="t">Comparability caveat</p>
       <p>
-        All arms run identical protocol on dedicated idle nodes — <strong>valid for arm-vs-arm decisions</strong>.
-        The provider comparison below is matched on workload shape (single request, 1k prompt, decode rate
-        after first token) but providers carry live multi-tenant load and unknown stacks — treat it as
-        same-ballpark placement, not a ranking.
+        Current headline numbers are from the Humming-kernel windows (<code>20260725T122256Z</code>,
+        <code>20260726T033158Z</code>, GPTQ checkpoint; the Humming serve attests the patched kernel
+        fail-closed before every benchmark). The five-arm checkpoint comparison is from 07-22 and lives
+        in <a href="#history">history</a>. Arm-vs-arm claims are valid; the provider comparison is
+        matched on workload shape (single request, 1k prompt, decode rate after first token) but
+        providers carry live multi-tenant load — same-ballpark placement, not a ranking.
       </p>
     </div>
   </section>
 
-  <!-- ============ REASONING THROUGHPUT ============ -->
+  <!-- ============ CAPACITY ============ -->
   <section id="throughput">
     <h2>Reasoning throughput</h2>
     <div class="h2sub">The capacity story</div>
-    <p class="col" style="color:var(--ink-2);font-size:14px;margin-bottom:14px">
-      Five-arm windows of 07-22 on the then-current CUTLASS stack — the reference for
-      <em>checkpoint-vs-checkpoint</em> claims. The in-house arms' absolute numbers have since improved
-      (conc-1 decode 97 → 137 tok/s); see <a href="#kernel-evolution">kernel evolution</a>.
-    </p>
     <div class="scroll">
       <table>
         <thead>
@@ -332,23 +291,18 @@
             <th>conc 64 · tok/s (TTFT ms)</th><th>tok/s per GPU @64</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">BF16</td><td>16</td><td>81 (136)</td><td>712 (583)</td><td>1,707 (2,329)</td><td>107</td></tr>
-          <tr><td class="arm">GPTQ (in-house)</td><td>8</td><td>97 (143)</td><td>1,007 (448)</td><td>2,782 (1,274)</td><td class="cell-good">348</td></tr>
-          <tr><td class="arm">AWQ r5 (in-house)</td><td>8</td><td>97 (139)</td><td>1,018 (421)</td><td>2,844 (1,310)</td><td class="cell-good">356</td></tr>
-          <tr><td class="arm">MXFP8 (vendor)</td><td>8</td><td>95 (132)</td><td>901 (708)</td><td class="cell-warn">2,096 (3,506)</td><td>262</td></tr>
-          <tr><td class="arm">cyankiwi (W4A16)</td><td>8</td><td>116 (137)</td><td>1,190 (620)</td><td class="cell-warn">2,848 (2,089)</td><td>356</td></tr>
+          <tr class="baseline"><td class="arm">BF16 (07-22)</td><td>16</td><td>81 (136)</td><td>712 (583)</td><td>1,707 (2,329)</td><td>107</td></tr>
+          <tr><td class="arm">W4AFP8 · Humming (07-26)</td><td>8</td><td class="cell-good">137 (142)</td><td class="cell-good">1,302 (470)</td><td class="cell-good">3,262 (1,410)</td><td class="cell-good">408</td></tr>
         </tbody>
       </table>
     </div>
     <div class="col">
       <p style="margin-top:16px">
-        The in-house arms are <strong>faster than BF16 at every operating point on half the silicon</strong>:
-        +20% single-user speed, ~1.6× aggregate throughput at concurrency 64, <strong>~3.3× per-GPU</strong>.
-        GPTQ and AWQ are statistically identical (same kernels) — quality remains the only differentiator
-        between them. MXFP8 matches everyone single-user but falls apart under load (TTFT 3.5&nbsp;s at
-        conc&nbsp;64). cyankiwi's W4A16 has the fastest single-user decode (Marlin kernels; it also quantizes
-        attention in 57/60 layers, where our recipe keeps all attention at BF16 to protect quality — see below)
-        but the worst TTFT scaling among the 4-bit arms.
+        Faster than BF16 at every operating point on half the silicon: +69% single-user, 1.9× aggregate,
+        <strong>3.8× per-GPU</strong>. Measured on the GPTQ checkpoint; AWQ shares the same kernels and
+        was speed-identical in the five-arm windows. BF16 baseline is the 07-22 window — re-running it
+        on the current stack would recover at most the ~7% shared-expert-stream gain at conc 1 and
+        nothing at conc 64, so the capacity ratios stand.
       </p>
     </div>
   </section>
@@ -359,45 +313,35 @@
     <div class="h2sub">Commercial MiniMax-M3 endpoints, matched workload shape</div>
     <div class="col">
       <p>
-        Reference numbers are Artificial Analysis's <strong>"single query, 1k-token prompt"</strong> option
-        (median over the past 72&nbsp;h) — the same shape as our concurrency-1 reasoning point (one request in
-        flight, 1,000 synthetic input tokens). AA's <em>default</em> page has since moved to a 10k-input
-        workload; an earlier draft of this comparison used those default-page numbers, which is why the
-        figures here differ from it.
+        Reference: Artificial Analysis "single query, 1k-token prompt" (median, 72 h) — the same shape as
+        our concurrency-1 reasoning point.
       </p>
     </div>
     <div class="scroll">
       <table>
         <thead>
-          <tr><th class="arm">Endpoint (AA single query · 1k prompt, median 72h)</th><th>Output speed · tok/s/user</th></tr>
+          <tr><th class="arm">Endpoint</th><th>Output speed · tok/s/user</th></tr>
         </thead>
         <tbody>
           <tr><td class="arm">Nebius (FP8)</td><td>197</td></tr>
-          <tr><td class="arm"><strong>ours · in-house W4AFP8 + Humming kernel (07-25 update)</strong></td><td class="cell-good"><strong>137</strong></td></tr>
-          <tr><td class="arm"><strong>ours · cyankiwi W4A16</strong></td><td><strong>116</strong></td></tr>
-          <tr><td class="arm"><strong>ours · in-house W4AFP8 (GPTQ / AWQ)</strong></td><td><strong>97</strong></td></tr>
+          <tr><td class="arm"><strong>ours · W4AFP8 + Humming kernel</strong></td><td class="cell-good"><strong>137</strong></td></tr>
+          <tr><td class="arm">ours · cyankiwi W4A16 <span class="muted">(quality-broken; 07-22)</span></td><td>116</td></tr>
           <tr><td class="arm">Together AI</td><td>97</td></tr>
           <tr><td class="arm">MiniMax first-party</td><td>95</td></tr>
           <tr><td class="arm">Novita</td><td>94</td></tr>
           <tr><td class="arm">SiliconFlow</td><td>92</td></tr>
-          <tr><td class="arm"><strong>ours · BF16 TP16</strong></td><td><strong>81</strong></td></tr>
+          <tr><td class="arm">ours · BF16 TP16 <span class="muted">(07-22)</span></td><td>81</td></tr>
           <tr><td class="arm">Parasail (MXFP8 — same checkpoint as our MXFP8 arm)</td><td>66</td></tr>
         </tbody>
       </table>
     </div>
     <div class="col">
       <p style="margin-top:16px">
-        Same measurement regime on both sides (single request in flight, 1k-token prompt, decode rate after
-        first token). At this report's original window our W4AFP8 landed <strong>inside the mainstream
-        provider band</strong> — level with Together AI and ahead of MiniMax's own endpoint — on H100s with
-        a stock vLLM. The 07-25 Humming-kernel update (<a href="#kernel-evolution">below</a>, same checkpoint
-        and measurement recipe, window <code>20260725T122256Z</code>) lifts that to <strong>137 tok/s —
-        above every provider except Nebius</strong>. Nebius's 197 is a serving-stack tier (FP8 + speculative
-        decoding on newer silicon) that would stack on our checkpoint too. Independent corroboration in both directions: Parasail serves the same MXFP8 checkpoint and is
-        the slowest provider on AA, just as MXFP8 was our weakest quant arm. TTFT is <em>not</em> comparable
-        across the two sides (AA's "latency" includes the full thinking phase; ours is prefill-only), AA
-        medians drift with their 72-hour window, and provider endpoints carry live multi-tenant load while
-        ours were dedicated idle nodes.
+        <strong>Above every provider except Nebius</strong>, whose 197 is a serving-stack tier (FP8 +
+        speculative decoding on newer silicon) that would stack on our checkpoint too. Independent
+        corroboration: Parasail serves the same MXFP8 checkpoint and is the slowest provider here, just
+        as MXFP8 was our weakest arm. TTFT is not comparable across the two sides, and AA medians drift
+        with their 72-hour window.
       </p>
     </div>
   </section>
@@ -406,20 +350,92 @@
   <section id="agentic">
     <h2>Agentic serving</h2>
     <div class="h2sub">Latency under a real multi-turn shape</div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">W4AFP8 · Humming · TTFT p50 / p95 ms</th><th>conc 1</th><th>conc 4</th><th>conc 16</th><th>conc 32</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">warm (KV reuse)</td><td>196 / 214</td><td>316 / 441</td><td class="cell-good">592 / 888</td><td>735 / 1,289</td></tr>
+          <tr><td class="arm">cold (cache-defeated)</td><td>574 / 591</td><td>660 / 1,924</td><td class="cell-crit">1,949 / 5,255</td><td class="cell-crit">3,204 / 6,682</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p style="margin-top:16px">
+        Warm holds a 1-second p95 SLO to concurrency 16 and misses at 32 (1,289 ms) — BF16 held 32 in
+        its window, on double the hardware. Two findings:
+      </p>
+      <ul>
+        <li><strong>Prefix caching is worth 3–5× on TTFT under load</strong>, and no arm holds a 1 s SLO
+          past concurrency 1 uncached. Agentic serving without KV reuse is not viable, at any precision.</li>
+        <li><strong>The cache dominates turn depth:</strong> warm TTFT falls as conversations deepen
+          (deep turns are almost entirely cached prefix). vLLM 0.24 never reports
+          <code>cached_tokens</code>; caching was verified by a preflight double-prompt probe plus the
+          warm-vs-cold delta.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section id="history">
+    <h2>History · 07-22 → 07-26</h2>
+    <div class="h2sub">How the numbers got here, and the original five-arm comparison</div>
+
+    <h3>Kernel evolution — same checkpoint, −30% TPOT</h3>
+    <div class="bars" role="img" aria-label="Single-user decode by stage: CUTLASS stream off 95, CUTLASS stream on 103, Humming indexed 137, Humming packed-K 131 tokens per second">
+      <div class="bar-row"><span class="lab">CUTLASS · stream off</span>
+        <span class="track"><span class="fill f-ok" style="width:68%"></span></span><span class="num">95 tok/s</span></div>
+      <div class="bar-row"><span class="lab">CUTLASS · stream on</span>
+        <span class="track"><span class="fill f-ok" style="width:74%"></span></span><span class="num">103 tok/s</span></div>
+      <div class="bar-row"><span class="lab">Humming indexed</span>
+        <span class="track"><span class="fill f-ok" style="width:98%"></span></span><span class="num">137 tok/s</span></div>
+      <div class="bar-row"><span class="lab">+ 0.1.11 packed-K</span>
+        <span class="track"><span class="fill f-ok" style="width:94%"></span></span><span class="num">131 tok/s</span></div>
+    </div>
+    <p class="legend"><span>Reasoning conc-1 per-user decode · GPTQ checkpoint · 8×H100 TP8/EP8</span></p>
+
+    <div class="scroll" style="margin-top:18px">
+      <table>
+        <thead>
+          <tr><th class="arm">Stage</th><th>Window</th><th>conc-1 TPOT</th><th>What changed</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td class="muted">07-22</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the five-arm comparison below</td></tr>
+          <tr><td class="arm">1 · shared-expert stream re-enabled</td><td class="muted">07-24</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
+          <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="muted">07-25</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
+          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="muted">07-26</td><td>7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells (±0.2% noise floor). Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The 07-22 five-arm comparison (previous stack)</h3>
     <div class="col">
       <p>
-        Agentic traffic is multi-turn with a growing, mostly-cacheable prefix, so the workload shape matters.
-        We <strong>calibrated the shape on M3 itself</strong> with tau2-bench (114 telecom tasks, 1,540 agent
-        turns; our GPTQ endpoint as agent, DeepSeek-V4-Pro as user-sim): a 7,300-token cacheable system+tools
-        prefix, 256 unique tokens per session, 14±3 turns, ~100 output tokens per turn. <strong>warm</strong> =
-        sticky multi-turn sessions (real serving, KV reuse); <strong>cold</strong> = unique single-shot prompts
-        (cache-defeated control). TTFT p50/p95 (ms), warm:
+        Checkpoint-vs-checkpoint reference, all arms on the stage-0 CUTLASS stack. The relative verdicts
+        stand — MXFP8 and cyankiwi don't use the W4A8 MoE path, so the kernel work moves only our arms.
       </p>
     </div>
     <div class="scroll">
       <table>
         <thead>
-          <tr><th class="arm">Arm · warm</th><th>conc 1</th><th>conc 4</th><th>conc 16</th><th>conc 32</th><th>max conc @ p95 ≤ 1s</th></tr>
+          <tr><th class="arm">Arm · reasoning</th><th>GPUs</th>
+            <th>conc 1 · tok/s (TTFT ms)</th><th>conc 16 · tok/s (TTFT ms)</th>
+            <th>conc 64 · tok/s (TTFT ms)</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">BF16</td><td>16</td><td>81 (136)</td><td>712 (583)</td><td>1,707 (2,329)</td></tr>
+          <tr><td class="arm">GPTQ (in-house)</td><td>8</td><td>97 (143)</td><td>1,007 (448)</td><td>2,782 (1,274)</td></tr>
+          <tr><td class="arm">AWQ r5 (in-house)</td><td>8</td><td>97 (139)</td><td>1,018 (421)</td><td>2,844 (1,310)</td></tr>
+          <tr><td class="arm">MXFP8 (vendor)</td><td>8</td><td>95 (132)</td><td>901 (708)</td><td class="cell-warn">2,096 (3,506)</td></tr>
+          <tr><td class="arm">cyankiwi (W4A16)</td><td>8</td><td>116 (137)</td><td>1,190 (620)</td><td class="cell-warn">2,848 (2,089)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="scroll" style="margin-top:14px">
+      <table>
+        <thead>
+          <tr><th class="arm">Arm · agentic warm · TTFT p50/p95 ms</th><th>conc 1</th><th>conc 4</th><th>conc 16</th><th>conc 32</th><th>max conc @ p95 ≤ 1s</th></tr>
         </thead>
         <tbody>
           <tr class="baseline"><td class="arm">BF16 (16 GPU)</td><td>196 / 238</td><td>285 / 420</td><td>469 / 752</td><td>521 / 922</td><td>32</td></tr>
@@ -431,132 +447,19 @@
       </table>
     </div>
     <div class="col">
-      <p style="margin-top:16px">
-        Same tiers as everywhere else: the in-house arms hold a 1-second p95 SLO to concurrency 16 (BF16, on
-        double the hardware, to 32), while MXFP8 and cyankiwi fall out past concurrency 4. Two findings behind
-        the table:
-      </p>
-      <ul>
-        <li><strong>Prefix caching is worth ~3–4× on TTFT.</strong> Cold-mode TTFT is 0.6–2.7&nbsp;s for the
-          in-house arms (4.7&nbsp;s for MXFP8 at conc&nbsp;16), and <em>no arm</em> holds a 1s SLO past
-          concurrency 1 uncached. Agentic serving without KV reuse is not viable at load, at any precision.</li>
-        <li><strong>The cache dominates turn depth.</strong> Warm TTFT <em>falls</em> as conversations deepen
-          (647&nbsp;ms at turn 0 → 287&nbsp;ms by turn 19 while context grows 8k → 20k tokens): deep turns are
-          almost entirely cached prefix. vLLM 0.24 never reports <code>cached_tokens</code>, so caching was
-          verified by a preflight double-prompt probe plus this warm-vs-cold delta.</li>
+      <ul style="margin-top:16px">
+        <li><strong>GPTQ ≈ AWQ on speed</strong> (same kernels) — quality is the only differentiator
+          between them.</li>
+        <li><strong>cyankiwi's +16% single-user edge is bought with a broken model:</strong> it
+          quantizes attention to 4-bit in 57/60 layers (our recipe keeps attention, shared experts, and
+          router gates at BF16); the <a href="M3_OFFICIAL_QUALITY_RESULTS.html">quality report</a> shows
+          degenerate reasoning loops and the worst scores on every axis. It also has the worst loaded
+          TTFT among the 4-bit arms.</li>
+        <li><strong>Workload-shape provenance:</strong> agentic numbers use the M3-calibrated tau2 shape;
+          re-calibrating from the borrowed M2.5 shape moved warm TTFTs ≤10% and changed no ranking.</li>
+        <li><strong>KV collapse</strong> was identical across arms (warm conc 16, cold conc 4) — not
+          kernel-dependent.</li>
       </ul>
-    </div>
-    <div class="note good">
-      <p class="t">Workload-shape provenance</p>
-      <p>
-        The first perf pass ran with a shape borrowed from the M2.5 tau2 calibration; the M3 calibration
-        (run in parallel) matched it on every structural knob — prefix 7,300 vs 7,200 tokens, 14±3 turns,
-        256-token unique context — and corrected only per-turn verbosity (230 → 100 tokens; M3 speaks more
-        tersely per agentic turn). The agentic numbers above are from the re-run under the M3-calibrated
-        shape; the correction moved warm TTFTs by ≤10% for the in-house arms and changed no ranking. Caveat:
-        per-turn output is bimodal (p50 84 / p95 252), so a flat mean understates tail turns.
-      </p>
-    </div>
-    <div class="note">
-      <p class="t">Why cyankiwi is faster per-user but broken</p>
-      <p>
-        The community quant's +16% single-user decode edge comes from quantizing attention to 4-bit in 57 of
-        60 layers (~13&nbsp;GB less weight traffic per token) on the most mature W4A16 kernel path. Our recipe
-        deliberately keeps all attention, shared experts, and router gates at BF16. The
-        <a href="M3_OFFICIAL_QUALITY_RESULTS.html">quality report</a> is the verdict on that trade: cyankiwi's
-        checkpoint produces degenerate reasoning loops and the worst scores on every axis — a ~16% speed edge
-        in exchange for a broken model. Where FP8 activations matter (prefill, high concurrency), the trade
-        reverses and our arms win decisively.
-      </p>
-    </div>
-  </section>
-
-  <!-- ============ KERNEL EVOLUTION (added 2026-07-26) ============ -->
-  <section id="kernel-evolution">
-    <h2>Kernel evolution · 07-22 → 07-26</h2>
-    <div class="h2sub">Same checkpoint, −30% TPOT: how the W4A8 serving stack moved</div>
-    <div class="col">
-      <p>
-        Everything above compares <em>checkpoints</em> on a fixed serving stack. This section tracks the
-        opposite axis: the GPTQ checkpoint never changed, and four serving-stack stages took reasoning
-        single-user decode from 95 to 137 tok/s. Every number is from a recorded suite window under the
-        same recipe as the tables above (reasoning ISL 1k / pinned 8k decode; per-user decode rate at
-        concurrency 1).
-      </p>
-    </div>
-
-    <div class="bars" role="img" aria-label="Single-user decode by stage: CUTLASS stream off 95, CUTLASS stream on 103, Humming indexed 137, Humming packed-K 131 tokens per second">
-      <div class="bar-row"><span class="lab">CUTLASS · stream off</span>
-        <span class="track"><span class="fill f-ok" style="width:68%"></span></span><span class="num">95 tok/s</span></div>
-      <div class="bar-row"><span class="lab">CUTLASS · stream on</span>
-        <span class="track"><span class="fill f-ok" style="width:74%"></span></span><span class="num">103 tok/s</span></div>
-      <div class="bar-row"><span class="lab">Humming indexed</span>
-        <span class="track"><span class="fill f-ok" style="width:98%"></span></span><span class="num">137 tok/s</span></div>
-      <div class="bar-row"><span class="lab">+ 0.1.11 packed-K</span>
-        <span class="track"><span class="fill f-ok" style="width:94%"></span></span><span class="num">131 tok/s</span></div>
-    </div>
-    <p class="legend"><span>Reasoning conc-1 per-user decode · same GPTQ checkpoint, 8×H100 TP8/EP8 · packed-K trades this point for high-load gains (below)</span></p>
-
-    <div class="scroll" style="margin-top:18px">
-      <table>
-        <thead>
-          <tr><th class="arm">Stage</th><th>Window</th><th>conc-1 TPOT</th><th>conc-1 decode</th><th>What changed</th></tr>
-        </thead>
-        <tbody>
-          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td class="muted">07-22 / 07-24 am</td><td>10.3–10.5 ms</td><td>95–97 tok/s</td><td class="muted" style="white-space:normal;text-align:left">The stack behind every table above</td></tr>
-          <tr><td class="arm">1 · shared-expert stream re-enabled</td><td class="muted">07-24 pm</td><td>9.7 ms</td><td>103 tok/s</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); the aux-stream overlap workaround retired</td></tr>
-          <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="muted">07-25</td><td class="cell-good">7.29 ms</td><td class="cell-good">137 tok/s</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects</td></tr>
-          <tr><td class="arm">3 · Humming 0.1.11 packed-K</td><td class="muted">07-26</td><td>7.59 ms</td><td>131 tok/s</td><td style="white-space:normal;text-align:left">Upstream dequant-layout optimization — a trade, not a win (next note)</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="col">
-      <h3>Stage 1 — the free 7%</h3>
-      <p>
-        Production serves had been running with the shared-expert auxiliary stream disabled — a workaround
-        for a flaky illegal-memory-access during CUDA-graph capture. The IMA was root-caused to the fork's
-        graph capture dropping upstream's pre-cleanup <code>torch.cuda.synchronize()</code>; with the sync
-        restored (<code>LLMC_M3_CAPTURE_SYNC=sync</code>), the overlap is on by default. Measured twice:
-        interleaved A/B on one node (TPOT 8.45 → 7.83 ms, −7.4%) and same-profile suite windows
-        (95.3 → 103.3 tok/s). Concurrency-64 barely moved — the shared expert is TP8-sliced and short, so
-        overlap matters most at small batch.
-      </p>
-      <h3>Stage 2 — the kernel switch</h3>
-      <p>
-        Humming is a Hopper-native WGMMA/TMA W4A8-FP8 MoE kernel with direct GPTQ loading. Qualifying it
-        required a patched side-install carrying <strong>four SHA-pinned fixes</strong> we made to the
-        upstream kernel — a missing input-schema entry, a grouped-mode expert-bound bug, a missing PTX
-        fence, and (the hard one) TMA stores that were never committed to an async group, so every
-        store-wait was a no-op and the epilogue memory was overwritten mid-store. All four are still
-        unfixed upstream; every serve attests the patched kernel fail-closed before benchmarking. Result:
-        <strong>decode 23–35% faster than CUTLASS at every operating point</strong>, in exchange for worse
-        loaded prefill (TTFT +12–29% at concurrency ≥16). The grouped scheduling variant never beats
-        indexed on decode; CUTLASS keeps the loaded-TTFT crown.
-      </p>
-      <h3>Stage 3 — packed-K is a trade, and its adoption is an open call</h3>
-      <p>
-        Humming 0.1.11 auto-enables a packed-K dequant layout for exactly our config. Measured two
-        independent ways (paired suite window + AA-style sweep) against a ±0.2% run-to-run noise floor:
-        it <strong>costs ~4% at concurrency 1</strong> (indexed; −1% grouped) and
-        <strong>gains 1–3% TPOT at concurrency 16–64</strong>, up to +7–10% in the most weight-bound
-        cells. Adopt for throughput-oriented serving, hold 0.1.10 for interactive latency, or adopt
-        per-gemm — the decision is deliberately not made here.
-      </p>
-    </div>
-    <div class="note">
-      <p class="t">Scope of this section</p>
-      <p>
-        Kernel-evolution windows use the in-house GPTQ checkpoint only (conc-1 decode is
-        kernel-time-bound, and where windows span checkpoints the CUTLASS arms agree within ~1 tok/s).
-        The five-arm tables above remain the reference for checkpoint-vs-checkpoint claims. Detail docs:
-        <a href="M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md"><code>M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md</code></a>
-        (full evolution narrative + CUTLASS-vs-Humming window),
-        <code>docs/m3-w4a8-three-arm-perf.md</code> (CUTLASS / indexed / grouped),
-        <code>docs/m3-w4a8-packedk-ab-perf.md</code> and <code>docs/m3-w4a8-packedk-aa-sweep.md</code>
-        (packed-K A/B + AA-style sweep),
-        <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code> (the four kernel fixes and attestation).
-      </p>
     </div>
   </section>
 
@@ -565,15 +468,15 @@
     <h2>Context &amp; sources</h2>
     <div class="h2sub">Where the metrics and interpretation come from</div>
     <ul class="sources col">
-      <li><strong>Provider speed comparison</strong> — <a href="https://artificialanalysis.ai/models/minimax-m3/providers/prompt-options/single/medium">Artificial Analysis: MiniMax-M3 providers, single query · 1k prompt</a> (median, 72h window) and their <a href="https://artificialanalysis.ai/methodology/performance-benchmarking">measurement methodology</a> (one request in flight, decode rate after first token). Note AA's default page now uses a 10k-input workload — the 1k option is the one matching our test shape.</li>
+      <li><strong>Provider speed comparison</strong> — <a href="https://artificialanalysis.ai/models/minimax-m3/providers/prompt-options/single/medium">Artificial Analysis: MiniMax-M3 providers, single query · 1k prompt</a> (median, 72h window) and their <a href="https://artificialanalysis.ai/methodology/performance-benchmarking">measurement methodology</a> (one request in flight, decode rate after first token). AA's default page now uses a 10k-input workload; the 1k option matches our test shape.</li>
       <li><strong>Perf tooling</strong> — <a href="https://github.com/ai-dynamo/aiperf">aiperf</a> (NVIDIA) drives all perf workloads; <a href="https://github.com/sierra-research/tau2-bench">tau2-bench</a> generates the agentic workload <em>shape</em> (not scored).</li>
-      <li><strong>Quality companion</strong> — <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>: recovery, flips, token-spend, and the AWQ non-termination pathology; the ship/no-ship verdicts.</li>
+      <li><strong>Quality companion</strong> — <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>: recovery, flips, token-spend, the AWQ non-termination pathology; ship/no-ship verdicts.</li>
+      <li><strong>Kernel-evolution detail docs</strong> — <a href="M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md"><code>M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md</code></a> (full narrative + CUTLASS-vs-Humming window), <code>docs/m3-w4a8-three-arm-perf.md</code> (CUTLASS/indexed/grouped), <code>docs/m3-w4a8-packedk-ab-perf.md</code> + <code>docs/m3-w4a8-packedk-aa-sweep.md</code> (packed-K), <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code> (the four kernel fixes + attestation).</li>
     </ul>
     <h3>Raw evidence on disk</h3>
     <ul class="sources col">
-      <li><code>benchmarks/results/&lt;profile&gt;/vllm/perf/</code> — aiperf runs: reasoning <code>20260722T083736Z</code>, agentic (M3-calibrated shape) <code>20260722T131810Z</code>; each with <code>*perf_summary.json</code> (goodput sweep + collapse point) next to the raw <code>conc_*</code> exports.</li>
-      <li><code>results/m3-calibration/20260722T091007Z/</code> — tau2 calibration run + extracted <code>AG_*</code> shape (<code>calib/ag_block.txt</code>); sim traces in <code>tau2-bench/data/simulations/m3_calib_base_20260722T091007Z/</code>.</li>
-      <li><strong>Kernel evolution (added 07-26)</strong> — stream fix A/B: <code>logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/</code>; CUTLASS vs Humming: windows <code>20260725T074535Z</code> / <code>20260725T122256Z</code>; packed-K A/B: <code>20260726T033158Z</code>; AA-style sweep: <code>benchmarks/results/minimax-m3-inhouse-humming-w4afp8-*/self-hosted/perf/aa-sweep/20260726T040130Z/</code>.</li>
+      <li><strong>Current windows</strong> — <code>benchmarks/results/minimax-m3-inhouse-humming-w4afp8-*/vllm/perf/</code>: three-arm <code>20260725T122256Z</code>, packed-K A/B <code>20260726T033158Z</code>, AA-style sweep <code>self-hosted/perf/aa-sweep/20260726T040130Z</code>; stream-fix A/B <code>logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/</code>.</li>
+      <li><strong>07-22 five-arm windows</strong> — <code>benchmarks/results/&lt;profile&gt;/vllm/perf/</code>: reasoning <code>20260722T083736Z</code>, agentic (M3-calibrated shape) <code>20260722T131810Z</code>; tau2 calibration <code>results/m3-calibration/20260722T091007Z/</code>.</li>
     </ul>
   </section>
 

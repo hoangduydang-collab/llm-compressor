@@ -219,14 +219,14 @@
     <p class="eyebrow">MiniMax-M3 · Quantization performance · aiperf</p>
     <h1>W4AFP8 serves at provider-band speed on half the hardware</h1>
     <p class="dek">
-      Serving-speed evaluation of the same five arms as the quality report: our in-house W4AFP8 quants
-      (GPTQ, AWQ) deliver ~3.3× BF16's per-GPU reasoning throughput, single-user decode inside the
-      commercial MiniMax-M3 provider band, and BF16-class agentic latency to concurrency 16 — while the
-      vendor MXFP8 and community AWQ arms degrade sharply under load. Quality verdicts live in the
-      companion report, <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
-      <strong>Updated 2026-07-26:</strong> the serving stack itself has since moved — the
-      <a href="#kernel-evolution">kernel-evolution section</a> tracks single-user decode from
-      95 → 137 tok/s on the same checkpoint, with zero requantization.
+      Serving-speed evaluation of the same five arms as the quality report, plus the serving-stack work
+      since: our in-house W4AFP8 quants (GPTQ, AWQ) deliver ~3.3× BF16's per-GPU reasoning throughput
+      and BF16-class agentic latency to concurrency 16, and the 07-24→07-26
+      <a href="#kernel-evolution">kernel evolution</a> lifted single-user decode to 137 tok/s — above
+      every commercial MiniMax-M3 provider except Nebius — on the same checkpoint, with zero
+      requantization. The vendor MXFP8 and community AWQ arms degrade sharply under load. Quality
+      verdicts live in the companion report,
+      <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf 0.8.0)</span>
@@ -248,13 +248,16 @@
       <p>
         The case for W4AFP8 serving is unambiguous. Both in-house arms deliver
         <strong>~1.6× BF16's aggregate reasoning throughput on half the GPUs</strong> (~3.3× per-GPU),
-        and their single-user decode (97 tok/s) sits <strong>inside the mainstream commercial provider
-        band (92–97 tok/s)</strong> on stock vLLM with no serving-stack tricks. Under an agentic
-        multi-turn shape calibrated on M3 itself, they hold a 1-second p95 TTFT SLO to concurrency 16
-        (BF16 holds 32, on double the hardware). The vendor MXFP8 checkpoint and the community AWQ
-        collapse past concurrency 4. GPTQ and AWQ are statistically identical here (same kernels) —
-        <strong>quality is the only differentiator between them</strong>, and that verdict is in the
-        companion report.
+        and since the 07-24→07-26 kernel work their single-user decode is
+        <strong>137 tok/s — above every commercial MiniMax-M3 provider except Nebius</strong> — on
+        stock vLLM plus our patched Humming MoE kernel, same checkpoint, zero requantization (97 tok/s
+        at this report's original CUTLASS window; the
+        <a href="#kernel-evolution">kernel-evolution section</a> has the stage-by-stage story). Under an
+        agentic multi-turn shape calibrated on M3 itself, they hold a 1-second p95 TTFT SLO to
+        concurrency 16 (BF16 holds 32, on double the hardware). The vendor MXFP8 checkpoint and the
+        community AWQ collapse past concurrency 4. GPTQ and AWQ are statistically identical here (same
+        kernels) — <strong>quality is the only differentiator between them</strong>, and that verdict is
+        in the companion report.
       </p>
     </div>
     <div class="tiles">
@@ -265,8 +268,8 @@
       </div>
       <div class="tile good">
         <p class="k">W4AFP8 · single-user decode</p>
-        <p class="v">97<small> tok/s</small></p>
-        <p class="d">Inside the provider band: Together 97, MiniMax 95, Novita 94, SiliconFlow 92.</p>
+        <p class="v">137<small> tok/s</small></p>
+        <p class="d">With the 07-26 Humming kernel (was 97 on CUTLASS). Second only to Nebius (197) among providers.</p>
       </div>
       <div class="tile good">
         <p class="k">Agentic · 1s p95 SLO holds to</p>
@@ -278,22 +281,6 @@
         <p class="v">conc 4</p>
         <p class="d">Agentic p95 TTFT &gt;1.7s by conc 32; MXFP8 TTFT 3.5s at reasoning conc 64.</p>
       </div>
-      <div class="tile good">
-        <p class="k">Since 07-26 · Humming kernel</p>
-        <p class="v">137<small> tok/s</small></p>
-        <p class="d">Single-user decode +41% over the tables below — same checkpoint. <a href="#kernel-evolution">Details</a>.</p>
-      </div>
-    </div>
-    <div class="note good">
-      <p class="t">2026-07-26 update — the numbers below are the 07-22 windows; the stack has moved since</p>
-      <p>
-        The five-arm comparison in this report (frozen, still valid arm-vs-arm) ran on the original
-        CUTLASS W4A8 MoE path. Two serving-stack changes since — re-enabling the shared-expert stream
-        and switching the MoE GEMM to the Humming kernel — took the in-house W4AFP8 single-user decode
-        from 95–97 to <strong>137 tok/s</strong> and cut reasoning TPOT 30%, moving us from mid-pack in
-        the provider band to <strong>second only to Nebius</strong>. Full story in
-        <a href="#kernel-evolution">the kernel-evolution section</a>.
-      </p>
     </div>
   </section>
 
@@ -332,6 +319,11 @@
   <section id="throughput">
     <h2>Reasoning throughput</h2>
     <div class="h2sub">The capacity story</div>
+    <p class="col" style="color:var(--ink-2);font-size:14px;margin-bottom:14px">
+      Five-arm windows of 07-22 on the then-current CUTLASS stack — the reference for
+      <em>checkpoint-vs-checkpoint</em> claims. The in-house arms' absolute numbers have since improved
+      (conc-1 decode 97 → 137 tok/s); see <a href="#kernel-evolution">kernel evolution</a>.
+    </p>
     <div class="scroll">
       <table>
         <thead>

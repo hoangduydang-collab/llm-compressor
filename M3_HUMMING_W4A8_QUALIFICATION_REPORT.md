@@ -193,3 +193,28 @@ set / measurement protocol, with `HUMMING_NVRTC_LIB_DIR`, the declared-patch
 attestation, and the effective argv recorded per arm. That is a new experiment
 and needs design sign-off on concurrency points and pass/fail thresholds before
 it spends cluster time.
+
+---
+
+## Addendum (2026-07-25, later the same day) — grouped_contiguous and three more kernel defects
+
+The grouped arm work that followed this qualification found **three additional
+Humming kernel defects**, all patched, SHA-declared, and evidenced. This
+supersedes the "Indexed only" limitation above and the single-patch integrity
+accounting: the side-install now carries **four declared patches**, and
+`DECLARED_PATCH_SHA256` holds a tuple of allowed post-patch hashes per file
+(0.1.10 and, where upstream content changed, 0.1.11).
+
+| # | Defect | Patch | Evidence |
+|---|---|---|---|
+| 3 | grouped_contiguous derives the **last expert's row count from `a.size(0)`**, which vLLM oversizes to `(M·topk, K)` — tail experts corrupted (100% of experts 13–15's rows wrong in the probe) | `patch_humming_grouped_expert_bounds.py` | `evidence/m3-arm3-grouped-bounds/` |
+| 4 | **Missing `fence.proxy.async.shared::cta`** before TMA C stores (PTX-required; empirically *not* the observed corruption on its own) | `patch_humming_tma_store_fence.py` | `evidence/m3-arm3-tma-commit/` (fence-only run: 11/48 still bad) |
+| 5 | **`cp.async.bulk.commit_group` never called**, so every `tma_wait_store_group` was a no-op — producer overwrote the union-aliased epilogue smem mid-store (intermittent whole-tile garbage; early-EOS at serving scale) and stream-K released tile locks early (nondeterminism at BM=8/16) | `patch_humming_tma_store_commit.py` | `evidence/m3-arm3-tma-commit/` (pre-fix 10/48 bad; post-fix **0/96**, clean sweep, determinism restored) |
+
+None of the four defects (incl. defect 1's schema gap) are fixed in upstream
+0.1.11; none are filed upstream yet (outward-facing — needs sign-off). With all
+four patches, grouped_contiguous re-qualified and completed the three-arm perf
+window: results in [`docs/m3-w4a8-three-arm-perf.md`](docs/m3-w4a8-three-arm-perf.md)
+(which also covers the paired benchmark recommended above, extended to three
+arms). A patched 0.1.11 side-install exists for the packed-K dequant layout
+adoption (`run_humming_0111_packedk_qual_srun.sh`, qualification pending).

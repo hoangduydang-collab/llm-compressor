@@ -40,6 +40,22 @@ arm**; pass the inputs instead.
 Every in-house arm serves on **1 node, 8×H100, TP8/EP8, W4AFP8**, vLLM 0.24.0 with the
 M3 overlay — which is why they share one benchmark profile.
 
+### W4A8 kernel-backend arms (same checkpoint, different MoE kernel)
+
+These arms hold the checkpoint fixed (`gptq-base`'s ABI overlay export) and vary only
+the MoE GEMM backend. Humming arms need the patched side-install on `PYTHONPATH`
+(see `DECLARED_PATCH_SHA256` in `pipeline/m3_humming_w4a8.py`) and
+`VLLM_HUMMING_USE_F16_ACCUM=0`.
+
+| `M3_ARM` | MoE kernel | Extra env | Port used (window `20260725T122256Z`) |
+|---|---|---|---|
+| `cutlass-w4afp8` | vLLM CUTLASS W4A8 | — | 8000 |
+| `humming-w4afp8-indexed` | humming 0.1.10 indexed | `VLLM_HUMMING_MOE_GEMM_TYPE=indexed` | 8005 |
+| `humming-w4afp8-grouped` | humming 0.1.10 grouped_contiguous | `VLLM_HUMMING_MOE_GEMM_TYPE=grouped_contiguous` | 8010 |
+
+Perf results + attempt history (the grouped arm took three attempts; the first two are
+invalid/confounded by kernel defects): [`m3-w4a8-three-arm-perf.md`](m3-w4a8-three-arm-perf.md).
+
 > **Ports here are the profile *defaults*, not what every run used.** Launchers override
 > `ENDPOINT_PORT` per run — e.g. `pipeline/slurm/run_perf_eval_r8r7_srun.sh` serves
 > `r8-fp8rest` on 8002 and `r8-uniformqkv` on 8003 so four arms can share a node set.

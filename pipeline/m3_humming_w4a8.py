@@ -16,7 +16,9 @@ from typing import Any, Mapping, Sequence
 from pipeline.m3_serve_abi import analyze_checkpoint
 
 EXPECTED_VLLM_VERSION = "0.24.0"
-EXPECTED_HUMMING_VERSION = "0.1.10"
+# 0.1.10 = qualified baseline; 0.1.11 = packed-K side-install, correctness-
+# qualified 2026-07-26 (m3-humming-0111-packedk-qual/20260726T032735Z).
+EXPECTED_HUMMING_VERSIONS = ("0.1.10", "0.1.11")
 EXPECTED_DEVICE_CAPABILITY = (9, 0)
 EXPECTED_CACHE_BASENAME = "cache-m3-gptq-w4a8-v1"
 NVFP4_OVERLAY_MARKER = b"LLMC_NVFP4_W4A8_G16_V1"
@@ -168,7 +170,7 @@ def evaluate_preflight(
             "VLLM_VERSION_MISMATCH",
         ),
         (
-            runtime.humming_version == EXPECTED_HUMMING_VERSION,
+            runtime.humming_version in EXPECTED_HUMMING_VERSIONS,
             "HUMMING_VERSION_MISMATCH",
         ),
         (

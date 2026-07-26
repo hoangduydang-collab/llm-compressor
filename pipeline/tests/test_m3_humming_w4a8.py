@@ -110,11 +110,21 @@ def test_accepts_exact_native_humming_w4a8_contract():
     assert report["details"]["gemm_type"] == "indexed"
 
 
+def test_accepts_qualified_0111_packedk_side_install():
+    runtime = replace(valid_runtime(), humming_version="0.1.11")
+
+    report = evaluate_preflight(valid_config(), valid_abi_report(), runtime)
+
+    assert report["valid"] is True
+    assert report["reason_codes"] == []
+
+
 @pytest.mark.parametrize(
     ("changes", "reason"),
     [
         ({"vllm_version": "0.23.0"}, "VLLM_VERSION_MISMATCH"),
         ({"humming_version": "0.1.9"}, "HUMMING_VERSION_MISMATCH"),
+        ({"humming_version": "0.1.12"}, "HUMMING_VERSION_MISMATCH"),
         ({"device_capability": (8, 0)}, "SM_NOT_90"),
         (
             {

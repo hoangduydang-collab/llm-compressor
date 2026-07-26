@@ -126,6 +126,12 @@ def main() -> int:
 
     layer_config = build_layer_config()
     meta = HummingLayerMeta(**layer_config)
+    # humming 0.1.11 derives use_packed_k_layout in HummingLayerMeta, but the
+    # kernel-side LayerConfig built from the layer_config JSON defaults it to
+    # False -- mirror the derived flag so kernel and weight repack agree
+    # (0.1.10 metas have no such attribute).
+    if hasattr(meta, "use_packed_k_layout"):
+        layer_config["use_packed_k_layout"] = meta.use_packed_k_layout
 
     offsets, total_valid = realistic_offsets(args.num_tokens, generator)
     buffer_rows = args.num_tokens * TOPK

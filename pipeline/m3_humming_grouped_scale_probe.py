@@ -275,6 +275,12 @@ def main() -> int:
         shape_n, shape_k = geom["shape_n"], geom["shape_k"]
         layer_config = build_layer_config(shape_n, shape_k)
         meta = HummingLayerMeta(**layer_config)
+        # humming 0.1.11 derives use_packed_k_layout in HummingLayerMeta, but the
+        # kernel-side LayerConfig built from the layer_config JSON defaults it to
+        # False -- mirror the derived flag so kernel and weight repack agree
+        # (0.1.10 metas have no such attribute).
+        if hasattr(meta, "use_packed_k_layout"):
+            layer_config["use_packed_k_layout"] = meta.use_packed_k_layout
 
         weight_bf16 = (
             torch.randn(

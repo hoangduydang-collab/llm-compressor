@@ -203,8 +203,8 @@
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf 0.8.0)</span>
-      <span><b>Quantization axis:</b> one window, 07-26 (<code>20260726T132617Z</code>)</span>
-      <span><b>Kernel axis:</b> windows 07-25/26</span>
+      <span><b>Quantization axis:</b> single window (<code>20260726T132617Z</code>)</span>
+      <span><b>Kernel axis:</b> suite + AA windows (see sources)</span>
       <span><b>Engine:</b> vLLM 0.24.0, flags held fixed · FP8 KV cache</span>
       <span><b>Baseline:</b> MiniMax-M3 BF16 (TP16, 2 nodes)</span>
     </div>
@@ -287,7 +287,7 @@
     <h2>Axis 1 · Kernel</h2>
     <div class="h2sub">Model fixed (in-house GPTQ W4AFP8) — how the serving stack evolved</div>
 
-    <h3>The evolution — same checkpoint, −30% TPOT in four days</h3>
+    <h3>The evolution — same checkpoint, −30% TPOT</h3>
     <div class="bars" role="img" aria-label="Single-user decode by stage: CUTLASS stream off 95, CUTLASS stream on 103, Humming indexed 137, Humming packed-K 131 tokens per second">
       <div class="bar-row"><span class="lab">CUTLASS · stream off</span>
         <span class="track"><span class="fill f-ok" style="width:68%"></span></span><span class="num">95 tok/s</span></div>
@@ -303,13 +303,13 @@
     <div class="scroll" style="margin-top:18px">
       <table>
         <thead>
-          <tr><th class="arm">Stage</th><th>Window</th><th>conc-1 TPOT</th><th>What changed</th></tr>
+          <tr><th class="arm">Stage (in order)</th><th>conc-1 TPOT</th><th>What changed</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td class="muted">07-22</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
-          <tr><td class="arm">1 · shared-expert stream re-enabled</td><td class="muted">07-24</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
-          <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="muted">07-25</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
-          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="muted">07-26</td><td>7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
+          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
+          <tr><td class="arm">1 · shared-expert stream re-enabled</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
+          <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
+          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td>7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
         </tbody>
       </table>
     </div>
@@ -328,7 +328,7 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>CUTLASS: window 20260725T122256Z · Humming arms: 20260726T033158Z · noise floor ±0.2%</span></p>
+    <p class="legend"><span>CUTLASS and Humming arms from separate suite windows (see sources) · noise floor ±0.2%</span></p>
 
     <h3>AA-style sweep — per-user decode tok/s (TTFT ms)</h3>
     <div class="scroll">
@@ -346,7 +346,7 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>All five arms: window 20260726T132617Z, uniform 131k context · natural output length</span></p>
+    <p class="legend"><span>All five arms: one window, uniform 131k context · natural output length</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li><strong>Kernel ordering is stable at every input length:</strong> Humming indexed &gt; grouped
@@ -365,8 +365,8 @@
     <div class="h2sub">Kernel fixed (Humming indexed 0.1.10) — which checkpoint to serve</div>
     <div class="col">
       <p>
-        All five arms measured in <strong>one window on one stack</strong> (07-26,
-        <code>20260726T132617Z</code>). The kernel is pinned to the axis-1 winner wherever the format
+        All five arms measured in <strong>one window on one stack</strong>
+        (<code>20260726T132617Z</code>). The kernel is pinned to the axis-1 winner wherever the format
         admits it: in-house GPTQ and AWQ r7 are W4AFP8 group-128 and run Humming indexed 0.1.10; the
         community cyankiwi checkpoint is <strong>W4A16 group-32 and cannot run the W4A8 kernel</strong>
         (it serves on Marlin, its only path); MXFP8 and BF16 use their native paths.
@@ -450,7 +450,7 @@
           <a href="M3_OFFICIAL_QUALITY_RESULTS.html">quality pathology</a> made perf-visible. Its suite
           reasoning also stops ~2.6% short of the pinned decode at conc 64 despite <code>ignore_eos</code>
           (small favorable bias; all other arms are clean).</li>
-        <li>The 07-22 window's "MXFP8/cyankiwi collapse at conc 4" verdict <strong>did not reproduce</strong>
+        <li>The original window's "MXFP8/cyankiwi collapse at conc 4" verdict <strong>did not reproduce</strong>
           on today's stack — both now complete every concurrency, just slower. The historical verdict is
           superseded by this window (<a href="#history">history</a>).</li>
       </ul>
@@ -491,7 +491,7 @@
         <strong>Above every provider except Nebius</strong>, whose 197 is a serving-stack tier (FP8 +
         speculative decoding on newer silicon) that would stack on our checkpoint too. Independent
         corroboration: Parasail serves the same MXFP8 checkpoint and is the slowest provider here, just
-        as MXFP8 trails our 4-bit arms. "Ours" rows are the 07-26 window; TTFT is not comparable across
+        as MXFP8 trails our 4-bit arms. "Ours" rows are from the current single window; TTFT is not comparable across
         the two sides, and AA medians drift with their 72-hour window.
       </p>
     </div>
@@ -499,7 +499,7 @@
 
   <!-- ============ HISTORY ============ -->
   <section id="history">
-    <h2>History · 07-22</h2>
+    <h2>History</h2>
     <div class="h2sub">The original five-arm comparison (superseded by axis 2)</div>
     <div class="col">
       <p>
@@ -546,7 +546,7 @@
         <li><strong>Workload-shape provenance:</strong> agentic numbers use the M3-calibrated tau2 shape;
           re-calibrating from the borrowed M2.5 shape moved warm TTFTs ≤10% and changed no ranking.</li>
         <li><strong>KV collapse</strong> in this window was identical across arms (warm conc 16, cold
-          conc 4) — not kernel-dependent, and not reproduced on the 07-26 stack.</li>
+          conc 4) — not kernel-dependent, and not reproduced on the current stack.</li>
       </ul>
     </div>
   </section>

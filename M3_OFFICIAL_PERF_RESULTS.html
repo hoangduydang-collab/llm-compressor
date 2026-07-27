@@ -270,9 +270,10 @@
       <ul>
         <li><strong>Primary path</strong> (suite-native) — <em>reasoning</em>: 1k input, 8k forced decode
           (<code>ignore_eos</code>; isolates kernel speed from model verbosity), temp 0.6, thinking on,
-          concurrency 1/4/16/64; <em>agentic</em>: multi-turn, M3-calibrated tau2 shape (7,300-token
-          cacheable prefix, ~100 output tokens/turn), warm (KV reuse) vs cold (cache-defeated),
-          concurrency 1/4/16/32.</li>
+          concurrency 1/4/16/64; <em>agentic</em>: multi-turn, M3-calibrated tau2 shape — 8±2 turns per
+          sticky session, prompt growing 8.1k → ~15k tokens as the transcript accumulates (mean 12k
+          measured), only ~100 output tokens per turn — warm (KV reuse) vs cold (cache-defeated,
+          single-turn 10.6k prompts), concurrency 1/4/16/32.</li>
         <li><strong>AA-style sweep</strong> — Artificial-Analysis axes: input 1k/10k/100k × concurrency
           1/10, natural output length (AA's answer-token floors recorded, not forced). Comparable columns
           are output speed and TTFT; AA-style, <em>not</em> AA-leaderboard-comparable (synthetic
@@ -513,8 +514,10 @@
           rate (1 ÷ inter-token latency), total output tok/s is every stream summed over wall time. The
           quantized arms win both, and the per-GPU column is where the 3.4–3.8× gap over BF16 lives.</li>
         <li><strong>The agentic output rate is prefill-bound, not decode-bound</strong> — 1,036 tok/s at
-          concurrency 32 against 3,267 in the reasoning shape, because each turn generates ~100 tokens on
-          top of a 7.3k-token prefix. That is the regime where BF16's extra GPUs close the most ground
+          concurrency 32 against 3,267 in the reasoning shape, because each turn generates only ~100 tokens
+          on top of a ~12k-token prompt — 120 prompt tokens per output token, against reasoning's 1 per 8.
+          Defeating the cache (cold, same decode shape) drops it further to 236 tok/s, which is the proof
+          that the limit is prefill. That is the regime where BF16's extra GPUs close the most ground
           (44.3 vs 129.5 tok/s/GPU, a 2.9× gap rather than 3.8×).</li>
       </ul>
     </div>

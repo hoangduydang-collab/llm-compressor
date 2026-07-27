@@ -159,8 +159,9 @@ Cold-regime total output tok/s (same shape, cache defeated), GPTQ/AWQ/cyankiwi/
 MXFP8/BF16: conc 1 → 81/80/66/58/56; conc 4 → 183/183/138/124/133; conc 16 →
 236/235/164/120/162; conc 32 → 219/219/147/126/179 tok/s.
 
-The agentic output rate is prefill-bound (≈100 output tokens per turn on a 7.3k-token
-prefix), which is why it lands at 1036 tok/s @32 against 3267 in the pinned
+The agentic output rate is prefill-bound (≈100 output tokens per turn on a ~12k-token
+prompt — measured mean ISL 11.7k/12.5k/12.5k/12.5k at conc 1/4/16/32, growing 8.1k →
+~15k across a session's turns), which is why it lands at 1036 tok/s @32 against 3267 in the pinned
 reasoning shape — and why BF16's 16 GPUs close the per-GPU gap there to 2.9×
 (44.3 vs 129.5) instead of 3.8×.
 

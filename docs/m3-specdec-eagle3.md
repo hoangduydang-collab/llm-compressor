@@ -7,7 +7,10 @@ Phase E: window `m3-specdec-eagle3/20260727T084526Z-format`, 2 arms × 4 cells.
 Phase F: window `m3-specdec-eagle3/20260727T092342Z-bf16ref`, 2 arms × 4 cells.
 Phase G: window `m3-specdec-eagle3/20260727T102751Z-int4drafter`, 3 A/B arms + 1 probe.
 Phase H: window `m3-specdec-eagle3/20260727T105919Z-kopt`, 2 arms × 5 serves.
-All arms rc=0, every gate passed. Design + decision rule:
+Phase I: window `m3-specdec-eagle3/20260727T134635Z-kernel`, 1 arm × 5 serves (3 served,
+2 killed by an upstream vLLM defect — see phase I).
+All arms rc=0 except phase I (rc=1, fail-closed on the two Humming cells); every gate
+passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
 
 **Answer to the question that prompted this ("can spec-dec give 2.5–3.5× at conc 1?"):
@@ -611,11 +614,18 @@ per-invocation cost that INT4 cannot touch (launch, all-reduce) accounts for the
 | 5 | 8k-high |  1 | 171.6 | 168.1 | −2.04% |
 | 5 | 8k-high | 10 |  83.8 |  85.1 | +1.50% |
 
-**Mean +1.63%**, positive in 11 of 12 cells; server tok/s agrees at +1.59% mean. The
-bf16 half's same-serve repeat puts the per-user drift floor at ±0.24% (−0.21%, +0.08%,
-−0.24%), so the mean clears it by ~7×. But the per-cell spread is 3–4× the mean, so the
-two outliers (+5.61%, −2.04%) are noise excursions, not per-cell results. In absolute
-terms this is 2–6 tok/s/user on an 84–340 tok/s base.
+**Mean +1.63%**, positive in 11 of 12 cells; server tok/s agrees at +1.59% mean. In
+absolute terms this is 2–6 tok/s/user on an 84–340 tok/s base.
+
+> **Noise-floor correction (phase I).** The ±0.24% figure originally quoted here came
+> from the bf16 half's *same-serve* repeat, but the int4-vs-bf16 comparison is between two
+> *different* serves, so that was the wrong yardstick. Phase I measured the cross-engine
+> floor for the first time — three fresh-engine measurements of one identical config give
+> **sd 1.22%, range 2.4%**, roughly 10× larger. The +1.63% mean is therefore *inside* the
+> cross-engine floor. What carries the conclusion is sign consistency, not magnitude: 11
+> of 12 cells positive is p = 0.0063 under a null of zero effect. Read this as "small and
+> consistently positive", not as a measured 1.63%. The two outliers (+5.61%, −2.04%) are
+> noise excursions either way.
 
 Note that `output_token_throughput_per_user` is aiperf's mean of per-request `1/ITL`,
 not `1/mean(ITL)`, so it is not exactly the reciprocal of the ITL column above — and in
@@ -800,7 +810,128 @@ creative writing** — and the recipe's one-size k=3 is wrong for both, leaving 
 the table depending on the workload. This is a larger lever than the drafter
 quantization of phase G.
 
+## Phase I — which W4A16 kernel should the drafter use? (complete)
+
+Window `20260727T134635Z-kernel`, 1 arm × 5 serves on gpu-h113, all at k=5 / 8k-low /
+conc 1 and 10. Arm rc=1: three of five serves completed, two were killed by an upstream
+defect (below), which is itself the phase's second finding.
+
+**The hypothesis.** Phase G's INT4 drafter delivered ~half its predicted bandwidth
+saving, and I named the drafter's `lm_head` running on Marlin as the leading
+explanation. The mechanism was concrete: `check_machete_supports_shape` requires
+`out_features % 128 == 0`, TP8 gives 200064/8 = 25008 (`% 128 == 48`), so Machete takes
+8 of 9 drafter linears and Marlin takes `lm_head` — 153.6 M of the 254.3 M params read
+per rank per forward, **60% of the drafter's weight traffic**. vLLM warns about it
+directly (`marlin_utils.py:237`): the padded layer's activations/outputs are
+"padded/sliced on every forward". `marlin_padded_nk(25008, 6144, 128)` picks
+(25024, 6144) — only +16 columns, so the cost is a per-forward pad/slice and an extra
+launch, not bandwidth.
+
+**Result: the hypothesis is refuted.** Cell D moved `lm_head` onto Machete by padding
+the draft vocab to 200704 (25088/rank, `% 128 == 0`), verified at serve time —
+`kernels=[Machete]`, Marlin gone from the process, pad warning absent.
+
+| cell | conc | per-user | vs A | ITL ms | accepted | step ms | vs A |
+|---|---|---|---|---|---|---|---|
+| A-baseline (Machete+Marlin) |  1 | 337.3 | — | 2.994 | 3.866 | 11.577 | — |
+| A-baseline | 10 | 152.9 | — | 6.728 | 3.868 | 26.023 | — |
+| D-machete-all |  1 | 331.7 | −1.66% | 3.042 | 3.780 | 11.499 | −0.68% |
+| D-machete-all | 10 | 155.8 | +1.85% | 6.602 | 3.844 | 25.379 | −2.47% |
+| A-repeat (drift) |  1 | 329.2 | **−2.40%** | 3.057 | 3.759 | 11.492 | −0.74% |
+| A-repeat | 10 | 153.2 | +0.14% | 6.720 | 3.796 | 25.510 | −1.97% |
+
+The two concurrencies disagree in sign (−1.66%, +1.85%), and **the drift control is as
+large as the effect**: re-serving the identical config at window end moved per-user
+−2.40% at conc 1 — bigger than cell D's −1.66%.
+
+Three independent measurements of the *same* config on the *same* node, each on a fresh
+engine, pin the precision:
+
+| measurement | per-user tok/s |
+|---|---|
+| phase H, k=5 | 334.1 |
+| phase I, A-baseline | 337.3 |
+| phase I, A-repeat | 329.2 |
+
+mean 333.5, **sd 1.22%**, range 2.43%. Cell D's effects are 1.36 sd and 1.51 sd — **not
+significant**. Moving 60% of the drafter's weight traffic off Marlin and eliminating a
+per-forward pad/slice produces no measurable change in output speed. If the Marlin
+`lm_head` were worth the ~2% needed to explain phase G's missing half, cell D would have
+shown it consistently. It did not.
+
+One suggestive detail, not a claim: the step-cost saving is larger at conc 10 (−2.47%)
+than conc 1 (−0.68%), which is the shape conventional wisdom predicts — Marlin was built
+for the memory-bound batch-1 regime and Machete's advantage grows with batch (the
+drafter GEMM has 1 row at conc 1, 10 at conc 10). But most of that conc-10 figure is
+drift (A-repeat alone moved step −1.97%), so it needs replication to claim.
+
+**Second finding: `HummingLinearKernel` cannot serve a quantized `lm_head` at all.**
+Cells B and C forced Humming onto `lm_head` via `VLLM_DISABLED_KERNELS`. Kernel
+*selection* succeeded (`Using HummingLinearKernel for CompressedTensorsWNA16` appears in
+both logs), then all 8 ranks died in weight prep:
+
+```
+AttributeError: 'ParallelLMHead' object has no attribute 'input_size'
+```
+
+`prepare_humming_layer` (`humming_utils.py:81`) is annotated `layer: LinearBase` and
+needs three attributes `ParallelLMHead` does not have:
+
+| needed | `ParallelLMHead` equivalent |
+|---|---|
+| `input_size_per_partition` / `input_size` | `embedding_dim` |
+| `output_partition_sizes` (used twice) | `[num_embeddings_per_partition]` |
+| `has_bias` | absent — only `LinearBase` sets it (`linear.py:260`) |
+
+The irony is that the function's own comment names the class it crashes on — *"Use
+hasattr rather than getattr's default arg, which is evaluated eagerly and would raise on
+layers lacking input_size (e.g. ParallelLMHead)"* — and then the `else` branch
+dereferences `layer.input_size` anyway. `can_implement` never checks layer type, so the
+kernel claims an `lm_head` it cannot prepare. This fully explains why the path has never
+run on CUDA: it is unreachable by default (Marlin precedes it and always succeeds) *and*
+broken when reached. Fixing it was **not** pursued, because cell D had already refuted
+the hypothesis that the `lm_head` kernel is worth anything — the fix would buy no
+measured performance. It is the study's second upstream vLLM defect, alongside
+`llama_eagle3.py:158` omitting `quant_config` (phase G).
+
+**Retroactive correction to phase G's noise floor.** Phase G's drift control was a
+*same-serve* repeat (±0.24% per-user), but its actual comparison — int4 vs bf16 — was
+between two *different* serves. The right yardstick is the cross-engine floor, which
+phase I measures for the first time at **sd 1.22%, range 2.4%** — roughly 10× larger. So
+phase G's mean **+1.63% per-user is inside the cross-engine noise floor**, and its
+conclusion does not rest on that magnitude. What survives is sign consistency: 11 of 12
+cells positive, which under a null of zero effect is p = 0.0063. The INT4 drafter is
+still worth adopting (it is free in acceptance and consistently non-negative), but
+"+1.63%" should be read as "small and positive", not as a measured 1.63%.
+
+**Also confirmed:** acceptance run-to-run variance at these sample sizes is ~2–3% at
+conc 1 (A-repeat moved it −2.78% with nothing changed), which independently vindicates
+treating phase G's +2.89% acceptance excursion at k=5/8k-low as noise rather than a
+drafter effect.
+
+**Verdict:** the drafter's kernel assignment is not a lever. Leave the default
+(Machete ×8 + Marlin on `lm_head`); do not adopt the vocab padding, which adds a vLLM
+patch for no measurable gain. The missing half of phase G's predicted INT4 saving remains
+unexplained — per-invocation costs INT4 cannot touch (kernel launch, all-reduce,
+Python/dispatch overhead) are the remaining candidates, and none of them is a kernel
+choice.
+
 ## Raw evidence
+
+**Phase I** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T134635Z-kernel/`:
+`arm-kernel/{A-baseline,B-hum-lmhead,C-hum-all,D-machete-all,A-repeat}/`. Each served
+cell carries `wna16-kernels.txt` (the gated kernel set), `marlin-pad-warning.txt`,
+`kernel-census.txt` (every "Using X for Y" line, to prove the env lever never touched a
+non-WNA16 scheme), `kernel-env.txt`, `accepted-*.txt`, `metrics/*-{pre,post}.txt`, and
+`speedbench/*/conc_*/profile_export_aiperf.json`. `B-hum-lmhead/serve.log` and
+`C-hum-all/serve.log` hold the `ParallelLMHead' object has no attribute 'input_size'`
+tracebacks on all 8 ranks, each preceded by `Using HummingLinearKernel for
+CompressedTensorsWNA16` — selection succeeded, weight prep did not. Pre-flight gates in
+`kernel-registry.txt` (priority order Machete > Marlin > Humming),
+`humming-availability.txt`, `drafter-identity.txt` (asserts the 25008 % 128 == 48
+premise), `patch-checks.log`, `speedbench-manifest.txt`. Aggregate:
+`kernel-summary.json` via `pipeline/specdec_kernel_aggregate.py`.
+
 
 **Wave 2** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2/`:
 6 arms (`natural-k{0,3}`, `load-k{0,3}`, `lowconc-k{0,3}`), each with `client.log`,

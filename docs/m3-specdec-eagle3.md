@@ -3,6 +3,7 @@
 Wave 1: window `m3-specdec-eagle3/20260727T061506Z`, 4 arms.
 Wave 2: window `m3-specdec-eagle3/20260727T064934Z-wave2`, 6 arms.
 Phase D: window `m3-specdec-eagle3/20260727T073533Z-phaseD`, 2 arms × 10 cells.
+Phase E: window `m3-specdec-eagle3/20260727T084526Z-format`, 2 arms × 4 cells.
 All arms rc=0, every gate passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
 
@@ -323,6 +324,79 @@ The conc-10 sweep was scoped to 1k and 8k by design
 (`pipeline/slurm/specdec_phaseD_arm.sh:118`); 32k ran conc-1 only, so the two
 32k conc-10 cells are absent rather than failed.
 
+## Phase E — is the drafter compatible with *our* 4-bit target? (complete)
+
+Window `20260727T084526Z-format`, 2 arms (`mxfp8-k{0,3}`), 4 cells each, all rc=0.
+EAGLE3 consumes the *target's hidden states*, so quantization can cost acceptance
+twice over — once by shifting the verify distribution, once by feeding the drafter
+off-distribution input. This phase holds everything but the weight format constant
+and reads acceptance directly. The W4AFP8 side is phase D's 8k cells: hash-identical
+prompt bytes, same seed 42, temp 0.6, `max_tokens` 2048, TP8/EP8 on one node,
+kv_cache_dtype fp8, block_size 128, gpu_util 0.9. The serve banners were diffed —
+the only non-default args that differ are the checkpoint and `quantization: humming`.
+
+**MXFP8 is the right reference, and BF16 is not.** The drafter's README states all
+its published numbers are measured against `MiniMaxAI/MiniMax-M3-MXFP8` at
+`tensor-parallel-size=4`. Training used `inference.vllm.tp_size=4` on GB300 nodes
+(~744 GiB per engine): BF16 M3 is 796 GiB of safetensors and cannot fit that, while
+MXFP8 is 414 GiB and fits with ~330 GiB left for KV. So the hidden states the
+drafter learned from were MXFP8's. (`base_model: MiniMax-M3-preview` is lineage
+only; the "bf16" in its training section is the *draft trainer's* dtype.) MXFP8 is
+therefore the drafter's on-distribution target, which makes this phase — not a BF16
+arm — the one that answers whether drafter finetuning has headroom.
+
+### Accepted length — the answer
+
+| cell | conc | W4AFP8 (ours, 4-bit) | MXFP8 (vendor, 8-bit) | delta | rel |
+|---|---|---|---|---|---|
+| 8k-low | 1 | 3.106 | 3.147 | +0.041 | +1.33% |
+| 8k-low | 10 | 3.131 | 3.138 | +0.007 | +0.22% |
+| 8k-high | 1 | 1.779 | 1.804 | +0.025 | +1.41% |
+| 8k-high | 10 | 1.816 | **1.803** | **−0.013** | **−0.71%** |
+
+Mean +0.56%, and **the sign flips** — on 8k-high at conc 10 our 4-bit target
+*out-accepts* the vendor's 8-bit target. A difference that changes direction across
+cells is measurement noise, not a quantization penalty. → **Our W4AFP8 target costs
+no measurable drafter acceptance versus the drafter's own reference format.** On the
+training-distribution-mismatch argument there is nothing for drafter finetuning to
+recover.
+
+Per-position rates agree cell-for-cell (e.g. 8k-low conc 1: 0.844/0.696/0.565 vs
+0.851/0.709/0.587). An earlier read of the two conc-1 cells alone suggested a
+consistent ~1.35% penalty *and* a compounding-down-the-chain pattern; both
+dissolved once the conc-10 cells landed, and neither is claimed here.
+
+### Speed — W4AFP8 is faster at equal acceptance
+
+Both formats ran TP8 on one 8×H100 node with the same flag set, so unlike the BF16
+arm these absolute numbers *are* comparable. Each format still carries its own k=0
+control, so no ratio crosses formats.
+
+| cell | conc | W4AFP8 k0 → k3 (×) | MXFP8 k0 → k3 (×) | our k3 advantage |
+|---|---|---|---|---|
+| 8k-low | 1 | 136.74 → 296.90 (2.17×) | 107.01 → 242.56 (2.27×) | **+22%** |
+| 8k-low | 10 | 73.03 → 133.18 (1.82×) | 54.68 → 95.03 (1.74×) | **+40%** |
+| 8k-high | 1 | 136.70 → 178.95 (1.31×) | 107.01 → 147.24 (1.38×) | **+22%** |
+| 8k-high | 10 | 78.05 → 90.49 (1.16×) | 60.63 → 67.58 (1.11×) | **+34%** |
+
+The speedup *ratios* are a wash (mean 1.62× vs 1.63×, no consistent direction), but
+the absolute throughput is not: our W4AFP8 + Humming stack is **22–40% faster than
+MXFP8 in every cell, with and without the drafter**. MXFP8's marginally better
+ratios at conc 1 are an artefact of its slower baseline step — the drafter's largely
+format-independent cost is a smaller fraction of a slower step. Decomposing conc-1
+8k-low via `speedup = accepted / step-cost-ratio`: drafting inflates the W4AFP8 step
+by 43.5% (7.313 → 10.49 ms) and the MXFP8 step by 39.3% (9.345 → 13.01 ms). Quoting
+a cross-format ratio would credit MXFP8 for being slow.
+
+### Cross-check against the vendor's published numbers
+
+The drafter's README reports SPEED-Bench low-entropy at 16k (n=64, greedy draft,
+`--enforce-eager`): **2.776 accepted, per-position 0.747/0.576/0.453.** Our W4AFP8 at
+8k-low measured **3.106, 0.844/0.696/0.565** — above the vendor's own figure on their
+own benchmark family. Not directly comparable (different ISL bucket, greedy vs
+temp 0.6, eager vs graphs, unknown masked-data handling), but it rules out our
+target underperforming the drafter's advertised behaviour.
+
 Harness comparability: these are **not** comparable to published SPEED-Bench
 scores. ~42–56% of the public parquet is masked
 (`FULL BENCHMARK DATA SHOULD BE FETCHED FROM THE SOURCE USING SPECDEC_BENCH`) and
@@ -342,6 +416,13 @@ counter delta. Window-level `aggregate.json`, `arm-provenance.txt`,
 ```
 pipeline/specdec_wave2_aggregate.py --root <window> --out-json <window>/aggregate.json
 ```
+
+**Phase E** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T084526Z-format/`:
+arms `mxfp8-k{0,3}`, each with `client.log`, `serve.log`, `quant-boot.log` (the
+asserted native MXFP8 path), `spec-boot.log`, per-cell aiperf artifacts and
+`metrics/sb-<cell>-c<n>-{pre,post}.txt`. Window-level `speedbench-manifest.txt`
+(hash-equal to phase D's), `w4a8-reference-window.txt` naming the phase D window
+used as the comparison arm, `arm-provenance.txt`, `actual-commit.txt`.
 
 **Phase D** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T073533Z-phaseD/`:
 arms `phaseD-k{0,3}`, each with `client.log`, `serve.log`, `spec-boot.log`,

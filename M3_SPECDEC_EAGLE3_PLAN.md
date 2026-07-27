@@ -1,8 +1,14 @@
 # M3 EAGLE3 speculative decoding on our W4AFP8 arm — design packet
 
-**Status:** WAVE 1 LAUNCHED 2026-07-27 (user-signed: "agree with the experiment
-you suggested" + "just try the AA-style sweep first"). Owner: full-stack agent
-per `FULL_STACK_AGENT_PROTOCOL.md`.
+**Status:** WAVE 1 **EXECUTED** 2026-07-27 (user-signed: "agree with the experiment
+you suggested" + "just try the AA-style sweep first"). Window
+`m3-specdec-eagle3/20260727T061506Z` — 4 arms, all rc=0, all gates passed.
+Results: `docs/m3-specdec-eagle3.md`. **Verdict: k=3 gives 1.72–1.75× output speed
+at conc 1 (not the 2.5–3.5× hoped for) and also raises conc-10 throughput
+1.64–1.75×; adopt k=3 for the latency tier, but conc 32/64 is unmeasured so do not
+enable globally.** Wave 2 (natural prompts, conc 32/64, suite reasoning path) is
+proposed at the end of the results doc and not yet signed off.
+Owner: full-stack agent per `FULL_STACK_AGENT_PROTOCOL.md`.
 
 ## Decision question
 

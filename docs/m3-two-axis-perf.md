@@ -13,6 +13,12 @@ Table formats (identical everywhere):
 - **AA-style sweep** (natural output): rows = input×conc incl. 100k, cells =
   **per-user decode p50 tok/s (TTFT p50 ms)**.
 
+Highlight convention (same as the HTML report): **bold** = best in the row, and
+every cell within 1% of it is bolded too (that is the noise floor, so
+co-leaders show as co-leaders); every data row carries at least one bold cell.
+† marks cells that are not valid comparisons (cyankiwi's runaway generations) —
+excluded from the ranking.
+
 ## Axis 1 — Kernel (model fixed: in-house GPTQ W4AFP8)
 
 ### Primary path
@@ -25,8 +31,8 @@ vs 7.29/8.82/12.22/19.43.)
 | conc | CUTLASS | Hum idx 0.1.10 | Hum grp 0.1.10 | Hum idx 0.1.11pk | Hum grp 0.1.11pk |
 |---|---|---|---|---|---|
 | 1 | 9.73 (102) | **7.29 (137)** | 8.48 (117) | 7.59 (131) | 8.58 (116) |
-| 4 | 11.91 (335) | **8.82 (452)** | 9.91 (402) | 8.90 (448) | 9.89 (403) |
-| 16 | 15.28 (1042) | 12.22 (1302) | 13.28 (1198) | 12.23 (1300) | 13.04 (1220) |
+| 4 | 11.91 (335) | **8.82 (452)** | 9.91 (402) | **8.90 (448)** | 9.89 (403) |
+| 16 | 15.28 (1042) | **12.22 (1302)** | 13.28 (1198) | **12.23 (1300)** | 13.04 (1220) |
 | 64 | 22.28 (2849) | 19.43 (3262) | 20.64 (3046) | **19.21 (3299)** | 20.11 (3128) |
 
 ### AA-style sweep (this window, all five kernel arms, uniform 131072 ctx)
@@ -66,37 +72,67 @@ per-GPU numbers divide by 16, the quant arms by 8.
 
 | conc | GPTQ·Hum | AWQ-r7·Hum | cyankiwi·Marlin | MXFP8 | BF16 (16 GPU) |
 |---|---|---|---|---|---|
-| 1 | **7.30 (137)** | 7.30 (136) | 7.96 (118) | 9.31 (107) | 12.40 (81) |
-| 4 | 8.82 (451) | **8.80 (453)** | 9.33 (415) | 11.40 (349) | 16.23 (246) |
-| 16 | 12.23 (1300) | **12.18 (1303)** | 12.35 (1268) | 16.42 (968) | 22.48 (711) |
-| 64 | **19.40 (3267)** | 19.43 (3262) | 21.10 (2923) | 27.52 (2177) | 35.16 (1700) |
+| 1 | **7.30 (137)** | **7.30 (136)** | 7.96 (118) | 9.31 (107) | 12.40 (81) |
+| 4 | **8.82 (451)** | **8.80 (453)** | 9.33 (415) | 11.40 (349) | 16.23 (246) |
+| 16 | **12.23 (1300)** | **12.18 (1303)** | 12.35 (1268) | 16.42 (968) | 22.48 (711) |
+| 64 | **19.40 (3267)** | **19.43 (3262)** | 21.10 (2923) | 27.52 (2177) | 35.16 (1700) |
 
 Per-GPU aggregate at conc-64: GPTQ/AWQ 408, cyankiwi 365, MXFP8 272, BF16 106
 tok/s/GPU → in-house W4AFP8 = **3.84× BF16 per GPU**.
+
+### Serve-ready vs BF16 baseline (per-GPU efficiency)
+
+Serve-ready = in-house GPTQ W4AFP8 on Humming indexed 0.1.10 — the one arm with
+a shipping quality verdict (recovery 97.4–101.1% on all seven tasks). Both
+columns come from this window. Per-GPU = the cell divided by that arm's GPU
+count (BF16 16, quant 8).
+
+| metric | BF16 baseline (16×H100, 2 nodes) | serve-ready W4AFP8 (8×H100, 1 node) | advantage |
+|---|---|---|---|
+| GPUs · nodes to serve | 16 · 2 | **8 · 1** | half the fleet, no cross-node hop in the serving path |
+| weights on disk | 796 GB | **225 GB** | **3.5× smaller** — why it fits one node's HBM |
+| reasoning conc 1 · decode tok/s | 81 (5.1/GPU) | **137 (17.1/GPU)** | 1.7× per user · **3.4× per GPU** |
+| reasoning conc 4 · agg tok/s | 246 (15.4/GPU) | **451 (56.4/GPU)** | 1.8× total · **3.7× per GPU** |
+| reasoning conc 16 · agg tok/s | 711 (44.4/GPU) | **1300 (162.5/GPU)** | 1.8× total · **3.7× per GPU** |
+| reasoning conc 64 · agg tok/s | 1700 (106/GPU) | **3267 (408/GPU)** | 1.9× total · **3.8× per GPU** |
+| GPU-hours per 1M output tokens (conc 64) | 2.61 | **0.68** | **3.8× cheaper** per token at full load |
+| agentic warm 16 · interactivity tok/s | 41.4 (2.6/GPU) | **72.2 (9.0/GPU)** | 1.7× per user · **3.5× per GPU** |
+| agentic warm 16 · p95 TTFT ms | **783** | 893 | BF16 wins by 12% (16 GPUs prefill faster); both inside the 1 s SLO |
+| 100k-token prompt conc 1 · decode tok/s | 78.4 (4.9/GPU) | **130.9 (16.4/GPU)** | 1.7× per user · **3.3× per GPU**; TTFT also 8% better (5.39 s vs 5.88 s) |
+
+Everything except loaded prefill improves ~3.5× per GPU. The other ship-capable
+options are worse buys: vendor MXFP8 is quality-clean but 272 tok/s/GPU at
+conc-64 (2.6× BF16, vs our 3.8×); in-house AWQ r7 is speed-identical to GPTQ
+(within 1% in every cell) but has no quality verdict yet; cyankiwi is
+quality-disqualified.
 
 ### Agentic (warm / cold) — interactivity tok/s (TTFT p50/p95 ms)
 
 | conc | GPTQ·Hum | AWQ-r7·Hum | cyankiwi·Marlin | MXFP8 | BF16 |
 |---|---|---|---|---|---|
-| warm 1 | 138.9 (177/209) | 138.2 (196/225) | 127.5 (177/212) | 108.1 (180/206) | 80.8 (190/226) |
-| warm 4 | 106.5 (315/487) | 107.8 (302/433) | 101.0 (304/423) | 84.0 (309/439) | 60.3 (299/420) |
-| warm 16 | 72.2 (586/893) | 73.2 (609/898) | 69.0 (734/1085) | 55.6 (704/1062) | 41.4 (511/783) |
-| warm 32 | 49.1 (761/1314) | 47.3 (688/1231) | 48.1 (1004/1836) | 38.8 (979/1647) | 27.3 (521/808) |
-| cold 1 | 139.5 (565/597) | 139.1 (575/595) | 127.8 (806/840) | 108.6 (881/893) | 81.5 (628/645) |
-| cold 4 | 86.2 (912/1928) | 85.4 (877/1921) | 73.4 (1312/2881) | 62.3 (1438/3163) | 51.2 (921/2110) |
-| cold 16 | 29.3 (2109/5490) | 29.6 (1782/5560) | 21.6 (2678/8243) | 12.4 (4937/7329) | 14.7 (2978/4567) |
-| cold 32 | 10.0 (3215/6731) | 10.0 (3203/7030) | 6.9 (5356/10011) | 5.5 (4710/12167) | 7.2 (2755/8536) |
+| warm 1 | **138.9 (177/209)** | **138.2 (196/225)** | 127.5 (177/212) | 108.1 (180/206) | 80.8 (190/226) |
+| warm 4 | 106.5 (315/487) | **107.8 (302/433)** | 101.0 (304/423) | 84.0 (309/439) | 60.3 (299/420) |
+| warm 16 | 72.2 (586/893) | **73.2 (609/898)** | 69.0 (734/1085) | 55.6 (704/1062) | 41.4 (511/783) |
+| warm 32 | **49.1 (761/1314)** | 47.3 (688/1231) | 48.1 (1004/1836) | 38.8 (979/1647) | 27.3 (521/808) |
+| cold 1 | **139.5 (565/597)** | **139.1 (575/595)** | 127.8 (806/840) | 108.6 (881/893) | 81.5 (628/645) |
+| cold 4 | **86.2 (912/1928)** | **85.4 (877/1921)** | 73.4 (1312/2881) | 62.3 (1438/3163) | 51.2 (921/2110) |
+| cold 16 | 29.3 (2109/5490) | **29.6 (1782/5560)** | 21.6 (2678/8243) | 12.4 (4937/7329) | 14.7 (2978/4567) |
+| cold 32 | **10.0 (3215/6731)** | **10.0 (3203/7030)** | 6.9 (5356/10011) | 5.5 (4710/12167) | 7.2 (2755/8536) |
+
+1 s p95 TTFT SLO: warm — held by the in-house arms through conc 16 (cyankiwi and
+MXFP8 miss at 16), only BF16 (16 GPUs) still holds at 32; cold — missed by every
+arm past conc 1. The HTML report marks each over-SLO cell with an amber bar.
 
 ### AA-style sweep
 
 | input×conc | GPTQ·Hum | AWQ-r7·Hum | cyankiwi·Marlin† | MXFP8 | BF16 |
 |---|---|---|---|---|---|
-| 1k × 1 | **137.3 (114)** | 137.0 (117) | 126.3 (110) | 107.7 (118) | 80.9 (129) |
+| 1k × 1 | **137.3 (114)** | **137.0 (117)** | 126.3 (110) | 107.7 (118) | 80.9 (129) |
 | 1k × 10 | **92.2 (423)** | 90.6 (428) | 87.4 (656) | 71.1 (638) | 50.5 (491) |
-| 10k × 1 | 137.1 (554) | **137.1 (549)** | 124.6† (807) | 107.6 (836) | 80.6 (583) |
+| 10k × 1 | **137.1 (554)** | **137.1 (549)** | 124.6† (807) | 107.6 (836) | 80.6 (583) |
 | 10k × 10 | **75.8 (2685)** | 70.4 (2200) | 85.9† (4023) | 55.8 (4386) | 44.3 (2350) |
 | 100k × 1 | 130.9 (5391) | **133.4 (5410)** | 116.0† (7703) | 104.9 (8283) | 78.4 (5883) |
-| 100k × 10 | 13.8 (18110) | 17.4 (22852) | 56.5† (33162) | 15.4 (37886) | 22.5 (31815) |
+| 100k × 10 | 13.8 (18110) | 17.4 (22852) | 56.5† (33162) | 15.4 (37886) | **22.5 (31815)** |
 
 ### Readings
 

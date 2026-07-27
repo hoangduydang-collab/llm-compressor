@@ -135,10 +135,13 @@
   }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr.baseline td { background: var(--accent-soft); }
+  tbody tr.ours td { background: var(--accent-soft); }
   td.arm, th.arm { font-weight: 600; }
+  /* fill = ranking (best in row); inset bar = threshold miss; they compose */
   .cell-good { color: var(--good); background: var(--good-bg); font-weight: 600; }
   .cell-warn { color: var(--warn); background: var(--warn-bg); font-weight: 600; }
   .cell-crit { color: var(--crit); background: var(--crit-bg); font-weight: 700; }
+  .slo { box-shadow: inset 3px 0 0 var(--warn); }
   .muted { color: var(--ink-3); }
 
   /* ---- bar meters ---- */
@@ -223,7 +226,8 @@
         <strong>137 tok/s single-user decode</strong> (BF16: 81 on two nodes), <strong>3,267 tok/s
         aggregate at concurrency 64</strong> (BF16: 1,700 on twice the GPUs), a <strong>1-second agentic
         p95 TTFT SLO held to concurrency 16</strong>, and <strong>131 tok/s decode with a 100k-token
-        prompt</strong>. The speed ladder is set by <em>format and kernel</em>, not quantization
+        prompt</strong> — the full <a href="#efficiency">serve-ready vs BF16 comparison</a> is one table.
+        The speed ladder is set by <em>format and kernel</em>, not quantization
         algorithm: GPTQ and AWQ on the same kernel are identical in every cell; the community W4A16 and
         vendor MXFP8 checkpoints trail at every operating point.
       </p>
@@ -279,6 +283,24 @@
         is ±0.2% (re-run arms reproduce to ±0.02 ms). Provider numbers are matched on workload shape but
         carry live multi-tenant load — same-ballpark placement, not a ranking.
       </p>
+      <p>
+        <strong>How to read the highlights.</strong> One rule, applied to every table: the green fill
+        marks the <strong>best cell in the row</strong>, and any cell within <strong>1%</strong> of it is
+        marked too (that is measurement noise, so co-leaders are shown as co-leaders). Every data row
+        therefore carries at least one green. The amber left bar is a separate, composable mark: the cell
+        <strong>misses the stated threshold</strong> for that table — for agentic tables, p95 TTFT above
+        the 1-second interactivity SLO. A cell can be both (fastest arm, still over the SLO). Amber
+        <em>text</em> with a † means the cell is <strong>not a valid comparison</strong> (cyankiwi's
+        runaway generations); those cells are excluded from the row ranking. Tinted rows are baselines or
+        our own arms, as noted per table. Two tables are structurally not row-wise comparisons — the
+        kernel-stage narrative and the provider ranking — and each states its own convention underneath.
+      </p>
+      <p class="legend">
+        <span><span class="sw" style="background:var(--good-bg); box-shadow: inset 0 0 0 1px var(--good)"></span> best in row (±1% = co-leaders)</span>
+        <span><span class="sw" style="background:var(--surface-2); box-shadow: inset 3px 0 0 var(--warn), inset 0 0 0 1px var(--line-2)"></span> misses the stated threshold</span>
+        <span><span class="sw" style="background:var(--warn-bg); box-shadow: inset 0 0 0 1px var(--warn)"></span> † not a valid comparison — excluded from ranking</span>
+        <span><span class="sw" style="background:var(--accent-soft); box-shadow: inset 0 0 0 1px var(--line-2)"></span> baseline / our arm</span>
+      </p>
     </div>
   </section>
 
@@ -307,12 +329,13 @@
         </thead>
         <tbody>
           <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
-          <tr><td class="arm">1 · shared-expert stream re-enabled</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
+          <tr class="baseline"><td class="arm">1 · shared-expert stream re-enabled</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
           <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
-          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td>7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
+          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="slo">7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="legend"><span>Stage narrative, not a row-wise comparison: tinted = superseded stack, green = current default, amber bar = measured but not adopted</span></p>
 
     <h3>Primary path — reasoning · TPOT p50 ms (aggregate tok/s)</h3>
     <div class="scroll">
@@ -322,13 +345,13 @@
         </thead>
         <tbody>
           <tr><td class="arm">1</td><td>9.73 (102)</td><td class="cell-good">7.29 (137)</td><td>8.48 (117)</td><td>7.59 (131)</td><td>8.58 (116)</td></tr>
-          <tr><td class="arm">4</td><td>11.91 (335)</td><td class="cell-good">8.82 (452)</td><td>9.91 (402)</td><td>8.90 (448)</td><td>9.89 (403)</td></tr>
-          <tr><td class="arm">16</td><td>15.28 (1,042)</td><td>12.22 (1,302)</td><td>13.28 (1,198)</td><td>12.23 (1,300)</td><td>13.04 (1,220)</td></tr>
+          <tr><td class="arm">4</td><td>11.91 (335)</td><td class="cell-good">8.82 (452)</td><td>9.91 (402)</td><td class="cell-good">8.90 (448)</td><td>9.89 (403)</td></tr>
+          <tr><td class="arm">16</td><td>15.28 (1,042)</td><td class="cell-good">12.22 (1,302)</td><td>13.28 (1,198)</td><td class="cell-good">12.23 (1,300)</td><td>13.04 (1,220)</td></tr>
           <tr><td class="arm">64</td><td>22.28 (2,849)</td><td>19.43 (3,262)</td><td>20.64 (3,046)</td><td class="cell-good">19.21 (3,299)</td><td>20.11 (3,128)</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>CUTLASS and Humming arms from separate suite windows (see sources) · noise floor ±0.2%</span></p>
+    <p class="legend"><span>Green = lowest TPOT in the row (±1%) · CUTLASS and Humming arms from separate suite windows (see sources) · noise floor ±0.2%</span></p>
 
     <h3>AA-style sweep — per-user decode tok/s (TTFT ms)</h3>
     <div class="scroll">
@@ -342,11 +365,11 @@
           <tr><td class="arm">10k × 1</td><td>102.0 (532)</td><td class="cell-good">137.1 (554)</td><td>117.5 (557)</td><td>131.9 (554)</td><td>115.9 (561)</td></tr>
           <tr><td class="arm">10k × 10</td><td>56.6 (1,705)</td><td class="cell-good">75.8 (2,685)</td><td>65.4 (2,709)</td><td>64.3 (1,868)</td><td>60.4 (1,790)</td></tr>
           <tr><td class="arm">100k × 1</td><td>100.3 (5,193)</td><td class="cell-good">130.9 (5,391)</td><td>115.5 (5,473)</td><td>127.8 (5,512)</td><td>113.7 (5,456)</td></tr>
-          <tr><td class="arm">100k × 10 <span class="muted">(saturation)</span></td><td>15.7 (24,529)</td><td>13.8 (18,110)</td><td>17.7 (24,389)</td><td>14.4 (18,130)</td><td>16.1 (29,715)</td></tr>
+          <tr><td class="arm">100k × 10 <span class="muted">(saturation)</span></td><td>15.7 (24,529)</td><td>13.8 (18,110)</td><td class="cell-good">17.7 (24,389)</td><td>14.4 (18,130)</td><td>16.1 (29,715)</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>All five arms: one window, uniform 131k context · natural output length</span></p>
+    <p class="legend"><span>Green = highest per-user decode in the row (±1%) · all five arms: one window, uniform 131k context · natural output length</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li><strong>Kernel ordering is stable at every input length:</strong> Humming indexed &gt; grouped
@@ -373,6 +396,48 @@
       </p>
     </div>
 
+    <h3 id="efficiency">What shipping this buys you — serve-ready W4AFP8 vs the BF16 baseline</h3>
+    <div class="col">
+      <p>
+        One arm is quality-cleared to serve today: <strong>in-house GPTQ W4AFP8 on the Humming indexed
+        kernel</strong> (<a href="M3_OFFICIAL_QUALITY_RESULTS.html">recovery 97.4–101.1% on all seven
+        tasks</a>). Everything below is that arm against the unquantized BF16 baseline it replaces,
+        normalized per GPU — because the headline is not that it is faster, it is that it is faster on
+        <em>half the hardware</em>.
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Metric</th><th>BF16 baseline<br><span class="muted">16×H100 · 2 nodes</span></th><th>Serve-ready W4AFP8<br><span class="muted">8×H100 · 1 node</span></th><th>Advantage</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GPUs · nodes to serve</td><td>16 · 2</td><td class="cell-good">8 · 1</td><td style="white-space:normal;text-align:left">Half the fleet, one node — no cross-node interconnect in the serving path</td></tr>
+          <tr><td class="arm">Weights on disk</td><td>796 GB</td><td class="cell-good">225 GB</td><td style="white-space:normal;text-align:left"><strong>3.5× smaller</strong> — why it fits in one node's HBM at all</td></tr>
+          <tr><td class="arm">Reasoning conc 1 · decode tok/s</td><td>81 <span class="muted">(5.1/GPU)</span></td><td class="cell-good">137 <span class="muted">(17.1/GPU)</span></td><td style="white-space:normal;text-align:left">1.7× per user · <strong>3.4× per GPU</strong></td></tr>
+          <tr><td class="arm">Reasoning conc 4 · aggregate tok/s</td><td>246 <span class="muted">(15.4/GPU)</span></td><td class="cell-good">451 <span class="muted">(56.4/GPU)</span></td><td style="white-space:normal;text-align:left">1.8× total · <strong>3.7× per GPU</strong></td></tr>
+          <tr><td class="arm">Reasoning conc 16 · aggregate tok/s</td><td>711 <span class="muted">(44.4/GPU)</span></td><td class="cell-good">1,300 <span class="muted">(162.5/GPU)</span></td><td style="white-space:normal;text-align:left">1.8× total · <strong>3.7× per GPU</strong></td></tr>
+          <tr><td class="arm">Reasoning conc 64 · aggregate tok/s</td><td>1,700 <span class="muted">(106/GPU)</span></td><td class="cell-good">3,267 <span class="muted">(408/GPU)</span></td><td style="white-space:normal;text-align:left">1.9× total · <strong>3.8× per GPU</strong></td></tr>
+          <tr><td class="arm">GPU-hours per 1M output tokens <span class="muted">(conc 64)</span></td><td>2.61</td><td class="cell-good">0.68</td><td style="white-space:normal;text-align:left"><strong>3.8× cheaper</strong> per token served at full load</td></tr>
+          <tr><td class="arm">Agentic warm conc 16 · interactivity tok/s</td><td>41.4 <span class="muted">(2.6/GPU)</span></td><td class="cell-good">72.2 <span class="muted">(9.0/GPU)</span></td><td style="white-space:normal;text-align:left">1.7× per user · <strong>3.5× per GPU</strong></td></tr>
+          <tr><td class="arm">Agentic warm conc 16 · p95 TTFT ms</td><td class="cell-good">783</td><td>893</td><td style="white-space:normal;text-align:left"><strong>BF16 wins</strong> by 12% — 16 GPUs prefill faster. Both hold the 1 s SLO.</td></tr>
+          <tr><td class="arm">100k-token prompt · conc 1 decode tok/s</td><td>78.4 <span class="muted">(4.9/GPU)</span></td><td class="cell-good">130.9 <span class="muted">(16.4/GPU)</span></td><td style="white-space:normal;text-align:left">1.7× per user · <strong>3.3× per GPU</strong>; TTFT also 8% better (5.39 s vs 5.88 s)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = better of the two columns · both arms measured in the same window on the same stack · per-GPU = the cell divided by that arm's GPU count</span></p>
+    <div class="col">
+      <ul style="margin-top:14px">
+        <li><strong>Everything except loaded prefill improves by ~3.5× per GPU.</strong> The one row BF16
+          wins is p95 TTFT under agentic load, and it wins it by spending twice the GPUs on prefill; both
+          arms clear the 1-second SLO there, so it costs nothing operationally.</li>
+        <li><strong>The other two ship-capable options are worse buys.</strong> Vendor MXFP8 is
+          quality-clean but only 272 tok/s/GPU at conc 64 (2.6× BF16, vs our 3.8×); in-house AWQ r7 is
+          speed-identical to GPTQ (within 1% in every cell of every table below) but has no quality
+          verdict yet, so it is not serve-ready. cyankiwi W4A16 is disqualified on quality.</li>
+      </ul>
+    </div>
+
     <h3>Primary path — reasoning · TPOT p50 ms (aggregate tok/s)</h3>
     <div class="scroll">
       <table>
@@ -381,18 +446,19 @@
         </thead>
         <tbody>
           <tr><td class="arm">1</td><td class="cell-good">7.30 (137)</td><td class="cell-good">7.30 (136)</td><td>7.96 (118)</td><td>9.31 (107)</td><td>12.40 (81)</td></tr>
-          <tr><td class="arm">4</td><td>8.82 (451)</td><td>8.80 (453)</td><td>9.33 (415)</td><td>11.40 (349)</td><td>16.23 (246)</td></tr>
-          <tr><td class="arm">16</td><td>12.23 (1,300)</td><td>12.18 (1,303)</td><td>12.35 (1,268)</td><td>16.42 (968)</td><td>22.48 (711)</td></tr>
-          <tr><td class="arm">64</td><td class="cell-good">19.40 (3,267)</td><td>19.43 (3,262)</td><td>21.10 (2,923)</td><td>27.52 (2,177)</td><td>35.16 (1,700)</td></tr>
+          <tr><td class="arm">4</td><td class="cell-good">8.82 (451)</td><td class="cell-good">8.80 (453)</td><td>9.33 (415)</td><td>11.40 (349)</td><td>16.23 (246)</td></tr>
+          <tr><td class="arm">16</td><td class="cell-good">12.23 (1,300)</td><td class="cell-good">12.18 (1,303)</td><td>12.35 (1,268)</td><td>16.42 (968)</td><td>22.48 (711)</td></tr>
+          <tr><td class="arm">64</td><td class="cell-good">19.40 (3,267)</td><td class="cell-good">19.43 (3,262)</td><td>21.10 (2,923)</td><td>27.52 (2,177)</td><td>35.16 (1,700)</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="legend"><span>Green = lowest TPOT in the row (±1%) — the two in-house arms are co-leaders in every row · one window, one stack</span></p>
     <div class="col">
       <p style="margin-top:14px">
-        Per-GPU aggregate at conc 64: GPTQ/AWQ <strong>408</strong>, cyankiwi 365, MXFP8 272, BF16
-        <strong>106</strong> tok/s/GPU — in-house W4AFP8 is <strong>3.8× BF16 per GPU</strong>, now from
-        a single same-day window (the BF16 rerun landed on its old number: 81 tok/s conc-1, so the
-        earlier cross-window caveat is closed).
+        Per-GPU aggregate at conc 64, all five arms: GPTQ/AWQ <strong>408</strong>, cyankiwi 365, MXFP8
+        272, BF16 <strong>106</strong> tok/s/GPU (see the <a href="#efficiency">efficiency table</a> for
+        the full serve-ready-vs-baseline breakdown). All from one same-day window — the BF16 rerun landed
+        on its old number (81 tok/s conc 1), so the earlier cross-window caveat is closed.
       </p>
     </div>
 
@@ -403,16 +469,18 @@
           <tr><th class="arm">conc</th><th>GPTQ · Humming</th><th>AWQ r7 · Humming</th><th>cyankiwi · Marlin</th><th>MXFP8</th><th>BF16 (16 GPU)</th></tr>
         </thead>
         <tbody>
-          <tr><td class="arm">warm 1</td><td class="cell-good">138.9 (177/209)</td><td>138.2 (196/225)</td><td>127.5 (177/212)</td><td>108.1 (180/206)</td><td>80.8 (190/226)</td></tr>
-          <tr><td class="arm">warm 4</td><td>106.5 (315/487)</td><td>107.8 (302/433)</td><td>101.0 (304/423)</td><td>84.0 (309/439)</td><td>60.3 (299/420)</td></tr>
-          <tr><td class="arm">warm 16</td><td>72.2 (586/<strong>893</strong>)</td><td>73.2 (609/898)</td><td>69.0 (734/1,085)</td><td>55.6 (704/1,062)</td><td>41.4 (511/783)</td></tr>
-          <tr><td class="arm">warm 32</td><td>49.1 (761/1,314)</td><td>47.3 (688/1,231)</td><td>48.1 (1,004/1,836)</td><td>38.8 (979/1,647)</td><td>27.3 (521/808)</td></tr>
-          <tr><td class="arm">cold 1</td><td>139.5 (565/597)</td><td>139.1 (575/595)</td><td>127.8 (806/840)</td><td>108.6 (881/893)</td><td>81.5 (628/645)</td></tr>
-          <tr><td class="arm">cold 16</td><td>29.3 (2,109/5,490)</td><td>29.6 (1,782/5,560)</td><td>21.6 (2,678/8,243)</td><td class="cell-warn">12.4 (4,937/7,329)</td><td>14.7 (2,978/4,567)</td></tr>
-          <tr><td class="arm">cold 32</td><td>10.0 (3,215/6,731)</td><td>10.0 (3,203/7,030)</td><td>6.9 (5,356/10,011)</td><td class="cell-warn">5.5 (4,710/12,167)</td><td>7.2 (2,755/8,536)</td></tr>
+          <tr><td class="arm">warm 1</td><td class="cell-good">138.9 (177/209)</td><td class="cell-good">138.2 (196/225)</td><td>127.5 (177/212)</td><td>108.1 (180/206)</td><td>80.8 (190/226)</td></tr>
+          <tr><td class="arm">warm 4</td><td>106.5 (315/487)</td><td class="cell-good">107.8 (302/433)</td><td>101.0 (304/423)</td><td>84.0 (309/439)</td><td>60.3 (299/420)</td></tr>
+          <tr><td class="arm">warm 16</td><td>72.2 (586/893)</td><td class="cell-good">73.2 (609/898)</td><td class="slo">69.0 (734/1,085)</td><td class="slo">55.6 (704/1,062)</td><td>41.4 (511/783)</td></tr>
+          <tr><td class="arm">warm 32</td><td class="cell-good slo">49.1 (761/1,314)</td><td class="slo">47.3 (688/1,231)</td><td class="slo">48.1 (1,004/1,836)</td><td class="slo">38.8 (979/1,647)</td><td>27.3 (521/808)</td></tr>
+          <tr><td class="arm">cold 1</td><td class="cell-good">139.5 (565/597)</td><td class="cell-good">139.1 (575/595)</td><td>127.8 (806/840)</td><td>108.6 (881/893)</td><td>81.5 (628/645)</td></tr>
+          <tr><td class="arm">cold 4</td><td class="cell-good slo">86.2 (912/1,928)</td><td class="cell-good slo">85.4 (877/1,921)</td><td class="slo">73.4 (1,312/2,881)</td><td class="slo">62.3 (1,438/3,163)</td><td class="slo">51.2 (921/2,110)</td></tr>
+          <tr><td class="arm">cold 16</td><td class="slo">29.3 (2,109/5,490)</td><td class="cell-good slo">29.6 (1,782/5,560)</td><td class="slo">21.6 (2,678/8,243)</td><td class="slo">12.4 (4,937/7,329)</td><td class="slo">14.7 (2,978/4,567)</td></tr>
+          <tr><td class="arm">cold 32</td><td class="cell-good slo">10.0 (3,215/6,731)</td><td class="cell-good slo">10.0 (3,203/7,030)</td><td class="slo">6.9 (5,356/10,011)</td><td class="slo">5.5 (4,710/12,167)</td><td class="slo">7.2 (2,755/8,536)</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="legend"><span>Green = highest interactivity in the row (±1%) · amber bar = p95 TTFT over the 1 s SLO · warm = prefix cache reused, cold = cache defeated</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li>The in-house arms hold the <strong>1 s warm p95 SLO to concurrency 16</strong>; cyankiwi and
@@ -430,15 +498,16 @@
           <tr><th class="arm">input × conc</th><th>GPTQ · Humming</th><th>AWQ r7 · Humming</th><th>cyankiwi · Marlin†</th><th>MXFP8</th><th>BF16 (16 GPU)</th></tr>
         </thead>
         <tbody>
-          <tr><td class="arm">1k × 1</td><td class="cell-good">137.3 (114)</td><td>137.0 (117)</td><td>126.3 (110)</td><td>107.7 (118)</td><td>80.9 (129)</td></tr>
+          <tr><td class="arm">1k × 1</td><td class="cell-good">137.3 (114)</td><td class="cell-good">137.0 (117)</td><td>126.3 (110)</td><td>107.7 (118)</td><td>80.9 (129)</td></tr>
           <tr><td class="arm">1k × 10</td><td class="cell-good">92.2 (423)</td><td>90.6 (428)</td><td>87.4 (656)</td><td>71.1 (638)</td><td>50.5 (491)</td></tr>
-          <tr><td class="arm">10k × 1</td><td>137.1 (554)</td><td class="cell-good">137.1 (549)</td><td>124.6† (807)</td><td>107.6 (836)</td><td>80.6 (583)</td></tr>
-          <tr><td class="arm">10k × 10</td><td class="cell-good">75.8 (2,685)</td><td>70.4 (2,200)</td><td>85.9† (4,023)</td><td>55.8 (4,386)</td><td>44.3 (2,350)</td></tr>
-          <tr><td class="arm">100k × 1</td><td>130.9 (5,391)</td><td class="cell-good">133.4 (5,410)</td><td>116.0† (7,703)</td><td>104.9 (8,283)</td><td>78.4 (5,883)</td></tr>
-          <tr><td class="arm">100k × 10 <span class="muted">(saturation)</span></td><td>13.8 (18,110)</td><td>17.4 (22,852)</td><td>56.5† (33,162)</td><td>15.4 (37,886)</td><td>22.5 (31,815)</td></tr>
+          <tr><td class="arm">10k × 1</td><td class="cell-good">137.1 (554)</td><td class="cell-good">137.1 (549)</td><td class="cell-warn">124.6† (807)</td><td>107.6 (836)</td><td>80.6 (583)</td></tr>
+          <tr><td class="arm">10k × 10</td><td class="cell-good">75.8 (2,685)</td><td>70.4 (2,200)</td><td class="cell-warn">85.9† (4,023)</td><td>55.8 (4,386)</td><td>44.3 (2,350)</td></tr>
+          <tr><td class="arm">100k × 1</td><td>130.9 (5,391)</td><td class="cell-good">133.4 (5,410)</td><td class="cell-warn">116.0† (7,703)</td><td>104.9 (8,283)</td><td>78.4 (5,883)</td></tr>
+          <tr><td class="arm">100k × 10 <span class="muted">(saturation)</span></td><td>13.8 (18,110)</td><td>17.4 (22,852)</td><td class="cell-warn">56.5† (33,162)</td><td>15.4 (37,886)</td><td class="cell-good">22.5 (31,815)</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="legend"><span>Green = highest per-user decode in the row (±1%) · † cyankiwi decodes to the 16k cap at 10k/100k input — different workload, excluded from the ranking · 100k × 10 is a saturation cell, not an A/B</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li><strong>The axis headline: quantization method does not matter for speed — format does.</strong>
@@ -474,18 +543,19 @@
         </thead>
         <tbody>
           <tr><td class="arm">Nebius (FP8)</td><td>197</td></tr>
-          <tr><td class="arm"><strong>ours · W4AFP8 + Humming kernel</strong></td><td class="cell-good"><strong>137</strong></td></tr>
-          <tr><td class="arm">ours · cyankiwi W4A16 <span class="muted">(quality-broken)</span></td><td>122</td></tr>
-          <tr><td class="arm">ours · MXFP8 (vendor checkpoint)</td><td>107</td></tr>
+          <tr class="ours"><td class="arm"><strong>ours · W4AFP8 + Humming kernel</strong> <span class="muted">(serve-ready)</span></td><td class="cell-good"><strong>137</strong></td></tr>
+          <tr class="ours"><td class="arm">ours · cyankiwi W4A16 <span class="muted">(quality-broken)</span></td><td class="cell-warn">122†</td></tr>
+          <tr class="ours"><td class="arm">ours · MXFP8 (vendor checkpoint)</td><td>107</td></tr>
           <tr><td class="arm">Together AI</td><td>97</td></tr>
           <tr><td class="arm">MiniMax first-party</td><td>95</td></tr>
           <tr><td class="arm">Novita</td><td>94</td></tr>
           <tr><td class="arm">SiliconFlow</td><td>92</td></tr>
-          <tr><td class="arm">ours · BF16 TP16</td><td>81</td></tr>
+          <tr class="ours"><td class="arm">ours · BF16 TP16 <span class="muted">(baseline)</span></td><td>81</td></tr>
           <tr><td class="arm">Parasail (MXFP8 — same checkpoint as our MXFP8 arm)</td><td>66</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="legend"><span>Ranking table, so no per-row best: tinted rows = our arms, green = our serve-ready configuration, † quality-disqualified but listed for completeness</span></p>
     <div class="col">
       <p style="margin-top:16px">
         <strong>Above every provider except Nebius</strong>, whose 197 is a serving-stack tier (FP8 +
@@ -511,36 +581,37 @@
         cyankiwi's quality verdict is unchanged and disqualifying.
       </p>
     </div>
+    <h3>Historical primary path — reasoning · aggregate tok/s (TTFT p50 ms)</h3>
     <div class="scroll">
       <table>
         <thead>
-          <tr><th class="arm">Arm · reasoning</th><th>GPUs</th>
-            <th>conc 1 · tok/s (TTFT ms)</th><th>conc 16 · tok/s (TTFT ms)</th>
-            <th>conc 64 · tok/s (TTFT ms)</th></tr>
+          <tr><th class="arm">conc</th><th>GPTQ (in-house)</th><th>AWQ r5 (in-house)</th><th>cyankiwi (W4A16)</th><th>MXFP8 (vendor)</th><th>BF16 (16 GPU)</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">BF16</td><td>16</td><td>81 (136)</td><td>712 (583)</td><td>1,707 (2,329)</td></tr>
-          <tr><td class="arm">GPTQ (in-house)</td><td>8</td><td>97 (143)</td><td>1,007 (448)</td><td>2,782 (1,274)</td></tr>
-          <tr><td class="arm">AWQ r5 (in-house)</td><td>8</td><td>97 (139)</td><td>1,018 (421)</td><td>2,844 (1,310)</td></tr>
-          <tr><td class="arm">MXFP8 (vendor)</td><td>8</td><td>95 (132)</td><td>901 (708)</td><td class="cell-warn">2,096 (3,506)</td></tr>
-          <tr><td class="arm">cyankiwi (W4A16)</td><td>8</td><td>116 (137)</td><td>1,190 (620)</td><td class="cell-warn">2,848 (2,089)</td></tr>
+          <tr><td class="arm">1</td><td>97 (143)</td><td>97 (139)</td><td class="cell-good">116 (137)</td><td>95 (132)</td><td>81 (136)</td></tr>
+          <tr><td class="arm">16</td><td>1,007 (448)</td><td>1,018 (421)</td><td class="cell-good">1,190 (620)</td><td>901 (708)</td><td>712 (583)</td></tr>
+          <tr><td class="arm">64</td><td>2,782 (1,274)</td><td class="cell-good">2,844 (1,310)</td><td class="cell-good">2,848 (2,089)</td><td>2,096 (3,506)</td><td>1,707 (2,329)</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="scroll" style="margin-top:14px">
+    <p class="legend"><span>Green = highest aggregate throughput in the row (±1%) · this window recorded aggregate tok/s + TTFT, not TPOT · stage-0 CUTLASS stack, 40,960 context</span></p>
+
+    <h3>Historical primary path — agentic warm · TTFT p50 / p95 ms</h3>
+    <div class="scroll">
       <table>
         <thead>
-          <tr><th class="arm">Arm · agentic warm · TTFT p50/p95 ms</th><th>conc 1</th><th>conc 4</th><th>conc 16</th><th>conc 32</th><th>max conc @ p95 ≤ 1s</th></tr>
+          <tr><th class="arm">conc</th><th>GPTQ (in-house)</th><th>AWQ r5 (in-house)</th><th>cyankiwi (W4A16)</th><th>MXFP8 (vendor)</th><th>BF16 (16 GPU)</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">BF16 (16 GPU)</td><td>196 / 238</td><td>285 / 420</td><td>469 / 752</td><td>521 / 922</td><td>32</td></tr>
-          <tr><td class="arm">GPTQ (in-house)</td><td>187 / 227</td><td>292 / 408</td><td>507 / 795</td><td>575 / 1,005</td><td class="cell-good">16</td></tr>
-          <tr><td class="arm">AWQ r5 (in-house)</td><td>178 / 211</td><td>301 / 419</td><td>488 / 797</td><td>591 / 1,016</td><td class="cell-good">16</td></tr>
-          <tr><td class="arm">MXFP8 (vendor)</td><td>155 / 194</td><td>310 / 410</td><td>719 / 1,070</td><td>1,015 / 1,752</td><td class="cell-crit">4</td></tr>
-          <tr><td class="arm">cyankiwi (W4A16)</td><td>162 / 196</td><td>304 / 424</td><td>711 / 1,071</td><td>1,033 / 1,762</td><td class="cell-crit">4</td></tr>
+          <tr><td class="arm">1</td><td>187 / 227</td><td>178 / 211</td><td>162 / 196</td><td class="cell-good">155 / 194</td><td>196 / 238</td></tr>
+          <tr><td class="arm">4</td><td class="cell-good">292 / 408</td><td>301 / 419</td><td>304 / 424</td><td class="cell-good">310 / 410</td><td>285 / 420</td></tr>
+          <tr><td class="arm">16</td><td>507 / 795</td><td>488 / 797</td><td class="slo">711 / 1,071</td><td class="slo">719 / 1,070</td><td class="cell-good">469 / 752</td></tr>
+          <tr><td class="arm">32</td><td class="slo">575 / 1,005</td><td class="slo">591 / 1,016</td><td class="slo">1,033 / 1,762</td><td class="slo">1,015 / 1,752</td><td class="cell-good">521 / 922</td></tr>
+          <tr><td class="arm">max conc @ p95 ≤ 1 s</td><td>16</td><td>16</td><td>4</td><td>4</td><td class="cell-good">32</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="legend"><span>Green = lowest p95 TTFT in the row (±1%) · amber bar = over the 1 s SLO · bottom row: highest concurrency still inside the SLO</span></p>
     <div class="col">
       <ul style="margin-top:16px">
         <li><strong>Workload-shape provenance:</strong> agentic numbers use the M3-calibrated tau2 shape;

@@ -229,22 +229,55 @@ Caveats worth carrying:
 
 Window `20260727T073533Z-phaseD`, 2 arms. Isolates *content domain* from *prompt
 length* using NVIDIA's purpose-built spec-dec benchmark: fixed-ISL buckets
-(1k/8k/32k) crossed with entropy tier, natural output, temp 0.6. Two cells of
-eleven have landed per arm:
+(1k/8k/32k) crossed with entropy tier, temp 0.6, no `ignore_eos`, `max_tokens`
+2048. The 1k and 8k conc-1 cells have landed:
 
-| cell (conc 1) | ISL | control speed | k3 speed | × | accepted len | ITL control → k3 |
-|---|---|---|---|---|---|---|
-| 1k **low** entropy (code, sorting) | 1011 | 137.31 | 294.77 | **2.15×** | 3.100 | 7.283 → 3.406 ms |
-| 1k **high** entropy (creative writing) | 990 | 137.38 | 186.22 | **1.36×** | 1.850 | 7.279 → 5.455 ms |
+| cell (conc 1) | ISL | control speed | k3 speed | × | accepted len | ITL control → k3 | TTFT control → k3 |
+|---|---|---|---|---|---|---|---|
+| 1k **low** entropy (code, sorting) | 1011 | 137.31 | 294.77 | **2.15×** | 3.100 | 7.283 → 3.406 | 128.9 → 127.5 |
+| 8k **low** entropy | 8080 | 136.74 | 296.90 | **2.17×** | 3.106 | 7.313 → 3.378 | 420.8 → 420.1 |
+| 1k **high** entropy (creative writing) | 990 | 137.38 | 186.22 | **1.36×** | 1.850 | 7.279 → 5.455 | 133.1 → 136.0 |
+| 8k **high** entropy | 8183 | 136.70 | 178.95 | **1.31×** | 1.779 | 7.315 → 5.729 | 456.1 → 466.9 |
 
-Length is held fixed (1011 vs 990 tokens) and the control is an almost exact
-internal check — 137.31 vs 137.38 tok/s, ITL 7.283 vs 7.279 ms. The baseline is
-indifferent to subject matter, so the whole 1.36×–2.15× spread is drafter
-behaviour. **Content domain is the largest axis found: 1.85 → 3.10 accepted length,
-+68%**, larger than output shape. ShareGPT's mixed traffic at 1.81× sits between
-the two extremes, where a blend should.
+Two axes separate cleanly, and the control is an almost exact internal check across
+all four cells (136.70–137.38 tok/s, ITL 7.279–7.315 ms) — the baseline is
+indifferent to both length and subject matter, so the entire spread is drafter
+behaviour.
 
-Remaining cells: 8k and 32k at conc 1, and the 1k/8k crossing at conc 10.
+**Content domain is the dominant axis: 1.78 → 3.11 accepted length, +75%** — larger
+than output shape (+33%) and far larger than temperature (+4%). ShareGPT's mixed
+traffic at 1.81× sits between the two extremes, where a blend should.
+
+**Length is flat, now for the right reason.** Within a tier, an 8× longer prompt
+moves acceptance by +0.006 (low) and −0.071 (high). Wave 1 also found length flat,
+but only on synthetic random tokens, where one could argue there was nothing worth
+copying. These prompts are real code and real prose at 8k, the ideal setup for a
+drafter to lift spans out of context, and it still buys nothing — because EAGLE3's
+drafter conditions on the target's hidden state, not on retrievable prompt text.
+The 8k-low cell also shows **no prefill penalty at all** (420.8 → 420.1 ms).
+
+### Output-budget censoring (measured, affects interpretation)
+
+`max_tokens=2048` truncated a large share of responses, so these are **not**
+natural-stopping lengths:
+
+| cell | requests at the 2048 cap (control / k3) |
+|---|---|
+| 1k-low | 15% / 20% |
+| 8k-low | 60% / 60% |
+| 1k-high | 82.5% / 82.5% |
+| 8k-high | 92.5% / 92.5% |
+
+The ratios and the tier contrast survive this: censoring is identical between arms
+in every cell, both arms emit the same token counts, and at conc 1 the speed ratio
+is just the ITL ratio. Nor is this the wave-2 shape inflation — `ignore_eos` forces
+generation *past* its natural stop (which is what made drafting easy, +33%),
+whereas truncation stops reading *early*, so acceptance over the retained prefix
+(~80k tokens per cell) is genuine natural-generation acceptance. What the data does
+**not** support is any claim about per-tier natural response length; a higher budget
+would be needed for that.
+
+Remaining cells: both 32k cells at conc 1, and the 1k/8k crossing at conc 10.
 
 Harness comparability: these are **not** comparable to published SPEED-Bench
 scores. ~42–56% of the public parquet is masked

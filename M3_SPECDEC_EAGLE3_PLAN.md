@@ -150,6 +150,73 @@ Gates and decision rule carry over from wave 1, plus: **enable k=3 by default on
 up to the highest concurrency where aggregate output tok/s is ≥ control**; above
 that it must be load-gated.
 
+## Phase D design (user-signed 2026-07-27): does prompt length change the answer?
+
+User question: "would the result change for the natural prompts arm if we use
+longer prompts (>1k), still natural?" — then "reuse the agentic suite since it is
+naturally generated (verify)".
+
+**Verification result: the agentic suite is NOT naturally generated, so it cannot
+answer this.** Its `warm`/`cold` modes build prompts from aiperf's *synthetic*
+token generators (`--shared-system-prompt-length`, `--user-context-prompt-length`,
+`--synthetic-input-tokens-mean`) — token counts, no real text — and
+`run_perf_agentic.sh:119` pins output with `ignore_eos: true` +
+`max_tokens = min_tokens = AG_OUTPUT_TOKENS`, the exact shape measured here as
+inflating acceptance +33%. Its `replay` mode also forces `ignore_eos`, and
+`mooncake` mode has no trace on disk (`env.sh:92` is a `/PATH/TO` placeholder) and
+Mooncake traces carry lengths/hashes rather than text.
+
+**Nor is any aiperf public dataset multi-turn**: every public loader keeps only the
+first message (ShareGPT `conversations[0]`, SpecBench `turns[0]`, HF-conversation
+"Extracts the first message ... producing single-turn Conversations").
+
+**Adopted instrument (prime directive — reputable existing resource):**
+`nvidia/SPEED-Bench` (paper arXiv:2604.09557, blog, and NVIDIA's `specdec_bench`
+framework), registered in our aiperf 0.8.0 already. It is built for this exact
+measurement — "evaluate speculative decoding across diverse semantic domains and
+realistic serving regimes ... acceptance-rate characteristics and end-to-end
+throughput" — and its *throughput* split is fixed-ISL buckets crossed with entropy
+tiers, so length and content vary independently:
+
+| axis | values |
+|---|---|
+| ISL bucket | 1k, 8k, 32k (verified under the M3 tokenizer: 1018/8100/32408 mean) |
+| entropy tier | `low_entropy` (code, sorting — copy-heavy best case), `high_entropy` (creative writing — worst case) |
+| concurrency | 1 (all six cells), 10 (1k and 8k only, to bound KV and wall clock) |
+
+Two release facts required a staging step (`pipeline/stage_speedbench.py`) rather
+than `--public-dataset speed_bench_*`:
+
+1. **~45% of the public parquet is masked** ("FULL BENCHMARK DATA SHOULD BE FETCHED
+   FROM THE SOURCE USING SPECDEC_BENCH") and aiperf's `SpeedBenchLoader` does not
+   filter those rows. A masked row is short and repetitive, so it would break the
+   ISL bucket *and* inflate acceptance. The controller gates fail-closed on zero
+   surviving placeholders plus per-file sha256.
+2. **The `mixed` tier is 100% masked** (512/512) in every throughput split, so
+   phase D reports `low_entropy` and `high_entropy` only.
+
+Clean prompts available per cell after filtering: 419/478 (1k), 343/465 (8k),
+338/486 (32k) — against the 40–100 each cell consumes.
+
+Output is **natural** (`max_tokens` 2048, no `ignore_eos`), temp 0.6, and
+`--random-seed 42` is fixed so both arms draw identical prompts in identical order.
+
+**Harness comparability:** these numbers are **not** directly comparable to
+published SPEED-Bench scores. We run the public release's *clean subset* rather
+than the full data fetched via `specdec_bench`, the `mixed` tier is absent, and the
+serving stack is our own W4AFP8 + Humming. The cells are valid for
+control-vs-k3 decisions in-window, which is what phase D is for.
+
+Prior expectation to test: the length axis is already flat on synthetic prompts
+(1.72× at 1k, 1.75× at 10k in wave 1) and ITL is flat at 7.25–7.30 ms from 227 to
+10,000 tokens of context, so per-token speedup should be length-invariant. The one
+untested mechanism is copyable long context, which is what `low_entropy` at 8k/32k
+probes and what synthetic random tokens structurally cannot show.
+
+Launchers: `pipeline/slurm/run_specdec_phaseD_srun.sh` +
+`pipeline/slurm/specdec_phaseD_arm.sh` (ports 8040/8041). Window
+`20260727T073533Z-phaseD`.
+
 ## Raw evidence
 
 `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/<RUN_TS>/` — per arm: `serve.log`,

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniMax-M3 Quantization — Historical Performance Results</title>
+<style>
+  :root {
+    /* cool-neutral ground, single steel-blue accent; green/amber/red are
+       semantic (recovery severity), never the accent */
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #161b22;
+    --ink-2: #47515f;
+    --ink-3: #6b7684;
+    --line: #d9dee6;
+    --line-2: #c5ccd6;
+    --accent: #23628f;
+    --accent-soft: #e4eef5;
+    --good: #2f8f57;
+    --good-bg: #e5f2ea;
+    --warn: #b0781a;
+    --warn-bg: #f6ecd9;
+    --crit: #c1443a;
+    --crit-bg: #f7e3e1;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", "Menlo", "Cascadia Code", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --maxw: 900px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1217;
+      --surface: #161b22;
+      --surface-2: #1c222b;
+      --ink: #e7ebf0;
+      --ink-2: #aab4c0;
+      --ink-3: #7c8794;
+      --line: #2a323d;
+      --line-2: #38414e;
+      --accent: #6fb2df;
+      --accent-soft: #17303f;
+      --good: #5cc487;
+      --good-bg: #14281c;
+      --warn: #d6a24e;
+      --warn-bg: #2c2413;
+      --crit: #e8756a;
+      --crit-bg: #2e1a18;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f5; --ink: #161b22;
+    --ink-2: #47515f; --ink-3: #6b7684; --line: #d9dee6; --line-2: #c5ccd6;
+    --accent: #23628f; --accent-soft: #e4eef5;
+    --good: #2f8f57; --good-bg: #e5f2ea; --warn: #b0781a; --warn-bg: #f6ecd9;
+    --crit: #c1443a; --crit-bg: #f7e3e1;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1c222b; --ink: #e7ebf0;
+    --ink-2: #aab4c0; --ink-3: #7c8794; --line: #2a323d; --line-2: #38414e;
+    --accent: #6fb2df; --accent-soft: #17303f;
+    --good: #5cc487; --good-bg: #14281c; --warn: #d6a24e; --warn-bg: #2c2413;
+    --crit: #e8756a; --crit-bg: #2e1a18;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px 96px; }
+  .col { max-width: 68ch; }
+
+  /* ---- header ---- */
+  header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+  }
+  .head-inner { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 32px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4.2vw, 40px); line-height: 1.12; margin: 0 0 12px;
+    letter-spacing: -.02em; text-wrap: balance; font-weight: 680;
+  }
+  .dek { font-size: 18px; color: var(--ink-2); margin: 0 0 22px; max-width: 62ch; text-wrap: pretty; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono);
+    font-size: 12.5px; color: var(--ink-3);
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---- section rhythm ---- */
+  section { margin-top: 52px; }
+  h2 {
+    font-size: 13px; font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: .1em; color: var(--accent); margin: 0 0 4px;
+  }
+  h2 + .h2sub { font-size: 24px; letter-spacing: -.01em; margin: 0 0 18px; font-weight: 640; text-wrap: balance; }
+  h3 { font-size: 18px; margin: 30px 0 8px; font-weight: 620; letter-spacing: -.01em; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 640; }
+  code {
+    font-family: var(--mono); font-size: .875em; background: var(--surface-2);
+    padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);
+  }
+
+  /* ---- KPI tiles ---- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 4px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 16px 14px; position: relative; overflow: hidden;
+  }
+  .tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+  .tile.good::before { background: var(--good); }
+  .tile.crit::before { background: var(--crit); }
+  .tile .k { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
+  .tile .v { font-size: 30px; font-weight: 680; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .tile .v small { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+  .tile .d { font-size: 13px; color: var(--ink-2); margin-top: 8px; line-height: 1.4; }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 13px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface-2); color: var(--ink-2);
+    font-weight: 600; font-size: 12px; letter-spacing: .02em; z-index: 1;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.baseline td { background: var(--accent-soft); }
+  tbody tr.ours td { background: var(--accent-soft); }
+  td.arm, th.arm { font-weight: 600; }
+  /* fill = ranking (best in row); inset bar = threshold miss; they compose */
+  .cell-good { color: var(--good); background: var(--good-bg); font-weight: 600; }
+  .cell-warn { color: var(--warn); background: var(--warn-bg); font-weight: 600; }
+  .cell-crit { color: var(--crit); background: var(--crit-bg); font-weight: 700; }
+  .slo { box-shadow: inset 3px 0 0 var(--warn); }
+  .muted { color: var(--ink-3); }
+
+  /* ---- bar meters ---- */
+  .bars { display: grid; gap: 10px; margin: 4px 0 6px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 68px; align-items: center; gap: 12px; font-size: 13.5px; }
+  .bar-row .lab { color: var(--ink-2); font-weight: 600; }
+  .track { position: relative; height: 20px; background: var(--surface-2); border-radius: 5px; border: 1px solid var(--line); overflow: hidden; }
+  .track .baseline-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink-3); opacity: .55; }
+  .fill { height: 100%; border-radius: 4px 0 0 4px; }
+  .fill.f-crit { background: var(--crit); }
+  .fill.f-warn { background: var(--warn); }
+  .fill.f-ok { background: var(--accent); }
+  .bar-row .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* ---- callouts ---- */
+  .note {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 18px; margin: 18px 0;
+  }
+  .note.finding { border-left-color: var(--crit); }
+  .note.good { border-left-color: var(--good); }
+  .note .t { font-weight: 640; margin: 0 0 6px; }
+  .note p:last-child { margin-bottom: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin: 10px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  .sources { font-size: 14px; }
+  .sources li { margin: 7px 0; }
+
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+
+  .toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 10; font-family: var(--mono); font-size: 12px;
+    background: var(--surface); color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 7px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 560px) {
+    .bar-row { grid-template-columns: 96px 1fr 54px; }
+  }
+</style>
+</head>
+<body>
+<button class="toggle" id="themeToggle" aria-label="Toggle light/dark theme">◐ theme</button>
+
+<header>
+  <div class="head-inner">
+    <p class="eyebrow">MiniMax-M3 · Quantization performance · superseded results</p>
+    <h1>The original five-arm comparison — kept for provenance</h1>
+    <p class="dek">
+      The first checkpoint-vs-checkpoint performance pass, measured on the stage-0 CUTLASS serving stack
+      (shared-expert stream off, 40,960-token context). Every arm here has since been re-measured on the
+      current stack in a single window — those are the numbers to quote:
+      <a href="M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a>.
+    </p>
+    <div class="meta">
+      <span><b>Status:</b> superseded — do not quote as current</span>
+      <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf)</span>
+      <span><b>Stack:</b> CUTLASS W4A8 MoE, stream off, 40,960 context</span>
+      <span><b>Current results:</b> <a href="M3_OFFICIAL_PERF_RESULTS.html">two-axis report</a></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="what-changed">
+    <h2>Why this is here</h2>
+    <div class="h2sub">Two verdicts changed when the stack changed</div>
+    <div class="col">
+      <p>
+        These tables were the basis of the first "which checkpoint should we serve" decision. The kernel
+        work that followed (<a href="M3_OFFICIAL_PERF_RESULTS.html#axis-kernel">axis 1</a>) moved the
+        in-house arms ~40% on single-user decode, so the absolute numbers below understate every quantized
+        arm. Two specific conclusions from this window did not survive:
+      </p>
+      <ul>
+        <li><strong>"MXFP8 and cyankiwi collapse at concurrency 4"</strong> — not reproduced on the
+          current stack; both complete every concurrency now, they are simply the slowest arms.</li>
+        <li><strong>The BF16 baseline was suspected of being ~7% low</strong> from a cross-window
+          comparison — the re-run landed on the same 81 tok/s, so the caveat is closed.</li>
+      </ul>
+      <p>
+        What did not change: cyankiwi's quality verdict is still disqualifying, and the in-house arms
+        still lead every operating point. Metric names follow the current report — <strong>total output
+        tok/s</strong> = output tokens over all concurrent requests ÷ wall time; <strong>output
+        speed</strong> = one request's decode rate. Highlights: green = best in row (±1%), amber bar =
+        p95 TTFT over the 1-second SLO.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section id="history">
+    <h2>The window itself</h2>
+    <div class="h2sub">Five arms, one stack — as measured</div>
+    <div class="col">
+      <p>
+        All five arms on the stage-0 CUTLASS stack; <a href="M3_OFFICIAL_PERF_RESULTS.html#axis-quant">axis
+        2</a> of the current report re-measured every one of them in a single window.
+      </p>
+    </div>
+    <h3>Reasoning · total output tok/s (TTFT p50 ms)</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">conc</th><th>GPTQ (in-house)</th><th>AWQ r5 (in-house)</th><th>cyankiwi (W4A16)</th><th>MXFP8 (vendor)</th><th>BF16 (16 GPU)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">1</td><td>97 (143)</td><td>97 (139)</td><td class="cell-good">116 (137)</td><td>95 (132)</td><td>81 (136)</td></tr>
+          <tr><td class="arm">16</td><td>1,007 (448)</td><td>1,018 (421)</td><td class="cell-good">1,190 (620)</td><td>901 (708)</td><td>712 (583)</td></tr>
+          <tr><td class="arm">64</td><td>2,782 (1,274)</td><td class="cell-good">2,844 (1,310)</td><td class="cell-good">2,848 (2,089)</td><td>2,096 (3,506)</td><td>1,707 (2,329)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = highest total output tok/s in the row (±1%) · this window recorded total output tok/s + TTFT, not TPOT · stage-0 CUTLASS stack, 40,960 context</span></p>
+
+    <h3>Agentic warm · TTFT p50 / p95 ms</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">conc</th><th>GPTQ (in-house)</th><th>AWQ r5 (in-house)</th><th>cyankiwi (W4A16)</th><th>MXFP8 (vendor)</th><th>BF16 (16 GPU)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">1</td><td>187 / 227</td><td>178 / 211</td><td>162 / 196</td><td class="cell-good">155 / 194</td><td>196 / 238</td></tr>
+          <tr><td class="arm">4</td><td class="cell-good">292 / 408</td><td>301 / 419</td><td>304 / 424</td><td class="cell-good">310 / 410</td><td>285 / 420</td></tr>
+          <tr><td class="arm">16</td><td>507 / 795</td><td>488 / 797</td><td class="slo">711 / 1,071</td><td class="slo">719 / 1,070</td><td class="cell-good">469 / 752</td></tr>
+          <tr><td class="arm">32</td><td class="slo">575 / 1,005</td><td class="slo">591 / 1,016</td><td class="slo">1,033 / 1,762</td><td class="slo">1,015 / 1,752</td><td class="cell-good">521 / 922</td></tr>
+          <tr><td class="arm">max conc @ p95 ≤ 1 s</td><td>16</td><td>16</td><td>4</td><td>4</td><td class="cell-good">32</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = lowest p95 TTFT in the row (±1%) · amber bar = over the 1 s SLO · bottom row: highest concurrency still inside the SLO</span></p>
+    <div class="col">
+      <ul style="margin-top:16px">
+        <li><strong>Workload-shape provenance:</strong> agentic numbers use the M3-calibrated tau2 shape;
+          re-calibrating from the borrowed M2.5 shape moved warm TTFTs ≤10% and changed no ranking.</li>
+        <li><strong>KV collapse</strong> in this window was identical across arms (warm conc 16, cold
+          conc 4) — not kernel-dependent, and not reproduced on the current stack.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ SOURCES ============ -->
+  <section id="sources">
+    <h2>Raw evidence</h2>
+    <div class="h2sub">Where these numbers came from</div>
+    <ul class="sources col">
+      <li><strong>Five-arm windows</strong> — reasoning <code>20260722T083736Z</code>, agentic
+        (M3-calibrated tau2 shape) <code>20260722T131810Z</code>; tau2 calibration
+        <code>results/m3-calibration/20260722T091007Z/</code>.</li>
+      <li><strong>Current results that supersede these</strong> —
+        <a href="M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a> and
+        <code>docs/m3-two-axis-perf.md</code> (window <code>20260726T132617Z</code>).</li>
+      <li><strong>Quality verdicts</strong> —
+        <a href="M3_OFFICIAL_QUALITY_RESULTS.html">M3_OFFICIAL_QUALITY_RESULTS.html</a>.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Superseded MiniMax-M3 quantization performance results, kept for provenance ·
+    current numbers in <a href="M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a>.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeToggle');
+    var root = document.documentElement;
+    function current() {
+      if (root.dataset.theme) return root.dataset.theme;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      root.dataset.theme = current() === 'dark' ? 'light' : 'dark';
+    });
+  })();
+</script>
+</body>
+</html>

@@ -202,7 +202,8 @@
       to concurrency 16 — same checkpoint we shipped, zero requantization. Results are organized on two
       axes: <a href="#axis-kernel">which kernel</a> (model fixed) and
       <a href="#axis-quant">which quantization</a> (kernel fixed). Quality verdicts:
-      <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
+      <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>;
+      superseded results: <a href="M3_HISTORICAL_PERF_RESULTS.html"><code>M3_HISTORICAL_PERF_RESULTS.html</code></a>.
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>performance/</code> (aiperf 0.8.0)</span>
@@ -349,7 +350,7 @@
           <tr><th class="arm">Stage (in order)</th><th>conc-1 TPOT</th><th>What changed</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">0 · CUTLASS, stream off</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
+          <tr class="baseline"><td class="arm">0 · CUTLASS, stream off</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="M3_HISTORICAL_PERF_RESULTS.html">superseded results</a>)</td></tr>
           <tr class="baseline"><td class="arm">1 · shared stream on</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
           <tr><td class="arm">2 · Humming indexed</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
           <tr><td class="arm">3 · 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="slo">7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
@@ -583,7 +584,7 @@
           server-rate comparisons belong.</li>
         <li>The original window's "MXFP8/cyankiwi collapse at conc 4" verdict <strong>did not reproduce</strong>
           on today's stack — both now complete every concurrency, just slower. The historical verdict is
-          superseded by this window (<a href="#history">history</a>).</li>
+          superseded by this window (<a href="M3_HISTORICAL_PERF_RESULTS.html">superseded results</a>).</li>
       </ul>
     </div>
   </section>
@@ -613,7 +614,7 @@
           <tr><td class="arm">Novita</td><td>94</td></tr>
           <tr><td class="arm">SiliconFlow</td><td>92</td></tr>
           <tr class="ours"><td class="arm">ours · BF16 <span class="muted">(baseline)</span></td><td>81</td></tr>
-          <tr><td class="arm">Parasail <span class="muted">(MXFP8, same checkpoint as ours)</span></td><td>66</td></tr>
+          <tr><td class="arm">Parasail</td><td>66</td></tr>
         </tbody>
       </table>
     </div>
@@ -621,66 +622,11 @@
     <div class="col">
       <p style="margin-top:16px">
         <strong>Above every provider except Nebius</strong>, whose 197 is a serving-stack tier (FP8 +
-        speculative decoding on newer silicon) that would stack on our checkpoint too. Independent
-        corroboration: Parasail serves the same MXFP8 checkpoint and is the slowest provider here, just
-        as MXFP8 trails our 4-bit arms. "Ours" rows are from the current single window; TTFT is not comparable across
-        the two sides, and AA medians drift with their 72-hour window.
+        speculative decoding on newer silicon) that would stack on our checkpoint too. "Ours" rows are
+        from the current single window; each provider row carries whatever checkpoint, hardware and live
+        multi-tenant load that endpoint runs — none of which we can see. TTFT is not comparable across the
+        two sides, and AA medians drift with their 72-hour window.
       </p>
-    </div>
-  </section>
-
-  <!-- ============ HISTORY ============ -->
-  <section id="history">
-    <h2>History</h2>
-    <div class="h2sub">The original five-arm comparison (superseded by axis 2)</div>
-    <div class="col">
-      <p>
-        First checkpoint-vs-checkpoint pass, all arms on the stage-0 CUTLASS stack (shared-expert stream
-        off, 40,960 context). Kept for provenance; <a href="#axis-quant">axis 2</a> re-measured every arm
-        on the current stack in one window. Two verdicts changed with the stack: the in-house arms gained
-        ~40% single-user decode from the kernel work (axis 1), and the "MXFP8/cyankiwi agentic collapse at
-        conc 4" no longer reproduces (they now complete every concurrency — still the slowest arms).
-        cyankiwi's quality verdict is unchanged and disqualifying.
-      </p>
-    </div>
-    <h3>Historical primary path — reasoning · total output tok/s (TTFT p50 ms)</h3>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th class="arm">conc</th><th>GPTQ (in-house)</th><th>AWQ r5 (in-house)</th><th>cyankiwi (W4A16)</th><th>MXFP8 (vendor)</th><th>BF16 (16 GPU)</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="arm">1</td><td>97 (143)</td><td>97 (139)</td><td class="cell-good">116 (137)</td><td>95 (132)</td><td>81 (136)</td></tr>
-          <tr><td class="arm">16</td><td>1,007 (448)</td><td>1,018 (421)</td><td class="cell-good">1,190 (620)</td><td>901 (708)</td><td>712 (583)</td></tr>
-          <tr><td class="arm">64</td><td>2,782 (1,274)</td><td class="cell-good">2,844 (1,310)</td><td class="cell-good">2,848 (2,089)</td><td>2,096 (3,506)</td><td>1,707 (2,329)</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="legend"><span>Green = highest total output tok/s in the row (±1%) · this window recorded total output tok/s + TTFT, not TPOT · stage-0 CUTLASS stack, 40,960 context</span></p>
-
-    <h3>Historical primary path — agentic warm · TTFT p50 / p95 ms</h3>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th class="arm">conc</th><th>GPTQ (in-house)</th><th>AWQ r5 (in-house)</th><th>cyankiwi (W4A16)</th><th>MXFP8 (vendor)</th><th>BF16 (16 GPU)</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="arm">1</td><td>187 / 227</td><td>178 / 211</td><td>162 / 196</td><td class="cell-good">155 / 194</td><td>196 / 238</td></tr>
-          <tr><td class="arm">4</td><td class="cell-good">292 / 408</td><td>301 / 419</td><td>304 / 424</td><td class="cell-good">310 / 410</td><td>285 / 420</td></tr>
-          <tr><td class="arm">16</td><td>507 / 795</td><td>488 / 797</td><td class="slo">711 / 1,071</td><td class="slo">719 / 1,070</td><td class="cell-good">469 / 752</td></tr>
-          <tr><td class="arm">32</td><td class="slo">575 / 1,005</td><td class="slo">591 / 1,016</td><td class="slo">1,033 / 1,762</td><td class="slo">1,015 / 1,752</td><td class="cell-good">521 / 922</td></tr>
-          <tr><td class="arm">max conc @ p95 ≤ 1 s</td><td>16</td><td>16</td><td>4</td><td>4</td><td class="cell-good">32</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="legend"><span>Green = lowest p95 TTFT in the row (±1%) · amber bar = over the 1 s SLO · bottom row: highest concurrency still inside the SLO</span></p>
-    <div class="col">
-      <ul style="margin-top:16px">
-        <li><strong>Workload-shape provenance:</strong> agentic numbers use the M3-calibrated tau2 shape;
-          re-calibrating from the borrowed M2.5 shape moved warm TTFTs ≤10% and changed no ranking.</li>
-        <li><strong>KV collapse</strong> in this window was identical across arms (warm conc 16, cold
-          conc 4) — not kernel-dependent, and not reproduced on the current stack.</li>
-      </ul>
     </div>
   </section>
 
@@ -691,6 +637,7 @@
     <ul class="sources col">
       <li><strong>Provider speed comparison</strong> — <a href="https://artificialanalysis.ai/models/minimax-m3/providers/prompt-options/single/medium">Artificial Analysis: MiniMax-M3 providers, single query · 1k prompt</a> (median, 72h window) and their <a href="https://artificialanalysis.ai/methodology/performance-benchmarking">measurement methodology</a> (one request in flight, decode rate after first token). AA's default page now uses a 10k-input workload; the 1k option matches our test shape.</li>
       <li><strong>Perf tooling</strong> — <a href="https://github.com/ai-dynamo/aiperf">aiperf</a> (NVIDIA) drives all perf workloads; <a href="https://github.com/sierra-research/tau2-bench">tau2-bench</a> generates the agentic workload <em>shape</em> (not scored).</li>
+      <li><strong>Superseded results</strong> — <a href="M3_HISTORICAL_PERF_RESULTS.html"><code>M3_HISTORICAL_PERF_RESULTS.html</code></a>: the original five-arm comparison on the stage-0 CUTLASS stack, with the two verdicts that did not survive the stack change.</li>
       <li><strong>Quality companion</strong> — <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>: recovery, flips, token-spend, the AWQ non-termination pathology; ship/no-ship verdicts.</li>
       <li><strong>Detail docs</strong> — <code>docs/m3-two-axis-perf.md</code> (this page's primary window, incl. validity checks), <a href="M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md"><code>M3_PAIRED_CUTLASS_HUMMING_PERF_REPORT.md</code></a> (kernel-evolution narrative), <code>docs/m3-w4a8-three-arm-perf.md</code>, <code>docs/m3-w4a8-packedk-ab-perf.md</code> + <code>docs/m3-w4a8-packedk-aa-sweep.md</code>, <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code> (the four kernel fixes + attestation), <code>M3_TWO_AXIS_PERF_PLAN.md</code> (design packet incl. the AA-methodology fidelity audit).</li>
     </ul>
@@ -698,7 +645,7 @@
     <ul class="sources col">
       <li><strong>Two-axis window (axis 2 + all AA tables)</strong> — <code>benchmarks/results/&lt;profile&gt;/{vllm/perf,self-hosted/perf/aa-sweep}/20260726T132617Z/</code>; controller artifacts <code>/mnt/nfs/hoangduy/results/m3-two-axis-perf/20260726T132617Z/</code>.</li>
       <li><strong>Kernel-axis suite windows</strong> — three-arm <code>20260725T122256Z</code>, packed-K A/B <code>20260726T033158Z</code>, first AA sweep <code>20260726T040130Z</code>; stream-fix A/B <code>logs/m3-cudagraph-shared-stream/20260724-130708-fixmatrix-tpot-ab/</code>.</li>
-      <li><strong>07-22 five-arm windows</strong> — reasoning <code>20260722T083736Z</code>, agentic (M3-calibrated shape) <code>20260722T131810Z</code>; tau2 calibration <code>results/m3-calibration/20260722T091007Z/</code>.</li>
+      <li><strong>Superseded five-arm window</strong> — tables and raw paths moved to <a href="M3_HISTORICAL_PERF_RESULTS.html"><code>M3_HISTORICAL_PERF_RESULTS.html</code></a> (reasoning <code>20260722T083736Z</code>, agentic <code>20260722T131810Z</code>).</li>
     </ul>
   </section>
 

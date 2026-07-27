@@ -211,6 +211,12 @@ server-rate comparisons.
   (040130Z, different ctx config) — ±0.5%.
 - CUTLASS AA conc-1 decode 102.2 vs suite anchor 102.5.
 
+## Superseded
+
+The original five-arm window (`20260722T083736Z` reasoning / `20260722T131810Z`
+agentic, stage-0 CUTLASS stack) now lives in `M3_HISTORICAL_PERF_RESULTS.html`,
+not in the main report.
+
 ## Raw
 
 - Controller artifacts: `/mnt/nfs/hoangduy/results/m3-two-axis-perf/20260726T132617Z/`

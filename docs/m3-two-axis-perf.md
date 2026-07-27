@@ -161,7 +161,12 @@ MXFP8/BF16: conc 1 → 81/80/66/58/56; conc 4 → 183/183/138/124/133; conc 16 �
 
 The agentic output rate is prefill-bound (≈100 output tokens per turn on a ~12k-token
 prompt — measured mean ISL 11.7k/12.5k/12.5k/12.5k at conc 1/4/16/32, growing 8.1k →
-~15k across a session's turns), which is why it lands at 1036 tok/s @32 against 3267 in the pinned
+~15k across a session's turns). Of that prompt, **7,300 tokens are a fixed shared
+prefix** (`AG_SHARED_SYSTEM_TOKENS=7300` in
+`benchmarks/performance/shapes/library/tau2-telecom.sh`, calibrated against turn-0
+input 7337 ±12); the rest is accumulated transcript. So ~60% of every warm-arm prompt
+is cacheable, which is precisely what the cold arm defeats — the two numbers describe
+different things and both are load-bearing. This is why it lands at 1036 tok/s @32 against 3267 in the pinned
 reasoning shape — and why BF16's 16 GPUs close the per-GPU gap there to 2.9×
 (44.3 vs 129.5) instead of 3.8×.
 

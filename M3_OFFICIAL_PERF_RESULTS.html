@@ -271,8 +271,10 @@
         <li><strong>Primary path</strong> (suite-native) — <em>reasoning</em>: 1k input, 8k forced decode
           (<code>ignore_eos</code>; isolates kernel speed from model verbosity), temp 0.6, thinking on,
           concurrency 1/4/16/64; <em>agentic</em>: multi-turn, M3-calibrated tau2 shape — 8±2 turns per
-          sticky session, prompt growing 8.1k → ~15k tokens as the transcript accumulates (mean 12k
-          measured), only ~100 output tokens per turn — warm (KV reuse) vs cold (cache-defeated,
+          sticky session, a fixed <strong>7,300-token shared cacheable prefix</strong>
+          (<code>AG_SHARED_SYSTEM_TOKENS</code>, calibrated to turn-0 input 7337 ±12) plus accumulated
+          transcript, so the prompt grows 8.1k → ~15k tokens (mean 12k measured) while only ~100 output
+          tokens are produced per turn — warm (KV reuse of that prefix) vs cold (cache-defeated,
           single-turn 10.6k prompts), concurrency 1/4/16/32.</li>
         <li><strong>AA-style sweep</strong> — Artificial-Analysis axes: input 1k/10k/100k × concurrency
           1/10, natural output length (AA's answer-token floors recorded, not forced). Comparable columns

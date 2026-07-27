@@ -682,6 +682,30 @@ Full k sweeps in tok/s per user — 8k-low conc 1: 136.8 (k=0) → 334.1 / 341.6
 (k=5/6/7); conc 10: 74.8 → 153.5 / 149.7 / 152.4. 8k-high conc 1: 136.8 → 178.0 /
 185.6 / 187.9 (k=1/2/3); conc 10: 80.5 → 95.1 / 97.0 / 94.7.
 
+**Why the two columns differ at conc 1, where there is only one user.** They have
+different denominators, from aiperf's definitions: `output_token_throughput_per_user`
+is `1 / ITL`, and ITL is the mean gap *between* output tokens, so it excludes the first
+token and is a pure decode rate. `output_token_throughput` is total output tokens over
+benchmark wall clock, which includes every request's prefill. At conc 1 the gap between
+them is therefore **only TTFT amortization**, and reconstructing it confirms that —
+`OSL / (TTFT + (OSL−1)·ITL)` reproduces the measured server rate to within ~1–3%:
+
+| workload | k | decode | prefill | prefill share | per-user | server | ratio |
+|---|---|---|---|---|---|---|---|
+| 8k-low  | 0 | 12.40 s | 0.413 s | 3.2% | 136.8 | 132.1 | 0.965 |
+| 8k-low  | 6 |  4.68 s | 0.417 s | **8.2%** | 341.6 | 316.3 | **0.926** |
+| 8k-high | 0 | 14.90 s | 0.457 s | 3.0% | 136.8 | 132.4 | 0.968 |
+| 8k-high | 3 | 10.85 s | 0.467 s | 4.1% | 187.9 | 174.7 | 0.930 |
+
+The share **grows as decode gets faster** because TTFT does not move — it is 413–420 ms
+across every k in the low-entropy arm, since spec-dec accelerates decode and never
+touches prefill. That is why the server-level speedup (2.40×) is lower than the decode
+speedup (2.50×): ordinary Amdahl on the prefill fraction. It also means the gap widens
+for shorter outputs, and the whole benefit disappears for a workload whose cost is
+prefill — which is exactly what the agentic shape in `docs/m3-two-axis-perf.md` is
+(≈100 output tokens per ~12k-token prompt). **Quote the per-user rate for how fast text
+feels, the server rate for capacity; the second is the honest end-to-end number.**
+
 Two honest notes on the high-entropy tier. At conc 1, **k=2 and k=3 are tied**: ITL
 favours k=2 by 0.2%, per-user tok/s favours k=3 by 1.2%, server tok/s favours k=2 by
 0.2% — all inside that arm's 1.44% drift floor. (The metrics can disagree slightly

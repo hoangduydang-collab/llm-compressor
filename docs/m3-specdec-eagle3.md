@@ -5,6 +5,8 @@ Wave 2: window `m3-specdec-eagle3/20260727T064934Z-wave2`, 6 arms.
 Phase D: window `m3-specdec-eagle3/20260727T073533Z-phaseD`, 2 arms × 10 cells.
 Phase E: window `m3-specdec-eagle3/20260727T084526Z-format`, 2 arms × 4 cells.
 Phase F: window `m3-specdec-eagle3/20260727T092342Z-bf16ref`, 2 arms × 4 cells.
+Phase G: window `m3-specdec-eagle3/20260727T102751Z-int4drafter`, 3 A/B arms + 1 probe.
+Phase H: window `m3-specdec-eagle3/20260727T105919Z-kopt`, 2 arms × 5 serves.
 All arms rc=0, every gate passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
 
@@ -517,6 +519,160 @@ itself, roughly half is the widened verify," not as a precise partition. It does
 independently corroborate the ~7%/position verify prior in
 `M3_SPECDEC_EAGLE3_PLAN.md:22`.
 
+## Phase G — does quantizing the *drafter* buy back drafting overhead? (complete)
+
+Phases D–F varied the target's weight format and found acceptance indifferent to it.
+This phase varies the **drafter** and asks a different question: not "does acceptance
+survive?" but "can drafting be made cheaper?" Phase D pins the cost — at 8k-low conc 1
+a k=0 step is 7.313 ms and a k=3 step is 10.49 ms, so drafting costs 3.18 ms/step and
+is what caps the speedup at 2.17×.
+
+Instrument: `Sebesky/MiniMax-M3-EAGLE3-RTN-INT4`, an RTN INT4 quantization of the
+exact drafter we already use. Weight-only **W4A16** (no `input_activations` in any
+config group), which is the right choice rather than a limitation — the drafter sees
+1 token per user per forward, so its activations are kilobytes and quantizing them
+would add work without saving bandwidth.
+
+### The published checkpoint does not load, and its embedding quantization was moot
+
+`llama_eagle3.py:158` constructs the draft `VocabParallelEmbedding` **without passing
+`quant_config`**, while `ParallelLMHead` at line 292 passes
+`quant_config=get_draft_quant_config(vllm_config)`. So vLLM always builds an
+unquantized draft embedding and has no `weight_packed` parameter to load into. The
+probe arm confirms it: `KeyError: 'embed_tokens.weight_packed'` at
+`llama_eagle3.py:284`, on all 8 ranks, during drafter weight load.
+
+Quantizing that tensor could never have paid anyway: when the draft embedding matches
+the target's, vLLM **deletes it and shares the target's table** (phase D's serve log
+logs exactly that), so an INT4 embedding adds error and no speed.
+`pipeline/prepare_int4_drafter.py` therefore restores the bf16 embedding, drops the
+`group_embed` group, and carries all 34 other published tensors byte-for-byte —
+asserted tensor-by-tensor, not assumed. The result loads, shares the embedding on all
+8 ranks, keeps its own INT4 lm_head, and reports **28.78 GiB** of model weights
+against the bf16 drafter's 29.26 GiB — a 0.48 GiB drop against 0.44 GiB predicted from
+the parameter count.
+
+Kernel split, from vLLM's own chooser: the 8 attention/MLP/fc linears get **Machete**;
+`lm_head` gets **Marlin**, because Machete's `can_implement` returns
+`(False, 'Output features size must be divisible by 128')` and TP8 gives
+200064/8 = 25008 per rank (`25008 % 128 == 48`). That matters — lm_head is 154 M of
+the 254 M parameters read per drafter forward, so **~60% of the drafter's weight
+traffic runs on the older kernel.** Padding the vocab to 200704 (→ 25088, divisible)
+would move it onto Machete; not tested.
+
+### Result — no acceptance cost, and a consistent but small speed win
+
+Each arm served INT4, ran the grid, tore down, served bf16, and ran the identical
+grid on the same node in the same allocation. 12 cells:
+
+| k | cell | conc | Δ accepted | Δ ITL | Δ step cost |
+|---|---|---|---|---|---|
+| 3 | 8k-low  |  1 | −0.10% | −2.10% | −2.20% |
+| 3 | 8k-high |  1 | −2.05% | −0.08% | −2.13% |
+| 3 | 8k-low  | 10 | +0.57% | −1.88% | −1.32% |
+| 3 | 8k-high | 10 | +0.80% | −1.50% | −0.72% |
+| 4 | 8k-low  |  1 | −2.15% | −1.11% | −3.24% |
+| 4 | 8k-high |  1 | +1.26% | −3.67% | −2.45% |
+| 4 | 8k-low  | 10 | −0.55% | +0.13% | −0.43% |
+| 4 | 8k-high | 10 | −0.39% | −0.65% | −1.03% |
+| 5 | 8k-low  |  1 | +2.89% | −5.28% | −2.54% |
+| 5 | 8k-high |  1 | −2.84% | −0.96% | −3.77% |
+| 5 | 8k-low  | 10 | +0.25% | −1.00% | −0.75% |
+| 5 | 8k-high | 10 | −0.16% | −1.25% | −1.40% |
+
+**Acceptance: no cost.** Mean −0.21%, range −2.84% to +2.89%, signs flipping. RTN INT4
+on a 1-layer drafter is free in accuracy terms. Note the noise band here (±3%) is
+wider than the target-format comparison's (±1.5%) — each half is a separate engine on
+a separate serve, so these are noisier than same-serve numbers.
+
+**Speed: real, consistent, and about half the predicted size.** Step cost is lower in
+**12 of 12 cells**, mean −1.83%. ITL is lower in 11 of 12, mean −1.61%. The bf16
+half's same-serve repeat cell puts the drift floor at ±0.3% (+0.30%, −0.19%, +0.28%
+across the three arms), so the effect clears the noise floor comfortably — but the
+bandwidth model predicted −4.3% at k=3 8k-low and the measurement is −2.20%. Roughly
+half. The likeliest reason is the Marlin lm_head above: if the layer holding 60% of
+the weight traffic doesn't reach the bandwidth roof, neither does the saving. A
+per-invocation cost that INT4 cannot touch (launch, all-reduce) accounts for the rest.
+
+The predicted scaling with k did **not** appear: at 8k-low conc 1 the step saving is
+−2.20% / −3.24% / −2.54% for k=3/4/5 — flat within cell-to-cell variance, where more
+drafter forwards should have meant a bigger absolute saving.
+
+One retraction. An early cross-window read against phase D showed −7.2% ITL at 8k-low
+conc 10 and I flagged it as suspicious because the bandwidth model predicts the effect
+should *shrink* at load (the drafter's weight read is fixed per step while total
+drafting overhead grows from 3.2 to 10.1 ms). The same-node number is **−1.88%**. The
+cross-window figure was node contamination, and node variance in this study runs
+1–2%.
+
+**Verdict:** adopt the INT4 drafter — it is free in acceptance and worth ~1.8% of step
+cost — but it is a minor lever. Choosing k per workload (phase H) is worth 4–9%.
+
+## Phase H — optimal draft depth per entropy tier (complete)
+
+Phase G's k=3/4/5 sweep bracketed neither optimum, and it had a design limitation
+worth naming: it ran each k on a *different* node (h107/h123/h108), so node variance
+was folded into its k-trend. That was correct for the INT4-vs-bf16 A/B it was built
+for — that comparison was same-node — but choosing k *is* a k-comparison. Phase H
+puts every k for a tier on one node and measures the drift that replaces node variance
+by re-serving the first spec k at the end of the window.
+
+Each arm carries its own k=0 control, so every speedup below is within-window.
+
+### Low entropy (8k-low, code/sorting) — the knee is at k≈5–6
+
+| k | conc 1 accepted | ITL | speedup | | conc 10 accepted | ITL | speedup |
+|---|---|---|---|---|---|---|---|
+| 0 | — | 7.307 | 1.00× | | — | 13.431 | 1.00× |
+| 5 | 3.820 | 3.014 | 2.425× | | 3.864 | **6.707** | **2.002×** |
+| 6 | 4.107 | **2.970** | **2.460×** | | 4.077 | 6.925 | 1.939× |
+| 7 | 4.224 | 2.979 | 2.453× | | 4.307 | 6.805 | 1.974× |
+
+*drift control: k=5 re-served at end of window, ITL 3.014 → 3.032 (+0.59%) at conc 1,
+6.707 → 6.656 (−0.76%) at conc 10.*
+
+**This corrects the extrapolation I made from phase G.** Phase G saw k=3→4→5 each buy
+~5% of ITL with no decay and I inferred the knee was above k=5. It isn't: k=5→6 buys
+1.5% and k=6→7 buys −0.3%. The marginal gain collapsed immediately after k=5. At
+conc 10 the sweep is non-monotone (k=6 worse than both k=5 and k=7) with a 3.3% spread
+against a 0.76% drift floor, which is the signature of a plateau, not a trend.
+**Practical answer: k=5 or 6; anything beyond 5 is within noise of it.**
+
+### High entropy (8k-high, creative writing) — the optimum is k=2
+
+| k | conc 1 accepted | ITL | speedup | | conc 10 accepted | ITL | speedup |
+|---|---|---|---|---|---|---|---|
+| 0 | — | 7.312 | 1.00× | | — | 12.453 | 1.00× |
+| 1 | 1.507 | 5.654 | 1.293× | | 1.512 | 10.630 | 1.171× |
+| 2 | 1.717 | **5.473** | **1.336×** | | 1.745 | **10.568** | **1.178×** |
+| 3 | 1.815 | 5.486 | 1.333× | | 1.816 | 10.846 | 1.148× |
+
+*drift control: k=1 re-served at end of window, ITL 5.654 → 5.736 (+1.44%) at conc 1,
+10.630 → 10.697 (+0.63%) at conc 10.*
+
+**k=2 wins at both concurrencies.** At conc 1, k=3 is statistically tied (+0.2%) and
+k=1 is 3.3% behind. At conc 10 the recipe's k=3 is a clear 2.6% loss — load pushes the
+optimum down, as the marginal-cost-per-position figures predict (12.1%/token at conc 1
+vs 19.4%/token at conc 10).
+
+### The rule that predicts all of it
+
+`ITL = step / accepted`, so raising k helps **iff the fractional gain in accepted
+length exceeds the fractional increase in step cost** — Δa/a > Δs/s. That is algebra,
+not a fit, and it calls every cell measured:
+
+| tier | step | Δa/a | Δs/s | predicted | measured ITL |
+|---|---|---|---|---|---|
+| 8k-low c1 | 5→6 | 7.51% | 5.96% | better | −1.5% ✓ |
+| 8k-low c1 | 6→7 | 2.85% | 3.14% | worse | +0.3% ✓ |
+| 8k-high c10 | 2→3 | 4.07% | 6.82% | worse | +2.6% ✓ |
+
+Because per-position acceptance falls geometrically while marginal step cost falls only
+slowly, the crossing point is sharp and entropy-dependent: **k≈5–6 for code, k=2 for
+creative writing** — and the recipe's one-size k=3 is wrong for both, leaving 4–9% on
+the table depending on the workload. This is a larger lever than the drafter
+quantization of phase G.
+
 ## Raw evidence
 
 **Wave 2** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2/`:
@@ -529,6 +685,37 @@ counter delta. Window-level `aggregate.json`, `arm-provenance.txt`,
 ```
 pipeline/specdec_wave2_aggregate.py --root <window> --out-json <window>/aggregate.json
 ```
+
+**Phase H** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T105919Z-kopt/`:
+arms `kopt-low` (gpu-h113, k=0/5/6/7 on 8k-low) and `kopt-high` (gpu-h114, k=0/1/2/3
+on 8k-high), each 5 serves in one allocation with per-config `k<n>/` subdirectories
+holding `serve.log`, `spec-boot.log`, `backend-attestation.json`,
+`model-loading-gib.txt`, per-cell aiperf artifacts and
+`metrics/sb-<cell>-c<n>-{pre,post}.txt`. The trailing `k<n>-repeat/` config is the
+end-of-window drift control. Window-level `drafter-identity.txt` (asserts W4A16 with
+no activation quant and an unmodified derivation hash), `speedbench-manifest.txt`,
+`arm-provenance.txt`, `actual-commit.txt`, `controller-done.txt`. Regenerate with the
+inline analysis in `pipeline/specdec_int4drafter_aggregate.py`'s helpers.
+
+**Phase G** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T102751Z-int4drafter/`:
+arms `int4-k{3,4,5}`, each holding both halves of its A/B as `int4/` and `fp/`
+subdirectories (identical cell grids, `fp/` additionally carrying the
+`8k-low-repeat` drift cell), plus `probe-published/` whose `probe-verdict.txt` records
+`failed` and `probe-failure-excerpt.txt` the `KeyError: 'embed_tokens.weight_packed'`
+traceback from the as-published checkpoint. Each half has `serve.log`,
+`spec-boot.log`, `backend-attestation.json`, `drafter-config.json`,
+`model-loading-gib.txt` (28.78 GiB INT4 vs 29.26 GiB bf16) and per-cell
+`metrics/sb-<cell>-c<n>-{pre,post}.txt`. Window-level `drafter-identity.txt`,
+`speedbench-manifest.txt` (hash-equal to phases D–F), `arm-provenance.txt`,
+`actual-commit.txt`, `controller-done.txt`. Regenerate the table with:
+
+```
+pipeline/specdec_int4drafter_aggregate.py --root <window> --out-json <window>/aggregate.json
+```
+
+The measured drafter is derived, not the published artifact — see
+`/mnt/nfs/hoangduy/hf_assets/derived/MiniMax-M3-EAGLE3-INT4-bf16embed/derivation-manifest.json`
+for the input hashes, the three dropped tensors and the spliced embedding.
 
 **Phase F** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T092342Z-bf16ref/`:
 arms `bf16-k{0,3}`, each 2 nodes × 8 GPUs (TP16 over ray), with `client.log`,

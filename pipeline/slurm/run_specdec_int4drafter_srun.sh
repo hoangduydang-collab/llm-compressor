@@ -21,10 +21,14 @@
 # The measured drafter is DERIVED, not the published artifact:
 # pipeline/prepare_int4_drafter.py restores the bf16 embed_tokens and drops the
 # group_embed quantization group, carrying all 34 other published tensors
-# byte-for-byte. Reason: vLLM's _maybe_share_embeddings reads
-# `self.model.model.embed_tokens.weight` with no hasattr guard, and a
-# compressed-tensors quantized embedding has no `weight` -- only weight_packed. The
-# access raises AttributeError during drafter load. It is also pointless to quantize:
+# byte-for-byte. Reason (mechanism corrected after the probe arm ran; this header
+# first blamed an unguarded `.weight` access in _maybe_share_embeddings, which is
+# downstream and never reached): llama_eagle3.py:158 builds the draft
+# VocabParallelEmbedding WITHOUT quant_config, while ParallelLMHead at line 292 passes
+# it. vLLM therefore always builds an unquantized draft embedding and has no
+# `weight_packed` parameter to load into, so drafter load dies with
+# `KeyError: 'embed_tokens.weight_packed'` at llama_eagle3.py:284 on every rank. It is
+# also pointless to quantize:
 # when the draft embedding matches the target's, vLLM deletes it and shares the
 # target's table (our own phase D serve log shows exactly that), so an INT4 embedding
 # could only have added error, never speed. The `probe` arm records what the

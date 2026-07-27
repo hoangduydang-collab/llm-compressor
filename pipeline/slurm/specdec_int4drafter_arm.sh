@@ -37,11 +37,20 @@
 #
 # The INT4 drafter is a DERIVED artifact (pipeline/prepare_int4_drafter.py): the
 # published Sebesky/MiniMax-M3-EAGLE3-RTN-INT4 additionally quantizes embed_tokens,
-# which vLLM's unguarded `self.model.model.embed_tokens.weight` access in
-# _maybe_share_embeddings cannot load -- and which could not have helped anyway,
-# since that tensor is deleted and replaced by the target's table. The derivation
-# restores the bf16 embedding byte-for-byte and changes nothing else. The published
-# artifact is tested separately by PROBE_ONLY=1.
+# which vLLM cannot load, and which could not have helped anyway since that tensor is
+# deleted and replaced by the target's table. The derivation restores the bf16
+# embedding byte-for-byte and changes nothing else.
+#
+# MECHANISM, CORRECTED (this header first blamed an unguarded
+# `self.model.model.embed_tokens.weight` access in _maybe_share_embeddings; that code
+# is downstream and never reached). The real cause is one line: llama_eagle3.py:158
+# constructs the draft VocabParallelEmbedding WITHOUT passing quant_config, while
+# ParallelLMHead at line 292 passes quant_config=get_draft_quant_config(vllm_config).
+# So vLLM always builds an unquantized draft embedding and has no `weight_packed`
+# parameter to load into -- the PROBE_ONLY=1 arm recorded
+# `KeyError: 'embed_tokens.weight_packed'` at llama_eagle3.py:284 on all 8 ranks
+# during drafter weight load. A quantized EAGLE3 embedding cannot load in this build
+# regardless of how the checkpoint targets it.
 set -uo pipefail
 
 ROOT=${ROOT:?}; ARM=${ARM:?}; RUN_TS=${RUN_TS:?}

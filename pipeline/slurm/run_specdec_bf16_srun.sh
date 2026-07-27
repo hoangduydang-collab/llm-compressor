@@ -15,13 +15,16 @@
 # cannot hold it, so TP16 over ray is required):
 #
 #   bf16-k0  port 8060   nodes h113,h114   unquantized MiniMax-M3, TP16/ray (control)
-#   bf16-k3  port 8061   nodes h97,h123    same + eagle3 k=3
+#   bf16-k3  port 8061   nodes h107,h123   same + eagle3 k=3
 #
-# NODE SELECTION IS DELIBERATE, NOT ARBITRARY. slurm reported h97, h98, h101, h113,
-# h114 and h123 all `idle`, but a direct nvidia-smi probe found h98 and h101 holding
-# only 248/246 GiB free of 633 -- a foreign job's memory that slurm was not
-# accounting. That exact failure mode killed arms in wave 1. The four nodes below
-# were each probed and confirmed at 633 GiB free with every GPU >=70 GiB.
+# NODE SELECTION IS DELIBERATE, NOT ARBITRARY. slurm reports h97, h98 and h101 as
+# `idle` while a foreign job holds ~350-390 GiB on each (probed repeatedly through
+# 2026-07-27: 252 / 280 / 246 GiB free of 633). slurm is not accounting that memory.
+# The same failure mode killed arms in wave 1, so the pre-launch probe below is a
+# hard gate, not a formality -- on the first attempt it caught h97 going from
+# 633 GiB free to 252 GiB in the minutes between an earlier probe and the launch,
+# and refused rather than starting a doomed 2-node arm. The four nodes used here
+# were each probed at 633 GiB free with every GPU >=70 GiB immediately before launch.
 #
 # Comparability: BF16 runs a different parallel topology (TP16 cross-node) than the
 # TP8 single-node quantized arms, so its ABSOLUTE speed is not comparable to theirs.
@@ -40,7 +43,7 @@ SB_DIR="$REPO/artifacts/aiperf-datasets/speedbench"
 PY=/mnt/nfs/hoangduy/venvs/quant/bin/python
 # Verified-clean pairs (probed 2026-07-27; see header). Override only after probing.
 NODES_K0=${NODES_K0:-gpu-h113,gpu-h114}
-NODES_K3=${NODES_K3:-gpu-h97,gpu-h123}
+NODES_K3=${NODES_K3:-gpu-h107,gpu-h123}
 # Proven BF16 value: 796 GiB of weights leaves ~22 GiB/GPU for KV at gpu_util 0.9.
 MAX_MODEL_LEN=${MAX_MODEL_LEN:-65536}
 # Windows whose 8k cells are the comparison arms (recorded for provenance).

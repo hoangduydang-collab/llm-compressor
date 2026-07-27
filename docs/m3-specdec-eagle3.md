@@ -9,6 +9,8 @@ Phase G: window `m3-specdec-eagle3/20260727T102751Z-int4drafter`, 3 A/B arms + 1
 Phase H: window `m3-specdec-eagle3/20260727T105919Z-kopt`, 2 arms × 5 serves.
 Phase I: window `m3-specdec-eagle3/20260727T134635Z-kernel`, 1 arm × 5 serves (3 served,
 2 killed by an upstream vLLM defect — see phase I).
+Phase I.2: window `m3-specdec-eagle3/20260727T154725Z-kernel`, 1 arm × 3 serves — the
+Humming lm_head fix + re-run of the two killed cells.
 All arms rc=0 except phase I (rc=1, fail-closed on the two Humming cells); every gate
 passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
@@ -889,10 +891,11 @@ layers lacking input_size (e.g. ParallelLMHead)"* — and then the `else` branch
 dereferences `layer.input_size` anyway. `can_implement` never checks layer type, so the
 kernel claims an `lm_head` it cannot prepare. This fully explains why the path has never
 run on CUDA: it is unreachable by default (Marlin precedes it and always succeeds) *and*
-broken when reached. Fixing it was **not** pursued, because cell D had already refuted
-the hypothesis that the `lm_head` kernel is worth anything — the fix would buy no
-measured performance. It is the study's second upstream vLLM defect, alongside
-`llama_eagle3.py:158` omitting `quant_config` (phase G).
+broken when reached. Fixing it was initially **not** pursued, because cell D appeared to
+refute the hypothesis that the `lm_head` kernel is worth anything. It was fixed in
+phase I.2 (below), which also revised that dismissal at conc 10. It is the study's
+second upstream vLLM defect, alongside `llama_eagle3.py:158` omitting `quant_config`
+(phase G).
 
 **Retroactive correction to phase G's noise floor.** Phase G's drift control was a
 *same-serve* repeat (±0.24% per-user), but its actual comparison — int4 vs bf16 — was
@@ -909,14 +912,112 @@ conc 1 (A-repeat moved it −2.78% with nothing changed), which independently vi
 treating phase G's +2.89% acceptance excursion at k=5/8k-low as noise rather than a
 drafter effect.
 
-**Verdict:** the drafter's kernel assignment is not a lever. Leave the default
-(Machete ×8 + Marlin on `lm_head`); do not adopt the vocab padding, which adds a vLLM
-patch for no measurable gain. The missing half of phase G's predicted INT4 saving remains
-unexplained — per-invocation costs INT4 cannot touch (kernel launch, all-reduce,
-Python/dispatch overhead) are the remaining candidates, and none of them is a kernel
-choice.
+**Verdict (as issued at the time; revised at conc 10 by phase I.2):** the drafter's
+kernel assignment is not a lever *at conc 1*. Phase I.2 re-measured the killed Humming
+cells after fixing the upstream defect and found the conc-10 half of this verdict was
+wrong — cell D's +1.85% at conc 10 was dismissed against the conc-1 noise floor
+(sd 1.22%), but the conc-10 floor turns out to be ~8× tighter (sd 0.16% across four
+cross-window replicates), making it significant after all. See phase I.2 for the
+corrected picture. The conc-1 conclusion stands, and the missing half of phase G's
+predicted INT4 saving at conc 1 remains explained by per-invocation costs INT4 cannot
+touch (kernel launch, all-reduce, Python/dispatch overhead).
+
+## Phase I.2 — the Humming lm_head fix, and a conc-10 revision (complete)
+
+Window `20260727T154725Z-kernel`, 1 arm × 3 serves on gpu-h113 (same node as phases
+H/I), rc=0. Two purposes: prove the `prepare_humming_layer` defect is fixable with a
+small patch, and re-run the two cells phase I lost to it.
+
+### The fix
+
+`pipeline/slurm/patch_vllm_humming_lmhead.py` (applied to the quant venv, commit
+`f35989b4`) replaces the three `LinearBase`-only attribute reads with guarded
+fallbacks that fire only when the `LinearBase` attributes are absent:
+
+| read | fallback |
+|---|---|
+| `input_size_per_partition` → `input_size` | → `embedding_dim` |
+| `output_partition_sizes` (both uses) | → `[num_embeddings_per_partition]` |
+| `has_bias` | → `getattr(layer, "bias", None) is not None` |
+
+Everything downstream was verified layer-type agnostic before writing it:
+`VocabParallelEmbedding` runs the same WNA16 `create_weights` (same param names and
+`input_dim`/`output_dim` tags), the extra `weight_shape` param flows through
+`convert_humming` untouched, `prepare_layer_meta` takes shapes explicitly, and
+`humming_gemm` allocates its output at the *valid* (unpadded) width
+(`shape_n − pad_shape_n`, `ops/__init__.py:132`) so the vocab-parallel logits gather
+stays aligned — Humming needs none of the vocab-padding games Machete needed in cell D.
+The patch is inert for every layer vLLM served before; the controller gains a
+fail-closed source gate for it.
+
+**It works.** Both previously-dead cells came up on all 8 ranks with the gated kernel
+sets, and acceptance — the numerics check; a garbage lm_head collapses it toward 1.0 —
+stayed in the normal 3.74–3.89 band. This was the first Humming W4A16 forward ever run
+through vLLM's MPLinear path.
+
+### Results (all k=5 / 8k-low, INT4 drafter)
+
+| cell | kernels | conc | per-user | vs A | ITL ms | accepted | step ms | vs A |
+|---|---|---|---|---|---|---|---|---|
+| A-baseline | Machete+Marlin | 1 | 335.2 | — | 3.007 | 3.820 | 11.487 | — |
+| A-baseline | | 10 | 153.1 | — | 6.746 | 3.884 | 26.199 | — |
+| B-hum-lmhead | Machete+Humming | 1 | 341.0 | +1.73% | 2.954 | 3.861 | 11.405 | −0.72% |
+| B-hum-lmhead | | 10 | **157.3** | **+2.73%** | 6.524 | 3.885 | 25.348 | **−3.25%** |
+| C-hum-all | Humming ×9 | 1 | 333.2 | −0.59% | 3.023 | 3.743 | 11.315 | −1.50% |
+| C-hum-all | | 10 | 155.5 | +1.54% | 6.607 | 3.834 | 25.336 | **−3.30%** |
+
+A-baseline reproduces phase H's k=5 cell across windows at +0.32% (conc 1) and −0.25%
+(conc 10) — the cross-window check passes.
+
+### The noise floor splits by concurrency — and that revises phase I
+
+The identical baseline config now has **four** fresh-engine, cross-window replicates on
+gpu-h113:
+
+| replicate | conc-1 per-user | conc-10 per-user |
+|---|---|---|
+| phase H, k=5 | 334.1 | 153.5 |
+| phase I, A-baseline | 337.3 | 152.9 |
+| phase I, A-repeat | 329.2 | 153.2 |
+| phase I.2, A-baseline | 335.2 | 153.1 |
+
+Conc 1: mean 333.9, **sd 1.02%**, range 2.4% — the phase I floor, confirmed. Conc 10:
+mean 153.2, **sd 0.16%**, range 0.4%. Batch-10 aggregation averages away the
+single-stream jitter, and the conc-10 column is ~7× more precise than the conc-1 one.
+
+Against the right floor, at **conc 10** every no-Marlin cell is a significant win:
+B-hum-lmhead +2.73%, D-machete-all +1.85% (phase I, wrongly dismissed against the
+conc-1 floor), C-hum-all +1.54%. The acceptance-adjusted view agrees and is cleaner:
+step cost −3.25% (B), −3.30% (C), −2.47% (D) — B and C land on the *same* ~3.3%
+kernel-level saving, with C's smaller per-user gain explained by its −1.27% acceptance
+drift. At **conc 1** every effect stays inside the 1.0–1.2% floor: phase I's conc-1
+verdict stands.
+
+The mechanism is the conventional one, now with clean evidence: the three winning cells
+share exactly one feature — **Marlin is off the `lm_head` at batch > 1**. Marlin was
+built for the memory-bound batch-1 regime; at conc 10 the drafter GEMM has ~10 rows and
+Marlin's weak batch scaling costs ~2–3% of the whole decode step through the one layer
+holding 60% of drafter weight traffic. (These cells cannot split how much of that is the
+per-forward pad/slice vs. Marlin's batch scaling, and nothing downstream needs the
+split.) At batch 1 Marlin is at home, and the assignment doesn't matter.
+
+**Verdict:** two regimes. At conc 1, leave the default (Machete ×8 + Marlin `lm_head`) —
+no measurable effect. For loaded serving at conc ≈ 10, take Marlin off the drafter's
+`lm_head`: the best measured cell is `VLLM_DISABLED_KERNELS=MarlinLinearKernel`
+(+2.73% per-user, requires the `prepare_humming_layer` patch), and the patch-free
+alternative is `LLMC_EAGLE3_LMHEAD_PAD=1024` for Machete-all (+1.85%). This does *not*
+resurrect the phase G "missing half" hypothesis at conc 1 — the conc-1 null is
+confirmed, and the overhead decomposition (drafter forward ≈ 4× its HBM floor) remains
+the explanation there.
 
 ## Raw evidence
+
+**Phase I.2** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T154725Z-kernel/`:
+`arm-kernel/{A-baseline,B-hum-lmhead,C-hum-all}/` with the same per-cell artifact set as
+phase I (`wna16-kernels.txt`, `marlin-pad-warning.txt`, `kernel-census.txt`,
+`accepted-*.txt`, `metrics/`, `speedbench/`), window-level `patch-checks.log` (including
+the new humming-lmhead source gate), `aggregate.json`. Re-run cells were selected with
+`CELLS=A-baseline,B-hum-lmhead,C-hum-all`.
 
 **Phase I** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T134635Z-kernel/`:
 `arm-kernel/{A-baseline,B-hum-lmhead,C-hum-all,D-machete-all,A-repeat}/`. Each served

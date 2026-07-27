@@ -51,6 +51,9 @@ NODE=${NODE:?set NODE to a node probed free immediately before launch}
 CELL=${CELL:-8k-low}
 SPEC_K=${SPEC_K:-5}
 PORT_BASE=${PORT_BASE:-8080}
+# Cell subset forwarded to the arm. Phase I.2 (after the prepare_humming_layer
+# ParallelLMHead fix) re-runs "A-baseline,B-hum-lmhead,C-hum-all" only.
+CELLS=${CELLS:-A-baseline,B-hum-lmhead,C-hum-all,D-machete-all,A-repeat}
 PHASEG_REF=${PHASEG_REF:-/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T102751Z-int4drafter}
 PHASEH_REF=${PHASEH_REF:-/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T105919Z-kopt}
 
@@ -172,6 +175,33 @@ print("pad patch inert at default 64; 1024 -> 200704 (25088/rank, % 128 == 0)")
 PY
 echo "[controller] lmhead-pad patch applied and confirmed inert by default"
 
+# --- humming lm_head prepare fix: cells B and C crash at load without it --------
+# prepare_humming_layer read three LinearBase-only attributes; ParallelLMHead (the
+# drafter's quantized lm_head) has none of them. The patch adds fallbacks that only
+# fire when the LinearBase attributes are absent, so it is inert for every layer
+# vLLM served before. See the patch script's docstring for the full verification.
+( cd "$REPO" && "$PY" pipeline/slurm/patch_vllm_humming_lmhead.py ) \
+  >>"$ROOT/patch-checks.log" 2>&1 || fail "could not apply humming lmhead patch"
+( cd "$REPO" && "$PY" pipeline/slurm/patch_vllm_humming_lmhead.py --check ) \
+  >>"$ROOT/patch-checks.log" 2>&1 || fail "humming lmhead patch not verifiable after apply"
+"$PY" - <<'PY' >>"$ROOT/patch-checks.log" || fail "humming lmhead patch source check failed"
+import ast, inspect
+from vllm.model_executor.layers.quantization.utils import humming_utils
+src = inspect.getsource(humming_utils.prepare_humming_layer)
+ast.parse(src)
+for frag in ("layer.embedding_dim", "[layer.num_embeddings_per_partition]",
+             "sum(output_partition_sizes)"):
+    assert frag in src, f"patched fallback missing: {frag}"
+assert "has_bias=layer.has_bias" not in src, "unguarded has_bias read still present"
+# The real class must expose the fallback attribute names the patch relies on.
+from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
+init = inspect.getsource(VocabParallelEmbedding.__init__)
+for attr in ("self.embedding_dim", "self.num_embeddings_per_partition", "self.params_dtype"):
+    assert attr in init, f"VocabParallelEmbedding no longer sets {attr}"
+print("humming lmhead patch: fallbacks present, VocabParallelEmbedding attrs confirmed")
+PY
+echo "[controller] humming lmhead patch applied and source-verified"
+
 # --- SPEED-Bench staging gate: byte-identical prompts to phases D-H -------------
 test -s "$SB_DIR/manifest.json" || fail "SPEED-Bench not staged"
 f="$SB_DIR/$CELL.jsonl"
@@ -218,7 +248,7 @@ esac
 
 ARM=kernel
 arm_env=(
-  "ROOT=$ROOT" "ARM=$ARM" "RUN_TS=$RUN_TS" "CELL=$CELL" "SPEC_K=$SPEC_K"
+  "ROOT=$ROOT" "ARM=$ARM" "RUN_TS=$RUN_TS" "CELL=$CELL" "SPEC_K=$SPEC_K" "CELLS=$CELLS"
   "CKPT=$GPTQ_CKPT" "PORT_BASE=$PORT_BASE" "SB_DIR=$SB_DIR" "DRAFTER=$DRAFTER"
   "HUMMING_M3_W4A8_CACHE_ROOT=/mnt/nfs/hoangduy/.humming"
   "M3_W4A8_BACKEND=humming" "VLLM_HUMMING_MOE_GEMM_TYPE=indexed"
@@ -242,8 +272,8 @@ echo "[controller] arm rc=$rc"
 
 {
   echo "phase I -- drafter W4A16 kernel selection"
-  echo "root=$ROOT node=$NODE cell=$CELL k=$SPEC_K rc=$rc"
-  for cfg in A-baseline B-hum-lmhead C-hum-all D-machete-all A-repeat; do
+  echo "root=$ROOT node=$NODE cell=$CELL k=$SPEC_K cells=$CELLS rc=$rc"
+  for cfg in $(echo "$CELLS" | tr ',' ' '); do
     d="$ROOT/arm-$ARM/$cfg"
     printf '%-15s kernels=%-18s pad_warn=%-4s acc_c1=%s\n' "$cfg" \
       "$(cat "$d/wna16-kernels.txt" 2>/dev/null || echo -)" \

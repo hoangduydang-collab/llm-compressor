@@ -89,6 +89,12 @@ LOADED_GIB_MAX=${LOADED_GIB_MAX:-29.05}
 # broken lm_head (e.g. corrupted padded logits) collapses acceptance toward 1.0, so
 # this catches catastrophic breakage without being brittle about a few percent.
 ACC_MIN=${ACC_MIN:-3.0}
+# Comma-separated cell subset. Phase I.2 re-runs only A-baseline,B-hum-lmhead,
+# C-hum-all after the prepare_humming_layer ParallelLMHead fix
+# (pipeline/slurm/patch_vllm_humming_lmhead.py); D and A-repeat are already
+# measured and the kernel-is-not-a-lever conclusion does not need them again.
+CELLS=${CELLS:-A-baseline,B-hum-lmhead,C-hum-all,D-machete-all,A-repeat}
+enabled() { case ",$CELLS," in *",$1,"*) return 0;; *) return 1;; esac; }
 
 C=$ROOT/arm-$ARM
 mkdir -p "$C"
@@ -303,18 +309,25 @@ run_one() {
   wait_gpus_free 60
 }
 
+note "cells enabled: $CELLS"
 p=$PORT_BASE
+enabled A-baseline && \
 run_one "A-baseline"    "$p" ""                                          ""     "Machete,Marlin"  1 "$CELL"; p=$((p+1))
+enabled B-hum-lmhead && \
 run_one "B-hum-lmhead"  "$p" "MarlinLinearKernel"                        ""     "Humming,Machete" 0 "$CELL"; p=$((p+1))
+enabled C-hum-all && \
 run_one "C-hum-all"     "$p" "MacheteLinearKernel,MarlinLinearKernel"    ""     "Humming"         0 "$CELL"; p=$((p+1))
 # Cell D runs LAST of the four: it is the only one needing a vLLM source patch, so a
 # failure there cannot cost the three env-only cells.
+enabled D-machete-all && \
 run_one "D-machete-all" "$p" ""                                          "1024" "Machete"         0 "$CELL"; p=$((p+1))
 
 # Drift control: re-serve the baseline on a fresh engine at the end of the window.
 # Any kernel effect must exceed the gap this reveals.
-note "drift control: re-serving A-baseline"
-run_one "A-repeat"      "$p" ""                                          ""     "Machete,Marlin"  1 "$CELL-repeat"
+if enabled A-repeat; then
+  note "drift control: re-serving A-baseline"
+  run_one "A-repeat"    "$p" ""                                          ""     "Machete,Marlin"  1 "$CELL-repeat"
+fi
 
 note "arm done rc=$rc_all"
 exit "$rc_all"

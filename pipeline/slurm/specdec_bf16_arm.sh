@@ -3,14 +3,21 @@
 # ("Phase F: drafter against the unquantized target").
 #
 # Question this answers: is retraining / finetuning the drafter worth it?
-# The Inferact EAGLE3 drafter was trained against the ORIGINAL BF16 MiniMax-M3 and
-# consumes the target's hidden states. Phase E showed our 4-bit W4AFP8 target loses
-# ~1.35% accepted length versus the vendor's 8-bit MXFP8 target -- but both are
-# quantized, so that only bounds the penalty against a mild quant. BF16 is the
-# drafter's training distribution and therefore the CEILING. If BF16 acceptance is
-# materially above W4AFP8, the gap is what finetuning the drafter on our quantized
-# target could plausibly recover. If BF16 matches W4AFP8, there is nothing to
-# recover and drafter training is not worth the spend.
+#
+# CORRECTED FRAMING (this header originally called BF16 the CEILING -- it is not).
+# The Inferact EAGLE3 drafter was measured and trained against **MXFP8**, not BF16:
+# its README names `MiniMaxAI/MiniMax-M3-MXFP8` as the measurement target, and
+# training is pinned by arithmetic (`inference.vllm.tp_size=4` on GB300 leaves
+# ~744 GiB per engine -- BF16 M3's 796 GiB does not fit, MXFP8's 414 GiB does).
+# Since EAGLE3 consumes the target's hidden states, MXFP8 is the on-distribution
+# reference and phase E was the decisive arm. BF16 is a DIFFERENT off-distribution
+# target and may legitimately score below MXFP8.
+#
+# What this arm is for: phase E compared two quantized targets and found no gap, but
+# could not exclude both being equally degraded against an unquantized target.
+# Spanning the full 4 -> 8 -> 16 bit range excludes it. Phase E's early "~1.35%
+# penalty" reading came from its first two cells and did not survive its conc-10
+# cells -- do not carry that number forward.
 #
 # Runs as 2 ranks on 2x 8xH100 (srun --nodes=2 --ntasks=2). BF16 M3 is 796 GiB of
 # safetensors and does not fit one node (8x80 GiB), so this needs TP16 over ray --

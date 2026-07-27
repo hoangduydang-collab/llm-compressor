@@ -4,6 +4,7 @@ Wave 1: window `m3-specdec-eagle3/20260727T061506Z`, 4 arms.
 Wave 2: window `m3-specdec-eagle3/20260727T064934Z-wave2`, 6 arms.
 Phase D: window `m3-specdec-eagle3/20260727T073533Z-phaseD`, 2 arms × 10 cells.
 Phase E: window `m3-specdec-eagle3/20260727T084526Z-format`, 2 arms × 4 cells.
+Phase F: window `m3-specdec-eagle3/20260727T092342Z-bf16ref`, 2 arms × 4 cells.
 All arms rc=0, every gate passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
 
@@ -424,6 +425,98 @@ aiperf's loader does not filter it, so `pipeline/stage_speedbench.py` stages the
 clean subset and the launcher gates on its hashes; the `mixed` tier is 512/512
 masked and absent entirely; and the serving stack is our own W4AFP8 + Humming.
 
+## Phase F — is drafter retraining worth it? (complete)
+
+The question behind this phase: *if the drafter were trained against our target
+instead of someone else's, how much acceptance would we get back?* The decision rule
+was "if the unquantized baseline's acceptance is noticeably higher, it's worth
+training/finetuning the draft model."
+
+One correction to the framing before the numbers, because it changes what BF16 *is*.
+BF16 is **not** the ceiling for this drafter. `Inferact/MiniMax-M3-EAGLE3` was both
+measured and trained against **MXFP8**, not BF16 — its README states the measurement
+target outright (`MiniMaxAI/MiniMax-M3-MXFP8`, TP=4, `--enforce-eager`), and training
+is pinned by arithmetic: `inference.vllm.tp_size=4` on GB300 gives ~744 GiB per
+engine, which BF16 M3 (796 GiB) cannot fit and MXFP8 (414 GiB) can. EAGLE3 drafters
+consume the target's hidden states, so **MXFP8 is the on-distribution reference and
+phase E was already the decisive arm.** Phase F still earns its keep: it rules out
+the one alternative phase E could not, namely that 4-bit and 8-bit are *equally*
+degraded relative to an unquantized target and phase E's null result is two damaged
+arms agreeing with each other.
+
+### Accepted length across the whole 4 → 8 → 16 bit range
+
+Same drafter, same prompts (sha256-identical staged SPEED-Bench), same seed, same
+k=3. Each figure is a Prometheus counter delta, `1 + Δaccepted/Δdrafts`:
+
+| cell | conc | W4AFP8 (ours, 4-bit) | MXFP8 (8-bit) | BF16 (16-bit) | spread | ordering |
+|---|---|---|---|---|---|---|
+| 8k-low  |  1 | 3.106 | **3.147** | 3.128 | 0.041 (1.3%) | 8 > 16 > 4 |
+| 8k-low  | 10 | 3.131 | 3.138 | **3.140** | 0.009 (0.3%) | 16 > 8 > 4 |
+| 8k-high |  1 | 1.779 | **1.804** | 1.796 | 0.025 (1.4%) | 8 > 16 > 4 |
+| 8k-high | 10 | **1.816** | 1.803 | 1.809 | 0.013 (0.7%) | 4 > 16 > 8 |
+
+**The answer to the decision rule is no.** BF16 beats our 4-bit target by +0.71%,
++0.29% and +0.96% in three cells and *loses* to it by 0.39% in the fourth. Every one
+of the four cells produces a **different ordering of the three formats**, and the
+widest spread across a 4× bit-width range is 0.041 accepted tokens. A quantity that
+cannot even rank 4-bit, 8-bit and 16-bit consistently is not measuring a quantization
+penalty; it is measuring noise. Retraining or finetuning the drafter against our
+target has no acceptance headroom to recover, because there is no deficit.
+
+Per-position acceptance says the same thing more finely — position 0 across all six
+low-entropy cells lands in 0.844–0.851, and across all six high-entropy cells in
+0.472–0.486. The drafter's per-position behaviour is indistinguishable whether the
+target's weights carry 4, 8 or 16 bits.
+
+Two of my own earlier readings died here, and both were mine to retract: a "~1.35%
+consistent penalty" claimed from phase E's first two cells (the conc-10 cells flipped
+the sign) and an "MXFP8 > BF16 > W4AFP8" ordering that held twice and then broke
+twice. The general shape of this study is that any effect under ~1.5% on accepted
+length has not survived a fourth cell.
+
+### Speed — and a cross-node drafting penalty
+
+BF16 M3 is 796 GiB of weights, so it cannot be served on one 8×80 GiB node: this arm
+runs **TP16 over ray across two nodes** while the W4AFP8 and MXFP8 arms are TP8
+single-node. Its absolute latency is therefore *not* comparable to theirs, which is
+why each arm carries its own k=0 control and only within-format ratios are quoted:
+
+| cell | conc | W4AFP8 (TP8) | MXFP8 (TP8) | BF16 (TP16, 2 nodes) |
+|---|---|---|---|---|
+| 8k-low  |  1 | 2.17× | 2.26× | 2.06× |
+| 8k-low  | 10 | 1.80× | 1.72× | 1.85× |
+| 8k-high |  1 | 1.28× | 1.35× | 1.23× |
+| 8k-high | 10 | 1.13× | 1.09× | 1.16× |
+
+What *is* comparable across arms is the **absolute cost of drafting** — the k=3 step
+minus the same arm's k=0 step, in ms:
+
+| cell | conc | W4AFP8 (TP8) | MXFP8 (TP8) | BF16 (TP16) |
+|---|---|---|---|---|
+| 8k-low  |  1 | 3.18 | 3.67 | **6.17** |
+| 8k-high |  1 | 2.88 | 3.13 | **5.46** |
+| 8k-low  | 10 | 10.13 | 15.24 | 16.09 |
+| 8k-high | 10 | 7.73 | 10.88 | 12.15 |
+
+At conc 1 the cross-node arm pays **1.9× the drafting overhead** of the single-node
+arms for the same drafter doing the same work. The mechanism is that every drafter
+forward adds an inter-node all-reduce, and at k=3 there are three of them per step.
+**Practical consequence: spec-dec's gain degrades on multi-node TP serving**, so a
+speedup measured single-node should not be promised on a cross-node topology.
+
+The two single-node arms also let the overhead be decomposed, since drafting cost
+splits into a target-side part (the verify forward covers k+1 positions instead of 1,
+so it scales with the target's own step time) and a format-independent drafter part.
+Solving the two arms simultaneously at 8k-low conc 1 gives an extended verify worth
+**+24% of a base step** for 3 extra positions (~8%/position) and a drafter cost of
+**1.42 ms for 3 forwards** (~0.47 ms each). Repeating the solve on 8k-high gives +12%
+and 1.98 ms — the same order, but a 2× disagreement in the split, because it divides
+two small differences. Treat it as "roughly half the drafting overhead is the drafter
+itself, roughly half is the widened verify," not as a precise partition. It does
+independently corroborate the ~7%/position verify prior in
+`M3_SPECDEC_EAGLE3_PLAN.md:22`.
+
 ## Raw evidence
 
 **Wave 2** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2/`:
@@ -436,6 +529,18 @@ counter delta. Window-level `aggregate.json`, `arm-provenance.txt`,
 ```
 pipeline/specdec_wave2_aggregate.py --root <window> --out-json <window>/aggregate.json
 ```
+
+**Phase F** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T092342Z-bf16ref/`:
+arms `bf16-k{0,3}`, each 2 nodes × 8 GPUs (TP16 over ray), with `client.log`,
+`serve.log`, `spec-boot.log`, `ray_runtime/gate.json`, per-cell aiperf artifacts and
+`metrics/sb-<cell>-c<n>-{pre,post}.txt`. Window-level `speedbench-manifest.txt`
+(hash-equal to phases D and E), `reference-windows.txt` naming both comparison
+windows, `arm-provenance.txt`, `actual-commit.txt`, `controller-done.txt`. The
+launcher gates the BF16 identity fail-closed (`torch_dtype=bfloat16`, no
+`quantization_config`, weights >640 GiB so the TP16 rationale cannot go stale) and
+re-probes every node's free GPU memory immediately before taking it — on the first
+attempt that gate refused the launch when `gpu-h97` went from 633 GiB free to
+252 GiB between an earlier probe and the launch.
 
 **Phase E** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T084526Z-format/`:
 arms `mxfp8-k{0,3}`, each with `client.log`, `serve.log`, `quant-boot.log` (the

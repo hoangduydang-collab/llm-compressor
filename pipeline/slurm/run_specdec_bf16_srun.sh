@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # Controller (tmux) for the EAGLE3 BF16 absolute-reference test -- phase F.
 #
-# Does retraining / finetuning the draft model pay off? The drafter was trained
-# against the ORIGINAL BF16 MiniMax-M3, so BF16 acceptance is the ceiling. Phase E
-# compared two quantized targets (our 4-bit W4AFP8 vs the vendor's 8-bit MXFP8) and
-# found only a ~1.35% acceptance gap -- but that bounds the penalty against a mild
-# quant, not against the drafter's actual training distribution. This phase measures
-# the ceiling:
+# Does retraining / finetuning the draft model pay off?
 #
-#   BF16 accepted length - W4AFP8 accepted length = the headroom drafter finetuning
-#   on our quantized target could plausibly recover.
+# CORRECTED FRAMING (this header originally called BF16 "the ceiling" -- it is not).
+# `Inferact/MiniMax-M3-EAGLE3` was both measured and trained against **MXFP8**, not
+# BF16: its README names `MiniMaxAI/MiniMax-M3-MXFP8` as the measurement target, and
+# training is pinned by arithmetic -- `inference.vllm.tp_size=4` on GB300 gives
+# ~744 GiB per engine, which BF16 M3 (796 GiB) cannot fit and MXFP8 (414 GiB) can.
+# EAGLE3 drafters consume the target's hidden states, so MXFP8 is the drafter's
+# on-distribution reference and PHASE E was the decisive arm. BF16 is a *different*
+# off-distribution target, and may legitimately score below MXFP8.
+#
+# This phase is therefore not a ceiling measurement. It rules out the one alternative
+# phase E could not: that 4-bit and 8-bit are EQUALLY degraded against an unquantized
+# target, making phase E's null result two damaged arms agreeing with each other.
+# Spanning the full 4 -> 8 -> 16 bit range is what kills that reading.
 #
 # 2 arms x 2 nodes = 4 nodes (BF16 M3 is 796 GiB of safetensors; one 8x80 GiB node
 # cannot hold it, so TP16 over ray is required):

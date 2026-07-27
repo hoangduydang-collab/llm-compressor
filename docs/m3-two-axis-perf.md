@@ -9,9 +9,23 @@ Serving stack for every arm: vLLM 0.24.0 fork, capture-sync fix on, 1 node
 Table formats (identical everywhere):
 
 - **Primary path** (suite-native reasoning, 1k input / 8k pinned output):
-  rows = concurrency 1/4/16/64, cells = **TPOT p50 ms (aggregate tok/s)**.
+  rows = concurrency 1/4/16/64, cells = **TPOT p50 ms (system output tok/s)**.
 - **AA-style sweep** (natural output): rows = input×conc incl. 100k, cells =
   **per-user decode p50 tok/s (TTFT p50 ms)**.
+
+Metric names (aiperf 0.8.0 fields, so nothing is guessed):
+
+| reported as | aiperf field | definition |
+|---|---|---|
+| TPOT p50 (ms) | `inter_token_latency` | (request latency − TTFT) ÷ (output tokens − 1) |
+| per-user decode (tok/s) | `output_token_throughput_per_user` | exactly 1 ÷ ITL — one user's decode rate. aiperf/InferenceX plot this axis as "interactivity"; at conc 1 it is 1000 ÷ TPOT |
+| system output tok/s | `output_token_throughput` | all output tokens ÷ benchmark wall time (prefill is in the denominator, so it is not a pure decode rate) |
+| per-GPU output tok/s | derived | system output tok/s ÷ GPUs (8 quant, 16 BF16) |
+| TTFT (ms) | `time_to_first_token` | first streamed token (= first reasoning token) |
+| requests/s | `request_throughput` | completed requests ÷ wall time; on the pinned-8k shape = system output tok/s ÷ 8000 |
+
+Earlier revisions of this doc said "aggregate tok/s" for system output throughput
+and "interactivity tok/s" for per-user decode — same numbers, non-standard names.
 
 Highlight convention (same as the HTML report): **bold** = best in the row, and
 every cell within 1% of it is bolded too (that is the noise floor, so
@@ -77,7 +91,7 @@ per-GPU numbers divide by 16, the quant arms by 8.
 | 16 | **12.23 (1300)** | **12.18 (1303)** | 12.35 (1268) | 16.42 (968) | 22.48 (711) |
 | 64 | **19.40 (3267)** | **19.43 (3262)** | 21.10 (2923) | 27.52 (2177) | 35.16 (1700) |
 
-Per-GPU aggregate at conc-64: GPTQ/AWQ 408, cyankiwi 365, MXFP8 272, BF16 106
+Per-GPU output throughput at conc-64: GPTQ/AWQ 408, cyankiwi 365, MXFP8 272, BF16 106
 tok/s/GPU → in-house W4AFP8 = **3.84× BF16 per GPU**.
 
 ### Serve-ready vs BF16 baseline (per-GPU efficiency)
@@ -91,22 +105,23 @@ count (BF16 16, quant 8).
 |---|---|---|---|
 | GPUs · nodes to serve | 16 · 2 | **8 · 1** | half the fleet, no cross-node hop in the serving path |
 | weights on disk | 796 GB | **225 GB** | **3.5× smaller** — why it fits one node's HBM |
-| reasoning conc 1 · decode tok/s | 81 (5.1/GPU) | **137 (17.1/GPU)** | 1.7× per user · **3.4× per GPU** |
-| reasoning conc 4 · agg tok/s | 246 (15.4/GPU) | **451 (56.4/GPU)** | 1.8× total · **3.7× per GPU** |
-| reasoning conc 16 · agg tok/s | 711 (44.4/GPU) | **1300 (162.5/GPU)** | 1.8× total · **3.7× per GPU** |
-| reasoning conc 64 · agg tok/s | 1700 (106/GPU) | **3267 (408/GPU)** | 1.9× total · **3.8× per GPU** |
+| reasoning conc 1 · output tok/s (single stream, system = per-user decode) | 81 (5.0/GPU) | **137 (17.1/GPU)** | 1.7× per user · **3.4× per GPU** |
+| reasoning conc 4 · system output tok/s | 246 (15.4/GPU) | **451 (56.4/GPU)** | 1.8× total · **3.7× per GPU** |
+| reasoning conc 16 · system output tok/s | 711 (44.4/GPU) | **1300 (162.5/GPU)** | 1.8× total · **3.7× per GPU** |
+| reasoning conc 64 · system output tok/s | 1700 (106/GPU) | **3267 (408/GPU)** | 1.9× total · **3.8× per GPU** |
 | GPU-hours per 1M output tokens (conc 64) | 2.61 | **0.68** | **3.8× cheaper** per token at full load |
-| agentic warm 16 · interactivity tok/s | 41.4 (2.6/GPU) | **72.2 (9.0/GPU)** | 1.7× per user · **3.5× per GPU** |
+| agentic warm 16 · per-user decode tok/s | 41.4 | **72.2** | **1.7× per user**, on half the GPUs |
+| agentic warm 16 · system output tok/s | 490 (30.6/GPU) | **727 (90.9/GPU)** | 1.5× total · **3.0× per GPU** — prefill-bound, BF16's best regime |
 | agentic warm 16 · p95 TTFT ms | **783** | 893 | BF16 wins by 12% (16 GPUs prefill faster); both inside the 1 s SLO |
-| 100k-token prompt conc 1 · decode tok/s | 78.4 (4.9/GPU) | **130.9 (16.4/GPU)** | 1.7× per user · **3.3× per GPU**; TTFT also 8% better (5.39 s vs 5.88 s) |
+| 100k-token prompt conc 1 · per-user decode tok/s | 78.4 | **130.9** | **1.7× per user** on half the GPUs; TTFT also 8% better (5.39 s vs 5.88 s) |
 
-Everything except loaded prefill improves ~3.5× per GPU. The other ship-capable
+Decode-bound work improves 3.4–3.8× per GPU, prefill-bound agentic work 3.0×. The other ship-capable
 options are worse buys: vendor MXFP8 is quality-clean but 272 tok/s/GPU at
 conc-64 (2.6× BF16, vs our 3.8×); in-house AWQ r7 is speed-identical to GPTQ
 (within 1% in every cell) but has no quality verdict yet; cyankiwi is
 quality-disqualified.
 
-### Agentic (warm / cold) — interactivity tok/s (TTFT p50/p95 ms)
+### Agentic (warm / cold) — per-user decode tok/s (TTFT p50/p95 ms)
 
 | conc | GPTQ·Hum | AWQ-r7·Hum | cyankiwi·Marlin | MXFP8 | BF16 |
 |---|---|---|---|---|---|
@@ -122,6 +137,33 @@ quality-disqualified.
 1 s p95 TTFT SLO: warm — held by the in-house arms through conc 16 (cyankiwi and
 MXFP8 miss at 16), only BF16 (16 GPUs) still holds at 32; cold — missed by every
 arm past conc 1. The HTML report marks each over-SLO cell with an amber bar.
+
+### Throughput view — system output tok/s (per GPU)
+
+| workload · conc | GPTQ·Hum | AWQ-r7·Hum | cyankiwi·Marlin | MXFP8 | BF16 (16 GPU) |
+|---|---|---|---|---|---|
+| reasoning 1 | **137 (17.1)** | **136 (17.0)** | 118 (14.7) | 107 (13.4) | 81 (5.0) |
+| reasoning 4 | **451 (56.4)** | **453 (56.6)** | 415 (51.9) | 349 (43.7) | 246 (15.4) |
+| reasoning 16 | **1300 (162.5)** | **1303 (162.8)** | 1268 (158.6) | 968 (121.0) | 711 (44.4) |
+| reasoning 64 | **3267 (408.4)** | **3262 (407.8)** | 2923 (365.4) | 2177 (272.1) | 1700 (106.2) |
+| agentic warm 1 | **112 (14.0)** | 109 (13.7) | 104 (13.0) | 91 (11.3) | 70 (4.4) |
+| agentic warm 4 | 292 (36.6) | **299 (37.4)** | 285 (35.6) | 247 (30.8) | 189 (11.8) |
+| agentic warm 16 | **727 (90.9)** | **727 (90.9)** | 662 (82.8) | 576 (72.0) | 490 (30.6) |
+| agentic warm 32 | **1036 (129.5)** | **1036 (129.6)** | 931 (116.4) | 825 (103.2) | 708 (44.3) |
+
+Cold-regime system throughput (same shape, cache defeated), GPTQ/AWQ/cyankiwi/
+MXFP8/BF16: conc 1 → 81/80/66/58/56; conc 4 → 183/183/138/124/133; conc 16 →
+236/235/164/120/162; conc 32 → 219/219/147/126/179 tok/s.
+
+Agentic throughput is prefill-bound (≈100 output tokens per turn on a 7.3k-token
+prefix), which is why it lands at 1036 tok/s @32 against 3267 in the pinned
+reasoning shape — and why BF16's 16 GPUs close the per-GPU gap there to 2.9×
+(44.3 vs 129.5) instead of 3.8×.
+
+AA cells also carry `aggregate_output_tps` and `request_throughput_rps`, but
+natural output lengths ran 307–696 tokens across arms (11k–16k for cyankiwi), so
+AA throughput is OSL-confounded — use the pinned-output reasoning path for
+throughput comparisons.
 
 ### AA-style sweep
 

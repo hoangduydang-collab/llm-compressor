@@ -2,6 +2,7 @@
 
 Wave 1: window `m3-specdec-eagle3/20260727T061506Z`, 4 arms.
 Wave 2: window `m3-specdec-eagle3/20260727T064934Z-wave2`, 6 arms.
+Phase D: window `m3-specdec-eagle3/20260727T073533Z-phaseD`, 2 arms × 10 cells.
 All arms rc=0, every gate passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
 
@@ -221,63 +222,106 @@ tier.**
 
 Caveats worth carrying:
 - The gain on production traffic is **1.81×**, not the 2.3× the pinned suites show.
-- Expect **1.36×–2.15× depending on workload mix** (phase D, below).
-- k=5 remains a net loss (wave 1); nothing deeper than k=3 is worth serving.
+- Expect **1.16×–2.17× depending on workload mix and load** (phase D, below): code
+  at low concurrency is the ceiling, creative writing under load is the floor.
+- k=5 remains a net loss (wave 1); nothing deeper than k=3 is worth serving. Phase
+  D's per-position rates suggest k=3 is also too deep for high-entropy traffic —
+  untested, and the one open question against this verdict.
 - Untested past conc 64 on a single node.
 
-## Phase D — length × entropy on nvidia/SPEED-Bench (in flight)
+## Phase D — length × entropy on nvidia/SPEED-Bench (complete)
 
-Window `20260727T073533Z-phaseD`, 2 arms. Isolates *content domain* from *prompt
-length* using NVIDIA's purpose-built spec-dec benchmark: fixed-ISL buckets
-(1k/8k/32k) crossed with entropy tier, temp 0.6, no `ignore_eos`, `max_tokens`
-2048. The 1k and 8k conc-1 cells have landed:
+Window `20260727T073533Z-phaseD`, 2 arms, 10 cells each, all rc=0. Isolates
+*content domain* from *prompt length* using NVIDIA's purpose-built spec-dec
+benchmark: fixed-ISL buckets (1k/8k/32k) crossed with entropy tier, temp 0.6, no
+`ignore_eos`, `max_tokens` 2048.
 
-| cell (conc 1) | ISL | control speed | k3 speed | × | accepted len | ITL control → k3 | TTFT control → k3 |
-|---|---|---|---|---|---|---|---|
-| 1k **low** entropy (code, sorting) | 1011 | 137.31 | 294.77 | **2.15×** | 3.100 | 7.283 → 3.406 | 128.9 → 127.5 |
-| 8k **low** entropy | 8080 | 136.74 | 296.90 | **2.17×** | 3.106 | 7.313 → 3.378 | 420.8 → 420.1 |
-| 1k **high** entropy (creative writing) | 990 | 137.38 | 186.22 | **1.36×** | 1.850 | 7.279 → 5.455 | 133.1 → 136.0 |
-| 8k **high** entropy | 8183 | 136.70 | 178.95 | **1.31×** | 1.779 | 7.315 → 5.729 | 456.1 → 466.9 |
+**Conc 1** — the full 3×2 grid:
 
-Two axes separate cleanly, and the control is an almost exact internal check across
-all four cells (136.70–137.38 tok/s, ITL 7.279–7.315 ms) — the baseline is
-indifferent to both length and subject matter, so the entire spread is drafter
-behaviour.
+| cell (conc 1) | ISL | control | k3 | × | accepted len | per-position | ITL control → k3 | TTFT control → k3 |
+|---|---|---|---|---|---|---|---|---|
+| 1k **low** entropy (code, sorting) | 1011 | 137.31 | 294.77 | **2.15×** | 3.100 | 0.847/0.691/0.562 | 7.283 → 3.406 | 128.9 → 127.5 |
+| 8k **low** entropy | 8080 | 136.74 | 296.90 | **2.17×** | 3.106 | 0.844/0.696/0.565 | 7.313 → 3.378 | 420.8 → 420.1 |
+| 32k **low** entropy | 32389 | 133.91 | 289.23 | **2.16×** | 3.064 | 0.838/0.681/0.544 | 7.468 → 3.475 | 1217.9 → 1245.2 |
+| 1k **high** entropy (creative writing) | 990 | 137.38 | 186.22 | **1.36×** | 1.850 | 0.507/0.237/0.106 | 7.279 → 5.455 | 133.1 → 136.0 |
+| 8k **high** entropy | 8183 | 136.70 | 178.95 | **1.31×** | 1.779 | 0.472/0.211/0.096 | 7.315 → 5.729 | 456.1 → 466.9 |
+| 32k **high** entropy | 32062 | 133.97 | 185.00 | **1.38×** | 1.892 | 0.523/0.252/0.117 | 7.464 → 5.485 | 1649.0 → 1690.1 |
+
+The control is an almost exact internal check across all six cells (133.91–137.38
+tok/s, ITL 7.279–7.468 ms) — the baseline is indifferent to both length and subject
+matter, so the entire spread is drafter behaviour.
 
 **Content domain is the dominant axis: 1.78 → 3.11 accepted length, +75%** — larger
 than output shape (+33%) and far larger than temperature (+4%). ShareGPT's mixed
 traffic at 1.81× sits between the two extremes, where a blend should.
 
-**Length is flat, now for the right reason.** Within a tier, an 8× longer prompt
-moves acceptance by +0.006 (low) and −0.071 (high). Wave 1 also found length flat,
-but only on synthetic random tokens, where one could argue there was nothing worth
-copying. These prompts are real code and real prose at 8k, the ideal setup for a
-drafter to lift spans out of context, and it still buys nothing — because EAGLE3's
-drafter conditions on the target's hidden state, not on retrievable prompt text.
-The 8k-low cell also shows **no prefill penalty at all** (420.8 → 420.1 ms).
+**Length is flat over a 32× range, now for the right reason.** Within a tier,
+1k → 32k moves accepted length by −0.036 (low) and +0.042 (high) — both smaller
+than the tier gap by a factor of ~30. Wave 1 also found length flat, but only on
+synthetic random tokens, where one could argue there was nothing worth copying.
+These are real code and real prose at up to 32k, the ideal setup for a drafter to
+lift spans out of context, and it still buys nothing — because EAGLE3's drafter
+conditions on the target's hidden state, not on retrievable prompt text. The
+prefill penalty stays near-constant in absolute terms (−0.7 ms at 8k-low,
++27.3 ms at 32k-low), so it shrinks *relatively* as prompts grow; per-user
+throughput at 32k is unchanged, and only the server-aggregate ratio slips
+(2.10× → 1.97× at 8k → 32k low) as prefill takes a larger share of the step.
+
+**Conc 10** — the 2×2 load crossing (1k/8k, both tiers):
+
+| cell (conc 10) | control | k3 | × per-user | server total × | accepted len | per-position |
+|---|---|---|---|---|---|---|
+| 1k-low | 80.71 | 152.91 | **1.89×** | 1.91× | 3.064 | 0.832/0.679/0.552 |
+| 8k-low | 73.03 | 133.18 | **1.82×** | 1.79× | 3.131 | 0.850/0.704/0.577 |
+| 1k-high | 85.40 | 104.69 | **1.23×** | 1.18× | 1.867 | 0.511/0.243/0.114 |
+| 8k-high | 78.05 | 90.49 | **1.16×** | 1.14× | 1.816 | 0.486/0.226/0.105 |
+
+**Acceptance is invariant to concurrency, third confirmation.** Every cell moves by
+<0.04 between conc 1 and conc 10 (3.100→3.064, 3.106→3.131, 1.850→1.867,
+1.779→1.816) — twice at 8× the load here, after phase B's flat 3.427/3.477/3.470
+across conc 16/32/64. The speedup does shrink under load (2.15→1.89 low,
+1.36→1.23 high), but that is compute sharing in the control, not worse drafting.
+
+**The floor of the whole study is 8k-high at conc 10: 1.16× per-user, 1.14×
+server.** With per-position rates 0.486/0.226/0.105, k=3 is spending three draft
+slots to win 0.82 extra tokens. Still a gain, so it does not change the
+enable-by-default verdict — but it is the cell where k=1 or k=2 would plausibly
+beat k=3, and it is the one worth measuring before hard-coding k=3 for all
+traffic.
+
+One anomaly, recorded not explained: at 8k-high conc 10 the control's TTFT is
+1448.2 ms against k3's 661.7 ms. The direction matches phase C's conc-16 inversion
+(482.55 → 220.58 ms) and the same prefill-bound mechanism would predict it, but a
+single cell at one concurrency is not enough to claim the magnitude is real.
 
 ### Output-budget censoring (measured, affects interpretation)
 
 `max_tokens=2048` truncated a large share of responses, so these are **not**
-natural-stopping lengths:
+natural-stopping lengths. Share of requests hitting the cap exactly
+(control / k3; a few land at 2046–2047 from tokenizer re-count versus the server's
+own accounting, so treat these as slight underestimates):
 
-| cell | requests at the 2048 cap (control / k3) |
-|---|---|
-| 1k-low | 15% / 20% |
-| 8k-low | 60% / 60% |
-| 1k-high | 82.5% / 82.5% |
-| 8k-high | 92.5% / 92.5% |
+| cell | conc 1 | conc 10 |
+|---|---|---|
+| 1k-low | 15% / 20% | 30% / 28% |
+| 8k-low | 60% / 60% | 52% / 53% |
+| 32k-low | 65% / 70% | — |
+| 1k-high | 80% / 82.5% | 78% / 70% |
+| 8k-high | 87.5% / 90% | 93% / 93% |
+| 32k-high | 90% / 95% | — |
 
-The ratios and the tier contrast survive this: censoring is identical between arms
-in every cell, both arms emit the same token counts, and at conc 1 the speed ratio
-is just the ITL ratio. Nor is this the wave-2 shape inflation — `ignore_eos` forces
-generation *past* its natural stop (which is what made drafting easy, +33%),
-whereas truncation stops reading *early*, so acceptance over the retained prefix
-(~80k tokens per cell) is genuine natural-generation acceptance. What the data does
-**not** support is any claim about per-tier natural response length; a higher budget
-would be needed for that.
+The ratios and the tier contrast survive this: censoring is within a few points
+between arms in every cell, both arms emit essentially the same token counts, and
+at conc 1 the speed ratio is just the ITL ratio. Nor is this the wave-2 shape
+inflation — `ignore_eos` forces generation *past* its natural stop (which is what
+made drafting easy, +33%), whereas truncation stops reading *early*, so acceptance
+over the retained prefix (~70–200k tokens per cell) is genuine natural-generation
+acceptance. What the data does **not** support is any claim about per-tier natural
+response length; a higher budget would be needed for that.
 
-Remaining cells: both 32k cells at conc 1, and the 1k/8k crossing at conc 10.
+The conc-10 sweep was scoped to 1k and 8k by design
+(`pipeline/slurm/specdec_phaseD_arm.sh:118`); 32k ran conc-1 only, so the two
+32k conc-10 cells are absent rather than failed.
 
 Harness comparability: these are **not** comparable to published SPEED-Bench
 scores. ~42–56% of the public parquet is masked
@@ -300,8 +344,13 @@ pipeline/specdec_wave2_aggregate.py --root <window> --out-json <window>/aggregat
 ```
 
 **Phase D** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T073533Z-phaseD/`:
-arms `phaseD-k{0,3}`, plus `speedbench-manifest.txt` recording the staged prompt
-hashes and per-cell token statistics the launcher gated on.
+arms `phaseD-k{0,3}`, each with `client.log`, `serve.log`, `spec-boot.log`,
+`backend-attestation.json`, per-cell `speedbench/<cell>/conc_<n>/` aiperf artifacts
+(including `profile_export.jsonl`, the source of the censoring table) and
+`metrics/sb-<cell>-c<n>-{pre,post}.txt` from which every acceptance and
+per-position figure is a counter delta. Window-level `speedbench-manifest.txt`
+records the staged prompt hashes and per-cell token statistics the launcher gated
+on; `arm-provenance.txt`, `actual-commit.txt`, `controller-done.txt`.
 
 **Wave 1** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T061506Z/` — per arm
 `serve.log`, `spec-boot.log`, `spec-metrics.log`, `backend-attestation.json`,

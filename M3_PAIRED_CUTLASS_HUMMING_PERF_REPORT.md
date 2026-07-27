@@ -50,16 +50,17 @@ counts identical at all 12 points. The deltas below are not a length artifact.
 
 ## Results
 
-`C` = CUTLASS, `H` = Humming. Metric names: **sys out tok/s** = system output
-throughput (aiperf `output_token_throughput`, all output tokens ÷ wall time);
-**per-user decode** = one user's decode rate (aiperf
-`output_token_throughput_per_user` = 1 ÷ inter-token latency; earlier revisions
-called it "interactivity", aiperf/InferenceX's name for the same field). Both:
-higher is better. `TPOT`/`TTFT`: lower is better.
+`C` = CUTLASS, `H` = Humming. Metric names: **total out tok/s** = output tokens
+over all concurrent requests ÷ wall time (aiperf `output_token_throughput`);
+**output speed** = output tokens/s for one request (aiperf
+`output_token_throughput_per_user` = 1 ÷ inter-token latency; AA's "Output
+Speed", labelled "interactivity" by aiperf/InferenceX). Output tokens only —
+input + output token throughput is not reported. Both: higher is better.
+`TPOT`/`TTFT`: lower is better.
 
 ### Reasoning (ISL 1000 / OSL ~8000)
 
-| conc | sys out tok/s C → H | TPOT ms C → H | TTFT p50 ms C → H |
+| conc | total out tok/s C → H | TPOT ms C → H | TTFT p50 ms C → H |
 | --- | --- | --- | --- |
 | 1 | 102.50 → 136.59 **+33.3%** | 9.73 → 7.29 **−25.0%** | 134.99 → 131.80 −2.4% |
 | 4 | 335.08 → 450.37 **+34.4%** | 11.90 → 8.82 **−25.8%** | 246.53 → 244.51 −0.8% |
@@ -68,7 +69,7 @@ higher is better. `TPOT`/`TTFT`: lower is better.
 
 ### Agentic warm (ISL ~12.5k / OSL ~100)
 
-| conc | sys out tok/s C → H | per-user decode C → H | TTFT p50 ms C → H |
+| conc | total out tok/s C → H | output speed C → H | TTFT p50 ms C → H |
 | --- | --- | --- | --- |
 | 1 | 86.56 → 109.09 **+26.0%** | 102.83 → 138.51 **+34.7%** | 187.00 → 195.23 +4.4% |
 | 4 | 240.34 → 291.81 **+21.4%** | 80.40 → 106.49 **+32.5%** | 287.98 → 317.43 +10.2% |
@@ -77,7 +78,7 @@ higher is better. `TPOT`/`TTFT`: lower is better.
 
 ### Agentic cold
 
-| conc | sys out tok/s C → H | per-user decode C → H | TTFT p50 ms C → H |
+| conc | total out tok/s C → H | output speed C → H | TTFT p50 ms C → H |
 | --- | --- | --- | --- |
 | 1 | 67.87 → 80.65 **+18.8%** | 103.15 → 138.73 **+34.5%** | 553.43 → 568.01 +2.6% |
 | 4 | 165.69 → 183.15 **+10.5%** | 65.86 → 86.63 **+31.5%** | 628.59 → 647.94 +3.1% |
@@ -92,9 +93,9 @@ collapse point is not kernel-dependent in this envelope.
 ## What the numbers say
 
 1. **Humming wins decode, consistently and by a lot.** TPOT is 13–26% lower
-   across every reasoning point, and per-user decode is 23–35% higher across every
+   across every reasoning point, and output speed is 23–35% higher across every
    agentic point. This is the strongest signal in the run.
-2. **The decode win shrinks as concurrency rises** (reasoning system output tok/s +33% at
+2. **The decode win shrinks as concurrency rises** (reasoning total output tok/s +33% at
    conc-1 → +15% at conc-64).
 3. **Humming loses TTFT, and the loss grows with load** — reasoning +12.1% at
    conc-16; agentic warm +4.4% → +29.0% from conc-1 to 32; agentic cold +30.9%
@@ -260,7 +261,7 @@ this file is the same picture one window earlier):
 
 - **Decode: Humming wins big.** Reasoning TPOT (CUTLASS / indexed / grouped):
   conc-1 9.73 / **7.29** / 8.49 ms; conc-64 22.28 / **19.42** / 20.63 ms.
-  Agentic per-user decode +23–35% for indexed over CUTLASS at every point.
+  Agentic output speed +23–35% for indexed over CUTLASS at every point.
 - **Prefill under load: Humming pays.** TTFT worsens with concurrency
   (reasoning conc-16 +12%; agentic warm conc-32 +29% vs CUTLASS). One
   crossover: agentic cold conc-32 throughput −1.2%.

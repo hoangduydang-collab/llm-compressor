@@ -198,7 +198,7 @@
     <h1>W4AFP8 decodes faster than every M3 provider but one — on half the hardware</h1>
     <p class="dek">
       Our in-house W4AFP8 quant serves at 137 tok/s single-user (second only to Nebius among commercial
-      M3 endpoints), 3.8× BF16's per-GPU reasoning throughput, and holds a 1-second agentic p95 TTFT SLO
+      M3 endpoints), 3.8× BF16's reasoning output tok/s per GPU, and holds a 1-second agentic p95 TTFT SLO
       to concurrency 16 — same checkpoint we shipped, zero requantization. Results are organized on two
       axes: <a href="#axis-kernel">which kernel</a> (model fixed) and
       <a href="#axis-quant">which quantization</a> (kernel fixed). Quality verdicts:
@@ -224,7 +224,7 @@
       <p>
         In-house W4AFP8 on one 8×H100 node, stock vLLM plus our patched Humming MoE kernel:
         <strong>137 tok/s single-user decode</strong> (BF16: 81 on two nodes), <strong>3,267 tok/s
-        system output throughput at concurrency 64</strong> (BF16: 1,700 on twice the GPUs), a <strong>1-second agentic
+        total output at concurrency 64</strong> (BF16: 1,700 on twice the GPUs), a <strong>1-second agentic
         p95 TTFT SLO held to concurrency 16</strong>, and <strong>131 tok/s decode with a 100k-token
         prompt</strong> — the full <a href="#efficiency">serve-ready vs BF16 comparison</a> is one table.
         The speed ladder is set by <em>format and kernel</em>, not quantization
@@ -234,7 +234,7 @@
     </div>
     <div class="tiles">
       <div class="tile good">
-        <p class="k">Per-GPU throughput</p>
+        <p class="k">Output tok/s per GPU</p>
         <p class="v">3.8<small>× BF16</small></p>
         <p class="d">Reasoning @ conc 64: 408 tok/s/GPU on 8 GPUs vs 106 on 16. Same window, same stack.</p>
       </div>
@@ -274,12 +274,12 @@
           concurrency 1/4/16/32.</li>
         <li><strong>AA-style sweep</strong> — Artificial-Analysis axes: input 1k/10k/100k × concurrency
           1/10, natural output length (AA's answer-token floors recorded, not forced). Comparable columns
-          are per-user decode speed and TTFT; AA-style, <em>not</em> AA-leaderboard-comparable (synthetic
+          are output speed and TTFT; AA-style, <em>not</em> AA-leaderboard-comparable (synthetic
           prompts, model-tokenizer units, one batch vs their 72-h medians).</li>
       </ul>
       <p>
-        Table format everywhere: primary cells are <strong>TPOT p50 ms (system output tok/s)</strong>; AA
-        cells are <strong>per-user decode p50 tok/s (TTFT p50 ms)</strong>. Cross-window TPOT noise floor
+        Table format everywhere: primary cells are <strong>TPOT p50 ms (total output tok/s)</strong>; AA
+        cells are <strong>output speed p50 tok/s (TTFT p50 ms)</strong>. Cross-window TPOT noise floor
         is ±0.2% (re-run arms reproduce to ±0.02 ms). Provider numbers are matched on workload shape but
         carry live multi-tenant load — same-ballpark placement, not a ranking.
       </p>
@@ -293,11 +293,12 @@
         </thead>
         <tbody>
           <tr><td class="arm">TPOT p50 (ms)</td><td><code>inter_token_latency</code></td><td style="white-space:normal;text-align:left">Time per output token in steady decode: (request latency − TTFT) ÷ (output tokens − 1). Lower is better.</td></tr>
-          <tr><td class="arm">per-user decode (tok/s)</td><td><code>output_token_throughput_per_user</code></td><td style="white-space:normal;text-align:left">Exactly 1 ÷ inter-token latency — the decode rate a single user experiences. aiperf and NVIDIA's InferenceX plots label this axis <em>interactivity</em>; this report uses the plain name. At concurrency 1 it is 1000 ÷ TPOT, i.e. the TPOT column inverted.</td></tr>
-          <tr><td class="arm">system output tok/s</td><td><code>output_token_throughput</code></td><td style="white-space:normal;text-align:left">All output tokens produced ÷ benchmark wall time, summed over the concurrent requests — the throughput figure in parentheses. Prefill time sits in the denominator, so it is <em>not</em> a pure decode rate; that is why it is not labelled "decode tok/s".</td></tr>
-          <tr><td class="arm">per-GPU output tok/s</td><td>derived</td><td style="white-space:normal;text-align:left">System output tok/s ÷ GPUs in the deployment (8 for every quant arm, 16 for BF16). The efficiency axis for cross-arm comparison.</td></tr>
+          <tr><td class="arm">output speed (tok/s)</td><td><code>output_token_throughput_per_user</code></td><td style="white-space:normal;text-align:left">Output tokens per second for one request — exactly 1 ÷ inter-token latency, i.e. the decode rate a single user sees. Artificial Analysis calls this <em>Output Speed</em>; aiperf and NVIDIA's InferenceX plots label the same field <em>interactivity</em>. At concurrency 1 it is 1000 ÷ TPOT, the TPOT column inverted.</td></tr>
+          <tr><td class="arm">total output tok/s</td><td><code>output_token_throughput</code></td><td style="white-space:normal;text-align:left">Output tokens summed over all concurrent requests ÷ benchmark wall time — the figure in parentheses in the tables. Output tokens only, and prefill time is in the denominator, so it is the whole server's output rate rather than one stream's decode rate.</td></tr>
+          <tr><td class="arm">output tok/s per GPU</td><td>derived</td><td style="white-space:normal;text-align:left">Total output tok/s ÷ GPUs in the deployment (8 for every quant arm, 16 for BF16). The efficiency axis for cross-arm comparison.</td></tr>
           <tr><td class="arm">TTFT (ms)</td><td><code>time_to_first_token</code></td><td style="white-space:normal;text-align:left">Time to the first streamed token — for M3 that is the first reasoning token. p50 unless p95 is named.</td></tr>
-          <tr><td class="arm">requests/s</td><td><code>request_throughput</code></td><td style="white-space:normal;text-align:left">Completed requests ÷ wall time. Recorded in every artifact; on the pinned-8k reasoning shape it is just system output tok/s ÷ 8,000, so the token form is what these tables show.</td></tr>
+          <tr><td class="arm">requests/s</td><td><code>request_throughput</code></td><td style="white-space:normal;text-align:left">Completed requests ÷ wall time. Recorded in every artifact; on the pinned-8k reasoning shape it is just total output tok/s ÷ 8,000, so the token form is what these tables show.</td></tr>
+          <tr><td class="arm">input + output tok/s</td><td><code>total_token_throughput</code></td><td style="white-space:normal;text-align:left"><strong>Not reported here.</strong> aiperf records it in the raw exports, but prompt tokens are processed once at prefill while output tokens are generated one at a time, so mixing them hides the decode behaviour these comparisons are about. Every tok/s figure in this document counts <em>output</em> tokens only.</td></tr>
         </tbody>
       </table>
     </div>
@@ -340,7 +341,7 @@
       <div class="bar-row"><span class="lab">+ 0.1.11 packed-K</span>
         <span class="track"><span class="fill f-ok" style="width:94%"></span></span><span class="num">131 tok/s</span></div>
     </div>
-    <p class="legend"><span>Reasoning conc-1 per-user decode · GPTQ checkpoint · 8×H100 TP8/EP8</span></p>
+    <p class="legend"><span>Reasoning conc-1 output speed · GPTQ checkpoint · 8×H100 TP8/EP8</span></p>
 
     <div class="scroll" style="margin-top:18px">
       <table>
@@ -348,16 +349,16 @@
           <tr><th class="arm">Stage (in order)</th><th>conc-1 TPOT</th><th>What changed</th></tr>
         </thead>
         <tbody>
-          <tr class="baseline"><td class="arm">0 · CUTLASS, shared-expert stream off</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
-          <tr class="baseline"><td class="arm">1 · shared-expert stream re-enabled</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
-          <tr><td class="arm">2 · Humming MoE kernel (indexed)</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
-          <tr><td class="arm">3 · Humming 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="slo">7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
+          <tr class="baseline"><td class="arm">0 · CUTLASS, stream off</td><td>10.3–10.5 ms</td><td style="white-space:normal;text-align:left">The stack behind the original five-arm comparison (<a href="#history">history</a>)</td></tr>
+          <tr class="baseline"><td class="arm">1 · shared stream on</td><td>9.7 ms</td><td style="white-space:normal;text-align:left">Capture-IMA root-caused (missing pre-capture sync in the fork's graph capture); overlap on by default. −7.4% TPOT.</td></tr>
+          <tr><td class="arm">2 · Humming indexed</td><td class="cell-good">7.29 ms</td><td style="white-space:normal;text-align:left">Hopper-native WGMMA/TMA W4A8 GEMM, adopted after fixing four upstream kernel defects (schema gap, expert-bound bug, missing PTX fence, uncommitted TMA store groups). Decode 23–35% faster than CUTLASS at every point; loaded prefill worse (TTFT +12–29% at conc ≥16 — CUTLASS keeps that crown). All four defects still unfixed upstream; every serve attests the patched kernel.</td></tr>
+          <tr><td class="arm">3 · 0.1.11 packed-K <span class="muted">(optional)</span></td><td class="slo">7.59 ms</td><td style="white-space:normal;text-align:left">Upstream dequant-layout change. A trade: −4% at conc 1, +1–3% TPOT at conc 16–64, up to +7–10% in weight-bound cells. Adoption is an open call — throughput serving says yes, interactive latency says stay on 0.1.10.</td></tr>
         </tbody>
       </table>
     </div>
     <p class="legend"><span>Stage narrative, not a row-wise comparison: tinted = superseded stack, green = current default, amber bar = measured but not adopted</span></p>
 
-    <h3>Primary path — reasoning · TPOT p50 ms (system output tok/s)</h3>
+    <h3>Primary path — reasoning · TPOT p50 ms (total output tok/s)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -371,9 +372,9 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = lowest TPOT in the row (±1%) · every arm on this axis runs 8 GPUs, so per-GPU throughput is the parenthesised figure ÷ 8 · CUTLASS and Humming arms from separate suite windows (see sources) · noise floor ±0.2%</span></p>
+    <p class="legend"><span>Green = lowest TPOT in the row (±1%) · every arm on this axis runs 8 GPUs, so output tok/s per GPU is the parenthesised figure ÷ 8 · CUTLASS and Humming arms from separate suite windows (see sources) · noise floor ±0.2%</span></p>
 
-    <h3>AA-style sweep — per-user decode tok/s (TTFT ms)</h3>
+    <h3>AA-style sweep — output speed tok/s (TTFT ms)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -389,7 +390,7 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = highest per-user decode in the row (±1%) · all five arms: one window, uniform 131k context · natural output length</span></p>
+    <p class="legend"><span>Green = highest output speed in the row (±1%) · all five arms: one window, uniform 131k context · natural output length</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li><strong>Kernel ordering is stable at every input length:</strong> Humming indexed &gt; grouped
@@ -432,26 +433,29 @@
           <tr><th class="arm">Metric</th><th>BF16 baseline<br><span class="muted">16×H100 · 2 nodes</span></th><th>Serve-ready W4AFP8<br><span class="muted">8×H100 · 1 node</span></th><th>Advantage</th></tr>
         </thead>
         <tbody>
-          <tr><td class="arm">GPUs · nodes to serve</td><td>16 · 2</td><td class="cell-good">8 · 1</td><td style="white-space:normal;text-align:left">Half the fleet, one node — no cross-node interconnect in the serving path</td></tr>
-          <tr><td class="arm">Weights on disk</td><td>796 GB</td><td class="cell-good">225 GB</td><td style="white-space:normal;text-align:left"><strong>3.5× smaller</strong> — why it fits in one node's HBM at all</td></tr>
-          <tr><td class="arm">Reasoning conc 1 · output tok/s <span class="muted">(single stream, so system = per-user decode)</span></td><td>81 <span class="muted">(5.0/GPU)</span></td><td class="cell-good">137 <span class="muted">(17.1/GPU)</span></td><td style="white-space:normal;text-align:left">1.7× per user · <strong>3.4× per GPU</strong></td></tr>
-          <tr><td class="arm">Reasoning conc 4 · system output tok/s</td><td>246 <span class="muted">(15.4/GPU)</span></td><td class="cell-good">451 <span class="muted">(56.4/GPU)</span></td><td style="white-space:normal;text-align:left">1.8× total · <strong>3.7× per GPU</strong></td></tr>
-          <tr><td class="arm">Reasoning conc 16 · system output tok/s</td><td>711 <span class="muted">(44.4/GPU)</span></td><td class="cell-good">1,300 <span class="muted">(162.5/GPU)</span></td><td style="white-space:normal;text-align:left">1.8× total · <strong>3.7× per GPU</strong></td></tr>
-          <tr><td class="arm">Reasoning conc 64 · system output tok/s</td><td>1,700 <span class="muted">(106/GPU)</span></td><td class="cell-good">3,267 <span class="muted">(408/GPU)</span></td><td style="white-space:normal;text-align:left">1.9× total · <strong>3.8× per GPU</strong></td></tr>
-          <tr><td class="arm">GPU-hours per 1M output tokens <span class="muted">(conc 64)</span></td><td>2.61</td><td class="cell-good">0.68</td><td style="white-space:normal;text-align:left"><strong>3.8× cheaper</strong> per token served at full load</td></tr>
-          <tr><td class="arm">Agentic warm conc 16 · per-user decode tok/s</td><td>41.4</td><td class="cell-good">72.2</td><td style="white-space:normal;text-align:left"><strong>1.7× per user</strong>, on half the GPUs</td></tr>
-          <tr><td class="arm">Agentic warm conc 16 · system output tok/s</td><td>490 <span class="muted">(30.6/GPU)</span></td><td class="cell-good">727 <span class="muted">(90.9/GPU)</span></td><td style="white-space:normal;text-align:left">1.5× total · <strong>3.0× per GPU</strong> — prefill-bound, BF16's best regime</td></tr>
-          <tr><td class="arm">Agentic warm conc 16 · p95 TTFT ms</td><td class="cell-good">783</td><td>893</td><td style="white-space:normal;text-align:left"><strong>BF16 wins</strong> by 12% — 16 GPUs prefill faster. Both hold the 1 s SLO.</td></tr>
-          <tr><td class="arm">100k-token prompt · conc 1 per-user decode tok/s</td><td>78.4</td><td class="cell-good">130.9</td><td style="white-space:normal;text-align:left"><strong>1.7× per user</strong> on half the GPUs; TTFT also 8% better (5.39 s vs 5.88 s)</td></tr>
+          <tr><td class="arm">GPUs · nodes</td><td>16 · 2</td><td class="cell-good">8 · 1</td><td>half the fleet</td></tr>
+          <tr><td class="arm">Weights</td><td>796 GB</td><td class="cell-good">225 GB</td><td>3.5× smaller</td></tr>
+          <tr><td class="arm">Output tok/s · conc 1</td><td>81 <span class="muted">(5.0)</span></td><td class="cell-good">137 <span class="muted">(17.1)</span></td><td>3.4× per GPU</td></tr>
+          <tr><td class="arm">Output tok/s · conc 4</td><td>246 <span class="muted">(15.4)</span></td><td class="cell-good">451 <span class="muted">(56.4)</span></td><td>3.7× per GPU</td></tr>
+          <tr><td class="arm">Output tok/s · conc 16</td><td>711 <span class="muted">(44.4)</span></td><td class="cell-good">1,300 <span class="muted">(162.5)</span></td><td>3.7× per GPU</td></tr>
+          <tr><td class="arm">Output tok/s · conc 64</td><td>1,700 <span class="muted">(106)</span></td><td class="cell-good">3,267 <span class="muted">(408)</span></td><td>3.8× per GPU</td></tr>
+          <tr><td class="arm">GPU-hours / 1M tokens</td><td>2.61</td><td class="cell-good">0.68</td><td>3.8× cheaper</td></tr>
+          <tr><td class="arm">Agentic warm 16 · output speed</td><td>41.4</td><td class="cell-good">72.2</td><td>1.7× per user</td></tr>
+          <tr><td class="arm">Agentic warm 16 · output tok/s</td><td>490 <span class="muted">(30.6)</span></td><td class="cell-good">727 <span class="muted">(90.9)</span></td><td>3.0× per GPU</td></tr>
+          <tr><td class="arm">Agentic warm 16 · p95 TTFT</td><td class="cell-good">783 ms</td><td>893 ms</td><td>BF16 −12%</td></tr>
+          <tr><td class="arm">100k prompt · output speed</td><td>78.4</td><td class="cell-good">130.9</td><td>1.7× per user</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = better of the two columns · both arms measured in the same window on the same stack · per-GPU = the cell divided by that arm's GPU count</span></p>
+    <p class="legend"><span>Green = better column · reasoning path unless noted · output tok/s = all streams summed, <span class="muted">(per GPU)</span> in grey · output speed = one request's decode rate · same window, same stack</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li><strong>Decode-bound work improves 3.4–3.8× per GPU; prefill-bound agentic work 3.0×.</strong>
-          The one row BF16 wins is p95 TTFT under agentic load, and it wins it by spending twice the GPUs
-          on prefill; both arms clear the 1-second SLO there, so it costs nothing operationally.</li>
+          Serving on one node also drops the cross-node interconnect from the serving path, and the 3.5×
+          smaller checkpoint is what makes 8 GPUs enough at all. The one row BF16 wins is p95 TTFT under
+          agentic load, and it wins it by spending twice the GPUs on prefill; both arms clear the
+          1-second SLO there, so it costs nothing operationally. The 100k row's TTFT is also 8% better
+          for the quant arm (5.39 s vs 5.88 s).</li>
         <li><strong>The other two ship-capable options are worse buys.</strong> Vendor MXFP8 is
           quality-clean but only 272 tok/s/GPU at conc 64 (2.6× BF16, vs our 3.8×); in-house AWQ r7 is
           speed-identical to GPTQ (within 1% in every cell of every table below) but has no quality
@@ -459,7 +463,7 @@
       </ul>
     </div>
 
-    <h3>Primary path — reasoning · TPOT p50 ms (system output tok/s)</h3>
+    <h3>Primary path — reasoning · TPOT p50 ms (total output tok/s)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -476,14 +480,14 @@
     <p class="legend"><span>Green = lowest TPOT in the row (±1%) — the two in-house arms are co-leaders in every row · one window, one stack</span></p>
     <div class="col">
       <p style="margin-top:14px">
-        Per-GPU output throughput at conc 64, all five arms: GPTQ/AWQ <strong>408</strong>, cyankiwi 365, MXFP8
+        Output tok/s per GPU at conc 64, all five arms: GPTQ/AWQ <strong>408</strong>, cyankiwi 365, MXFP8
         272, BF16 <strong>106</strong> tok/s/GPU (see the <a href="#efficiency">efficiency table</a> for
         the full serve-ready-vs-baseline breakdown). All from one same-day window — the BF16 rerun landed
         on its old number (81 tok/s conc 1), so the earlier cross-window caveat is closed.
       </p>
     </div>
 
-    <h3>Throughput view — system output tok/s (per GPU)</h3>
+    <h3>Output rate view — total output tok/s (per GPU)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -501,20 +505,20 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = highest system output throughput in the row (±1%) · parenthesis = the same figure ÷ that arm's GPU count (8, BF16 16) · reasoning rows have output pinned at 8k, so requests/s = the token figure ÷ 8,000</span></p>
+    <p class="legend"><span>Green = highest total output tok/s in the row (±1%) · parenthesis = the same figure ÷ that arm's GPU count (8, BF16 16) · reasoning rows have output pinned at 8k, so requests/s = the token figure ÷ 8,000</span></p>
     <div class="col">
       <ul style="margin-top:14px">
-        <li><strong>The two views agree because they are the same measurement:</strong> per-user decode is
-          1 ÷ inter-token latency, system throughput is total output tokens ÷ wall time. The quantized
-          arms win both, and the per-GPU column is where the 3.4–3.8× gap over BF16 lives.</li>
-        <li><strong>Agentic throughput is prefill-bound, not decode-bound</strong> — 1,036 tok/s at
+        <li><strong>Both views are the same tokens counted two ways:</strong> output speed is one stream's
+          rate (1 ÷ inter-token latency), total output tok/s is every stream summed over wall time. The
+          quantized arms win both, and the per-GPU column is where the 3.4–3.8× gap over BF16 lives.</li>
+        <li><strong>The agentic output rate is prefill-bound, not decode-bound</strong> — 1,036 tok/s at
           concurrency 32 against 3,267 in the reasoning shape, because each turn generates ~100 tokens on
           top of a 7.3k-token prefix. That is the regime where BF16's extra GPUs close the most ground
           (44.3 vs 129.5 tok/s/GPU, a 2.9× gap rather than 3.8×).</li>
       </ul>
     </div>
 
-    <h3>Primary path — agentic · per-user decode tok/s (TTFT p50/p95 ms)</h3>
+    <h3>Primary path — agentic · output speed tok/s (TTFT p50/p95 ms)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -532,7 +536,7 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = highest per-user decode in the row (±1%) · amber bar = p95 TTFT over the 1 s SLO · warm = prefix cache reused, cold = cache defeated</span></p>
+    <p class="legend"><span>Green = highest output speed in the row (±1%) · amber bar = p95 TTFT over the 1 s SLO · warm = prefix cache reused, cold = cache defeated</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li>The in-house arms hold the <strong>1 s warm p95 SLO to concurrency 16</strong>; cyankiwi and
@@ -543,7 +547,7 @@
       </ul>
     </div>
 
-    <h3>AA-style sweep — per-user decode tok/s (TTFT ms)</h3>
+    <h3>AA-style sweep — output speed tok/s (TTFT ms)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -559,7 +563,7 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = highest per-user decode in the row (±1%) · † cyankiwi decodes to the 16k cap at 10k/100k input — different workload, excluded from the ranking · 100k × 10 is a saturation cell, not an A/B</span></p>
+    <p class="legend"><span>Green = highest output speed in the row (±1%) · † cyankiwi decodes to the 16k cap at 10k/100k input — different workload, excluded from the ranking · 100k × 10 is a saturation cell, not an A/B</span></p>
     <div class="col">
       <ul style="margin-top:14px">
         <li><strong>The axis headline: quantization method does not matter for speed — format does.</strong>
@@ -571,11 +575,12 @@
           <a href="M3_OFFICIAL_QUALITY_RESULTS.html">quality pathology</a> made perf-visible. Its suite
           reasoning also stops ~2.6% short of the pinned decode at conc 64 despite <code>ignore_eos</code>
           (small favorable bias; all other arms are clean).</li>
-        <li><strong>Throughput is recorded for the AA cells too</strong> (<code>aggregate_output_tps</code>
-          and <code>request_throughput_rps</code> per cell) but it is not comparable here: natural output
-          lengths ran 307–696 tokens across arms — and 11k–16k for cyankiwi — so a cell's throughput
-          mostly reflects how much the model chose to say. Per-user decode and TTFT are the comparable
-          columns; the pinned-output reasoning path above is where throughput comparisons belong.</li>
+        <li><strong>Total output tok/s is recorded for the AA cells too</strong>
+          (<code>aggregate_output_tps</code>, <code>request_throughput_rps</code> per cell) but it is not
+          comparable here: natural output lengths ran 307–696 tokens across arms — and 11k–16k for
+          cyankiwi — so a cell's total rate mostly reflects how much the model chose to say. Output speed
+          and TTFT are the comparable columns; the pinned-output reasoning path above is where
+          server-rate comparisons belong.</li>
         <li>The original window's "MXFP8/cyankiwi collapse at conc 4" verdict <strong>did not reproduce</strong>
           on today's stack — both now complete every concurrency, just slower. The historical verdict is
           superseded by this window (<a href="#history">history</a>).</li>
@@ -600,15 +605,15 @@
         </thead>
         <tbody>
           <tr><td class="arm">Nebius (FP8)</td><td>197</td></tr>
-          <tr class="ours"><td class="arm"><strong>ours · W4AFP8 + Humming kernel</strong> <span class="muted">(serve-ready)</span></td><td class="cell-good"><strong>137</strong></td></tr>
+          <tr class="ours"><td class="arm"><strong>ours · W4AFP8 + Humming</strong> <span class="muted">(serve-ready)</span></td><td class="cell-good"><strong>137</strong></td></tr>
           <tr class="ours"><td class="arm">ours · cyankiwi W4A16 <span class="muted">(quality-broken)</span></td><td class="cell-warn">122†</td></tr>
-          <tr class="ours"><td class="arm">ours · MXFP8 (vendor checkpoint)</td><td>107</td></tr>
+          <tr class="ours"><td class="arm">ours · MXFP8 <span class="muted">(vendor)</span></td><td>107</td></tr>
           <tr><td class="arm">Together AI</td><td>97</td></tr>
           <tr><td class="arm">MiniMax first-party</td><td>95</td></tr>
           <tr><td class="arm">Novita</td><td>94</td></tr>
           <tr><td class="arm">SiliconFlow</td><td>92</td></tr>
-          <tr class="ours"><td class="arm">ours · BF16 TP16 <span class="muted">(baseline)</span></td><td>81</td></tr>
-          <tr><td class="arm">Parasail (MXFP8 — same checkpoint as our MXFP8 arm)</td><td>66</td></tr>
+          <tr class="ours"><td class="arm">ours · BF16 <span class="muted">(baseline)</span></td><td>81</td></tr>
+          <tr><td class="arm">Parasail <span class="muted">(MXFP8, same checkpoint as ours)</span></td><td>66</td></tr>
         </tbody>
       </table>
     </div>
@@ -638,7 +643,7 @@
         cyankiwi's quality verdict is unchanged and disqualifying.
       </p>
     </div>
-    <h3>Historical primary path — reasoning · system output tok/s (TTFT p50 ms)</h3>
+    <h3>Historical primary path — reasoning · total output tok/s (TTFT p50 ms)</h3>
     <div class="scroll">
       <table>
         <thead>
@@ -651,7 +656,7 @@
         </tbody>
       </table>
     </div>
-    <p class="legend"><span>Green = highest system output throughput in the row (±1%) · this window recorded system throughput + TTFT, not TPOT · stage-0 CUTLASS stack, 40,960 context</span></p>
+    <p class="legend"><span>Green = highest total output tok/s in the row (±1%) · this window recorded total output tok/s + TTFT, not TPOT · stage-0 CUTLASS stack, 40,960 context</span></p>
 
     <h3>Historical primary path — agentic warm · TTFT p50 / p95 ms</h3>
     <div class="scroll">

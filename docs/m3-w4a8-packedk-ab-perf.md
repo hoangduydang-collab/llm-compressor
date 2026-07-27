@@ -34,7 +34,7 @@ The re-run 0.1.10 arms vs the same arms in yesterday's window
 - **Reasoning TPOT p50: reproducible to ±0.02 ms (≤0.2%)** at every
   concurrency (e.g. indexed 7.29/7.29, 8.82/8.82, 12.22/12.25, 19.43/19.42;
   grouped 8.48/8.49 … 20.64/20.65).
-- Interactivity (per-user decode tps): ±0.5–1%.
+- Output speed (per-request decode tok/s): ±0.5–1%.
 - TTFT p50: wobbles up to ~6–8% in individual cells (queueing-sensitive).
 
 So TPOT/decode deltas ≥ ~0.5% are real; single-cell TTFT deltas under ~8%
@@ -49,7 +49,7 @@ should not be read.
 | 16 | 12.22 / 1302.0 | 12.23 / 1300.3 | flat | 13.28 / 1197.7 | **13.04** / 1219.9 | **−1.8% faster** |
 | 64 | 19.43 / 3262.5 | **19.21** / 3298.6 | **−1.1% faster** | 20.64 / 3045.6 | **20.11** / 3127.6 | **−2.6% faster** |
 
-## Agentic — per-user decode tok/s (aiperf `output_token_throughput_per_user`), TTFT p50 ms in parentheses
+## Agentic — output speed tok/s (aiperf `output_token_throughput_per_user`), TTFT p50 ms in parentheses
 
 ### Warm
 
@@ -74,10 +74,10 @@ should not be read.
 - **Packed-K trades low-concurrency decode speed for high-load throughput.**
   Consistent across the suite and the AA-style sweep
   (`docs/m3-w4a8-packedk-aa-sweep.md`, window `20260726T040130Z`):
-  - conc-1 decode: indexed −4% (7.29→7.59 ms TPOT; agentic per-user decode
+  - conc-1 decode: indexed −4% (7.29→7.59 ms TPOT; agentic output speed
     138.7→133.1), grouped −1% — all far above the ±0.2% noise floor.
   - conc-16/64 reasoning: grouped −1.8%/−2.6% TPOT, indexed flat/−1.1%;
-    system output tok/s +1–3%. Grouped cold conc-16 per-user decode +7.5%
+    total output tok/s +1–3%. Grouped cold conc-16 output speed +7.5%
     (19.7→21.2). The AA sweep's 10k-input conc-10 cells showed the same
     direction at +7–10%.
   - Mechanism consistent with the 0.1.11 packed-K sm90 tuner capping

@@ -77,10 +77,30 @@ Divide accepted length by measured speedup to get what a step costs:
 | k=3 | 2.45 / 1.72 | 1.42× |
 | k=5 | 2.55 / 1.66 | 1.54× |
 
-Each extra draft token costs a consistent ~0.11–0.12× of a decode step, which is
-why **k=3 is the optimum and k=5 is a net loss**: it buys +0.10 accepted length
-(2.45 → 2.55) for +0.12× step cost, and its per-position rates have collapsed to
-0.10 by the fifth token. Nothing deeper than k=3 is worth serving.
+The per-draft-token cost is **front-loaded, not flat** — an earlier version of this
+line called it "a consistent ~0.11–0.12×", which is true only of the middle
+positions. Marginal cost from the table above:
+
+| draft token | marginal step cost | running average per token |
+|---|---|---|
+| 1st | **+19%** | 19% (k=1) |
+| 2nd–3rd | +11.5% each | **14% (k=3)** |
+| 4th–5th | +6% each | 10.8% (k=5) |
+
+The first draft token costs nearly double a middle one — a fixed
+drafter-invocation overhead paid once per step regardless of depth. **Use ~14% per
+draft token for planning at k=3**, not a flat 11–12%. Today's measurements agree:
+step inflation at k=3 is +43.0% on W4AFP8 (14.3%/token) and +38.8% on MXFP8
+(12.9%/token) at 8k-low conc 1.
+
+This cost structure is why **k=3 is the optimum and k=5 is a net loss**: k=5 buys
++0.10 accepted length (2.45 → 2.55) for +0.12× step cost, and its per-position
+rates have collapsed to 0.10 by the fifth token. Nothing deeper than k=3 is worth
+serving.
+
+Not to be confused with `M3_SPECDEC_EAGLE3_PLAN.md`'s "a 4-token step costs only
+1.21× a 1-token step" — that is the *verify forward alone* (≈7% per extra position,
+excluding the drafter's own passes), and it was a pre-measurement prior.
 
 **The workload matters more than k.** On the greedy probe's 8 hand-picked prompts
 (English questions, temp 0, forced continuation) the same k=3 arm accepted

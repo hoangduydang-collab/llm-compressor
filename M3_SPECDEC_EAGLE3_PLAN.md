@@ -111,6 +111,45 @@ temperature, so OSL should be comparable and any large shift is itself a finding
 The 2.5–3.5× question is answered either way: wave 1 measures the actual
 multiplier at conc 1.
 
+## Wave 2 design (user-signed 2026-07-27)
+
+User chose: ShareGPT as the natural-prompt source; concurrency 16/32/64 at full
+request counts; temp-0 cells at **both** conc 1 and 10 (not just conc 1); and "run
+all phases in parallel".
+
+**Parallelism correction that was applied:** the phases get parallel *hardware*,
+not a shared server. Running a conc-64 pinned-output load beside a conc-1 latency
+cell on one endpoint would confound both, so each phase gets its own pair of
+serves — 6 nodes, wall time set by the longest phase rather than the sum.
+
+Only `k` needs a serve of its own; temperature and prompt set are per-request
+client parameters. k=1 and k=5 are dropped (wave 1 measured both as dominated).
+
+| phase | serves | prompts | output | temp | conc | answers |
+|---|---|---|---|---|---|---|
+| `natural` | 8030 / 8031 | ShareGPT (94,145 real conversations) | natural, cap 2048 | 0.6 then 0 | 1, 10 | the production multiplier; how much of wave 1's acceptance gap was temperature vs prompt naturalness |
+| `load` | 8032 / 8033 | synthetic 1k | pinned 8k (`ignore_eos`) | 0.6 | 16, 32, 64 | the concurrency where spec-dec stops paying — gates a global default |
+| `lowconc` | 8034 / 8035 | synthetic 1k | pinned 8k | 0.6 | 1, 4 | like-for-like against the two-axis report's tables |
+
+Why temp 0 is a bound and not the headline: rejection sampling accepts a draft
+whenever it survives the target's distribution, and at temp 0 the target is an
+argmax that agrees with the drafter's argmax far more often. Production sampling
+is 0.6, so the 0.6 cells are the number to quote and the 0 cells bound it.
+Note the pinned-output phases carry two opposing biases — synthetic prompts
+depress acceptance, `ignore_eos` continuation past the natural stop inflates it —
+so the `natural` phase is the one that describes real traffic.
+
+ShareGPT is staged in-workspace at
+`artifacts/aiperf-datasets/.cache/aiperf/datasets/` (gitignored; the path is
+CWD-relative by aiperf's design) so arms run with `HF_HUB_OFFLINE=1`.
+
+Acceptance is captured per cell from `/metrics` counter deltas, not just the log
+cadence, so each cell has its own acceptance number rather than a run average.
+
+Gates and decision rule carry over from wave 1, plus: **enable k=3 by default only
+up to the highest concurrency where aggregate output tok/s is ≥ control**; above
+that it must be load-gated.
+
 ## Raw evidence
 
 `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/<RUN_TS>/` — per arm: `serve.log`,

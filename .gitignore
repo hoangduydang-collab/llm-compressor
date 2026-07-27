@@ -834,3 +834,7 @@ uv.lock
 
 # Isolated local agent worktrees.
 .worktrees/
+
+# aiperf stages public datasets (ShareGPT ~670 MB) under $CWD/.cache/aiperf/datasets.
+# Needed because the `!*.[Cc]ache/` negation above re-includes it despite `artifacts/`.
+artifacts/aiperf-datasets/

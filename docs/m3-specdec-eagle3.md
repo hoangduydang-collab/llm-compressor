@@ -594,6 +594,11 @@ half. The likeliest reason is the Marlin lm_head above: if the layer holding 60%
 the weight traffic doesn't reach the bandwidth roof, neither does the saving. A
 per-invocation cost that INT4 cannot touch (launch, all-reduce) accounts for the rest.
 
+In output-rate terms the same result reads **+1.63% per-user tok/s** and **+1.59%
+server tok/s** on average, positive in 11 of 12 cells (worst −2.04%, best +5.61%, both
+at k=5). Concretely at 8k-low conc 1: 340.1 vs 322.0 tok/s per user at k=5, and 305.8
+vs 299.3 at k=3.
+
 The predicted scaling with k did **not** appear: at 8k-low conc 1 the step saving is
 −2.20% / −3.24% / −2.54% for k=3/4/5 — flat within cell-to-cell variance, where more
 drafter forwards should have meant a bigger absolute saving.
@@ -654,6 +659,41 @@ against a 0.76% drift floor, which is the signature of a plateau, not a trend.
 k=1 is 3.3% behind. At conc 10 the recipe's k=3 is a clear 2.6% loss — load pushes the
 optimum down, as the marginal-cost-per-position figures predict (12.1%/token at conc 1
 vs 19.4%/token at conc 10).
+
+### Output speed in tok/s (same windows, within-window k=0 control)
+
+The ratios above are ITL-based; these are the absolute rates, per user and per server,
+on the INT4 drafter at each tier's best k:
+
+| workload | conc | k | per-user tok/s | vs k=0 | server tok/s | vs k=0 |
+|---|---|---|---|---|---|---|
+| code (8k-low) | 1 | 0 | 136.8 | — | 132.1 | — |
+| code (8k-low) | 1 | **6** | **341.6** | **2.50×** | **316.3** | **2.40×** |
+| code (8k-low) | 10 | 0 | 74.8 | — | 706.4 | — |
+| code (8k-low) | 10 | **5** | **153.5** | **2.05×** | **1427.8** | **2.02×** |
+| creative (8k-high) | 1 | 0 | 136.8 | — | 132.4 | — |
+| creative (8k-high) | 1 | **2** | 185.6 | 1.36× | **175.1** | **1.32×** |
+| creative (8k-high) | 1 | 3 | 187.9 | 1.37× | 174.7 | 1.32× |
+| creative (8k-high) | 10 | 0 | 80.5 | — | 764.9 | — |
+| creative (8k-high) | 10 | **2** | **97.0** | **1.21×** | **892.5** | **1.17×** |
+| creative (8k-high) | 10 | 3 | 94.7 | 1.18× | 868.9 | 1.14× |
+
+Full k sweeps in tok/s per user — 8k-low conc 1: 136.8 (k=0) → 334.1 / 341.6 / 339.2
+(k=5/6/7); conc 10: 74.8 → 153.5 / 149.7 / 152.4. 8k-high conc 1: 136.8 → 178.0 /
+185.6 / 187.9 (k=1/2/3); conc 10: 80.5 → 95.1 / 97.0 / 94.7.
+
+Two honest notes on the high-entropy tier. At conc 1, **k=2 and k=3 are tied**: ITL
+favours k=2 by 0.2%, per-user tok/s favours k=3 by 1.2%, server tok/s favours k=2 by
+0.2% — all inside that arm's 1.44% drift floor. (The metrics can disagree slightly
+because ITL excludes the first token while the throughput metrics do not.) The tiebreak
+comes from conc 10, where k=2 beats k=3 by 2.4% per user and 2.7% per server. So k=2 is
+the recommendation because it never loses, not because it wins at conc 1.
+
+Also recorded and not explained: the 8k-high conc-10 **k=0 control shows TTFT 1236 ms**
+against 382–411 ms for every spec-dec config in the same arm. Decode is slower at k=0,
+so requests queue longer, but that does not obviously account for a 3× gap. This is the
+same unexplained TTFT behaviour flagged in phase D and it does not affect the
+output-rate comparison, which is measured after the first token.
 
 ### The rule that predicts all of it
 

@@ -626,6 +626,40 @@ metric and the disagreement is itself evidence the cell is inside the noise band
 For scale: on the same code workload, moving k=3 → k=6 (phase H) takes per-user speed
 305.8 → 341.6, i.e. **+11.7%** — about seven times the drafter-quantization gain.
 
+### What the drafter swap is worth at the *deployment* k
+
+Only two cells of the grid above are configurations we would actually run: 8k-low at
+k=5 (phase H's low-entropy optimum) and 8k-high at k=2 (its high-entropy optimum).
+Read that way the answer is smaller than the +5.61% headline, and one half of it is
+missing entirely.
+
+**8k-low k=5 — the +5.61% is mostly an acceptance fluctuation, not a drafting win.**
+
+| 8k-low k=5 | acceptance | step cost | ITL | per-user |
+|---|---|---|---|---|
+| conc 1  | 3.805 → 3.915 (**+2.89%**) | −2.54% | −5.28% | +5.61% |
+| conc 10 | 3.853 → 3.863 (+0.25%)     | −0.75% | −1.00% | +1.22% |
+
+`ITL = step / accepted`, so the conc-1 figure is `(1−0.0254)/(1+0.0289) = −5.28%`: over
+half of it comes from acceptance, which is the one quantity an INT4 drafter is not
+supposed to move. Because acceptance is concurrency-invariant (confirmed four times
+here), the two concurrencies are replicates of a single value — bf16 measured
+3.805/3.853, INT4 measured 3.915/3.863, overlapping scatter about ~3.86 with bf16's
+conc-1 point the low outlier. Pooled the gap is +1.57%, inside the ±3% two-serve band.
+**Quote the step-cost saving instead: ~2.5% (conc 1) and ~0.8% (conc 10), i.e. ~+2.6%
+and ~+0.8% per-user at acceptance parity.**
+
+**8k-high k=2 — not measured.** Phase G ran k=3/4/5 only, so no bf16-vs-INT4 pair
+exists at the high-entropy optimum. Scaling k=3's measured saving (0.217 ms of step for
+3 drafter forwards ≈ 0.072 ms/forward) to 2 forwards on a ~9.3 ms step predicts ~1.5% —
+a *prediction*, and a weak one, since phase G's other finding was that the predicted
+k-scaling did not materialise. Closing this hole costs one A/B arm.
+
+Also note that under the per-user metric the two entropy tiers disagree about which k
+wins at 8k-high conc 1: ITL and server tok/s pick k=2, per-user picks k=3 (187.9 vs
+185.6, +1.2%), while at conc 10 k=2 wins by 2.4%. Treat 8k-high as a k=2/k=3 tie under
+per-user.
+
 The predicted scaling with k did **not** appear: at 8k-low conc 1 the step saving is
 −2.20% / −3.24% / −2.54% for k=3/4/5 — flat within cell-to-cell variance, where more
 drafter forwards should have meant a bigger absolute saving.
@@ -638,7 +672,9 @@ cross-window figure was node contamination, and node variance in this study runs
 1–2%.
 
 **Verdict:** adopt the INT4 drafter — it is free in acceptance and worth ~1.8% of step
-cost — but it is a minor lever. Choosing k per workload (phase H) is worth 4–9%.
+cost grid-wide, ~2.5% at the low-entropy deployment k and (predicted, unmeasured) ~1.5%
+at the high-entropy one — but it is a minor lever. Choosing k per workload (phase H) is
+worth 4–9%.
 
 ## Phase H — optimal draft depth per entropy tier (complete)
 

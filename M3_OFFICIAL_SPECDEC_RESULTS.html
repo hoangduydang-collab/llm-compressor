@@ -1,0 +1,1085 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniMax-M3 Speculative Decoding — Tuning Results</title>
+<style>
+  :root {
+    /* same system as M3_OFFICIAL_PERF_RESULTS.html: cool-neutral ground, single
+       steel-blue accent; green/amber/red are semantic, never the accent */
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #161b22;
+    --ink-2: #47515f;
+    --ink-3: #6b7684;
+    --line: #d9dee6;
+    --line-2: #c5ccd6;
+    --accent: #23628f;
+    --accent-soft: #e4eef5;
+    --good: #2f8f57;
+    --good-bg: #e5f2ea;
+    --warn: #b0781a;
+    --warn-bg: #f6ecd9;
+    --crit: #c1443a;
+    --crit-bg: #f7e3e1;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", "Menlo", "Cascadia Code", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --maxw: 900px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1217;
+      --surface: #161b22;
+      --surface-2: #1c222b;
+      --ink: #e7ebf0;
+      --ink-2: #aab4c0;
+      --ink-3: #7c8794;
+      --line: #2a323d;
+      --line-2: #38414e;
+      --accent: #6fb2df;
+      --accent-soft: #17303f;
+      --good: #5cc487;
+      --good-bg: #14281c;
+      --warn: #d6a24e;
+      --warn-bg: #2c2413;
+      --crit: #e8756a;
+      --crit-bg: #2e1a18;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f5; --ink: #161b22;
+    --ink-2: #47515f; --ink-3: #6b7684; --line: #d9dee6; --line-2: #c5ccd6;
+    --accent: #23628f; --accent-soft: #e4eef5;
+    --good: #2f8f57; --good-bg: #e5f2ea; --warn: #b0781a; --warn-bg: #f6ecd9;
+    --crit: #c1443a; --crit-bg: #f7e3e1;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1c222b; --ink: #e7ebf0;
+    --ink-2: #aab4c0; --ink-3: #7c8794; --line: #2a323d; --line-2: #38414e;
+    --accent: #6fb2df; --accent-soft: #17303f;
+    --good: #5cc487; --good-bg: #14281c; --warn: #d6a24e; --warn-bg: #2c2413;
+    --crit: #e8756a; --crit-bg: #2e1a18;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px 96px; }
+  .col { max-width: 68ch; }
+
+  /* ---- header ---- */
+  header {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+  }
+  .head-inner { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 32px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4.2vw, 40px); line-height: 1.12; margin: 0 0 12px;
+    letter-spacing: -.02em; text-wrap: balance; font-weight: 680;
+  }
+  .dek { font-size: 18px; color: var(--ink-2); margin: 0 0 22px; max-width: 62ch; text-wrap: pretty; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono);
+    font-size: 12.5px; color: var(--ink-3);
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---- section rhythm ---- */
+  section { margin-top: 52px; }
+  h2 {
+    font-size: 13px; font-family: var(--mono); text-transform: uppercase;
+    letter-spacing: .1em; color: var(--accent); margin: 0 0 4px;
+  }
+  h2 + .h2sub { font-size: 24px; letter-spacing: -.01em; margin: 0 0 18px; font-weight: 640; text-wrap: balance; }
+  h3 { font-size: 18px; margin: 30px 0 8px; font-weight: 620; letter-spacing: -.01em; }
+  h4 { font-size: 15px; margin: 22px 0 6px; font-weight: 640; color: var(--ink-2); }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  strong { font-weight: 640; }
+  code {
+    font-family: var(--mono); font-size: .875em; background: var(--surface-2);
+    padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);
+  }
+
+  /* ---- KPI tiles ---- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 4px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 16px 14px; position: relative; overflow: hidden;
+  }
+  .tile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+  .tile.good::before { background: var(--good); }
+  .tile.warn::before { background: var(--warn); }
+  .tile .k { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
+  .tile .v { font-size: 30px; font-weight: 680; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .tile .v small { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+  .tile .d { font-size: 13px; color: var(--ink-2); margin-top: 8px; line-height: 1.4; }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 13px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface-2); color: var(--ink-2);
+    font-weight: 600; font-size: 12px; letter-spacing: .02em; z-index: 1;
+  }
+  thead th.grp { text-align: center; border-bottom: 1px solid var(--line-2); }
+  td.sep, th.sep { border-left: 1px solid var(--line-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.baseline td { background: var(--accent-soft); }
+  tbody tr.ours td { background: var(--accent-soft); }
+  td.arm, th.arm { font-weight: 600; }
+  .cell-good { color: var(--good); background: var(--good-bg); font-weight: 600; }
+  .cell-warn { color: var(--warn); background: var(--warn-bg); font-weight: 600; }
+  .cell-crit { color: var(--crit); background: var(--crit-bg); font-weight: 700; }
+  .noise { box-shadow: inset 3px 0 0 var(--line-2); color: var(--ink-3); }
+  .muted { color: var(--ink-3); }
+  .wrapcell { white-space: normal; text-align: left; }
+
+  /* ---- bar meters ---- */
+  .bars { display: grid; gap: 10px; margin: 4px 0 6px; }
+  .bar-row { display: grid; grid-template-columns: 190px 1fr 62px; align-items: center; gap: 12px; font-size: 13.5px; }
+  .bar-row .lab { color: var(--ink-2); font-weight: 600; }
+  .track { position: relative; height: 20px; background: var(--surface-2); border-radius: 5px; border: 1px solid var(--line); overflow: hidden; }
+  .track .baseline-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink-3); opacity: .55; }
+  .fill { height: 100%; border-radius: 4px 0 0 4px; }
+  .fill.f-ok { background: var(--accent); }
+  .fill.f-good { background: var(--good); }
+  .fill.f-warn { background: var(--warn); }
+  .bar-row .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* ---- callouts ---- */
+  .note {
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 10px 10px 0; padding: 16px 18px; margin: 18px 0;
+  }
+  .note.finding { border-left-color: var(--crit); }
+  .note.good { border-left-color: var(--good); }
+  .note.warn { border-left-color: var(--warn); }
+  .note .t { font-weight: 640; margin: 0 0 6px; }
+  .note p:last-child { margin-bottom: 0; }
+  .note ul { margin-bottom: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); margin: 10px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  .sources { font-size: 14px; }
+  .sources li { margin: 7px 0; }
+
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+
+  .toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 10; font-family: var(--mono); font-size: 12px;
+    background: var(--surface); color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 7px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 560px) {
+    .bar-row { grid-template-columns: 120px 1fr 54px; }
+  }
+</style>
+</head>
+<body>
+<button class="toggle" id="themeToggle" aria-label="Toggle light/dark theme">◐ theme</button>
+
+<header>
+  <div class="head-inner">
+    <p class="eyebrow">MiniMax-M3 · EAGLE3 speculative decoding · SPEED-Bench</p>
+    <h1>Speculative decoding is worth 1.2×–2.5× on our W4AFP8 M3 — and the tuning is workload-dependent, not universal</h1>
+    <p class="dek">
+      An off-the-shelf EAGLE3 drafter on our in-house 4-bit M3 reaches
+      <strong>341.6 tok/s single-user on code</strong> (2.50× the same node without it) but only
+      <strong>1.36× on creative writing</strong>. Three tuning axes decide where in that range you land:
+      <a href="#axis-k">how deep to draft</a>, <a href="#axis-kernel">which kernel runs the drafter</a>,
+      and <a href="#axis-quant">whether the drafter is quantized</a>. The first is the big one — up to
+      ~12% on code; the other two are worth ~2–3% each and act on the same layer. Perf and quality companions:
+      <a href="M3_OFFICIAL_PERF_RESULTS.html"><code>M3_OFFICIAL_PERF_RESULTS.html</code></a>,
+      <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>.
+    </p>
+    <div class="meta">
+      <span><b>Target:</b> in-house MiniMax-M3 GPTQ W4AFP8 + Humming 0.1.10</span>
+      <span><b>Drafter:</b> Inferact/MiniMax-M3-EAGLE3 (1 layer) · derived RTN INT4</span>
+      <span><b>Hardware:</b> one 8×H100 node, TP8/EP8</span>
+      <span><b>Engine:</b> vLLM 0.24.0, flags held fixed · FP8 KV cache</span>
+      <span><b>Benchmark:</b> nvidia/SPEED-Bench, clean subset · aiperf</span>
+      <span><b>Windows:</b> 10 measurement windows, 2026-07-27</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ BOTTOM LINE ============ -->
+  <section id="bottom-line">
+    <h2>Bottom line</h2>
+    <div class="h2sub">Read this if you have thirty seconds</div>
+    <div class="col">
+      <p>
+        Speculative decoding is the single largest decode-speed lever we have found on M3 — larger than any
+        kernel or quantization change in the perf report — and it costs nothing in output quality, because
+        verification is exact. But <strong>the size of the win is set by what the model is writing</strong>,
+        not by prompt length and not by load. Code and structured output draft easily (accepted length 3.8–4.2
+        tokens per step); creative writing does not (1.5–1.8).
+      </p>
+      <p>
+        That single fact drives every recommendation here: <strong>draft depth must be tuned per workload</strong>
+        (k≈5–6 for code, k=2 for creative writing — the reference recipe's one-size k=3 is wrong for both), while
+        the two drafter-cost levers are real but small, and they trade places as load rises.
+      </p>
+    </div>
+    <div class="tiles">
+      <div class="tile good">
+        <p class="k">Code · single user</p>
+        <p class="v">2.50<small>× decode</small></p>
+        <p class="d">341.6 vs 136.8 tok/s/user at k=6. Server-side 2.40× (316.3 tok/s) once prefill is counted.</p>
+      </div>
+      <div class="tile good">
+        <p class="k">Code · concurrency 10</p>
+        <p class="v">2.05<small>× decode</small></p>
+        <p class="d">153.5 vs 74.8 tok/s/user at k=5, and 1,428 vs 706 tok/s server-side — throughput gains too, not a trade.</p>
+      </div>
+      <div class="tile warn">
+        <p class="k">Creative writing · the floor</p>
+        <p class="v">1.21<small>–1.36×</small></p>
+        <p class="d">Best k is 2, not 3. Per-position acceptance collapses to 0.10 by the third draft token.</p>
+      </div>
+      <div class="tile">
+        <p class="k">Mixed production traffic</p>
+        <p class="v">1.81<small>×</small></p>
+        <p class="d">Real ShareGPT turns, natural stopping, temp 0.6 — the number to quote for a blended workload.</p>
+      </div>
+    </div>
+
+    <h3>Where the range comes from</h3>
+    <div class="bars" role="img" aria-label="Decode speedup by workload: code at concurrency 1 is 2.50 times, code at concurrency 10 is 2.05 times, mixed ShareGPT traffic 1.81 times, creative writing at concurrency 1 is 1.36 times, creative writing at concurrency 10 is 1.21 times; no-speculation baseline is 1.0 times">
+      <div class="bar-row"><span class="lab">code · conc 1 · k=6</span>
+        <span class="track"><span class="fill f-good" style="width:96%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">2.50×</span></div>
+      <div class="bar-row"><span class="lab">code · conc 10 · k=5</span>
+        <span class="track"><span class="fill f-good" style="width:79%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">2.05×</span></div>
+      <div class="bar-row"><span class="lab">mixed ShareGPT · conc 1 · k=3</span>
+        <span class="track"><span class="fill f-ok" style="width:70%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">1.81×</span></div>
+      <div class="bar-row"><span class="lab">creative · conc 1 · k=2</span>
+        <span class="track"><span class="fill f-warn" style="width:52%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">1.36×</span></div>
+      <div class="bar-row"><span class="lab">creative · conc 10 · k=2</span>
+        <span class="track"><span class="fill f-warn" style="width:47%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">1.21×</span></div>
+    </div>
+    <p class="legend">
+      <span>Per-user decode speedup vs the same node with speculation off · grey mark = 1.00× baseline</span>
+    </p>
+
+    <h3>The three axes at a glance</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="arm">Axis</th><th>Question</th><th>What varies</th><th>Held fixed</th><th>Worth</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="arm"><a href="#axis-k">1 · draft depth</a></td>
+            <td class="wrapcell">How many tokens to draft per step?</td>
+            <td class="wrapcell">k = 0…7</td>
+            <td class="wrapcell">default kernel, INT4 drafter</td>
+            <td class="cell-good">2–12%</td>
+          </tr>
+          <tr>
+            <td class="arm"><a href="#axis-kernel">2 · drafter kernel</a></td>
+            <td class="wrapcell">Which W4A16 kernel serves the drafter's 9 linears?</td>
+            <td class="wrapcell">Machete / Marlin / Humming assignment</td>
+            <td class="wrapcell">k=5, code workload, INT4 drafter</td>
+            <td>0% at conc 1 · <span class="cell-good">2.7%</span> at conc 10</td>
+          </tr>
+          <tr>
+            <td class="arm"><a href="#axis-quant">3 · drafter precision</a></td>
+            <td class="wrapcell">bf16 drafter or 4-bit drafter?</td>
+            <td class="wrapcell">drafter weights (bf16 ↔ RTN INT4 W4A16)</td>
+            <td class="wrapcell">k, workload, default kernel</td>
+            <td><span class="cell-good">2.6%</span> at conc 1 · 0.8% at conc 10</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Roadmap table, not a ranking. "Worth" = per-user decode gain at each axis's own best setting, measured at the deployment configuration.</span></p>
+  </section>
+
+  <!-- ============ SETUP ============ -->
+  <section id="setup">
+    <h2>Setup</h2>
+    <div class="h2sub">The benchmark, the target, and the draft model</div>
+
+    <h3>What speculative decoding does here</h3>
+    <div class="col">
+      <p>
+        Each decode step, a small <em>draft</em> model proposes k tokens autoregressively; the full target then
+        verifies all k+1 positions in <strong>one</strong> forward pass and keeps the longest prefix it agrees
+        with. Output is distributionally equivalent to plain decoding, so there is no quality axis to
+        report — only speed. The economics are one line:
+      </p>
+      <p style="text-align:center; font-family:var(--mono); font-size:15px; margin:18px 0">
+        ITL = step cost ÷ accepted length
+      </p>
+      <p>
+        Raising k raises both terms. It pays only while the fractional gain in <strong>accepted length</strong>
+        beats the fractional rise in <strong>step cost</strong> — which is why the optimum moves with the
+        workload, and why the two other axes (which attack step cost alone) are worth measuring at all.
+      </p>
+    </div>
+
+    <h3>Target and serving stack</h3>
+    <div class="col">
+      <p>
+        The target is our own <strong>GPTQ W4AFP8</strong> M3 with the ABI overlay and the patched
+        <strong>Humming indexed 0.1.10</strong> MoE kernel — the same serve-ready configuration the perf
+        report benchmarks — on <strong>one 8×H100 node at TP8/EP8</strong>, vLLM 0.24.0, 131,072-token context,
+        FP8 KV cache, prefix caching on. Across every arm on this page the <em>only</em> flag that differs is
+        <code>--speculative-config</code>; each arm carries its own in-window k=0 control, so every ratio quoted
+        is a same-window ratio rather than a cross-window one.
+      </p>
+      <p>
+        <strong>Our 4-bit target does not handicap the drafter.</strong> EAGLE3 conditions on the target's hidden
+        states, so quantizing the target could have cost acceptance twice over. Measured against the drafter's own
+        published reference format (vendor MXFP8) on hash-identical prompts, accepted length differs by
+        <strong>+0.56% on average and flips sign across cells</strong> — that is noise, not a penalty. Our stack
+        is also 22–40% faster than MXFP8 in absolute terms in every cell, with and without the drafter.
+      </p>
+    </div>
+
+    <h3>The draft model</h3>
+    <div class="col">
+      <p>
+        <code>Inferact/MiniMax-M3-EAGLE3</code> @ <code>44cafa5a</code> — a single-layer
+        <code>LlamaForCausalLMEagle3</code> head, hidden size 6144, full 200,064-token draft vocabulary,
+        6.53 GB in bf16. It loads in our vLLM with no code change. MTP was not an option: M3's
+        <code>config.json</code> declares <code>num_mtp_modules: 7</code> but neither the BF16 nor the vendor
+        MXFP8 release ships a single MTP tensor.
+      </p>
+      <p>
+        Axes 1 and 2 are measured on the <strong>4-bit drafter</strong> — an RTN INT4 weight-only (W4A16)
+        quantization derived from <code>Sebesky/MiniMax-M3-EAGLE3-RTN-INT4</code>. Weight-only is the right
+        choice rather than a limitation: the drafter sees one token per user per forward, so its activations are
+        kilobytes and quantizing them would add work without saving bandwidth.
+        <a href="#axis-quant">Axis 3</a> shows that this choice is free in acceptance, which is what licenses
+        using it as the baseline everywhere else.
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Drafter fact</th><th>Value</th><th>Why it matters here</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">Parameters read per rank per forward</td><td>254.3 M</td><td class="wrapcell">The cost speculation adds to every step, k times over.</td></tr>
+          <tr><td class="arm">of which <code>lm_head</code></td><td class="cell-warn">153.6 M · 60%</td><td class="wrapcell">One layer dominates the drafter's weight traffic — the reason <a href="#axis-kernel">axis 2</a> exists.</td></tr>
+          <tr><td class="arm">Quantized linears</td><td>9</td><td class="wrapcell">8 attention/MLP/fc layers plus <code>lm_head</code>; each gets a kernel from vLLM's chooser.</td></tr>
+          <tr><td class="arm">Model weights loaded · INT4 vs bf16</td><td>28.78 vs 29.26 GiB</td><td class="wrapcell">−0.48 GiB against −0.44 predicted from the parameter count.</td></tr>
+          <tr><td class="arm">Per-rank <code>lm_head</code> output width</td><td>25,008 <span class="muted">(200,064 ÷ 8)</span></td><td class="wrapcell"><code>25008 % 128 == 48</code>, which disqualifies the fastest kernel — see axis 2.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Reference table, no ranking. Amber marks the quantity that motivates axis 2.</span></p>
+
+    <h3>Benchmark and workloads</h3>
+    <div class="col">
+      <p>
+        <strong>nvidia/SPEED-Bench</strong>, NVIDIA's purpose-built speculative-decoding benchmark: fixed
+        input-length buckets crossed with an <em>entropy tier</em> that classifies content by how predictable it
+        is. That crossing is what lets us separate content domain from prompt length — and content domain turns
+        out to be the axis that matters. Driven by <strong>aiperf</strong> against the OpenAI endpoint,
+        temperature 0.6, <code>max_tokens</code> 2048, seed 42, no <code>ignore_eos</code>, at concurrency 1 and 10.
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Workload</th><th>Content</th><th>Input len</th><th>Accepted len @ k=3</th><th>Per-position acceptance</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">8k-low <span class="muted">(low entropy)</span></td><td class="wrapcell">code, sorting, structured output</td><td>8,080</td><td class="cell-good">3.106</td><td>0.844 / 0.696 / 0.565</td></tr>
+          <tr><td class="arm">8k-high <span class="muted">(high entropy)</span></td><td class="wrapcell">creative writing</td><td>8,183</td><td class="cell-warn">1.779</td><td>0.472 / 0.211 / 0.096</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = the easy-to-draft tier, amber = the hard one. Per-position figures are the probability that the 1st/2nd/3rd draft token survives verification.</span></p>
+    <div class="note">
+      <p class="t">Content domain is the dominant axis; prompt length is irrelevant</p>
+      <p>
+        Accepted length moves <strong>+75%</strong> between the two tiers (1.78 → 3.11) — far more than output
+        shape (+33%), temperature (+4%) or prompt naturalness (+1%). Over a <strong>32× range of prompt length</strong>
+        (1k → 32k) it moves by less than 0.05, and it is flat in concurrency from 1 to 64. EAGLE3's drafter
+        conditions on the target's hidden state, not on retrievable prompt text, so there is nothing for a longer
+        prompt to give it. <strong>Plan capacity by what your traffic writes, not by how long its prompts are.</strong>
+      </p>
+    </div>
+
+    <h3>Metric definitions</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">What we report</th><th>Source</th><th>Definition</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">accepted length</td><td><code>spec_decode_*</code> counters</td><td class="wrapcell">Mean output tokens committed per verify step, <code>1 + accepted ÷ drafts</code>, as a counter delta over the measured cell. Ranges 1.0 (nothing accepted) to k+1 (everything accepted).</td></tr>
+          <tr><td class="arm">per-user tok/s</td><td><code>output_token_throughput_per_user</code></td><td class="wrapcell">aiperf's mean of per-request 1÷ITL — the decode rate one stream sees. <strong>The primary metric.</strong> Excludes prefill; this is "how fast the text feels". Note it is the mean of reciprocals, not the reciprocal of the mean, so it need not agree in sign with the ITL column; where they conflict the cell is inside the noise band.</td></tr>
+          <tr><td class="arm">server tok/s</td><td><code>output_token_throughput</code></td><td class="wrapcell">Output tokens over benchmark wall clock, all requests summed — includes every prefill, so it is the honest end-to-end capacity number and always a slightly smaller speedup.</td></tr>
+          <tr><td class="arm">ITL (ms)</td><td><code>inter_token_latency</code></td><td class="wrapcell">Mean gap between successive output tokens. Lower is better.</td></tr>
+          <tr><td class="arm">step cost (ms)</td><td>derived</td><td class="wrapcell">ITL × accepted length — the cost of one verify step. The acceptance-adjusted view: it isolates kernel and precision effects from run-to-run acceptance drift, which is why axes 2 and 3 lead with it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Noise floors — read every percentage against these</h3>
+    <div class="col">
+      <p>
+        Effects on this page range from 1% to 150%, so the precision of the measurement is part of the result.
+        Four independent fresh-engine measurements of one <em>identical</em> configuration on the same node
+        (k=5, 8k-low, INT4 drafter) pin it, and the answer differs sharply by concurrency:
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Replicate of the identical config</th><th>conc 1 · tok/s/user</th><th>conc 10 · tok/s/user</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">axis 1 window (k=5 cell)</td><td>334.1</td><td>153.5</td></tr>
+          <tr><td class="arm">axis 2 window · baseline</td><td>337.3</td><td>152.9</td></tr>
+          <tr><td class="arm">axis 2 window · end-of-window repeat</td><td>329.2</td><td>153.2</td></tr>
+          <tr><td class="arm">axis 2 re-run window · baseline</td><td>335.2</td><td>153.1</td></tr>
+          <tr class="baseline"><td class="arm"><strong>mean · standard deviation</strong></td><td><strong>333.9 · <span class="cell-warn">sd 1.02%</span></strong></td><td><strong>153.2 · <span class="cell-good">sd 0.16%</span></strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Cross-engine replicate floor. Green = the precise regime, amber = the noisy one. Anything smaller than the relevant sd is not a result.</span></p>
+    <div class="col">
+      <p>
+        <strong>Concurrency 10 is ~7× more precise than concurrency 1</strong>, because batch aggregation averages
+        away single-stream jitter. This is not a footnote — it is why axis 2 has an answer at all, and it caused
+        a real error in our own first reading of that axis, corrected below.
+      </p>
+    </div>
+    <div class="note warn">
+      <p class="t">Two caveats to carry</p>
+      <ul>
+        <li><strong>Not comparable to published SPEED-Bench scores.</strong> 42–56% of the public parquet is masked
+          pending fetch through the vendor's own harness, so we stage and hash-gate the clean subset; the
+          <code>mixed</code> tier is fully masked and absent. Serving stack, temperature and graph mode also differ
+          from the vendor recipe. These numbers are valid for <em>configuration-to-configuration</em> decisions,
+          which is all this page makes.</li>
+        <li><strong>Output-budget censoring.</strong> At <code>max_tokens</code> 2048, 60% of low-entropy and
+          87–93% of high-entropy responses hit the cap, so these are not natural-stopping lengths. Ratios survive
+          (censoring is within a few points between arms, and both arms emit the same token counts), but do not
+          read per-tier response lengths off this data.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ AXIS 1 ============ -->
+  <section id="axis-k">
+    <h2>Axis 1 · draft depth</h2>
+    <div class="h2sub">How deep to draft — and why one k cannot serve both workloads</div>
+    <div class="col">
+      <p>
+        Every k in this section is measured on one node, with the default kernel assignment and the INT4 drafter,
+        against a k=0 control in the same window; each tier's sweep ends by re-serving its first speculative
+        configuration to measure drift. The reference recipe ships <strong>k=3</strong>. It is wrong for both
+        tiers, in opposite directions.
+      </p>
+    </div>
+
+    <h3>Low entropy (code, structured output) — the knee is at k≈5–6</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="arm" rowspan="2">k</th>
+            <th class="grp sep" colspan="4">concurrency 1</th>
+            <th class="grp sep" colspan="4">concurrency 10</th>
+          </tr>
+          <tr>
+            <th class="sep">accepted</th><th>ITL ms</th><th>tok/s/user</th><th>speedup</th>
+            <th class="sep">accepted</th><th>ITL ms</th><th>tok/s/user</th><th>speedup</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="baseline">
+            <td class="arm">0 <span class="muted">control</span></td>
+            <td class="sep">—</td><td>7.307</td><td>136.8</td><td>1.00×</td>
+            <td class="sep">—</td><td>13.431</td><td>74.8</td><td>1.00×</td>
+          </tr>
+          <tr>
+            <td class="arm">5</td>
+            <td class="sep">3.820</td><td>3.014</td><td>334.1</td><td>2.425×</td>
+            <td class="sep">3.864</td><td class="cell-good">6.707</td><td class="cell-good">153.5</td><td class="cell-good">2.002×</td>
+          </tr>
+          <tr>
+            <td class="arm">6</td>
+            <td class="sep">4.107</td><td class="cell-good">2.970</td><td class="cell-good">341.6</td><td class="cell-good">2.460×</td>
+            <td class="sep">4.077</td><td class="noise">6.925</td><td class="noise">149.7</td><td class="noise">1.939×</td>
+          </tr>
+          <tr>
+            <td class="arm">7</td>
+            <td class="sep">4.224</td><td>2.979</td><td>339.2</td><td>2.453×</td>
+            <td class="sep">4.307</td><td>6.805</td><td>152.4</td><td>1.974×</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend">
+      <span><span class="sw" style="background:var(--good-bg); box-shadow: inset 0 0 0 1px var(--good)"></span> best k in this column</span>
+      <span><span class="sw" style="background:var(--surface-2); box-shadow: inset 3px 0 0 var(--line-2), inset 0 0 0 1px var(--line)"></span> inside the plateau — not distinguishable from the winner</span>
+      <span><span class="sw" style="background:var(--accent-soft); box-shadow: inset 0 0 0 1px var(--line-2)"></span> in-window control</span>
+      <span>drift control: k=5 re-served at window end, ITL +0.59% (conc 1) / −0.76% (conc 10)</span>
+    </p>
+    <div class="col">
+      <p>
+        <strong>Acceptance keeps climbing but speed stops.</strong> Accepted length rises monotonically through
+        k=7 (3.82 → 4.22), yet ITL bottoms out at k=6 and then flattens: k=5→6 buys 1.5%, k=6→7 buys −0.3%. At
+        concurrency 10 the sweep is <em>non-monotone</em> (k=6 worse than both neighbours) with a 3.3% spread
+        against a 0.76% drift floor — the signature of a plateau rather than a trend. Serving k=5 or k=6 is a
+        real choice; anything deeper just adds drafter work that verification throws away.
+      </p>
+    </div>
+
+    <h3>High entropy (creative writing) — the optimum is k=2</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="arm" rowspan="2">k</th>
+            <th class="grp sep" colspan="4">concurrency 1</th>
+            <th class="grp sep" colspan="4">concurrency 10</th>
+          </tr>
+          <tr>
+            <th class="sep">accepted</th><th>ITL ms</th><th>tok/s/user</th><th>speedup</th>
+            <th class="sep">accepted</th><th>ITL ms</th><th>tok/s/user</th><th>speedup</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="baseline">
+            <td class="arm">0 <span class="muted">control</span></td>
+            <td class="sep">—</td><td>7.312</td><td>136.8</td><td>1.00×</td>
+            <td class="sep">—</td><td>12.453</td><td>80.5</td><td>1.00×</td>
+          </tr>
+          <tr>
+            <td class="arm">1</td>
+            <td class="sep">1.507</td><td>5.654</td><td>178.0</td><td>1.293×</td>
+            <td class="sep">1.512</td><td>10.630</td><td>95.1</td><td>1.171×</td>
+          </tr>
+          <tr>
+            <td class="arm">2</td>
+            <td class="sep">1.717</td><td class="cell-good">5.473</td><td>185.6</td><td class="cell-good">1.336×</td>
+            <td class="sep">1.745</td><td class="cell-good">10.568</td><td class="cell-good">97.0</td><td class="cell-good">1.178×</td>
+          </tr>
+          <tr>
+            <td class="arm">3 <span class="muted">recipe default</span></td>
+            <td class="sep">1.815</td><td class="noise">5.486</td><td class="noise">187.9</td><td class="noise">1.333×</td>
+            <td class="sep">1.816</td><td class="cell-crit">10.846</td><td class="cell-crit">94.7</td><td class="cell-crit">1.148×</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend">
+      <span><span class="sw" style="background:var(--good-bg); box-shadow: inset 0 0 0 1px var(--good)"></span> best k in this column</span>
+      <span><span class="sw" style="background:var(--surface-2); box-shadow: inset 3px 0 0 var(--line-2), inset 0 0 0 1px var(--line)"></span> tied with the winner inside this arm's 1.44% drift floor</span>
+      <span><span class="sw" style="background:var(--crit-bg); box-shadow: inset 0 0 0 1px var(--crit)"></span> the default loses here</span>
+      <span>drift control: k=1 re-served at window end, ITL +1.44% (conc 1) / +0.63% (conc 10)</span>
+    </p>
+    <div class="col">
+      <p>
+        <strong>k=2 is the recommendation because it never loses.</strong> At concurrency 1, k=2 and k=3 are
+        genuinely tied — ITL favours k=2 by 0.2%, per-user tok/s favours k=3 by 1.2%, all inside the 1.44%
+        drift floor. The tiebreak comes from load, where k=2 beats the default by <strong>2.4% per user and
+        2.7% per server</strong>. Load pushes the optimum <em>down</em>, because marginal cost per draft
+        position rises with batch (12.1%/token at conc 1 vs 19.4%/token at conc 10) while acceptance does not
+        change at all.
+      </p>
+    </div>
+
+    <h3>What you actually serve: absolute rates at each tier's best k</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Workload</th><th>conc</th><th>k</th><th>tok/s/user</th><th>vs k=0</th><th>server tok/s</th><th>vs k=0</th></tr>
+        </thead>
+        <tbody>
+          <tr class="baseline"><td class="arm">code</td><td>1</td><td>0</td><td>136.8</td><td>—</td><td>132.1</td><td>—</td></tr>
+          <tr><td class="arm">code</td><td>1</td><td><strong>6</strong></td><td class="cell-good"><strong>341.6</strong></td><td class="cell-good"><strong>2.50×</strong></td><td>316.3</td><td>2.40×</td></tr>
+          <tr class="baseline"><td class="arm">code</td><td>10</td><td>0</td><td>74.8</td><td>—</td><td>706.4</td><td>—</td></tr>
+          <tr><td class="arm">code</td><td>10</td><td><strong>5</strong></td><td class="cell-good"><strong>153.5</strong></td><td class="cell-good"><strong>2.05×</strong></td><td>1427.8</td><td>2.02×</td></tr>
+          <tr class="baseline"><td class="arm">creative</td><td>1</td><td>0</td><td>136.8</td><td>—</td><td>132.4</td><td>—</td></tr>
+          <tr><td class="arm">creative</td><td>1</td><td><strong>2</strong></td><td>185.6</td><td>1.36×</td><td>175.1</td><td>1.32×</td></tr>
+          <tr class="baseline"><td class="arm">creative</td><td>10</td><td>0</td><td>80.5</td><td>—</td><td>764.9</td><td>—</td></tr>
+          <tr><td class="arm">creative</td><td>10</td><td><strong>2</strong></td><td>97.0</td><td>1.21×</td><td>892.5</td><td>1.17×</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = the study's headline configuration. Tinted rows are the speculation-off controls each ratio is taken against.</span></p>
+    <div class="col">
+      <p>
+        <strong>Speculation raises server throughput as well as per-stream latency</strong> — at concurrency 10 the
+        code tier goes from 706 to 1,428 tok/s on the same 8 GPUs. This is not the usual latency-for-throughput
+        trade, because at this load the node is nowhere near compute-saturated for a sparse MoE, so verified draft
+        tokens ride in spare capacity. A separate load sweep found <strong>no crossover through concurrency 64</strong>
+        (server throughput still 1.79× at the top).
+      </p>
+      <p>
+        The server column is always the smaller speedup, and the gap widens as decode gets faster: prefill does not
+        move (TTFT is 413–420 ms across every k in the code tier), so it becomes a larger share of a shorter
+        request. That is ordinary Amdahl, and it has a sharp consequence — <strong>a prefill-dominated workload gets
+        almost nothing from speculation.</strong> Quote per-user for how fast text feels, server for capacity.
+      </p>
+    </div>
+
+    <h3>One rule predicts every cell</h3>
+    <div class="col">
+      <p>
+        Because <code>ITL = step ÷ accepted</code>, raising k helps if and only if the fractional gain in accepted
+        length exceeds the fractional rise in step cost. That is algebra, not a fit, and it calls all three
+        transitions where the data has the precision to check:
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Tier</th><th>step</th><th>Δ accepted</th><th>Δ step cost</th><th>Predicted</th><th>Measured ITL</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">code · conc 1</td><td>5 → 6</td><td>+7.51%</td><td>+5.96%</td><td>better</td><td class="cell-good">−1.5% ✓</td></tr>
+          <tr><td class="arm">code · conc 1</td><td>6 → 7</td><td>+2.85%</td><td>+3.14%</td><td>worse</td><td class="cell-good">+0.3% ✓</td></tr>
+          <tr><td class="arm">creative · conc 10</td><td>2 → 3</td><td>+4.07%</td><td>+6.82%</td><td>worse</td><td class="cell-good">+2.6% ✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = prediction confirmed. Not a ranking table.</span></p>
+    <div class="note good">
+      <p class="t">Axis 1 verdict — tune k per workload; it is the biggest lever on this page</p>
+      <p>
+        Per-position acceptance decays geometrically while marginal step cost decays only slowly, so the crossing
+        point is sharp and set by content entropy: <strong>k≈5–6 for code and structured output, k=2 for creative
+        writing</strong>. The recipe's one-size k=3 is simultaneously too shallow for one tier and too deep for the
+        other, and correcting it is worth <strong>+2.4% per user on creative writing under load</strong>
+        (measured within one window) and <strong>+11.7% on code at single-stream</strong> (k=3 → k=6, compared
+        across two windows, so ±1–2% node variance applies). Either way it is several times what the remaining two
+        axes are worth. If you route traffic by type, route k with it.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ AXIS 2 ============ -->
+  <section id="axis-kernel">
+    <h2>Axis 2 · drafter kernel</h2>
+    <div class="h2sub">Which W4A16 kernel runs the drafter — and why the answer depends on load</div>
+    <div class="col">
+      <p>
+        The 4-bit drafter's 9 linears each get a kernel from vLLM's own chooser, and the default split is not
+        uniform. <strong>Machete</strong> — the fast Hopper mixed-precision GEMM — requires output features
+        divisible by 128, and TP8 gives the draft <code>lm_head</code> 200,064 ÷ 8 = 25,008 per rank, where
+        <code>25008 % 128 == 48</code>. So Machete takes 8 layers and the older <strong>Marlin</strong> takes
+        <code>lm_head</code> — the one layer carrying <strong>60% of the drafter's weight traffic</strong>. vLLM
+        warns about the consequence directly: the padded layer's activations and outputs are "padded/sliced on
+        every forward".
+      </p>
+      <p>
+        Four cells break that default apart, all at <strong>k=5 on the code tier</strong>, with the kernel
+        assignment verified at serve time (kernel census gated fail-closed, so no cell can silently fall back).
+        Acceptance is a control here, not a result: the drafter weights and prompt bytes are byte-identical
+        across cells, so any acceptance movement is noise or a numerics bug.
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="arm" rowspan="2">Cell</th><th class="arm" rowspan="2">Kernels</th>
+            <th class="grp sep" colspan="3">concurrency 1</th>
+            <th class="grp sep" colspan="3">concurrency 10</th>
+          </tr>
+          <tr>
+            <th class="sep">tok/s/user</th><th>vs default</th><th>step cost</th>
+            <th class="sep">tok/s/user</th><th>vs default</th><th>step cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="baseline">
+            <td class="arm">default</td><td>Machete ×8 + Marlin</td>
+            <td class="sep">335.2</td><td>—</td><td>11.487</td>
+            <td class="sep">153.1</td><td>—</td><td>26.199</td>
+          </tr>
+          <tr>
+            <td class="arm">Humming <code>lm_head</code></td><td>Machete ×8 + Humming</td>
+            <td class="sep">341.0</td><td class="noise">+1.73%</td><td>11.405</td>
+            <td class="sep"><strong>157.3</strong></td><td class="cell-good"><strong>+2.73%</strong></td><td class="cell-good">−3.25%</td>
+          </tr>
+          <tr>
+            <td class="arm">Humming everywhere</td><td>Humming ×9</td>
+            <td class="sep">333.2</td><td class="noise">−0.59%</td><td>11.315</td>
+            <td class="sep">155.5</td><td class="cell-good">+1.54%</td><td class="cell-good">−3.30%</td>
+          </tr>
+          <tr>
+            <td class="arm">Machete everywhere <span class="muted">†</span></td><td>Machete ×9 <span class="muted">(vocab padded)</span></td>
+            <td class="sep">331.7</td><td class="noise">−1.66%</td><td>11.499</td>
+            <td class="sep">155.8</td><td class="cell-good">+1.85%</td><td class="cell-good">−2.47%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend">
+      <span><span class="sw" style="background:var(--good-bg); box-shadow: inset 0 0 0 1px var(--good)"></span> clears the noise floor for its concurrency</span>
+      <span><span class="sw" style="background:var(--surface-2); box-shadow: inset 3px 0 0 var(--line-2), inset 0 0 0 1px var(--line)"></span> inside the 1.02% conc-1 floor — not a result</span>
+      <span>† measured in a separate window against its own baseline (337.3 / 152.9); percentages are always within-window</span>
+    </p>
+    <div class="col">
+      <p>
+        Acceptance stayed in the 3.74–3.89 band across all four cells, as it must. Step cost — the
+        acceptance-adjusted view — tells the cleanest story: the two Humming cells land on the <em>same</em>
+        ~3.3% saving at concurrency 10, and the Machete-everywhere cell on 2.5%. The per-user gain of
+        Humming-everywhere is smaller than its step saving only because that cell happened to draw a −1.27%
+        acceptance draw.
+      </p>
+    </div>
+
+    <div class="note finding">
+      <p class="t">Integrity note: our first reading of this axis was wrong, and the noise floor is why</p>
+      <p>
+        The Machete-everywhere cell was originally dismissed as "not significant" — its +1.85% at concurrency 10
+        was compared against the <em>concurrency-1</em> noise floor (sd 1.02%), the only floor measured at the
+        time. The fourth replicate later put the concurrency-10 floor at <strong>sd 0.16%</strong>, roughly seven
+        times tighter, which makes +1.85% about eleven standard deviations. It was significant all along. The
+        conclusion published here is the corrected one: <strong>the conc-1 null stands, the conc-10 dismissal
+        does not.</strong>
+      </p>
+    </div>
+
+    <div class="col">
+      <p>
+        <strong>The mechanism is the conventional one.</strong> All three winning cells share exactly one feature:
+        Marlin is off the <code>lm_head</code> at batch greater than one. Marlin was built for the memory-bound
+        batch-1 regime, where it is at home and the assignment does not matter. At concurrency 10 the drafter GEMM
+        has ~10 rows, and Marlin's weak batch scaling costs ~2–3% of the entire decode step through the layer
+        holding 60% of the drafter's weight traffic. These cells cannot separate how much of that is the
+        per-forward pad/slice versus Marlin's batch scaling — and nothing downstream needs the split.
+      </p>
+    </div>
+
+    <div class="note">
+      <p class="t">Side finding: two upstream vLLM defects, one now fixed with a tested patch</p>
+      <p>
+        Forcing Humming onto the draft <code>lm_head</code> initially killed all 8 ranks at weight load
+        (<code>AttributeError: 'ParallelLMHead' object has no attribute 'input_size'</code>). vLLM's
+        <code>prepare_humming_layer</code> re-derives shapes from three attributes only <code>LinearBase</code>
+        sets, although the same code path also serves quantized <code>ParallelLMHead</code> layers — which is
+        exactly how Marlin serves this layer today. The path was both unreachable by default and broken when
+        reached. A ~10-line guarded-fallback patch fixes it; the two cells above are the
+        <strong>first Humming W4A16 forward ever run through vLLM's mixed-precision linear path</strong>, and
+        acceptance landing in the normal band is the numerics proof. The second defect, found earlier: vLLM builds
+        the draft embedding without a quantization config, so a published quantized drafter cannot load at all
+        (see <a href="#axis-quant">axis 3</a>).
+      </p>
+    </div>
+
+    <div class="note good">
+      <p class="t">Axis 2 verdict — two regimes</p>
+      <ul>
+        <li><strong>Single-stream / latency tier: leave the default.</strong> Every cell is inside the 1.02%
+          noise floor. Moving 60% of the drafter's weight traffic off Marlin, and eliminating a per-forward
+          pad/slice, produces no measurable change.</li>
+        <li><strong>Loaded serving (conc ≈ 10): take Marlin off the drafter's <code>lm_head</code>.</strong>
+          Best measured is <code>VLLM_DISABLED_KERNELS=MarlinLinearKernel</code> at +2.73% per user (requires the
+          patch above). The patch-free alternative is padding the draft vocabulary to 200,704 so Machete claims
+          the layer, at +1.85%.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ AXIS 3 ============ -->
+  <section id="axis-quant">
+    <h2>Axis 3 · drafter precision</h2>
+    <div class="h2sub">Quantizing the draft model — free in quality, small and real in speed</div>
+    <div class="col">
+      <p>
+        Axes 1 and 2 take the drafter's cost as given. This axis attacks it directly: the drafter is read in full
+        on every one of the k forwards per step, so shrinking its weights should shrink the step. The instrument is
+        an <strong>RTN INT4 weight-only (W4A16)</strong> quantization of the exact drafter already in use, A/B'd
+        against bf16 <strong>on the same node inside the same allocation</strong> — serve INT4, run the grid, tear
+        down, serve bf16, run the identical grid — across 12 cells (k=3/4/5 × both entropy tiers × conc 1 and 10).
+      </p>
+    </div>
+
+    <h3>Quality: no cost, and that is the important half</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Acceptance across all 12 A/B cells</th><th>Value</th><th>Reading</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">Mean change, INT4 vs bf16 drafter</td><td class="cell-good">−0.21%</td><td class="wrapcell">Indistinguishable from zero.</td></tr>
+          <tr><td class="arm">Range</td><td>−2.84% … +2.89%</td><td class="wrapcell">Signs flip cell to cell — scatter, not a penalty.</td></tr>
+          <tr><td class="arm">Two-serve noise band at this sample size</td><td>±3%</td><td class="wrapcell">The whole range fits inside it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Acceptance is the drafter's quality metric: it is the fraction of the drafter's proposals the full model agrees with. Model <em>output</em> quality is unaffected by construction — verification is exact.</span></p>
+    <div class="col">
+      <p>
+        <strong>4-bit RTN on a one-layer drafter is free.</strong> That is the finding that matters most, because it
+        is what licenses using the INT4 drafter as the baseline for axes 1 and 2, and it means a 4-bit drafter needs
+        no calibration effort, no data, and no accuracy review. It also saves 0.48 GiB of weights per deployment —
+        immaterial next to the target, but never negative.
+      </p>
+    </div>
+
+    <h3>Speed: consistently positive, smaller than predicted</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Measure across the 12-cell grid</th><th>Result</th><th>How to read it</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">Step cost lower</td><td class="cell-good">12 of 12 cells · mean −1.83%</td><td class="wrapcell">Unanimous sign — the cleanest evidence in the grid.</td></tr>
+          <tr><td class="arm">ITL lower</td><td>11 of 12 cells · mean −1.61%</td><td class="wrapcell">Same picture through the latency metric.</td></tr>
+          <tr><td class="arm">Per-user tok/s higher</td><td>11 of 12 cells · mean +1.63%</td><td class="wrapcell">2–6 tok/s on an 84–340 tok/s base.</td></tr>
+          <tr><td class="arm">Significance of the <em>magnitude</em></td><td class="noise">inside the 1.02% cross-engine floor</td><td class="wrapcell">Do not quote "+1.63%" as a measured value.</td></tr>
+          <tr><td class="arm">Significance of the <em>sign</em></td><td class="cell-good">p = 0.0063</td><td class="wrapcell">11-of-12 positive under a null of no effect. This is what carries the conclusion.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = supports adoption, grey bar = a number not to over-read. Read this axis as "small and consistently positive", not as a point estimate.</span></p>
+
+    <h4>At the deployment k, specifically</h4>
+    <div class="col">
+      <p>
+        Only two configurations in that grid are ones we would actually serve. On the code tier at k=5, the raw
+        per-user headline is +5.61% at concurrency 1 — but over half of it is an acceptance excursion, which is the
+        one quantity a 4-bit drafter is not supposed to move:
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">code · k=5</th><th>accepted, bf16 → INT4</th><th>step cost</th><th>ITL</th><th>per-user</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">conc 1</td><td class="noise">3.805 → 3.915 (+2.89%)</td><td class="cell-good">−2.54%</td><td>−5.28%</td><td class="noise">+5.61%</td></tr>
+          <tr><td class="arm">conc 10</td><td>3.853 → 3.863 (+0.25%)</td><td class="cell-good">−0.75%</td><td>−1.00%</td><td>+1.22%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Grey bar = contaminated by acceptance drift; green = the figure to quote. Because acceptance is concurrency-invariant, the two rows are replicates of one value (~3.86) and the conc-1 bf16 point is the low outlier.</span></p>
+    <div class="col">
+      <p>
+        <strong>Quote the step-cost saving: ~2.5% at concurrency 1 and ~0.8% at concurrency 10</strong>, i.e. about
+        +2.6% and +0.8% per user at acceptance parity. The creative tier's optimum (k=2) was never A/B'd — the grid
+        started at k=3 — so its value is a prediction of ~1.5%, and a weak one, since this axis's other finding was
+        that predicted scaling did not materialise: the step saving is −2.20% / −3.24% / −2.54% at k=3/4/5, flat
+        where more drafter forwards should have meant a larger absolute saving.
+      </p>
+    </div>
+
+    <h3>Why the ceiling is low — and how this connects to axis 2</h3>
+    <div class="col">
+      <p>
+        A bandwidth model predicted −4.3% of step cost at k=3 on the code tier; the measurement is −2.20%, roughly
+        half. The explanation is that <strong>a drafter forward is not bandwidth-bound</strong>. It runs at three to
+        four times its HBM floor, so only a quarter to a third of it is weight streaming; the rest is per-invocation
+        cost — kernel launch, all-reduce, dispatch — that no weight format can touch. Cutting weight bytes by 4×
+        therefore has a small ceiling by construction, and axis 2 tested the leading candidate for the rest of the
+        gap.
+      </p>
+      <p>
+        <strong>The two drafter-cost axes act on the same layer and trade places with load.</strong> Both target the
+        drafter's <code>lm_head</code>: axis 3 makes its weights smaller, axis 2 changes the kernel that reads them.
+        Measured at the code tier's k=5:
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Step-cost saving at k=5, code tier</th><th>concurrency 1</th><th>concurrency 10</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">Axis 3 · INT4 drafter instead of bf16</td><td class="cell-good">−2.54%</td><td>−0.75%</td></tr>
+          <tr><td class="arm">Axis 2 · Marlin off the <code>lm_head</code></td><td class="noise">inside noise</td><td class="cell-good">−3.25%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend"><span>Green = where each lever pays. Two separate experiments, never crossed factorially — see the caveat below.</span></p>
+    <div class="col">
+      <p>
+        The pattern is coherent with the mechanism. At concurrency 1 the drafter GEMM has a single row, so fewer
+        weight bytes is exactly the right lever and Marlin is in the regime it was designed for. At concurrency 10 it
+        has ten rows: the weight read is amortised across them, so precision matters less, while Marlin's weak batch
+        scaling starts to cost real time. <strong>Honest caveat:</strong> these are two separate experiments, so the
+        levers were never crossed in one factorial run. We cannot claim the savings add — only that each is real in
+        its own regime, and that the two regimes are different.
+      </p>
+    </div>
+
+    <div class="note good">
+      <p class="t">Axis 3 verdict — adopt the 4-bit drafter, but do not expect much from it</p>
+      <p>
+        It is free in acceptance (mean −0.21%, signs flipping), unanimously non-negative on step cost across 12
+        cells, and worth roughly <strong>+2.6% per user at the low-entropy deployment k at concurrency 1</strong>,
+        falling to under 1% under load. Take it — it costs nothing and never hurts — but it is a minor lever:
+        the same code workload gains <strong>+11.7%</strong> from moving k=3 → k=6, more than four times as much.
+      </p>
+    </div>
+
+    <div class="note">
+      <p class="t">Getting there required repairing the published checkpoint</p>
+      <p>
+        The public INT4 drafter does not load in vLLM: <code>llama_eagle3.py</code> builds the draft embedding
+        <em>without</em> passing a quantization config while passing one to <code>lm_head</code>, so there is no
+        packed-weight parameter to load into — <code>KeyError: 'embed_tokens.weight_packed'</code> on all 8 ranks.
+        Quantizing that tensor could never have paid anyway: when the draft embedding matches the target's, vLLM
+        deletes it and shares the target's table. Our preparation step restores the bf16 embedding, drops that
+        quantization group, and carries the other 34 tensors byte-for-byte, asserted tensor-by-tensor rather than
+        assumed.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ DEPLOYMENT ============ -->
+  <section id="deployment">
+    <h2>Putting it together</h2>
+    <div class="h2sub">What to actually serve</div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Traffic</th><th>Load</th><th>k</th><th>Drafter</th><th>Drafter kernel</th><th>Expected per-user</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="arm">code / structured</td><td>single-stream</td><td class="cell-good"><strong>6</strong></td><td>INT4</td>
+            <td>default</td><td class="cell-good"><strong>2.50×</strong> <span class="muted">(342 tok/s)</span></td>
+          </tr>
+          <tr>
+            <td class="arm">code / structured</td><td>conc ≈ 10</td><td class="cell-good"><strong>5</strong></td><td>INT4</td>
+            <td>Marlin off <code>lm_head</code></td><td class="cell-good"><strong>≈2.10×</strong> <span class="muted">(157 tok/s)</span></td>
+          </tr>
+          <tr>
+            <td class="arm">creative / open-ended</td><td>single-stream</td><td class="cell-good"><strong>2</strong></td><td>INT4</td>
+            <td>default</td><td>1.36× <span class="muted">(186 tok/s)</span></td>
+          </tr>
+          <tr>
+            <td class="arm">creative / open-ended</td><td>conc ≈ 10</td><td class="cell-good"><strong>2</strong></td><td>INT4</td>
+            <td>default <span class="muted">(untested at k=2)</span></td><td>1.21× <span class="muted">(97 tok/s)</span></td>
+          </tr>
+          <tr>
+            <td class="arm">mixed / unknown</td><td>any to conc 64</td><td>3</td><td>INT4</td>
+            <td>default</td><td>1.81× <span class="muted">(250 tok/s)</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend">
+      <span>Green = a tuned choice this study establishes. The conc-10 code row combines two windows (2.05× measured at k=5 plus the 2.7% kernel gain), so it is marked ≈; every other figure is a single same-window measurement.</span>
+    </p>
+    <div class="col">
+      <p>
+        If you can only make one change, make it <strong>k per traffic class</strong>. If you route by content type
+        already, the two drafter-cost levers are cheap to add on top: the 4-bit drafter is a checkpoint swap that
+        never hurts, and the kernel override is one environment variable that helps only under load.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ LIMITS ============ -->
+  <section id="limits">
+    <h2>Scope</h2>
+    <div class="h2sub">What this page does not cover</div>
+    <ul class="col">
+      <li><strong>Prefill-dominated traffic gets almost nothing.</strong> Speculation accelerates decode and never
+        touches prefill. An agentic shape that emits ~100 output tokens per ~12k-token prompt is outside the regime
+        where any of this pays.</li>
+      <li><strong>Axes 2 and 3 were measured at k=5 on the code tier only.</strong> Neither has been re-measured at
+        the creative tier's k=2, where there are fewer drafter forwards per step to save on. Expect less, not more.</li>
+      <li><strong>Concurrency was 1 and 10 for the tuning axes.</strong> A separate sweep confirms speculation still
+        pays at concurrency 16/32/64 (server throughput 1.95× / 1.97× / 1.79× at k=3), but the per-axis optima were
+        not re-derived there, and both the noise floor and the k optimum are load-dependent.</li>
+      <li><strong>The two drafter-cost levers were never crossed factorially</strong>, so their savings are not
+        claimed to add.</li>
+      <li><strong>Absolute accepted lengths reflect a censored output budget</strong> (2,048 tokens) and a staged
+        clean subset of SPEED-Bench. Ratios are sound; leaderboard comparison is not.</li>
+    </ul>
+  </section>
+
+  <!-- ============ SOURCES ============ -->
+  <section id="sources">
+    <h2>Context &amp; sources</h2>
+    <div class="h2sub">Where the numbers come from</div>
+    <ul class="sources col">
+      <li><strong>Full study write-up</strong> — <code>docs/m3-specdec-eagle3.md</code>: all ten measurement
+        windows with per-phase design, gates, drift controls, retractions and corrections. This page is the
+        collaborator-facing summary of its phases D through I.2; the write-up is the authority where they differ.</li>
+      <li><strong>Design packet</strong> — <code>M3_SPECDEC_EAGLE3_PLAN.md</code>: hypotheses and decision rules,
+        recorded before measurement.</li>
+      <li><strong>Draft model</strong> — <code>Inferact/MiniMax-M3-EAGLE3</code> @ <code>44cafa5a</code>;
+        4-bit derived from <code>Sebesky/MiniMax-M3-EAGLE3-RTN-INT4</code> via
+        <code>pipeline/prepare_int4_drafter.py</code> (input hashes and the three dropped tensors are recorded in
+        the derivation manifest alongside the checkpoint).</li>
+      <li><strong>Benchmark</strong> — <a href="https://huggingface.co/datasets/nvidia/SPEED-Bench">nvidia/SPEED-Bench</a>,
+        staged and hash-gated by <code>pipeline/stage_speedbench.py</code>; driven by
+        <a href="https://github.com/ai-dynamo/aiperf">aiperf</a>.</li>
+      <li><strong>Companion reports</strong> — <a href="M3_OFFICIAL_PERF_RESULTS.html"><code>M3_OFFICIAL_PERF_RESULTS.html</code></a>
+        (kernel and quantization axes for the target itself, and the baseline this page's speedups multiply) and
+        <a href="M3_OFFICIAL_QUALITY_RESULTS.html"><code>M3_OFFICIAL_QUALITY_RESULTS.html</code></a>
+        (quality verdicts; unaffected by speculation, which is output-equivalent by construction).</li>
+    </ul>
+    <h3>Raw evidence on disk</h3>
+    <ul class="sources col">
+      <li><strong>Axis 1</strong> — <code>/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T105919Z-kopt/</code>:
+        arms <code>kopt-low</code> (k=0/5/6/7) and <code>kopt-high</code> (k=0/1/2/3), each five serves in one
+        allocation with a trailing repeat as the drift control.</li>
+      <li><strong>Axis 2</strong> — <code>…/20260727T134635Z-kernel/</code> (baseline, Machete-everywhere, drift
+        repeat, plus the two crash logs) and <code>…/20260727T154725Z-kernel/</code> (the patch plus the two
+        re-run Humming cells). Each cell carries its gated kernel set, kernel census, pad-warning check and
+        acceptance counters.</li>
+      <li><strong>Axis 3</strong> — <code>…/20260727T102751Z-int4drafter/</code>: arms
+        <code>int4-k{3,4,5}</code>, each holding both halves of its A/B as <code>int4/</code> and <code>fp/</code>
+        subdirectories, plus <code>probe-published/</code> recording the as-published checkpoint's load failure.</li>
+      <li><strong>Supporting windows</strong> — length × entropy grid <code>…/20260727T073533Z-phaseD/</code>;
+        target-format comparison <code>…/20260727T084526Z-format/</code>; BF16 reference
+        <code>…/20260727T092342Z-bf16ref/</code>; real-prompt and load sweeps
+        <code>…/20260727T064934Z-wave2/</code> and <code>…/20260727T061506Z/</code>.</li>
+    </ul>
+  </section>
+
+  <footer>
+    MiniMax-M3 EAGLE3 speculative decoding · in-house GPTQ W4AFP8 target, TP8/EP8 on one 8×H100 node, engine flags
+    held fixed, dedicated idle nodes · every ratio is a same-window ratio against an in-window speculation-off
+    control · SPEED-Bench clean subset, not leaderboard-comparable.
+    Generated for internal collaboration.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeToggle');
+    var root = document.documentElement;
+    function current() {
+      if (root.dataset.theme) return root.dataset.theme;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      root.dataset.theme = current() === 'dark' ? 'light' : 'dark';
+    });
+  })();
+</script>
+</body>
+</html>

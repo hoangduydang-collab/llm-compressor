@@ -594,10 +594,37 @@ half. The likeliest reason is the Marlin lm_head above: if the layer holding 60%
 the weight traffic doesn't reach the bandwidth roof, neither does the saving. A
 per-invocation cost that INT4 cannot touch (launch, all-reduce) accounts for the rest.
 
-In output-rate terms the same result reads **+1.63% per-user tok/s** and **+1.59%
-server tok/s** on average, positive in 11 of 12 cells (worst −2.04%, best +5.61%, both
-at k=5). Concretely at 8k-low conc 1: 340.1 vs 322.0 tok/s per user at k=5, and 305.8
-vs 299.3 at k=3.
+### Per-user output tok/s — bf16 drafter vs INT4 drafter (the default metric)
+
+| k | workload | conc | bf16 drafter | INT4 drafter | gain |
+|---|---|---|---|---|---|
+| 3 | 8k-low  |  1 | 299.3 | 305.8 | +2.15% |
+| 3 | 8k-low  | 10 | 141.0 | 143.5 | +1.74% |
+| 3 | 8k-high |  1 | 183.0 | 183.4 | +0.19% |
+| 3 | 8k-high | 10 |  90.3 |  92.1 | +2.00% |
+| 4 | 8k-low  |  1 | 318.9 | 321.9 | +0.95% |
+| 4 | 8k-low  | 10 | 148.0 | 148.6 | +0.41% |
+| 4 | 8k-high |  1 | 173.2 | 181.0 | +4.51% |
+| 4 | 8k-high | 10 |  88.7 |  89.9 | +1.26% |
+| 5 | 8k-low  |  1 | 322.0 | 340.1 | +5.61% |
+| 5 | 8k-low  | 10 | 153.8 | 155.7 | +1.22% |
+| 5 | 8k-high |  1 | 171.6 | 168.1 | −2.04% |
+| 5 | 8k-high | 10 |  83.8 |  85.1 | +1.50% |
+
+**Mean +1.63%**, positive in 11 of 12 cells; server tok/s agrees at +1.59% mean. The
+bf16 half's same-serve repeat puts the per-user drift floor at ±0.24% (−0.21%, +0.08%,
+−0.24%), so the mean clears it by ~7×. But the per-cell spread is 3–4× the mean, so the
+two outliers (+5.61%, −2.04%) are noise excursions, not per-cell results. In absolute
+terms this is 2–6 tok/s/user on an 84–340 tok/s base.
+
+Note that `output_token_throughput_per_user` is aiperf's mean of per-request `1/ITL`,
+not `1/mean(ITL)`, so it is not exactly the reciprocal of the ITL column above — and in
+the k=5 / 8k-high / conc 1 cell the two aggregations disagree on sign (ITL improves
+0.96%, per-user rate worsens 2.04%). Where they conflict, per-user is the reported
+metric and the disagreement is itself evidence the cell is inside the noise band.
+
+For scale: on the same code workload, moving k=3 → k=6 (phase H) takes per-user speed
+305.8 → 341.6, i.e. **+11.7%** — about seven times the drafter-quantization gain.
 
 The predicted scaling with k did **not** appear: at 8k-low conc 1 the step saving is
 −2.20% / −3.24% / −2.54% for k=3/4/5 — flat within cell-to-cell variance, where more

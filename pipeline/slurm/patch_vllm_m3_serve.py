@@ -988,6 +988,15 @@ def _patch_humming_supports_quant_scheme(text: str) -> tuple[str, bool, bool]:
         return text, False, True
     match = anchor.search(text)
     if match is None:
+        # NOT APPLICABLE vs LAYOUT CHANGED. vLLM 0.24.0 -- our qualified baseline --
+        # has no allow-list here at all (_supports_quant_scheme returned True
+        # unconditionally), so the anchor is legitimately absent and there is nothing
+        # to admit. Only treat a missing anchor as fatal when the allow-list form is
+        # present, which means the shape we patch really did move.
+        # (Regression 2026-07-28: registering this as unconditionally required broke
+        # every 0.24.0 serve mid-window, since the arm re-runs the patcher per serve.)
+        if "SUPPORTED_W_A" not in text:
+            return text, False, True
         return text, False, False
 
     ind = match.group("indent")

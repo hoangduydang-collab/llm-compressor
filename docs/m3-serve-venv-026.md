@@ -1,7 +1,7 @@
 # Serving venv `serve-026` — vLLM 0.26.0 with humming merged in
 
 **Purpose.** The go-forward M3 serving environment. It replaces the
-`serve` venv + `PYTHONPATH` humming side-install with a single self-contained venv,
+`quant` venv + `PYTHONPATH` humming side-install with a single self-contained venv,
 and it is the *only* environment in which DSpark speculative decoding can run.
 
 Built 2026-07-28. Path: `/mnt/nfs/hoangduy/venvs/serve-026`.
@@ -13,8 +13,8 @@ Verified by source, not by version string:
 
 | vLLM | `DSparkModelTypes` in `config/speculative.py` |
 |---|---|
-| 0.23.x (our `serve` venv) | absent |
-| 0.24.0, 0.24.1 | absent |
+| 0.23.x | absent |
+| **0.24.0** (our `quant` venv — the actual serving venv) | **absent** — verified in the installed venv, not just upstream |
 | **0.25.0** | **present** — first release with DSpark |
 | 0.26.0 | present (latest stable; 0.26.1 does not exist) |
 
@@ -22,9 +22,15 @@ Upstream layout: `vllm/v1/worker/gpu/spec_decode/dspark/speculator.py` +
 `vllm/model_executor/models/qwen3_dspark.py`. Both live in the post-0.23 worker
 tree, so this is a genuine two-minor-version move, not a cherry-pick.
 
-**The de-risk that made it cheap:** vLLM 0.26.0 pins `torch==2.11.0`, which is
-exactly what the `serve` venv already runs (`2.11.0+cu130`, CUDA 13.0). PyPI
-resolved the same `+cu130` build. No torch bump, no CUDA rebuild.
+**Which venv actually serves.** `run_vllm_http_serve_smoke.sh` sources its venv, and
+the default is **`quant`** (vLLM 0.24.0, `humming_kernels` 0.1.6 installed and shadowed
+to 0.1.10 at serve time by `PYTHONPATH`). That is the environment every published M3
+serving number came from — not the `serve` venv, which holds an unrelated 0.23.1 build.
+The move is therefore **0.24.0 → 0.26.0**.
+
+**The de-risk that made it cheap:** vLLM 0.26.0 pins `torch==2.11.0`, exactly what
+`quant` already runs (`2.11.0+cu130`, CUDA 13.0). PyPI resolved the same `+cu130`
+build. No torch bump, no CUDA rebuild.
 
 ## Contents
 
@@ -46,6 +52,10 @@ Install log: `/mnt/nfs/hoangduy/venvs/serve-026-install.log`
 `humming_kernels` is a pure `py3-none-any` wheel (CUDA sources are JIT-compiled at
 runtime), so it needs no side-install to carry a patched copy. 0.1.10 is now a normal
 dependency of this venv.
+
+Select it with **`SERVE_VENV=/mnt/nfs/hoangduy/venvs/serve-026`**, the override added to
+`run_vllm_http_serve_smoke.sh` (default stays `quant`, so existing launchers are
+unaffected).
 
 **Launchers using `serve-026` must NOT prepend a humming site dir to `PYTHONPATH`.**
 The old form was `PYTHONPATH=/mnt/nfs/hoangduy/venvs/humming-0.1.10-site:$REPO`,
@@ -102,7 +112,7 @@ maintain (upstream has not taken it).
 
 | | order |
 |---|---|
-| 0.23.1 | Cutlass-W4A8 > Machete > AllSpark > Marlin > **Humming** > Conch > Exllama > Triton-W4A16 |
+| 0.24.0 (`quant`, our baseline) | Cutlass-W4A8 > Machete > AllSpark > Marlin > **Humming** > Conch > Exllama > Triton-W4A16 |
 | 0.26.0 | Cutlass-W4A8 > Machete > AllSpark > Marlin > Conch > Exllama > Triton-W4A16 > **Humming** |
 
 This **silently breaks the EAGLE3 axis-2 cell definitions**, which reached Humming by
@@ -110,12 +120,16 @@ This **silently breaks the EAGLE3 axis-2 cell definitions**, which reached Hummi
 the drafter's unpadded `lm_head` config (W4A16 uint4b8, group 128, symmetric,
 `[6144, 25008]` per rank, bf16 activations):
 
-| `VLLM_DISABLED_KERNELS` | 0.23.1 selected | 0.26.0 selects |
+| `VLLM_DISABLED_KERNELS` | 0.24.0 selected | 0.26.0 selects |
 |---|---|---|
 | *(none)* | Marlin | Marlin — unchanged |
 | `MarlinLinearKernel` | **Humming** | **TritonW4A16** — wrong cell |
 | `MarlinLinearKernel,MacheteLinearKernel` | **Humming** | **TritonW4A16** — wrong cell |
 | `MarlinLinearKernel,ConchLinearKernel,ExllamaLinearKernel,TritonW4A16LinearKernel` | — | **Humming** ✅ |
+
+Both orders and all three selections above were measured in the installed venvs, so
+the published EAGLE3 axis-2 cells were correct as run on 0.24.0; the demotion happened
+between 0.24.0 and 0.26.0.
 
 The fall-through lands on generic Triton rather than Conch because `conch-triton-kernels`
 is not installed and Exllama accepts fp16 activations only. So the old two-cell recipe
@@ -176,14 +190,15 @@ module appears.
 
 Do **not** upgrade or re-point these:
 
-- **`/mnt/nfs/hoangduy/venvs/serve`** (vLLM `0.23.1rc1.dev643+gf41e8ddc9`) — the
-  provenance of every published EAGLE3 / two-axis / packed-K number. Mutating it would
-  make already-reported results unreproducible.
+- **`/mnt/nfs/hoangduy/venvs/quant`** (vLLM `0.24.0`, `humming_kernels` 0.1.6) — the
+  actual serving venv and the provenance of every published EAGLE3 / two-axis /
+  packed-K number, *and* the qualified quantization environment. Mutating it would make
+  already-reported results unreproducible.
+- **`/mnt/nfs/hoangduy/venvs/serve`** (vLLM `0.23.1rc1.dev643+gf41e8ddc9`) — an older
+  build not used by the serving path; left alone.
 - **`/mnt/nfs/hoangduy/venvs/humming-0.1.10-site`** and `humming-0.1.11-site` — the
   validated side-installs those runs loaded, and the reference trees the merge above is
   diffed against.
-- **`/mnt/nfs/hoangduy/venvs/quant`** — stays on `humming_kernels` 0.1.6; the
-  quantization path is qualified against that version.
 
 Cross-venv comparisons are therefore **not** within-window. Any claim that pits a
 `serve-026` measurement against a `serve` measurement carries a runtime change on top of

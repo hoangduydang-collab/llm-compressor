@@ -95,15 +95,22 @@ else
   exit 1
 fi
 
-if [[ -f /mnt/nfs/hoangduy/venvs/quant/bin/activate ]]; then
+# Serving venv. Defaults to `quant` (vLLM 0.24.0 + the humming 0.1.10 PYTHONPATH
+# side-install), which produced every published M3 serving result -- do not change the
+# default without re-baselining. Override with SERVE_VENV to serve from a different
+# environment, e.g. serve-026 (vLLM 0.26.0, humming 0.1.10 merged in-venv), which is
+# the only one that can run DSpark spec-dec. See docs/m3-serve-venv-026.md.
+SERVE_VENV="${SERVE_VENV:-/mnt/nfs/hoangduy/venvs/quant}"
+if [[ -f "$SERVE_VENV/bin/activate" ]]; then
   # shellcheck disable=SC1091
-  source /mnt/nfs/hoangduy/venvs/quant/bin/activate
+  source "$SERVE_VENV/bin/activate"
 elif [[ "$_PRINT_CFG" -eq 1 ]]; then
-  echo "[http-smoke] WARNING: quant venv missing (PRINT_EFFECTIVE_CONFIG dry-run)"
+  echo "[http-smoke] WARNING: venv $SERVE_VENV missing (PRINT_EFFECTIVE_CONFIG dry-run)"
 else
-  echo "ERROR: missing /mnt/nfs/hoangduy/venvs/quant/bin/activate"
+  echo "ERROR: missing $SERVE_VENV/bin/activate"
   exit 1
 fi
+echo "[http-smoke] serve venv: $SERVE_VENV"
 
 export HOME="${HOME:-/mnt/nfs/hoangduy}"
 export WORK_ROOT="${WORK_ROOT:-/mnt/nfs/hoangduy}"

@@ -106,18 +106,62 @@ maintain (upstream has not taken it).
 | 0.26.0 | Cutlass-W4A8 > Machete > AllSpark > Marlin > Conch > Exllama > Triton-W4A16 > **Humming** |
 
 This **silently breaks the EAGLE3 axis-2 cell definitions**, which reached Humming by
-*subtraction*:
+*subtraction*. Measured with `choose_mp_linear_kernel(..., compute_capability=90)` on
+the drafter's unpadded `lm_head` config (W4A16 uint4b8, group 128, symmetric,
+`[6144, 25008]` per rank, bf16 activations):
 
-| cell | 0.23.1 `VLLM_DISABLED_KERNELS` | what it now selects on 0.26.0 |
+| `VLLM_DISABLED_KERNELS` | 0.23.1 selected | 0.26.0 selects |
 |---|---|---|
-| Machete×8 + Humming | `MarlinLinearKernel` | Machete×8 + **Conch** — wrong |
-| Humming×9 | `MarlinLinearKernel,MacheteLinearKernel` | **Conch**×9 — wrong |
+| *(none)* | Marlin | Marlin — unchanged |
+| `MarlinLinearKernel` | **Humming** | **TritonW4A16** — wrong cell |
+| `MarlinLinearKernel,MacheteLinearKernel` | **Humming** | **TritonW4A16** — wrong cell |
+| `MarlinLinearKernel,ConchLinearKernel,ExllamaLinearKernel,TritonW4A16LinearKernel` | — | **Humming** ✅ |
 
-On 0.26.0 those disable lists must also exclude `ConchLinearKernel`,
-`ExllamaLinearKernel` and `TritonW4A16LinearKernel`. A gate that only asserts the
-*relative* order `Machete > Marlin > Humming` passes anyway — it did here — so assert
-the intended kernel by name from the serve log instead of inferring it from the
-disable list.
+The fall-through lands on generic Triton rather than Conch because `conch-triton-kernels`
+is not installed and Exllama accepts fp16 activations only. So the old two-cell recipe
+does not merely pick a different good kernel — it silently substitutes the correctness
+fallback, which would read as a large Humming regression.
+
+Use the four-name disable list above. And note that a gate asserting only the *relative*
+order `Machete > Marlin > Humming` passes regardless — it did here — so assert the
+intended kernel **by name from the serve log**, never by inferring it from the disable
+list.
+
+### 1b. Kernel eligibility on H100 / bf16 (why most of the registry is untestable)
+
+`can_implement` verdicts for the same drafter `lm_head` config:
+
+| kernel | verdict | reason |
+|---|---|---|
+| Cutlass-W4A8 | no | FP8 (e4m3) activations only |
+| Machete | no (yes if padded) | out-features must be divisible by 128; 25008 % 128 == 48 |
+| AllSpark | **no** | "does not support device_capability = 90" — never available on H100 |
+| Marlin | yes | the default |
+| Conch | no *(unlockable)* | `conch-triton-kernels` not installed — a pip install, not a node |
+| Exllama | **no** | float16 activations only; we serve bf16 |
+| Triton-W4A16 | yes | generic fallback / correctness floor |
+| Humming | yes | |
+
+AllSpark and Exllama are structurally out on this hardware/dtype, so no amount of
+cluster time can turn them into cells. Conch is the only genuinely new candidate, and
+`LLMC_EAGLE3_LMHEAD_PAD=1024` remains the only way to make Machete eligible.
+
+### 1c. New in 0.26.0: cuteDSL low-latency BF16 gate GEMM
+
+`kernels/linear/cute_dsl/ll_bf16.py` is new, and `GateLinear` (the MoE router gate) now
+dispatches to it as **tier 1 on SM90+ when M ≤ 16, bf16 in, K % 8 == 0**. M3 has 60 MoE
+layers, so this GEMM runs 60× per forward. It is automatic — no env flag.
+
+It applies at conc 1 (M = 1), at conc 10 (M = 10), and to spec-dec verify at conc 1
+(M = k+1 ≤ 16), but **not** to conc-10 verify at k=5 (M = 60 > 16). So it should help
+exactly the low-concurrency regime and drop out under load.
+
+This is not an axis to sweep — it is part of the 0.26.0 baseline, and one concrete
+reason a 0.26.0 EAGLE3 control need not reproduce its 0.23.1 counterpart.
+
+Also new but not useful here: `int4_emulation_moe.py` (dequantizes int4 → BF16 at load
+and runs plain Triton BF16 experts — a compatibility fallback that discards the memory
+benefit of W4), `rdna_hybrid_w4a16.py` (AMD), `trtllm_lora_moe.py` (LoRA).
 
 ### 2. `minimax_m3_mtp` exists as a method but we have no weights for it
 

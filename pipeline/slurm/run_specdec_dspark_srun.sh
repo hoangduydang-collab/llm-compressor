@@ -36,17 +36,29 @@ say "root=$ROOT node=$NODE port_base=$PORT_BASE venv=serve-026"
 # label;k;cells
 #
 # Order carries the statistics:
-#   * D-k8-a runs FIRST and is the SMOKE serve -- k=8 is NVIDIA's published
-#     reference config, so a layout failure shows up in ~20 min and stops the arm.
+#   * D-k0-a runs FIRST and is the SMOKE serve. REORDERED 2026-07-28: it used to be
+#     D-k8-a (NVIDIA's published reference config), which was right while the only
+#     risk was drafter layout. It is wrong now. Two independent 0.26.0 blockers are
+#     known, and they fail in opposite places:
+#       - the topk_indices_buffer layout regression (FIXED, see
+#         fix_m3_topk_buffer_layout.py) broke k=0 too, i.e. plain serving;
+#       - the Model-Runner-V2 indexer assert (NOT fixed, see
+#         docs/m3-dspark-blockers-026.md) is reached only via method="dspark",
+#         which forces MRV2, so it can only fail on k>0.
+#     With k=8 as smoke, a still-live MRV2 assert smoke-aborts the arm before any
+#     k=0 cell runs -- discarding the one result the layout fix unblocks, which is
+#     also the same-workload 0.26.0-vs-0.24.0 citation this window exists to
+#     produce. k=0 first banks that citation, and a k>0 failure afterwards then
+#     costs only its own serve instead of the window.
 #   * k=8 and k=6 each get two replicates spread across the window.
-#   * k=0 controls bracket both ends, so the pair also measures window drift.
+#   * k=0 controls still bracket both ends, so the pair measures window drift.
 #   * k=10 and k=12 probe ABOVE the trained block_size of 8. num_speculative_tokens
 #     is a free serve-time int (vLLM sizes the query block from it, it is not clamped
 #     to the checkpoint), but the drafter was trained at 8, so these two points test
 #     whether acceptance saturates or degrades past training.
 SERVES=$(cat <<'EOF'
-D-k8-a;8;8k-low 8k-high
 D-k0-a;0;8k-low 8k-high
+D-k8-a;8;8k-low 8k-high
 D-k6-a;6;8k-low 8k-high
 D-k4-a;4;8k-low 8k-high
 D-k10-a;10;8k-low 8k-high
@@ -56,7 +68,7 @@ D-k6-b;6;8k-low 8k-high
 D-k0-b;0;8k-low 8k-high
 EOF
 )
-SMOKE_LABEL=D-k8-a
+SMOKE_LABEL=D-k0-a
 n_serves=$(printf '%s\n' "$SERVES" | grep -c ';')
 [ "$n_serves" = 9 ] || fail "serve list parsed $n_serves entries, expected 9"
 printf '%s\n' "$SERVES" > "$ROOT/serve-list.txt"

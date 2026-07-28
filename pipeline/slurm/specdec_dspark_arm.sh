@@ -437,7 +437,10 @@ while IFS= read -r spec; do
   port=$((port + 1))
   printf '%s done=%s skip=%s fail=%s\n' "$label" "$n_done" "$n_skip" "$n_fail" >> "$C/progress.txt"
   if [ "$smoke_abort" = 1 ]; then
-    note "STOPPING EARLY: smoke serve '$SMOKE_LABEL' did not qualify the DSpark wiring."
+    # The smoke serve qualifies whatever its own k implies: at k>0 the DSpark
+    # wiring, at k=0 the plain runtime. Either way its failure invalidates every
+    # later serve, so stop instead of collecting more corpses.
+    note "STOPPING EARLY: smoke serve '$SMOKE_LABEL' did not qualify."
     break
   fi
 done <<< "$SERVES"

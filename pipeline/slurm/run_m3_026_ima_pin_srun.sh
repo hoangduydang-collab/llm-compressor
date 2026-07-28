@@ -19,10 +19,11 @@
 # observed crash batches were mixed ({1 decode, 8191 prefill}), which is a
 # request-count-dependent discriminator that batch size alone does not explain.
 #
-# Attribution is sound even with cudagraphs left ON: max_cudagraph_capture_size is 512
-# and the faulting batch is 8192 tokens, so it runs eager regardless and every launch in
-# it is individually synchronized. Keeping graphs on also keeps this arm identical to
-# the configuration that crashes, which matters -- ENFORCE_EAGER is a separate arm.
+# Runs with ENFORCE_EAGER=1. The bisect settled that this is safe rather than a
+# confound: all three of its arms crashed, INCLUDING the enforce-eager one, so
+# cudagraphs are not involved and eager is a faithful reproduction. Disabling capture
+# removes the last source of attribution ambiguity, since nothing can be replayed
+# inside a graph where individual launches are not synchronized.
 #
 # Cost: ONE serve. CUDA_LAUNCH_BLOCKING makes everything ~10x slower, but the crash
 # arrives within seconds of the first burst, so the wall clock is dominated by model load.
@@ -73,7 +74,7 @@ mkdir -p "$cur"
 # CUDA_LAUNCH_BLOCKING is exported into the serve's environment, so every worker
 # process inherits it and each kernel launch is synchronized.
 CUDA_LAUNCH_BLOCKING=1 TORCH_SHOW_CPP_STACKTRACES=1 \
-M3_W4A8_BACKEND=humming KV_CACHE_DTYPE=fp8 ENFORCE_EAGER=0 \
+M3_W4A8_BACKEND=humming KV_CACHE_DTYPE=fp8 ENFORCE_EAGER=1 \
 CKPT="$CKPT" SERVED_NAME="$SERVED_NAME" MODEL_ID="$CKPT" PORT="$PORT" \
   MAX_MODEL_LEN="$MAX_MODEL_LEN" LOG="$cur/serve.log" PID_FILE="$cur/serve.pid" \
   bash "$REPO/pipeline/slurm/run_vllm_http_serve_smoke.sh" >>"$C/client.log" 2>&1 \

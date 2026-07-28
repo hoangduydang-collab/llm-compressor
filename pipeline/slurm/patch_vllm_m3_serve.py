@@ -946,6 +946,103 @@ def _patch_humming_supports_activation(
     return text[:insert_at] + insertion + text[insert_at:], True, True
 
 
+_HUMMING_SCHEME_MARK = "llmc M3 W4AFP8 humming MoE quant-scheme admit v1"
+
+
+def _patch_humming_supports_quant_scheme(text: str) -> tuple[str, bool, bool]:
+    """Admit M3's W4AFP8 scheme in ``HummingExpertsBase._supports_quant_scheme``.
+
+    vLLM 0.24.0 (venvs/quant, the qualified baseline) returned ``True``
+    unconditionally here, so every checkpoint reached the Humming MoE kernels and
+    M3 W4AFP8 was numerics-qualified on that path. 0.26.0 replaced the function
+    with an explicit ``SUPPORTED_W_A`` allow-list which has no entry for M3's
+    scheme, so all eight workers die during ``FusedMoE`` construction:
+
+        weight_key     QuantKey(uint4b8, ScaleDesc(float32, static=True,
+                                GroupShape(1, 128)), symmetric=True)
+        activation_key kFp8DynamicTokenSym
+
+    The nearest listed pairs are ``kInt4Static`` (float16 scales, per-channel) and
+    ``kInt4Static32`` (float16, group 32) -- neither matches group-128 fp32 scales.
+    Upstream has no reason to list a MiniMax-M3 pack-quantized W4AFP8 checkpoint,
+    so this is a *declaration* gap, not a capability regression: the kernel code
+    itself is unchanged (our four humming patches apply to byte-identical sources).
+
+    Note the failure does not even name itself. The rejection branch formats
+    ``f"quantization scheme {weight_key}x{activation_key}"`` and ``QuantKey.__str__``
+    does ``fx.graph.dtype_abbrs[self.dtype]``, which raises ``KeyError`` for vLLM's
+    own ``ScalarType`` -- so the real reason is replaced by
+    ``KeyError: ScalarType.uint4b8`` for *any* int4 MoE rejection. See
+    ``_patch_quantkey_str`` for that half.
+
+    Kept deliberately narrow: symmetric uint4b8 weights with static group scales
+    (32/64/128) and either unquantized or fp8-e4m3 activations. Anything else still
+    falls through to the upstream allow-list.
+    """
+
+    anchor = re.compile(
+        r"^(?P<indent>[ \t]+)return \(weight_key, activation_key\) in SUPPORTED_W_A[ \t]*$",
+        re.MULTILINE,
+    )
+    if _HUMMING_SCHEME_MARK in text:
+        return text, False, True
+    match = anchor.search(text)
+    if match is None:
+        return text, False, False
+
+    ind = match.group("indent")
+    replacement = (
+        f"{ind}if (weight_key, activation_key) in SUPPORTED_W_A:\n"
+        f"{ind}    return True\n"
+        f"{ind}# {_HUMMING_SCHEME_MARK}\n"
+        f"{ind}_wk, _ak = weight_key, activation_key\n"
+        f"{ind}return bool(\n"
+        f"{ind}    _wk is not None\n"
+        # ScalarType stringifies as "uint4b8" via str() and "ScalarType.uint4b8" via
+        # repr(); accept both rather than depending on which one vLLM keeps.
+        f'{ind}    and str(_wk.dtype) in ("uint4b8", "ScalarType.uint4b8")\n'
+        f"{ind}    and _wk.symmetric\n"
+        f"{ind}    and _wk.scale2 is None\n"
+        f"{ind}    and _wk.scale.static\n"
+        f"{ind}    and _wk.scale.group_shape.row == 1\n"
+        f"{ind}    and _wk.scale.group_shape.col in (32, 64, 128)\n"
+        f"{ind}    and (_ak is None or _ak.dtype is torch.float8_e4m3fn)\n"
+        f"{ind})"
+    )
+    return text[: match.start()] + replacement + text[match.end() :], True, True
+
+
+_QUANTKEY_STR_MARK = "llmc QuantKey.__str__ ScalarType fallback v1"
+
+
+def _patch_quantkey_str(text: str) -> tuple[str, bool, bool]:
+    """Stop ``QuantKey.__str__`` raising KeyError on vLLM's own ScalarType.
+
+    ``dtype_abbrs`` is a torch.fx map of *torch* dtypes, so any QuantKey holding a
+    ``ScalarType`` (uint4b8, uint8b128 -- i.e. every int4/int8 weight key) raises
+    ``KeyError`` when stringified. Since the modular-kernel oracle stringifies keys
+    only to explain a *rejection*, the effect is that unsupported-scheme errors are
+    replaced by an unrelated KeyError from the error path itself. Diagnostics only;
+    it changes no selection behaviour.
+    """
+
+    if _QUANTKEY_STR_MARK in text:
+        return text, False, True
+    anchor = re.compile(
+        r"^(?P<indent>[ \t]+)f\"QuantKey\(\{fx\.graph\.dtype_abbrs\[self\.dtype\]\},\"",
+        re.MULTILINE,
+    )
+    match = anchor.search(text)
+    if match is None:
+        return text, False, False
+    ind = match.group("indent")
+    # NOT an f-string: the braces below belong to the emitted vLLM source, so they
+    # must survive verbatim rather than being interpolated here.
+    emitted = 'f"QuantKey({fx.graph.dtype_abbrs.get(self.dtype, self.dtype)},"'
+    replacement = f"{ind}# {_QUANTKEY_STR_MARK}\n" + ind + emitted
+    return text[: match.start()] + replacement + text[match.end() :], True, True
+
+
 def _patch_apply_activation(text: str) -> tuple[str, bool, bool]:
     """Replace the SWIGLUOAI_UNINTERLEAVE assert with a clamp-scalar default."""
     assert_line = re.compile(
@@ -1694,6 +1791,21 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
     ]
 
 
+def _optional_patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
+    """Edits whose anchors exist only on some vLLM releases.
+
+    ``_patch_quantkey_str`` is diagnostics-only and its anchor is absent before
+    0.26.0, so a missing anchor must not fail the overlay.
+    """
+    return [
+        (
+            "QuantKey.__str__ ScalarType fallback",
+            vllm_dir / "model_executor/layers/quantization/utils/quant_utils.py",
+            _patch_quantkey_str,
+        ),
+    ]
+
+
 def _humming_patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
     return [
         (
@@ -1701,7 +1813,13 @@ def _humming_patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
             vllm_dir
             / "model_executor/layers/fused_moe/experts/fused_humming_moe.py",
             _patch_humming_supports_activation,
-        )
+        ),
+        (
+            "Humming W4AFP8 quant-scheme admit",
+            vllm_dir
+            / "model_executor/layers/fused_moe/experts/fused_humming_moe.py",
+            _patch_humming_supports_quant_scheme,
+        ),
     ]
 
 
@@ -1803,6 +1921,17 @@ def main() -> int:
         _apply(path, patch_fn, args.check)
         for _, path, patch_fn in targets
     ]
+
+    # Optional edits are diagnostics-only and their anchors are release-specific, so
+    # a missing anchor is reported but never gates STATUS.
+    # _apply already prints the per-file verdict; it returns `not changed`, so its
+    # return value cannot distinguish "just patched" from "anchor absent" and must
+    # not be re-interpreted here.
+    for label, path, patch_fn in _optional_patch_targets(vllm_dir):
+        if not path.exists():
+            print(f"optional {label}: file absent, skipped")
+            continue
+        _apply(path, patch_fn, args.check, fatal=False)
 
     if args.check:
         probe_status = ensure_m3_moe_probe(apply=False)

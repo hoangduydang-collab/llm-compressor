@@ -438,7 +438,7 @@
           <tr><td class="arm">per-user tok/s</td><td><code>output_token_throughput_per_user</code></td><td class="wrapcell">aiperf's mean of per-request 1÷ITL — the decode rate one stream sees. <strong>The primary metric.</strong> Excludes prefill; this is "how fast the text feels". Note it is the mean of reciprocals, not the reciprocal of the mean, so it need not agree in sign with the ITL column; where they conflict the cell is inside the noise band.</td></tr>
           <tr><td class="arm">server tok/s</td><td><code>output_token_throughput</code></td><td class="wrapcell">Output tokens over benchmark wall clock, all requests summed — includes every prefill, so it is the honest end-to-end capacity number and always a slightly smaller speedup.</td></tr>
           <tr><td class="arm">ITL (ms)</td><td><code>inter_token_latency</code></td><td class="wrapcell">Mean gap between successive output tokens. Lower is better.</td></tr>
-          <tr><td class="arm">step cost (ms)</td><td>derived</td><td class="wrapcell">ITL × accepted length — the cost of one verify step. The acceptance-adjusted view: it isolates kernel and precision effects from run-to-run acceptance drift, which is why axes 2 and 3 lead with it.</td></tr>
+          <tr><td class="arm">step cost (ms)</td><td>derived</td><td class="wrapcell">ITL × accepted length — the wall-clock time of one <em>complete</em> speculative iteration: the k drafter forwards <strong>plus</strong> the target's single verify forward over k+1 positions, plus sampling and collectives. <strong>Not the drafting time alone</strong> — drafting is 36% of it at concurrency 1 and 49% at concurrency 10 (k=5, code tier), the rest being work the k=0 control also does. Multiplying ITL by accepted length simply inverts <code>ITL = step ÷ accepted</code>, which is what makes this the acceptance-adjusted view: a cell that draws better acceptance gets no credit for it. Axes 2 and 3 lead with this metric for that reason.</td></tr>
         </tbody>
       </table>
     </div>
@@ -774,6 +774,13 @@
         has ~10 rows, and Marlin's weak batch scaling costs ~2–3% of the entire decode step through the layer
         holding 60% of the drafter's weight traffic. These cells cannot separate how much of that is the
         per-forward pad/slice versus Marlin's batch scaling — and nothing downstream needs the split.
+      </p>
+      <p>
+        <strong>Sized against the drafter rather than the whole iteration, the effect is larger than it looks.</strong>
+        Drafting accounts for 12.77 of the 26.199 ms step at concurrency 10 (49%, taking the k=0 control as the
+        no-drafting reference), so the −3.25% whole-step saving is <strong>−0.85 ms, or ~6.7% of the drafter's own
+        cost</strong>. That is a plausible magnitude for a kernel change on one layer of nine; 3.25% of an entire
+        decode iteration would not be.
       </p>
     </div>
 

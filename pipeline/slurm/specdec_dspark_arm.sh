@@ -246,11 +246,45 @@ gate_config() {
 
 snap() { curl -sf "http://localhost:$CUR_PORT/metrics" -o "$CUR/metrics/$1.txt" 2>/dev/null || true; }
 
+serve_alive() { curl -sf -m 10 "http://localhost:$CUR_PORT/health" >/dev/null 2>&1; }
+
+# Emits "<errored> <completed>" from aiperf's own export, or nothing if unreadable.
+# aiperf exits 0 even when every request returns HTTP 500, so its exit code alone
+# cannot distinguish a real cell from a cell run against a dead engine. Note that
+# aiperf OMITS error_request_count entirely on a clean run, so absence of errors is
+# not positive evidence -- the completed count is what proves the cell actually ran.
+cell_counts() {
+  local cell=$1 conc=$2
+  "$PYBIN" - "$CUR/speedbench/$cell/conc_$conc/profile_export_aiperf.json" <<'PY' 2>/dev/null
+import json, sys
+def scalar(v):
+    if isinstance(v, dict):
+        for key in ("total", "count", "avg", "sum"):
+            if key in v:
+                return int(float(v[key]))
+        return None
+    return None if v is None else int(float(v))
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+errs = scalar(d.get("error_request_count")) or 0
+done = scalar(d.get("request_count"))
+if done is None:
+    sys.exit(1)
+print(errs, done)
+PY
+}
+
 # $1 conc  $2 request count  $3 cell
 run_cell() {
   local conc=$1 n=$2 cell=$3
   local file="$SB_DIR/$cell.jsonl"
   test -s "$file" || { note "ABORT: missing staged prompts $file"; rc_all=1; return; }
+  if [ "$serve_died" = 1 ]; then
+    note "cell=$cell conc=$conc SKIPPED: serve already died"
+    return
+  fi
   note "cell=$cell conc=$conc requests=$n"
   snap "sb-$cell-c$conc-pre"
   "$PERF_VENV/bin/aiperf" profile \
@@ -265,6 +299,32 @@ run_cell() {
   snap "sb-$cell-c$conc-post"
   note "cell=$cell conc=$conc rc=$rc"
   [ "$rc" = 0 ] || rc_all=1
+
+  # aiperf exit code is not sufficient evidence the cell ran: it returns 0 after
+  # every request 500s against a dead engine. Gate on the engine still answering
+  # and on aiperf's own error tally.
+  local counts errs done_n
+  counts=$(cell_counts "$cell" "$conc")
+  if [ -z "$counts" ]; then
+    note "cell=$cell conc=$conc WARN: aiperf export unreadable -- cell not trustworthy"
+    rc_all=1
+  else
+    read -r errs done_n <<<"$counts"
+    if [ "$errs" -gt 0 ]; then
+      note "cell=$cell conc=$conc ERRORS: aiperf recorded $errs failed requests"
+      rc_all=1
+    fi
+    if [ "$done_n" -lt "$n" ]; then
+      note "cell=$cell conc=$conc TRUNCATED: only $done_n/$n requests completed"
+      rc_all=1
+    fi
+  fi
+  if ! serve_alive; then
+    serve_died=1
+    rc_all=1
+    note "cell=$cell conc=$conc ABORT: engine no longer answering /health -- it died"
+    note "  remaining cells for this serve are skipped; see $CUR/serve.log"
+  fi
 }
 
 # Returns 2 when the smoke serve fails the floor, which the main loop turns into an
@@ -274,7 +334,22 @@ acc_gate() {
   [ "$cell" = 8k-low ] || return 0
   [ "$k" -ge "$ACC_MIN_K" ] || return 0
   local pre=$CUR/metrics/sb-$cell-c1-pre.txt post=$CUR/metrics/sb-$cell-c1-post.txt
-  [ -s "$pre" ] && [ -s "$post" ] || { note "$label WARN: no metrics for acceptance gate"; return 0; }
+  # Absent metrics are NOT a soft condition on the smoke serve. A dead engine
+  # produces no post-scrape, so treating this as a warning defeats the whole
+  # point of gating the arm on the smoke serve (observed 2026-07-28: the engine
+  # died mid-cell, the gate warned, and the arm marched on toward 8 more serves).
+  if [ ! -s "$pre" ] || [ ! -s "$post" ]; then
+    if [ "$label" = "$SMOKE_LABEL" ]; then
+      rc_all=1
+      note "$label SMOKE FAILED: no metrics for the acceptance gate"
+      note "  The engine did not survive the conc-1 cell, so acceptance is unmeasurable"
+      note "  and every later serve would inherit the same broken runtime."
+      note "  Check: $CUR/serve.log, $CUR/aux-layers.txt, $CUR/spec-boot.log"
+      return 2
+    fi
+    note "$label WARN: no metrics for acceptance gate"
+    return 0
+  fi
   local acc
   acc=$("$PYBIN" - "$pre" "$post" <<'PY'
 import re, sys
@@ -329,6 +404,7 @@ while IFS= read -r spec; do
     note "skip $label (not in ONLY)"; n_skip=$((n_skip + 1)); port=$((port + 1)); continue
   fi
 
+  serve_died=0
   if serve_config "$label" "$k" "$port"; then
     if gate_config "$label" "$k"; then
       for cell in $cells; do
@@ -337,8 +413,17 @@ while IFS= read -r spec; do
         acc_gate "$label" "$k" "$cell"; ag=$?
         analyze "$label" "$k" "$cell"
         if [ "$ag" = 2 ]; then smoke_abort=1; break; fi
+        if [ "$serve_died" = 1 ]; then break; fi
       done
-      n_done=$((n_done + 1))
+      if [ "$serve_died" = 1 ]; then
+        n_fail=$((n_fail + 1))
+        note "$label FAILED: engine died mid-run; its cells are not measurements"
+        # An engine that cannot survive the smoke serve invalidates the runtime for
+        # every later serve, so stop rather than collect more corpses.
+        [ "$label" = "$SMOKE_LABEL" ] && smoke_abort=1
+      else
+        n_done=$((n_done + 1))
+      fi
     else
       note "$label gates failed -- no cells run"; rc_all=1; n_fail=$((n_fail + 1))
       [ "$label" = "$SMOKE_LABEL" ] && smoke_abort=1

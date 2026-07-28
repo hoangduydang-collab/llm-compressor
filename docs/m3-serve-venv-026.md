@@ -1,8 +1,30 @@
 # Serving venv `serve-026` — vLLM 0.26.0 with humming merged in
 
-**Purpose.** The go-forward M3 serving environment. It replaces the
-`quant` venv + `PYTHONPATH` humming side-install with a single self-contained venv,
-and it is the *only* environment in which DSpark speculative decoding can run.
+> ## STATUS 2026-07-28: **NOT QUALIFIED — do not publish numbers from this venv**
+>
+> First cluster window on `serve-026` (gpu-h123, job 13422) hit **two independent
+> blockers**. Both are 0.26.0-side; neither is a DSpark config error and neither is a
+> humming-merge error (patched humming sources are byte-identical to the validated
+> `humming-0.1.10-site`, and the JIT cache key includes per-file `.cuh` mtimes, so the
+> patched headers are genuinely compiled).
+>
+> 1. **k=0 baseline is unstable.** Plain M3 W4A8 + Humming, `speculative_config=None`,
+>    Model Runner **V1**: CUDA *illegal memory access* during the conc-10 cell, in a
+>    mixed prefill+decode batch (1 decode token + a 96-token prefill chunk). Surfaces at
+>    `gpu_model_runner.py:313` `async_copy_ready_event.synchronize()`. `LLMC_M3_CAPTURE_SYNC=sync`
+>    was set. Leading hypothesis: our `breakable_cudagraph.py` overlay edit was written
+>    against 0.24.0, still finds its anchor on 0.26.0, but no longer achieves its effect.
+>    **Until this is fixed, 0.26.0 cannot host any measurement — the baseline itself dies.**
+> 2. **DSpark cannot run on M3 at all** — see `m3-dspark-blockers-026.md`.
+>
+> The qualification decision is therefore **no**. `QUALIFIED_VLLM_VERSIONS` stays
+> `("0.24.0",)`; `LLMC_HUMMING_PROVISIONAL_VLLM=0.26.0` remains the only way in, and it
+> stamps `VLLM_VERSION_PROVISIONAL` into every attestation — which it did correctly here.
+
+**Purpose.** Intended as the go-forward M3 serving environment, replacing the
+`quant` venv + `PYTHONPATH` humming side-install with a single self-contained venv.
+It is the *only* environment in which DSpark speculative decoding can run at all
+(0.24.0 lacks the method) — but see the status block above.
 
 Built 2026-07-28. Path: `/mnt/nfs/hoangduy/venvs/serve-026`.
 

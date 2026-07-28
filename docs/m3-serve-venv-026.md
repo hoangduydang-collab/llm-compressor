@@ -8,18 +8,44 @@
 > `humming-0.1.10-site`, and the JIT cache key includes per-file `.cuh` mtimes, so the
 > patched headers are genuinely compiled).
 >
-> 1. **k=0 baseline is unstable.** Plain M3 W4A8 + Humming, `speculative_config=None`,
->    Model Runner **V1**: CUDA *illegal memory access* during the conc-10 cell, in a
->    mixed prefill+decode batch (1 decode token + a 96-token prefill chunk). Surfaces at
->    `gpu_model_runner.py:313` `async_copy_ready_event.synchronize()`. `LLMC_M3_CAPTURE_SYNC=sync`
->    was set. Leading hypothesis: our `breakable_cudagraph.py` overlay edit was written
->    against 0.24.0, still finds its anchor on 0.26.0, but no longer achieves its effect.
->    **Until this is fixed, 0.26.0 cannot host any measurement — the baseline itself dies.**
+> 1. ~~**k=0 baseline is unstable.**~~ **RESOLVED 2026-07-28 — root-caused and fixed.**
+>    Plain M3 W4A8 + Humming, `speculative_config=None`, Model Runner **V1**: CUDA
+>    *illegal memory access* on any mixed prefill+decode batch. Root cause is an
+>    **upstream 0.26.0 regression**, not our overlay: `nvidia/model.py` allocates the
+>    shared `topk_indices_buffer` token-major `[T, H, K]` for the rewritten SM100 MSA
+>    top-k, while the Triton indexer and Triton attend — the impls selected on every
+>    non-SM100 GPU — still slice it head-major. At TP8 `num_index_heads == 1`, so
+>    `buf[:, nd:, :]` with `nd >= 1` drops the head axis and yields an empty view with a
+>    shifted base pointer. Full analysis and the fix:
+>    **`m3-026-topk-buffer-layout.md`**. Verified 20/20 requests on the reproducer that
+>    previously gave 0/10 three times.
+>
+>    The hypothesis recorded here originally — our `breakable_cudagraph.py` overlay edit
+>    losing its effect — was **wrong**: the enforce-eager bisect arm crashed too, so
+>    cudagraphs were never involved. So were two later hypotheses (the new cuteDSL
+>    `ll_bf16` router GEMM; the packed KV layout / in-kernel fp8 dequant). See the
+>    falsified list in that doc.
+>
+>    Note the fix currently lives only in the venv plus a standalone fixer script — it is
+>    **not yet a `patch_vllm_m3_serve.py` target**, so rebuilding `serve-026` loses it.
 > 2. **DSpark cannot run on M3 at all** — see `m3-dspark-blockers-026.md`.
 >
-> The qualification decision is therefore **no**. `QUALIFIED_VLLM_VERSIONS` stays
-> `("0.24.0",)`; `LLMC_HUMMING_PROVISIONAL_VLLM=0.26.0` remains the only way in, and it
-> stamps `VLLM_VERSION_PROVISIONAL` into every attestation — which it did correctly here.
+> The qualification decision is **still no, but for one remaining reason instead of two.**
+> `QUALIFIED_VLLM_VERSIONS` stays `("0.24.0",)`; `LLMC_HUMMING_PROVISIONAL_VLLM=0.26.0`
+> remains the only way in, and it stamps `VLLM_VERSION_PROVISIONAL` into every
+> attestation — which it did correctly here.
+>
+> **What qualification now waits on.** With blocker 1 fixed, 0.26.0 can host
+> measurements again, so the citation this venv needs is finally obtainable: the
+> `D-k0-a` / `D-k0-b` Humming k=0 controls over the identical staged prompts that the
+> h114 window measured on 0.24.0 the same day (136.8 tok/s conc 1; 75.2 8k-low / 80.3
+> 8k-high at conc 10). Agreement there is the same-workload, same-day, runtime-only
+> comparison that qualifies the W4A8 path; divergence is a finding in its own right.
+> Re-run in flight 2026-07-28: `results/m3-specdec-dspark/20260728T094710Z-k-sweep`
+> (gpu-h105, job 13428), with `D-k0-a` promoted to smoke serve so the citation is banked
+> before any DSpark leg can abort the window. **Do not flip
+> `QUALIFIED_VLLM_VERSIONS` until those controls are in and agree** — blocker 1 being
+> fixed is necessary, not sufficient.
 
 **Purpose.** Intended as the go-forward M3 serving environment, replacing the
 `quant` venv + `PYTHONPATH` humming side-install with a single self-contained venv.

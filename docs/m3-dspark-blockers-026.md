@@ -4,6 +4,18 @@
 Not a config error on our side, and not a drafter-quality finding — DSpark never got far
 enough to produce an acceptance number.
 
+> **There were TWO independent 0.26.0 blockers, and they fail in opposite places.**
+> This doc covers the Model-Runner-V2 indexer assert, which is reachable *only* via
+> `method="dspark"` (which forces MRV2) and therefore only at k>0. It is **still open**.
+> The other one — a `topk_indices_buffer` layout regression that broke plain k=0 serving
+> under any concurrency — is **fixed**; see `m3-026-topk-buffer-layout.md`. Fixing that
+> one does **not** address the assert below, because the assert fires in `build()`
+> before any kernel runs.
+>
+> Consequence for scheduling: the DSpark serve list now runs `D-k0-a` as its smoke
+> serve, so a still-live MRV2 assert costs one serve instead of aborting the window
+> before the k=0 citation is banked.
+
 Window: `/mnt/nfs/hoangduy/results/m3-specdec-dspark/20260728T075431Z-k-sweep`
 (gpu-h123, job 13422, cancelled after the k=0 control).
 
@@ -22,7 +34,17 @@ which is what cost the in-house GLM-5.2 DSpark study a window (acceptance 1.27 v
 | acceptance floor (`ACC_MIN=2.2`) | **never reported — engine died first** |
 
 17 of 30 requests completed (89 s of clean generation) before the crash, so thousands of
-decode steps succeeded. This is a rare batch shape, not a systematic incompatibility.
+decode steps succeeded — the assert needs some *particular* batch shape rather than
+firing on every step.
+
+**Do not read that as "rare" (revised 2026-07-28).** The batch shape that violates the
+assert is still not established (see below), so its frequency is unknown. And the
+neighbouring inference — that a long clean stretch implies the runtime was healthy — was
+wrong: this same window's k=0 control was dying of a *separate*, fully systematic
+`topk_indices_buffer` layout regression that only manifests on mixed prefill+decode
+batches, which concurrency 1 never produces. Now fixed; see
+`m3-026-topk-buffer-layout.md`. A clean conc-1 stretch is not evidence that a runtime
+is sound at concurrency.
 
 ## The blocker
 

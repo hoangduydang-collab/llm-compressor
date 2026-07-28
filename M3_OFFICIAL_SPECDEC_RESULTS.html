@@ -348,8 +348,20 @@
         <strong>Humming indexed 0.1.10</strong> MoE kernel — the same serve-ready configuration the perf
         report benchmarks — on <strong>one 8×H100 node at TP8/EP8</strong>, vLLM 0.24.0, 131,072-token context,
         FP8 KV cache, prefix caching on. Across every arm on this page the <em>only</em> flag that differs is
-        <code>--speculative-config</code>; each arm carries its own in-window k=0 control, so every ratio quoted
-        is a same-window ratio rather than a cross-window one.
+        <code>--speculative-config</code>, and each arm carries its own in-window k=0 control, so no ratio is
+        taken across windows.
+      </p>
+      <p>
+        <strong>Both tuning axes are same-node comparisons, which is stronger than same-window.</strong> Axis 1's
+        entire code-tier sweep — every k, its control and its drift repeat — ran in one allocation on
+        <code>gpu-h113</code>, and the creative tier likewise on <code>gpu-h114</code>; both axis-2 windows also
+        ran on <code>gpu-h113</code>, which is what makes the noise floor above a genuine same-node floor. A useful
+        accident confirms the two nodes are matched: their independent k=0 controls both measured
+        <strong>136.8 tok/s</strong> at concurrency 1. The <em>supporting</em> figures quoted for context — the
+        1.81× mixed-traffic number and the length × entropy grid — come from earlier windows that placed the
+        control and speculative arms on different nodes of the same pool, so those carry this study's
+        <strong>1–2% node variance</strong> on top of their stated precision. They are 36–115% effects, so nothing
+        turns on it, but do not read them as same-node.
       </p>
       <p>
         <strong>Our 4-bit target does not handicap the drafter.</strong> EAGLE3 conditions on the target's hidden
@@ -1051,15 +1063,17 @@
     <h3>Raw evidence on disk</h3>
     <ul class="sources col">
       <li><strong>Axis 1</strong> — <code>/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T105919Z-kopt/</code>:
-        arms <code>kopt-low</code> (k=0/5/6/7) and <code>kopt-high</code> (k=0/1/2/3), each five serves in one
-        allocation with a trailing repeat as the drift control.</li>
+        arms <code>kopt-low</code> (k=0/5/6/7, <strong>gpu-h113</strong>) and <code>kopt-high</code> (k=0/1/2/3,
+        <strong>gpu-h114</strong>), each five serves in one allocation with a trailing repeat as the drift control.</li>
       <li><strong>Axis 2</strong> — <code>…/20260727T134635Z-kernel/</code> (baseline, Machete-everywhere, drift
         repeat, plus the two crash logs) and <code>…/20260727T154725Z-kernel/</code> (the patch plus the two
-        re-run Humming cells). Each cell carries its gated kernel set, kernel census, pad-warning check and
-        acceptance counters.</li>
+        re-run Humming cells), both <strong>gpu-h113</strong>. Each cell carries its gated kernel set, kernel
+        census, pad-warning check and acceptance counters.</li>
       <li><strong>Axis 3</strong> — <code>…/20260727T102751Z-int4drafter/</code>: arms
-        <code>int4-k{3,4,5}</code>, each holding both halves of its A/B as <code>int4/</code> and <code>fp/</code>
-        subdirectories, plus <code>probe-published/</code> recording the as-published checkpoint's load failure.</li>
+        <code>int4-k{3,4,5}</code> on <strong>gpu-h107 / h123 / h108</strong> respectively, each holding both
+        halves of its A/B as <code>int4/</code> and <code>fp/</code> subdirectories — so every A/B is same-node
+        even though the k-trend across arms is not — plus <code>probe-published/</code> (gpu-h97) recording the
+        as-published checkpoint's load failure.</li>
       <li><strong>Supporting windows</strong> — length × entropy grid <code>…/20260727T073533Z-phaseD/</code>;
         target-format comparison <code>…/20260727T084526Z-format/</code>; BF16 reference
         <code>…/20260727T092342Z-bf16ref/</code>; real-prompt and load sweeps

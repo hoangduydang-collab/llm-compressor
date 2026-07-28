@@ -174,7 +174,13 @@ gate_config() {
         --preflight "$CUR/serve.log.humming-preflight.json" --log "$CUR/serve.log" \
         --out "$CUR/backend-attestation.json" ) >>"$C/client.log" 2>&1 \
       || { note "$label ABORT: Humming attestation failed (fail closed)"; return 1; }
-    note "$label: Humming backend attested"
+    # Surface the provisional-vLLM advisory per serve, so it is visible in the run
+    # log and not only buried in the JSON.
+    if grep -q "VLLM_VERSION_PROVISIONAL" "$CUR/backend-attestation.json" 2>/dev/null; then
+      note "$label: Humming attested WITH ADVISORY VLLM_VERSION_PROVISIONAL (0.26.0 not yet qualified)"
+    else
+      note "$label: Humming backend attested"
+    fi
   else
     grep -qE "quantization[ =']+humming" "$CUR/serve.log" \
       && { note "$label ABORT: cutlass arm shows humming quantization"; return 1; }

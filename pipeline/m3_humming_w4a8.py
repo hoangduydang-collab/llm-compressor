@@ -15,10 +15,30 @@ from typing import Any, Mapping, Sequence
 
 from pipeline.m3_serve_abi import analyze_checkpoint
 
-EXPECTED_VLLM_VERSION = "0.24.0"
+# vLLM releases this Humming W4A8 stack is QUALIFIED against. Same convention as
+# EXPECTED_HUMMING_VERSIONS below: a version is added only with a citation to the
+# window that qualified it. 0.24.0 is the baseline (venvs/quant), the runtime every
+# published M3 Humming number came from.
+QUALIFIED_VLLM_VERSIONS = ("0.24.0",)
+EXPECTED_VLLM_VERSION = QUALIFIED_VLLM_VERSIONS[0]  # kept for existing callers
 # 0.1.10 = qualified baseline; 0.1.11 = packed-K side-install, correctness-
 # qualified 2026-07-26 (m3-humming-0111-packedk-qual/20260726T032735Z).
 EXPECTED_HUMMING_VERSIONS = ("0.1.10", "0.1.11")
+
+
+def provisional_vllm_version() -> str | None:
+    """The one vLLM version a qualification run may provisionally serve on.
+
+    A qualification run has to execute on a not-yet-qualified vLLM, so the pin needs
+    an escape hatch -- but a bare "skip the check" flag would silently contaminate
+    unrelated runs. This one must name the EXACT version it is unlocking, so setting
+    it for a 0.26.0 qualification cannot also wave through 0.27.0, and every
+    preflight/attestation artifact records that it was used (`vllm_version_provisional`
+    plus a VLLM_VERSION_PROVISIONAL advisory). Results produced under it are not
+    qualified results until the version moves into QUALIFIED_VLLM_VERSIONS with a
+    citation.
+    """
+    return os.environ.get("LLMC_HUMMING_PROVISIONAL_VLLM") or None
 EXPECTED_DEVICE_CAPABILITY = (9, 0)
 EXPECTED_CACHE_BASENAME = "cache-m3-gptq-w4a8-v1"
 NVFP4_OVERLAY_MARKER = b"LLMC_NVFP4_W4A8_G16_V1"
@@ -164,9 +184,15 @@ def evaluate_preflight(
         else ""
     )
 
+    vllm_qualified = runtime.vllm_version in QUALIFIED_VLLM_VERSIONS
+    vllm_provisional = (
+        not vllm_qualified
+        and provisional_vllm_version() == runtime.vllm_version
+    )
+
     checks = (
         (
-            runtime.vllm_version == EXPECTED_VLLM_VERSION,
+            vllm_qualified or vllm_provisional,
             "VLLM_VERSION_MISMATCH",
         ),
         (
@@ -263,8 +289,13 @@ def evaluate_preflight(
         "valid": reason is None,
         "backend": "humming",
         "reason_codes": [] if reason is None else [reason],
+        # Non-fatal but load-bearing: a run that only passed because of the
+        # provisional pin must be readable as such from its own artifact.
+        "advisories": ["VLLM_VERSION_PROVISIONAL"] if vllm_provisional else [],
         "details": {
             "vllm_version": runtime.vllm_version,
+            "vllm_version_qualified": vllm_qualified,
+            "vllm_version_provisional": vllm_provisional,
             "humming_version": runtime.humming_version,
             "device_capability": runtime.device_capability,
             "humming_source_integrity": runtime.humming_source_integrity,
@@ -328,12 +359,16 @@ def classify_backend_log(
         (observed.get(expected, False), "HUMMING_GEMM_MARKER_MISSING"),
     )
     reason = _first_reason(checks)
+    inherited = list(preflight.get("advisories") or [])
     return {
         "schema_version": 1,
         "valid": reason is None,
         "backend": "humming",
         "gemm_type": expected if reason is None else None,
         "reason_codes": [] if reason is None else [reason],
+        # Carried forward from the preflight so a per-serve attestation cannot look
+        # cleaner than the preflight it was built on.
+        "advisories": inherited,
         "details": {
             "quantization_marker": quantization,
             "expected_gemm_type": expected,

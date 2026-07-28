@@ -251,6 +251,20 @@ arm_env=(
   # (vLLM 0.24.0), which has no dspark method at all, so this override is what makes
   # the window possible -- not a convenience.
   "SERVE_VENV=/mnt/nfs/hoangduy/venvs/serve-026"
+  # The Humming W4A8 preflight is qualified against vLLM 0.24.0 and fail-closes on
+  # anything else (reason VLLM_VERSION_MISMATCH). 0.26.0 cannot be qualified without
+  # first running on it, so this names that exact version as provisional. It unlocks
+  # 0.26.0 and nothing else, and every preflight/attestation artifact from this window
+  # carries details.vllm_version_provisional=true plus a VLLM_VERSION_PROVISIONAL
+  # advisory. Numbers from this window are NOT qualified Humming numbers until
+  # 0.26.0 moves into QUALIFIED_VLLM_VERSIONS with a citation.
+  #
+  # THIS WINDOW GENERATES THAT CITATION: the D-k0-a / D-k0-b controls are Humming
+  # k=0 on 0.26.0 over the identical staged prompts that the h114 window measured on
+  # 0.24.0 the same day (136.8 tok/s conc 1; 75.2 8k-low / 80.3 8k-high at conc 10).
+  # Agreement there is the same-workload, same-day, runtime-only comparison that
+  # qualifies the W4A8 path; divergence is a finding in its own right.
+  "LLMC_HUMMING_PROVISIONAL_VLLM=0.26.0"
   # No humming side dir: 0.1.10 is installed in serve-026 itself.
   "PYTHONPATH=$REPO"
 )

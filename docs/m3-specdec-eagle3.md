@@ -11,9 +11,21 @@ Phase I: window `m3-specdec-eagle3/20260727T134635Z-kernel`, 1 arm × 5 serves (
 2 killed by an upstream vLLM defect — see phase I).
 Phase I.2: window `m3-specdec-eagle3/20260727T154725Z-kernel`, 1 arm × 3 serves — the
 Humming lm_head fix + re-run of the two killed cells.
+Phase J: windows `20260728T061839Z-unified`, `20260729T031914Z-unified`,
+`20260729T050619Z-unified`, `20260729T064811Z-unified` — 35 serves on one node, four
+axes, **with replicates**; supersedes the cross-window comparisons in phases G–I.2
+wherever they disagree.
 All arms rc=0 except phase I (rc=1, fail-closed on the two Humming cells); every gate
 passed. Design + decision rule:
 `M3_SPECDEC_EAGLE3_PLAN.md`.
+
+**Phase J is the section to read if you only read one.** Earlier phases compared
+configurations across different windows and nodes, which cannot resolve the 1–3%
+effects that actually decide k and kernel choice. Phase J re-measures all of it in one
+allocation with replicates, and three earlier conclusions changed — the 8k-high k=2→3
+step (ns → sig), the conc-10 drafter-kernel recommendation (`hum-lmhead` → `hum-all`),
+and a high-tier INT4-drafter win that turned out to be an n=1 artifact and is
+withdrawn. See [Phase J](#phase-j--unified-one-node-run-four-axes-one-node-with-replicates).
 
 **Answer to the question that prompted this ("can spec-dec give 2.5–3.5× at conc 1?"):
 no, not on production traffic — and the honest answer is a range, not a point.
@@ -1056,7 +1068,273 @@ resurrect the phase G "missing half" hypothesis at conc 1 — the conc-1 null is
 confirmed, and the overhead decomposition (drafter forward ≈ 4× its HBM floor) remains
 the explanation there.
 
+> **Revised by Phase J.** The conc-10 recommendation above names `hum-lmhead`
+> (`VLLM_DISABLED_KERNELS=MarlinLinearKernel`) as the best cell at +2.73%. With
+> replicates it is **+1.11%, ns** — and the variant that actually wins is `hum-all`
+> (disable Machete too), at **+2.25%, sig**. See
+> [Axis 2](#axis-2--drafter-w4a16-kernel-assignment). The two-regime shape of the
+> verdict (nothing at conc 1, something at conc 10) survives; the specific kernel
+> setting does not.
+
+## Phase J — unified one-node run: four axes, one node, with replicates
+
+Every earlier phase compared configurations measured in *different* windows, on
+different nodes, sometimes against a k=0 control from another allocation. That made
+1–3% effects — exactly the size of the draft-depth and kernel-selection effects that
+decide deployment — indistinguishable from window-to-window drift. Phase J fixes the
+design rather than the analysis: one node (`gpu-h114`), one vLLM (0.24.0, `quant`
+venv), one workload (nvidia/SPEED-Bench, 8k-low and 8k-high, conc 1 and 10), a k=0
+control measured *in the same allocation*, and **replicates on every cell whose
+comparison is smaller than 5%**.
+
+**Scale:** 35 serves with data across four windows (`20260728T061839Z`,
+`20260729T031914Z`, `20260729T050619Z`, `20260729T064811Z`), each running 2–4
+workload cells. Pooled analysis:
+`/mnt/nfs/hoangduy/results/m3-specdec-eagle3/pooled-20260729T0755/`.
+
+Replicate groups are keyed on each serve's recorded `cell-config.txt`
+(`k`, backend, drafter, kernel) — **never on its label** — so serves from different
+windows pool iff the evidence says they are the same configuration. Labels stay
+window-qualified (`20260729T050619Z/A1-k1-r2`), so a mis-pooled group shows up in the
+provenance table instead of being averaged away silently.
+
+### The estimator that made 1% effects readable
+
+Per-user tok/s is the metric we quote, but it is not the low-variance one. ITL and
+accepted length move inversely across replicates — a serve that happens to accept
+more tokens per draft step reports a lower per-token ITL — so both scatter by ~1%
+while their product barely moves. **`step = ITL × accepted` is wall-clock time per
+draft-verify step**, and it cancels the acceptance scatter:
+
+| config (8k-high k=2, conc 1) | step ms across replicates | separated? |
+|---|---|---|
+| bf16 drafter | 9.5552, 9.5588 | — |
+| INT4 drafter | 9.3917, 9.4026, 9.3816 | **yes, no overlap** |
+
+The per-user values for those same serves overlap. So each axis is reported on the
+metric that answers its own question: **per-user** for what the user feels, **step**
+for whether the arithmetic got cheaper, **accepted** as the *control* that must not
+move when only the arithmetic changed.
+
+Two integrity rules the aggregator enforces:
+
+- **n=1 rows are flagged `~` and use an assumed sd** (`{conc 1: 1.02%, conc 10:
+  0.16%}`, from the historical drift floor). A single replicate forces sd=0, which
+  does not mean "precise" — it *fabricates* a standard error. Never quote a `~` row
+  as measured. **Phase J showed the conc-10 floor is too tight** — see the
+  `machete-all` reversal in axis 2.
+- **`per_user` is aiperf's `output_token_throughput_per_user`** (the mean of
+  per-request 1/ITL), not `1000 / mean_ITL`. They agree at k=0 (136.76 vs 136.8) but
+  diverge ~0.9% at k=5 (339.3 vs 336.2), because spec-dec adds per-request ITL
+  variance and the mean of reciprocals is not the reciprocal of the mean. Earlier
+  phases quote the latter; Phase J standardises on the former.
+
+### The full ladder (per-user output tok/s)
+
+| tier | conc | CUTLASS k=0 | Humming k=0 | Humming + best k | total |
+|---|---|---|---|---|---|
+| 8k-low | 1 | 102.2 | 136.8 (1.34×) | 345.9 (k=6) | **3.39×** |
+| 8k-low | 10 | 60.7 | 75.2 (1.24×) | 155.5 (k=5, `hum-all`) | **2.56×** |
+| 8k-high | 1 | 102.1 | 136.7 (1.34×) | 181.2 (k=2) | **1.77×** |
+| 8k-high | 10 | 63.0 | 79.8 (1.27×) | 94.1 (k=2) | **1.50×** |
+
+The two rungs are independent and multiply: the prefill-kernel swap is worth
+1.24–1.34× with no spec-dec at all, and spec-dec is worth a further 1.18–2.53× on top.
+Best case is a single user on code-shaped work (3.39×); the floor is loaded
+creative-writing traffic (1.50×).
+
+### Axis 0 — the prefill kernel, no spec-dec
+
+| tier | conc | CUTLASS | Humming | delta | se |
+|---|---|---|---|---|---|
+| 8k-low | 1 | 102.18 | 136.75 | **+33.83%** | 0.04% |
+| 8k-low | 10 | 60.65 | 75.21 | **+24.01%** | 0.09% |
+| 8k-high | 1 | 102.14 | 136.73 | **+33.86%** | 0.04% |
+| 8k-high | 10 | 62.97 | 79.76 | **+26.66%** | 0.45% |
+
++33.8% at conc 1 in *both* tiers, to 0.04% — the two tiers agreeing to two decimal
+places is itself the strongest evidence the harness measures what it claims. The gain
+compresses to +24–27% at conc 10, where the GPU is no longer latency-bound. This is
+the rung the published 95→137 tok/s figure covers, re-measured on SPEED-Bench so it
+chains with the spec-dec legs on one workload.
+
+### Axis 1 — draft depth, and why the optimum moves
+
+Against the in-window k=0 Humming control, the best depth per cell:
+
+| tier | conc | best k | per-user | speedup |
+|---|---|---|---|---|
+| 8k-low | 1 | **6** | 345.9 | +152.9% |
+| 8k-low | 10 | **5** | 152.0 | +102.2% |
+| 8k-high | 1 | **2** | 181.2 | +32.5% |
+| 8k-high | 10 | 1–3 flat | 94.1 | +18.0% |
+
+The result that matters is in the *adjacent* steps, where the replicates were spent:
+
+| step | conc 1 | conc 10 |
+|---|---|---|
+| 8k-low k=5→6 | **+1.95%** (2.5se) | **−2.19%** (2.7se) |
+| 8k-low k=6→7 | −1.55% (ns 1.1se) | +0.45% (ns 0.5se) |
+| 8k-high k=1→2 | **+2.98%** (10.4se) | +0.30% (ns 0.8se) |
+| 8k-high k=2→3 | **−1.16%** (3.7se) | −0.91% (ns 1.9se) |
+
+**k=5→6 changes sign with load** — significantly better at conc 1, significantly
+worse at conc 10, both at ~2.5se. That is neither noise nor a contradiction: at conc 1
+a spare GPU absorbs the extra draft step for free, while at conc 10 ten requests'
+draft steps compete for the same SMs, so the deeper draft costs more than the extra
+accepted token returns. **There is no single best k** — fixed k=6 is right for
+interactive single-user traffic and wrong under load.
+
+Note also that acceptance rises *monotonically* with k (3.903 → 4.143 → 4.254 for
+k=5/6/7) while throughput turns over. Acceptance is not the objective; `Δa/a > Δs/s`
+is. Chasing accepted length past the knee buys tokens that cost more than they save.
+
+> The 8k-high k=2→3 result **changed with the replicate**: at n=1 it read `ns ~0.9se`
+> and now reads `sig 3.7se`. One of the four adjacent-step conclusions inverted — the
+> concrete payoff of the replicate design.
+
+### Axis 2 — drafter W4A16 kernel assignment
+
+Four variants, all reading identical drafter weights; only the W4A16 kernel changes:
+
+| variant | `lm_head` kernel | body (8 linears) | note |
+|---|---|---|---|
+| `default` | Marlin | Machete | Marlin is a fallback: draft vocab 200064 isn't Machete-shaped |
+| `hum-lmhead` | Humming | Machete | `VLLM_DISABLED_KERNELS=MarlinLinearKernel` |
+| `hum-all` | Humming | **Humming** | `…=MarlinLinearKernel,MacheteLinearKernel` |
+| `machete-all` | Machete | Machete | `LLMC_EAGLE3_LMHEAD_PAD=1024` (vocab → 200704) — **varies two things** |
+
+**8k-low k=5, vs `default` (all measured sd, n=2 each):**
+
+| variant | conc | per-user | step | accepted |
+|---|---|---|---|---|
+| `hum-lmhead` | 1 | −1.50% (sig 4.8) | −1.22% (sig 2.1) | **−2.79%** (sig 14.1) |
+| `hum-lmhead` | 10 | +1.11% (ns 1.9) | −0.35% (ns) | +0.51% (ns) |
+| **`hum-all`** | 1 | +0.66% (ns 1.2) | −2.37% (sig 5.0) | **−1.82%** (sig 3.5) |
+| **`hum-all`** | **10** | **+2.25% (sig 4.9)** | −1.27% (sig 2.5) | +0.91% (sig 2.1) |
+| `machete-all` | 1 | +0.43% (ns 1.3) | −1.41% (sig 2.2) | −0.90% (sig 4.2) |
+| `machete-all` | 10 | +1.20% (ns 1.1) | −0.33% (ns) | +0.54% (ns) |
+
+At 8k-high k=2 **every variant is flat**: `hum-all` is +0.02% (conc 1) and −0.06%
+(conc 10) on per-user, both ns, with acceptance ns everywhere. `hum-lmhead` and
+`machete-all` are still n=1 in this tier and remain `~`-flagged.
+
+**Deployment verdict.** `hum-all` at k=5 conc 10 reaches **155.5 per-user, the best
+number anywhere in the 8k-low conc-10 set** — ahead of `default`@k=5 (152.0) and
+`default`@k=6 (148.7). That is the only cell in the axis where a kernel variant
+significantly beats the incumbent. At conc 1 there is no win, and `default`@k=6
+(345.9) still beats `hum-all`@k=5 (341.5), so the conc-1 recommendation is unchanged.
+The kernel-variant cells were only ever run at k=5, so `hum-all`@k=6 is unmeasured.
+
+**The acceptance control does *not* hold in this axis, and that is the finding.** This
+axis was designed on the premise that the drafter reads identical bytes, so accepted
+length must not move. At 8k-low conc 1 it moves, monotonically and significantly:
+
+    default 3.903  >  machete-all 3.867  >  hum-all 3.832  >  hum-lmhead 3.794
+
+So **a W4A16 kernel swap on the drafter perturbs which tokens get drafted.** An
+earlier reading of this doc attributed the shift to `lm_head` numerics; that is wrong.
+`hum-lmhead` and `hum-all` use the *same* Humming `lm_head` and differ by 1% in
+acceptance, so the head kernel alone does not set it — the body kernel matters too.
+Nor does "mixed head/body kernels cost acceptance" work as a rule: `default` is also
+mixed (Marlin head, Machete body) and scores highest. **The mechanism is unresolved.**
+
+What the tier split suggests, as inference rather than measurement: acceptance
+compounds over draft positions, so a small per-token logit perturbation is visible
+over 5 positions (8k-low, accepted ≈3.9) and hidden over 2 (8k-high, accepted ≈1.68).
+That predicts the effect grows with k, which is testable at k=6/7 and was not tested.
+
+> **The assumed conc-10 sd floor (0.16%) is too tight — two claims died.**
+> `machete-all` at 8k-low conc 10 read `+2.21% sig~ 5.5se` on the assumed floor;
+> measured, it is `+1.20% ns 1.1se`, because its real conc-10 sd is **1.41%, nearly
+> 9× the assumption**. Its acceptance claim (`+1.15% sig~ 3.7se` → `+0.54% ns`) died
+> the same way. All three of `hum-all`'s conc-10 claims survived the transition.
+> Treat every remaining `~` row at conc 10 as weaker than its printed se.
+
+**Design note, recorded because the first attempt got it wrong.** The first axis-2
+replicate was spent on `hum-lmhead` — the *worst* variant, which could not change a
+deployment decision whichever way it resolved — chosen because its acceptance shift
+looked anomalous. The variant that could displace the incumbent, `hum-all`, was left
+at n=1, and its high-tier cell was never scheduled at all. Anomaly interest is not
+decision value; replicate the arm that could win.
+
+**Provenance caveat.** The 8k-low `hum-all` pair spans two windows (0728 + 0729), so
+its sd includes cross-window drift. The 8k-high `hum-all` pair is two back-to-back
+serves in one window, so its sd captures within-window variance only and is
+optimistically tight. That result is a null (+0.02%), and a tight sd cannot manufacture
+a win, so the null stands — but it is not directly comparable to the low-tier sds.
+
+### Axis 3 — drafter precision: quantizing the drafter is free
+
+| cell | conc | metric | bf16 | INT4 | delta |
+|---|---|---|---|---|---|
+| 8k-low k=5 | 1 | per-user | 328.81 | 339.28 | **+3.18%** (sig 4.7) |
+| 8k-low k=5 | 1 | step | 11.94 | 11.61 | **−2.82%** (sig 3.2) |
+| 8k-low k=5 | 1 | *accepted* | 3.894 | 3.903 | +0.23% (**ns**) |
+| 8k-low k=5 | 10 | step | 26.10 | 25.69 | **−1.57%** (sig 2.4) |
+| 8k-high k=2 | 1 | step | 9.56 | 9.39 | **−1.73%** (sig 25.7) |
+| 8k-high k=2 | 10 | per-user | 93.03 | 94.15 | **+1.20%** (sig 3.1) |
+
+**The control holds here: accepted length does not move** (+0.23%, ns). The INT4
+drafter drafts the same tokens as the bf16 one and its arithmetic is 1.6–2.8% cheaper.
+Quantizing the drafter is free — no draft-quality cost, a small consistently-signed
+speed win. Footprint attested per serve: 28.78 GiB (INT4) vs 29.26 GiB (bf16).
+
+Note the contrast with axis 2: dropping the drafter from bf16 to INT4 — a far larger
+numerical change than swapping which 4-bit kernel does the arithmetic — leaves
+acceptance alone, while the kernel swap moves it. Whatever axis 2 is measuring, it is
+not simply "less precision."
+
+> **Correction to an earlier flag.** A large high-tier conc-1 per-user win for the
+> INT4 drafter was previously recorded here. With the replicate it collapses to
+> **+0.28%, ns (0.4se)**: that flag was an n=1 artifact and is withdrawn. The
+> step-cost win (−1.73%, 25.7se) and the conc-10 per-user win (+1.20%, 3.1se) do
+> survive on measured sd.
+
+### What to actually deploy
+
+| traffic shape | prefill kernel | k | drafter | drafter W4A16 kernel |
+|---|---|---|---|---|
+| interactive, code-shaped | Humming | 6 | INT4 | `default` |
+| loaded (≈10 conc), code-shaped | Humming | 5 | INT4 | **`hum-all`** |
+| interactive, prose-shaped | Humming | 2 | INT4 | `default` |
+| loaded (≈10 conc), prose-shaped | Humming | 1–3 (flat) | INT4 | `default` |
+
+Humming prefill and the INT4 drafter are unconditional. `k` and the drafter kernel
+both depend on load, and neither transfers across tiers.
+
 ## Raw evidence
+
+**Phase J** — four windows under
+`/mnt/nfs/hoangduy/results/m3-specdec-eagle3/`, all on `gpu-h114` with the `quant`
+venv (vLLM 0.24.0):
+
+| window | serves with data | what it added |
+|---|---|---|
+| `20260728T061839Z-unified` | 25 | the full grid |
+| `20260729T031914Z-unified` | 2 | k=7 and k=0 third replicates |
+| `20260729T050619Z-unified` | 4 | k=1/k=3/bf16 replicates, `hum-lmhead` r2 |
+| `20260729T064811Z-unified` | 4 | `hum-all` + `machete-all` replicates, high-tier `hum-all` |
+
+Each serve directory (`arm-unified/<label>/`) carries `cell-config.txt` (the pooling
+key), `backend-attestation.json`, `wna16-kernels.txt`, `model-loading-gib.txt`,
+`drafter-wiring.txt`, `kernel-census.txt`, `accepted-*.txt`, `spec-boot.log`,
+`serve.log`, `metrics/sb-*-{pre,post}.txt`, and
+`speedbench/<tier>/conc_<n>/profile_export_aiperf.json`. Window-level:
+`patch-checks.log`, `unified-srun.log`, `arm-unified/{progress.txt,client.log}`.
+
+Pooled output: `pooled-20260729T0755/{pooled.txt,pooled.json,windows.txt}`, produced by
+
+```
+pipeline/specdec_unified_aggregate.py --arm unified \
+  --root <window1> --root <window2> --root <window3> --root <window4> \
+  --out-json pooled.json
+```
+
+`--root` is repeatable; groups are keyed on `cell-config.txt`, and the
+`REPLICATE PROVENANCE` block in `pooled.txt` lists the window/label of every serve in
+every group. One empty shell (`20260728T061839Z/L0-hum-k0-r3`, 0 aiperf files) is
+reported and excluded rather than silently dropped.
 
 **Phase I.2** — `/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T154725Z-kernel/`:
 `arm-kernel/{A-baseline,B-hum-lmhead,C-hum-all}/` with the same per-cell artifact set as

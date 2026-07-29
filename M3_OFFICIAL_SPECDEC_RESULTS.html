@@ -203,7 +203,7 @@
     <h1>Speculative decoding is worth 1.2×–2.5× on our W4AFP8 M3 — and the tuning is workload-dependent, not universal</h1>
     <p class="dek">
       An off-the-shelf EAGLE3 drafter on our in-house 4-bit M3 reaches
-      <strong>341.6 tok/s single-user on code</strong> (2.50× the same node without it) but only
+      <strong>345.9 tok/s single-user on code</strong> (2.53× the same node without it) but only
       <strong>1.36× on creative writing</strong>. Three tuning axes decide where in that range you land:
       <a href="#axis-k">how deep to draft</a>, <a href="#axis-kernel">which kernel runs the drafter</a>,
       and <a href="#axis-quant">whether the drafter is quantized</a>. The first is the big one — up to
@@ -217,12 +217,43 @@
       <span><b>Hardware:</b> one 8×H100 node, TP8/EP8</span>
       <span><b>Engine:</b> vLLM 0.24.0, flags held fixed · FP8 KV cache</span>
       <span><b>Benchmark:</b> nvidia/SPEED-Bench, clean subset · aiperf</span>
-      <span><b>Windows:</b> 10 measurement windows, 2026-07-27</span>
+      <span><b>Windows:</b> 10 windows 2026-07-27 · 4 replicated windows 2026-07-28/29 (35 serves)</span>
     </div>
   </div>
 </header>
 
 <div class="wrap">
+
+  <!-- ============ REVISION BANNER ============ -->
+  <section id="revision">
+    <div class="note warn">
+      <p class="t">Revised 2026-07-29 by a replicated re-measurement — three conclusions on this page changed</p>
+      <p>
+        Everything below was originally measured by comparing configurations across
+        <em>different</em> windows. That design cannot resolve 1–3% effects, which is exactly the size of the
+        drafter-kernel and adjacent-draft-depth effects it was being used to decide. A follow-up run put
+        <strong>35 serves on one node in one allocation with replicates on every cell whose comparison is under
+        5%</strong>, and three published conclusions moved:
+      </p>
+      <ul>
+        <li><strong>Axis 2's conc-10 recommendation is wrong.</strong> The winner is <em>Humming everywhere</em>
+          (+2.25%, significant), not <em>Humming <code>lm_head</code></em> (+2.73% → <strong>+1.11%, not
+          significant</strong>). See <a href="#axis-kernel">axis 2</a>, revised in place.</li>
+        <li><strong>Axis 2's acceptance control failed, and that is a finding.</strong> Accepted length was
+          asserted here to be a control that "must not move". It moves, monotonically and significantly, so a
+          4-bit kernel swap perturbs which tokens the drafter proposes. The mechanism is unresolved.</li>
+        <li><strong>The conc-10 noise floor of sd 0.16% is not a floor.</strong> It was estimated from 4
+          replicates of one configuration; other configurations measure 0.64% and 1.41%. Percentages on this
+          page that were called significant against 0.16% need re-reading — see
+          <a href="#noise">noise floors</a>.</li>
+      </ul>
+      <p>
+        Axis 1's shape, axis 3's conclusion, and every headline speedup survive. The full replicated analysis,
+        including a fourth axis (the prefill kernel, worth 1.24–1.34× on its own with no speculation at all), is
+        in <code>docs/m3-specdec-eagle3.md</code> under <strong>Phase J</strong>.
+      </p>
+    </div>
+  </section>
 
   <!-- ============ BOTTOM LINE ============ -->
   <section id="bottom-line">
@@ -245,13 +276,13 @@
     <div class="tiles">
       <div class="tile good">
         <p class="k">Code · single user</p>
-        <p class="v">2.50<small>× decode</small></p>
-        <p class="d">341.6 vs 136.8 tok/s/user at k=6. Server-side 2.40× (316.3 tok/s) once prefill is counted.</p>
+        <p class="v">2.53<small>× decode</small></p>
+        <p class="d">345.9 vs 136.8 tok/s/user at k=6 (replicated, n=3). Server-side ≈2.4× once prefill is counted.</p>
       </div>
       <div class="tile good">
         <p class="k">Code · concurrency 10</p>
-        <p class="v">2.05<small>× decode</small></p>
-        <p class="d">153.5 vs 74.8 tok/s/user at k=5, and 1,428 vs 706 tok/s server-side — throughput gains too, not a trade.</p>
+        <p class="v">2.07<small>× decode</small></p>
+        <p class="d">155.5 vs 75.2 tok/s/user at k=5 with Humming ×9 — 2.02× on the default kernel. Server throughput rises too, not a trade.</p>
       </div>
       <div class="tile warn">
         <p class="k">Creative writing · the floor</p>
@@ -266,11 +297,11 @@
     </div>
 
     <h3>Where the range comes from</h3>
-    <div class="bars" role="img" aria-label="Decode speedup by workload: code at concurrency 1 is 2.50 times, code at concurrency 10 is 2.05 times, mixed ShareGPT traffic 1.81 times, creative writing at concurrency 1 is 1.36 times, creative writing at concurrency 10 is 1.21 times; no-speculation baseline is 1.0 times">
+    <div class="bars" role="img" aria-label="Decode speedup by workload: code at concurrency 1 is 2.53 times, code at concurrency 10 is 2.07 times, mixed ShareGPT traffic 1.81 times, creative writing at concurrency 1 is 1.36 times, creative writing at concurrency 10 is 1.21 times; no-speculation baseline is 1.0 times">
       <div class="bar-row"><span class="lab">code · conc 1 · k=6</span>
-        <span class="track"><span class="fill f-good" style="width:96%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">2.50×</span></div>
-      <div class="bar-row"><span class="lab">code · conc 10 · k=5</span>
-        <span class="track"><span class="fill f-good" style="width:79%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">2.05×</span></div>
+        <span class="track"><span class="fill f-good" style="width:96%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">2.53×</span></div>
+      <div class="bar-row"><span class="lab">code · conc 10 · k=5 · Humming ×9</span>
+        <span class="track"><span class="fill f-good" style="width:79%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">2.07×</span></div>
       <div class="bar-row"><span class="lab">mixed ShareGPT · conc 1 · k=3</span>
         <span class="track"><span class="fill f-ok" style="width:70%"></span><span class="baseline-mark" style="left:38.5%"></span></span><span class="num">1.81×</span></div>
       <div class="bar-row"><span class="lab">creative · conc 1 · k=2</span>
@@ -303,7 +334,7 @@
             <td class="wrapcell">Which W4A16 kernel serves the drafter's 9 linears?</td>
             <td class="wrapcell">Machete / Marlin / Humming assignment</td>
             <td class="wrapcell">k=5, code workload, INT4 drafter</td>
-            <td>0% at conc 1 · <span class="cell-good">2.7%</span> at conc 10</td>
+            <td>0% at conc 1 · <span class="cell-good">2.3%</span> at conc 10 <span class="muted">(revised)</span></td>
           </tr>
           <tr>
             <td class="arm"><a href="#axis-quant">3 · drafter precision</a></td>
@@ -455,7 +486,7 @@
       </table>
     </div>
 
-    <h3>Noise floors — read every percentage against these</h3>
+    <h3 id="noise">Noise floors — read every percentage against these</h3>
     <div class="col">
       <p>
         Effects on this page range from 1% to 150%, so the precision of the measurement is part of the result.
@@ -483,6 +514,29 @@
         <strong>Concurrency 10 is ~7× more precise than concurrency 1</strong>, because batch aggregation averages
         away single-stream jitter. This is not a footnote — it is why axis 2 has an answer at all, and it caused
         a real error in our own first reading of that axis, corrected below.
+      </p>
+    </div>
+    <div class="note warn">
+      <p class="t">Revised: sd 0.16% is one configuration's draw, not a floor — and an n=4 sd cannot carry an
+        11-sigma claim</p>
+      <p>
+        Two things are wrong with using the 0.16% figure the way this page originally used it.
+      </p>
+      <ul>
+        <li><strong>It does not generalise across configurations.</strong> The replicated run re-measured
+          conc-10 scatter per configuration: the same default k=5 cell came out at <strong>sd 0.64%</strong>
+          (n=3), and the Machete-everywhere cell at <strong>sd 1.41%</strong> (n=2) — nearly 9× the 0.16%
+          assumption. Scatter is a property of the configuration and the window, not of the concurrency alone.</li>
+        <li><strong>An sd estimated from n=4 is itself imprecise.</strong> Its own relative standard error is
+          <code>1/√(2(n−1))</code> ≈ <strong>41%</strong>, so "sd 0.16%" is compatible with a true sd anywhere
+          from roughly 0.1% to 0.25% before any configuration effect is added. Quoting "eleven standard
+          deviations" against it was overreach regardless of which configuration it came from.</li>
+      </ul>
+      <p>
+        The qualitative claim survives — conc 10 really is the more precise regime, and conc 1 really is noisy.
+        What does not survive is treating 0.16% as a fixed threshold that any conc-10 percentage can be tested
+        against. The replicated run therefore reports a <em>measured</em> sd per cell and flags every
+        single-replicate row rather than borrowing a floor from elsewhere.
       </p>
     </div>
     <div class="note warn">
@@ -642,6 +696,19 @@
       </table>
     </div>
     <p class="legend"><span>Green = the study's headline configuration. Tinted rows are the speculation-off controls each ratio is taken against.</span></p>
+    <div class="note good">
+      <p class="t">Independently reproduced — this table is the axis-1 window, and the replicated run agrees</p>
+      <p>
+        The figures above come from the axis-1 window on <code>gpu-h113</code>/<code>gpu-h114</code> (2026-07-27).
+        The Phase J run re-measured the same cells a day or two later, on one node, with n=2–3 per cell:
+        <strong>345.9 vs 341.6</strong> tok/s/user for code at conc 1 k=6 (2.53× vs 2.50×), <strong>152.0 vs
+        153.5</strong> at conc 10 k=5, a k=0 conc-1 control matching to <strong>0.03%</strong> (136.8 both times),
+        and a k=0 conc-10 control of 75.2 vs 74.8 (0.5%).
+        Agreement is within 1.3% everywhere. Headline numbers elsewhere on this page use the replicated values;
+        this table is left as the original same-window measurement so the two can be compared. Where they differ
+        it is window drift of about 1%, not a correction.
+      </p>
+    </div>
     <div class="col">
       <p>
         <strong>Speculation raises server throughput as well as per-stream latency</strong> — at concurrency 10 the
@@ -710,8 +777,15 @@
       <p>
         Four cells break that default apart, all at <strong>k=5 on the code tier</strong>, with the kernel
         assignment verified at serve time (kernel census gated fail-closed, so no cell can silently fall back).
-        Acceptance is a control here, not a result: the drafter weights and prompt bytes are byte-identical
-        across cells, so any acceptance movement is noise or a numerics bug.
+        Acceptance was designed as a control here, not a result: the drafter weights and prompt bytes are
+        byte-identical across cells, so any acceptance movement should be noise or a numerics bug.
+        <strong>The control failed</strong> — see below.
+      </p>
+      <p class="muted">
+        The table below is the <strong>replicated</strong> measurement (2026-07-28/29): one node, one allocation,
+        every cell at n=2 and the default baseline at n=3, with the standard error measured per cell rather than
+        borrowed from a floor. It replaces the original single-replicate table, which had a different baseline
+        (335.2 / 153.1) and required a cross-window footnote for the Machete-everywhere cell.
       </p>
     </div>
     <div class="scroll">
@@ -723,76 +797,115 @@
             <th class="grp sep" colspan="3">concurrency 10</th>
           </tr>
           <tr>
-            <th class="sep">tok/s/user</th><th>vs default</th><th>step cost</th>
-            <th class="sep">tok/s/user</th><th>vs default</th><th>step cost</th>
+            <th class="sep">tok/s/user</th><th>vs default</th><th>accepted</th>
+            <th class="sep">tok/s/user</th><th>vs default</th><th>accepted</th>
           </tr>
         </thead>
         <tbody>
           <tr class="baseline">
-            <td class="arm">default</td><td>Machete ×8 + Marlin</td>
-            <td class="sep">335.2</td><td>—</td><td>11.487</td>
-            <td class="sep">153.1</td><td>—</td><td>26.199</td>
+            <td class="arm">default <span class="muted">n=3</span></td><td>Machete ×8 + Marlin</td>
+            <td class="sep">339.3</td><td>—</td><td>3.903</td>
+            <td class="sep">152.0</td><td>—</td><td>3.819</td>
           </tr>
           <tr>
-            <td class="arm">Humming <code>lm_head</code></td><td>Machete ×8 + Humming</td>
-            <td class="sep">341.0</td><td class="noise">+1.73%</td><td>11.405</td>
-            <td class="sep"><strong>157.3</strong></td><td class="cell-good"><strong>+2.73%</strong></td><td class="cell-good">−3.25%</td>
+            <td class="arm">Humming <code>lm_head</code> <span class="muted">n=2</span></td><td>Machete ×8 + Humming</td>
+            <td class="sep">334.2</td><td class="cell-warn">−1.50%</td><td class="cell-warn">3.794</td>
+            <td class="sep">153.7</td><td class="noise">+1.11%</td><td>3.838</td>
           </tr>
           <tr>
-            <td class="arm">Humming everywhere</td><td>Humming ×9</td>
-            <td class="sep">333.2</td><td class="noise">−0.59%</td><td>11.315</td>
-            <td class="sep">155.5</td><td class="cell-good">+1.54%</td><td class="cell-good">−3.30%</td>
+            <td class="arm">Humming everywhere <span class="muted">n=2</span></td><td>Humming ×9</td>
+            <td class="sep">341.5</td><td class="noise">+0.66%</td><td class="cell-warn">3.832</td>
+            <td class="sep"><strong>155.5</strong></td><td class="cell-good"><strong>+2.25%</strong></td><td>3.853</td>
           </tr>
           <tr>
-            <td class="arm">Machete everywhere <span class="muted">†</span></td><td>Machete ×9 <span class="muted">(vocab padded)</span></td>
-            <td class="sep">331.7</td><td class="noise">−1.66%</td><td>11.499</td>
-            <td class="sep">155.8</td><td class="cell-good">+1.85%</td><td class="cell-good">−2.47%</td>
+            <td class="arm">Machete everywhere <span class="muted">n=2</span></td><td>Machete ×9 <span class="muted">(vocab padded)</span></td>
+            <td class="sep">340.7</td><td class="noise">+0.43%</td><td class="cell-warn">3.867</td>
+            <td class="sep">153.9</td><td class="noise">+1.20%</td><td>3.839</td>
           </tr>
         </tbody>
       </table>
     </div>
     <p class="legend">
-      <span><span class="sw" style="background:var(--good-bg); box-shadow: inset 0 0 0 1px var(--good)"></span> clears the noise floor for its concurrency</span>
-      <span><span class="sw" style="background:var(--surface-2); box-shadow: inset 3px 0 0 var(--line-2), inset 0 0 0 1px var(--line)"></span> inside the 1.02% conc-1 floor — not a result</span>
-      <span>† measured in a separate window against its own baseline (337.3 / 152.9); percentages are always within-window</span>
+      <span><span class="sw" style="background:var(--good-bg); box-shadow: inset 0 0 0 1px var(--good)"></span> significant at 2 se against this cell's own measured sd</span>
+      <span><span class="sw" style="background:var(--surface-2); box-shadow: inset 3px 0 0 var(--line-2), inset 0 0 0 1px var(--line)"></span> not significant</span>
+      <span><span class="sw" style="background:var(--warn-bg); box-shadow: inset 0 0 0 1px var(--warn)"></span> significant <em>and against us</em> — a control that was supposed to hold</span>
+      <span>All cells in one allocation; no cross-window footnote needed.</span>
     </p>
     <div class="col">
       <p>
-        Acceptance stayed in the 3.74–3.89 band across all four cells, as it must. Step cost — the
-        acceptance-adjusted view — tells the cleanest story: the two Humming cells land on the <em>same</em>
-        ~3.3% saving at concurrency 10, and the Machete-everywhere cell on 2.5%. The per-user gain of
-        Humming-everywhere is smaller than its step saving only because that cell happened to draw a −1.27%
-        acceptance draw.
+        <strong>One cell wins, not three.</strong> Only Humming-everywhere clears its own standard error at
+        concurrency 10 (+2.25%, 4.9 se). Humming-<code>lm_head</code> (+1.11%) and Machete-everywhere (+1.20%)
+        are both inside noise. At concurrency 10, 155.5 tok/s/user is the best number measured anywhere on the
+        code tier — ahead of the default at k=5 (152.0) and at k=6 (148.7). At concurrency 1 nothing wins, and
+        the default at k=6 (345.9) still beats Humming-everywhere at k=5 (341.5).
       </p>
     </div>
 
-    <div class="note finding">
-      <p class="t">Integrity note: our first reading of this axis was wrong, and the noise floor is why</p>
+    <div class="note warn">
+      <p class="t">The acceptance control failed — a 4-bit kernel swap changes which tokens get drafted</p>
       <p>
-        The Machete-everywhere cell was originally dismissed as "not significant" — its +1.85% at concurrency 10
-        was compared against the <em>concurrency-1</em> noise floor (sd 1.02%), the only floor measured at the
-        time. The fourth replicate later put the concurrency-10 floor at <strong>sd 0.16%</strong>, roughly seven
-        times tighter, which makes +1.85% about eleven standard deviations. It was significant all along. The
-        conclusion published here is the corrected one: <strong>the conc-1 null stands, the conc-10 dismissal
-        does not.</strong>
+        This axis was built on the premise that accepted length is a control: identical weights, identical
+        prompts, so only the arithmetic differs and acceptance must not move. At concurrency 1 on the code tier
+        it moves, monotonically, and every step is significant:
+      </p>
+      <p style="text-align:center">
+        <code>default 3.903 &nbsp;&gt;&nbsp; Machete-all 3.867 &nbsp;&gt;&nbsp; Humming-all 3.832 &nbsp;&gt;&nbsp; Humming-lm_head 3.794</code>
+      </p>
+      <p>
+        <strong>An earlier reading of this attributed the shift to <code>lm_head</code> numerics. That is wrong:</strong>
+        Humming-<code>lm_head</code> and Humming-everywhere use the <em>same</em> Humming <code>lm_head</code> and
+        differ by ~1% in accepted length, so the head kernel alone does not set it. "Mixed head/body kernels cost
+        acceptance" fails too — the default is also mixed (Marlin head, Machete body) and scores highest.
+        <strong>The mechanism is unresolved and is recorded as unresolved.</strong>
+      </p>
+      <p>
+        On the creative-writing tier every variant is flat (acceptance moves −0.17% to +0.41%, all inside noise;
+        Humming-everywhere is +0.02% / −0.06% on per-user throughput). One inference, not a measurement:
+        acceptance compounds over draft positions, so a small per-token logit perturbation should show over 5
+        positions (code, accepted ≈3.9) and hide over 2 (prose, accepted ≈1.7). That predicts the effect grows
+        with k — testable at k=6/7, and not tested.
+      </p>
+      <p>
+        Practical consequence: this is a <strong>speed/draft-quality trade</strong>, not a free win.
+        Humming-everywhere buys +2.25% throughput at concurrency 10 while giving up 1.8% accepted length at
+        concurrency 1. Verification remains exact either way, so <em>output</em> quality is untouched — what
+        moves is how often the drafter guesses right.
+      </p>
+    </div>
+
+    <div class="note">
+      <p class="t">Superseded: the original "integrity note" on this axis was itself wrong</p>
+      <p>
+        This page previously argued that Machete-everywhere's +1.85% at concurrency 10 had been wrongly dismissed,
+        because the conc-10 floor of <strong>sd 0.16%</strong> made it "about eleven standard deviations". With
+        replicates, that cell's real conc-10 sd is <strong>1.41%</strong> and its effect is
+        <strong>+1.20%, not significant</strong>. Its acceptance claim (+1.15%, called significant) is likewise
+        +0.54% and not significant. The correction to the first error introduced a second one by treating a
+        4-point sd from one configuration as a universal threshold — see
+        <a href="#noise">noise floors</a>. All three of Humming-everywhere's conc-10 claims did survive the move
+        to measured sd.
       </p>
     </div>
 
     <div class="col">
       <p>
-        <strong>The mechanism is the conventional one.</strong> All three winning cells share exactly one feature:
-        Marlin is off the <code>lm_head</code> at batch greater than one. Marlin was built for the memory-bound
-        batch-1 regime, where it is at home and the assignment does not matter. At concurrency 10 the drafter GEMM
-        has ~10 rows, and Marlin's weak batch scaling costs ~2–3% of the entire decode step through the layer
-        holding 60% of the drafter's weight traffic. These cells cannot separate how much of that is the
-        per-forward pad/slice versus Marlin's batch scaling — and nothing downstream needs the split.
+        <strong>The Marlin mechanism is weakened, not confirmed.</strong> The original argument was that all
+        three non-default cells win because each takes Marlin off the <code>lm_head</code> at batch &gt; 1, where
+        Marlin's weak batch scaling costs 2–3% through the layer holding 60% of the drafter's weight traffic.
+        All three still take Marlin off, but only one now wins — so "Marlin off" is not sufficient to produce a
+        measurable gain. It remains the best available explanation for why the effect exists at concurrency 10
+        and not at concurrency 1, and step cost supports it: every variant is cheaper per draft-verify step at
+        both concurrencies (Humming-everywhere −2.37% at conc 1, −1.27% at conc 10, both significant), even where
+        that saving does not reach throughput.
       </p>
       <p>
         <strong>Sized against the drafter rather than the whole iteration, the effect is larger than it looks.</strong>
-        Drafting accounts for 12.77 of the 26.199 ms step at concurrency 10 (49%, taking the k=0 control as the
-        no-drafting reference), so the −3.25% whole-step saving is <strong>−0.85 ms, or ~6.7% of the drafter's own
-        cost</strong>. That is a plausible magnitude for a kernel change on one layer of nine; 3.25% of an entire
-        decode iteration would not be.
+        Taking the k=0 control as the no-drafting reference, drafting accounts for about 12.3 of the 25.7 ms step
+        at concurrency 10 (48%), so Humming-everywhere's −1.27% whole-step saving is <strong>−0.33 ms, or ~2.6%
+        of the drafter's own cost</strong>; at concurrency 1 the −2.37% saving is ~6.4% of it. That is a plausible
+        magnitude for a kernel change on one layer of nine. This decomposition is an <em>upper bound</em> on
+        drafting cost: the k=5 verify forward processes 6 tokens rather than 1, and that extra verify work is
+        lumped in with drafting here.
       </p>
     </div>
 
@@ -813,16 +926,25 @@
     </div>
 
     <div class="note good">
-      <p class="t">Axis 2 verdict — two regimes</p>
+      <p class="t">Axis 2 verdict — two regimes (revised)</p>
       <ul>
-        <li><strong>Single-stream / latency tier: leave the default.</strong> Every cell is inside the 1.02%
-          noise floor. Moving 60% of the drafter's weight traffic off Marlin, and eliminating a per-forward
-          pad/slice, produces no measurable change.</li>
-        <li><strong>Loaded serving (conc ≈ 10): take Marlin off the drafter's <code>lm_head</code>.</strong>
-          Best measured is <code>VLLM_DISABLED_KERNELS=MarlinLinearKernel</code> at +2.73% per user (requires the
-          patch above). The patch-free alternative is padding the draft vocabulary to 200,704 so Machete claims
-          the layer, at +1.85%.</li>
+        <li><strong>Single-stream / latency tier: leave the default.</strong> No cell beats it, and two of the
+          three lose accepted length significantly. Moving 60% of the drafter's weight traffic off Marlin, and
+          eliminating a per-forward pad/slice, produces no throughput gain here.</li>
+        <li><strong>Loaded serving (conc ≈ 10), code-shaped traffic: run Humming on all nine linears.</strong>
+          <code>VLLM_DISABLED_KERNELS=MarlinLinearKernel,MacheteLinearKernel</code> gives +2.25% per user
+          (155.5 tok/s/user, 4.9 se) and requires the <code>prepare_humming_layer</code> patch above. Disabling
+          Marlin alone (+1.11%) and padding the vocabulary for Machete (+1.20%) are both inside noise — the
+          patch-free alternative buys nothing measurable.</li>
+        <li><strong>Creative-writing tier: leave the default at either concurrency.</strong> Every variant is
+          flat there, including the one that wins on code.</li>
+        <li><strong>Unmeasured:</strong> the kernel variants were only ever run at k=5, while the conc-1 optimum
+          is k=6. Humming-everywhere at k=6 has not been measured.</li>
       </ul>
+      <p>
+        The two-regime <em>shape</em> of the original verdict — nothing at concurrency 1, something at
+        concurrency 10 — survived replication. The specific kernel setting did not.
+      </p>
     </div>
   </section>
 
@@ -903,10 +1025,33 @@
     <div class="col">
       <p>
         <strong>Quote the step-cost saving: ~2.5% at concurrency 1 and ~0.8% at concurrency 10</strong>, i.e. about
-        +2.6% and +0.8% per user at acceptance parity. The creative tier's optimum (k=2) was never A/B'd — the grid
-        started at k=3 — so its value is a prediction of ~1.5%, and a weak one, since this axis's other finding was
-        that predicted scaling did not materialise: the step saving is −2.20% / −3.24% / −2.54% at k=3/4/5, flat
-        where more drafter forwards should have meant a larger absolute saving.
+        +2.6% and +0.8% per user at acceptance parity. This axis's other finding was that predicted scaling did
+        not materialise: the step saving is −2.20% / −3.24% / −2.54% at k=3/4/5, flat where more drafter forwards
+        should have meant a larger absolute saving.
+      </p>
+    </div>
+
+    <div class="note">
+      <p class="t">Now measured: the creative tier's k=2, and it is smaller than the prediction</p>
+      <p>
+        The creative optimum was called "never A/B'd, predicted ~1.5%" above. The replicated run measured it at
+        k=2 with the bf16 drafter as the comparison arm. Per-user is <strong>+0.28%, not significant</strong> at
+        concurrency 1 and <strong>+1.20%, significant</strong> at concurrency 10; step cost is
+        <strong>−1.73%</strong> (conc 1) and <strong>−0.50%</strong> (conc 10), both significant. So the
+        prediction was the right order of magnitude on step cost but the conc-1 throughput gain does not appear
+        at all — consistent with k=2 having fewer drafter forwards to save on.
+      </p>
+      <p>
+        On the code tier the same run measured <strong>+3.18% per user at concurrency 1</strong> (4.7 se) with
+        <strong>accepted length flat at +0.23%, not significant</strong> — so the acceptance drift that
+        contaminated the original conc-1 row is gone, and the conclusion is unchanged and now clean:
+        <strong>quantizing the drafter costs nothing in draft quality.</strong> A separate earlier flag, a large
+        creative-tier conc-1 per-user win, was a single-replicate artifact and is <strong>withdrawn</strong>.
+      </p>
+      <p class="muted">
+        Worth noting against axis 2: dropping the drafter from bf16 to 4-bit — a far larger numerical change than
+        swapping which 4-bit kernel does the arithmetic — leaves accepted length alone, while the kernel swap
+        moves it. Whatever axis 2 is measuring, it is not simply "less precision".
       </p>
     </div>
 
@@ -985,11 +1130,11 @@
         <tbody>
           <tr>
             <td class="arm">code / structured</td><td>single-stream</td><td class="cell-good"><strong>6</strong></td><td>INT4</td>
-            <td>default</td><td class="cell-good"><strong>2.50×</strong> <span class="muted">(342 tok/s)</span></td>
+            <td>default</td><td class="cell-good"><strong>2.53×</strong> <span class="muted">(346 tok/s)</span></td>
           </tr>
           <tr>
             <td class="arm">code / structured</td><td>conc ≈ 10</td><td class="cell-good"><strong>5</strong></td><td>INT4</td>
-            <td>Marlin off <code>lm_head</code></td><td class="cell-good"><strong>≈2.10×</strong> <span class="muted">(157 tok/s)</span></td>
+            <td>Humming ×9 <span class="muted">(revised)</span></td><td class="cell-good"><strong>≈2.07×</strong> <span class="muted">(155.5 tok/s)</span></td>
           </tr>
           <tr>
             <td class="arm">creative / open-ended</td><td>single-stream</td><td class="cell-good"><strong>2</strong></td><td>INT4</td>
@@ -997,7 +1142,7 @@
           </tr>
           <tr>
             <td class="arm">creative / open-ended</td><td>conc ≈ 10</td><td class="cell-good"><strong>2</strong></td><td>INT4</td>
-            <td>default <span class="muted">(untested at k=2)</span></td><td>1.21× <span class="muted">(97 tok/s)</span></td>
+            <td>default <span class="muted">(now tested at k=2: all variants flat)</span></td><td>1.21× <span class="muted">(97 tok/s)</span></td>
           </tr>
           <tr>
             <td class="arm">mixed / unknown</td><td>any to conc 64</td><td>3</td><td>INT4</td>
@@ -1007,7 +1152,7 @@
       </table>
     </div>
     <p class="legend">
-      <span>Green = a tuned choice this study establishes. The conc-10 code row combines two windows (2.05× measured at k=5 plus the 2.7% kernel gain), so it is marked ≈; every other figure is a single same-window measurement.</span>
+      <span>Green = a tuned choice this study establishes. Every figure here is from the replicated Phase J pool, so the conc-10 code row no longer combines windows — 155.5 tok/s/user was measured directly at k=5 with Humming ×9. It stays marked ≈ because that cell rests on n=2.</span>
     </p>
     <div class="col">
       <p>
@@ -1026,8 +1171,13 @@
       <li><strong>Prefill-dominated traffic gets almost nothing.</strong> Speculation accelerates decode and never
         touches prefill. An agentic shape that emits ~100 output tokens per ~12k-token prompt is outside the regime
         where any of this pays.</li>
-      <li><strong>Axes 2 and 3 were measured at k=5 on the code tier only.</strong> Neither has been re-measured at
-        the creative tier's k=2, where there are fewer drafter forwards per step to save on. Expect less, not more.</li>
+      <li><strong>Axes 2 and 3 are now measured at the creative tier's k=2 as well</strong> — and the prediction
+        held: less, not more. Every axis-2 kernel variant is flat there, and axis 3 is +0.28% (ns) at concurrency 1
+        against +3.18% on code. What is still unmeasured is the reverse direction: the kernel variants were only
+        run at k=5, while the code tier's concurrency-1 optimum is k=6.</li>
+      <li><strong>Standard errors are per-cell and mostly rest on n=2.</strong> Two replicates give a usable but
+        crude sd; treat 2–3 se results as directional. Two cells remain at n=1 on the creative tier
+        (Humming-<code>lm_head</code>, Machete-everywhere) and are reported as such rather than tested.</li>
       <li><strong>Concurrency was 1 and 10 for the tuning axes.</strong> A separate sweep confirms speculation still
         pays at concurrency 16/32/64 (server throughput 1.95× / 1.97× / 1.79× at k=3), but the per-axis optima were
         not re-derived there, and both the noise floor and the k optimum are load-dependent.</li>
@@ -1043,9 +1193,17 @@
     <h2>Context &amp; sources</h2>
     <div class="h2sub">Where the numbers come from</div>
     <ul class="sources col">
-      <li><strong>Full study write-up</strong> — <code>docs/m3-specdec-eagle3.md</code>: all ten measurement
+      <li><strong>Full study write-up</strong> — <code>docs/m3-specdec-eagle3.md</code>: all fourteen measurement
         windows with per-phase design, gates, drift controls, retractions and corrections. This page is the
-        collaborator-facing summary of its phases D through I.2; the write-up is the authority where they differ.</li>
+        collaborator-facing summary of its phases D through J; the write-up is the authority where they differ.</li>
+      <li><strong>Replicated re-measurement (Phase J)</strong> — the source for every revised number on this page:
+        35 serves across <code>…/20260728T061839Z-unified/</code>, <code>…/20260729T031914Z-unified/</code>,
+        <code>…/20260729T050619Z-unified/</code> and <code>…/20260729T064811Z-unified/</code>, all on
+        <code>gpu-h114</code>. Pooled analysis in <code>…/pooled-20260729T0755/</code>
+        (<code>pooled.txt</code> carries a per-group provenance block naming the window and label of every serve
+        in every replicate group). Aggregated by
+        <code>pipeline/specdec_unified_aggregate.py</code> with one <code>--root</code> per window; groups key on
+        each serve's recorded <code>cell-config.txt</code>, never on its label.</li>
       <li><strong>Design packet</strong> — <code>M3_SPECDEC_EAGLE3_PLAN.md</code>: hypotheses and decision rules,
         recorded before measurement.</li>
       <li><strong>Draft model</strong> — <code>Inferact/MiniMax-M3-EAGLE3</code> @ <code>44cafa5a</code>;

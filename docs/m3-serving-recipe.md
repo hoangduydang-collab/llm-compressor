@@ -62,11 +62,12 @@ Check status without applying: `python pipeline/slurm/patch_vllm_m3_serve.py --c
 `system_fingerprint` like `vllm-0.24.0-tp8-ep-<hash>`.
 
 **Which edits matter when.** Edits 1–2 are required for the **W4A8** kernel path
-regardless of runtime mode. Edits 3–7 matter when **CUDA graphs are enabled**; the paired
-quality eval serves with `enforce_eager: true` (graphs off), so it exercises 1–2 in all
-cases. Edit 8 is required on **0.26.0** and inert on 0.24.0. Edits 4–6 are env-gated
-knobs whose non-default values were needed to close the graphs-on capture IMA — the
-overlay installs the capability; the launcher chooses the mode.
+regardless of runtime mode. Edits 3–7 matter when **CUDA graphs are enabled** — which is
+**every published M3 result**, quality and performance alike (see the graph-mode note
+below), so treat them as required in practice, not as a graphs-only extra. Edit 8 is
+required on **0.26.0** and inert on 0.24.0. Edits 4–6 are env-gated knobs whose
+non-default values were needed to close the graphs-on capture IMA — the overlay installs
+the capability; the launcher chooses the mode.
 `pipeline/vllm_m3_patches.py` is the in-process equivalent used by `serve_verify`
 (workers need the persistent file patch above for the HTTP `vllm serve` path).
 
@@ -93,6 +94,11 @@ Per-arm checkpoint paths and recipe provenance live in
 
 ## Representative `vllm serve` command (OpenAI-compatible)
 
+Prefer `pipeline/slurm/run_vllm_http_serve_smoke.sh` — it is the launcher that produced
+every published M3 serving result, and it runs the `--check` preflight, sets the
+graphs-on env knobs, and applies the gate-alpha overlay when the arm needs it. The
+expansion, for hand-serving or for baking into an image:
+
 ```bash
 # in a venv/image with vLLM 0.24.0 + the overlay applied
 vllm serve <checkpoint-path> \
@@ -102,16 +108,31 @@ vllm serve <checkpoint-path> \
   --block-size 128 \
   --kv-cache-dtype fp8 \
   --max-model-len 65536 \
-  --gpu-memory-utilization 0.85 \
-  --enforce-eager \
+  --gpu-memory-utilization 0.9 \
   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 --enable-auto-tool-choice \
   --trust-remote-code \
   --host 0.0.0.0 --port 8000
 ```
-(Parsers `minimax_m3` are vLLM's documented M3 parsers; `--enforce-eager` matches the
-paired-eval serving profile. Drop `--enforce-eager` only after confirming the CUDA-graph
-edits 3–7 are applied **and** the graphs-on env knobs are set — `LLMC_M3_CAPTURE_SYNC=sync`
-in particular; the fix matrix showed the capture IMA survives every other arm without it.)
+
+Parsers `minimax_m3` are vLLM's documented M3 parsers.
+
+> **Graph-mode correction (2026-07-29).** An earlier revision of this page carried
+> `--enforce-eager` in this command and described graphs-off as "the paired-eval serving
+> profile". That is wrong for every current run. Verified from the serve logs:
+> `full4` (07-20), `tok64k` (07-21), `tok64k-awqr6` (07-23), `tok64k-awqr7` (07-24),
+> two-axis perf (07-26) and the specdec windows (07-29) **all** served with
+> `enforce_eager=False` and `CUDAGraphMode.FULL_AND_PIECEWISE`. **CUDA graphs on is the
+> production configuration for quality and performance alike.** The stale claim traced to
+> `pipeline/configs/eval_minimax_m3_quality.yaml` (`enforce_eager: true`) — which is
+> correct for the older in-repo `pipeline.m3_quality_eval` path it belongs to, but is *not*
+> the profile the official benchmarks `quality.run_ab` runs use. Don't read that config as
+> describing the production endpoint.
+>
+> Graphs-on needs the env knobs the launcher defaults for you — above all
+> `LLMC_M3_CAPTURE_SYNC=sync`, without which the capture IMA survives every other
+> mitigation; also `VLLM_DISABLE_SHARED_EXPERTS_STREAM=0`. `ENFORCE_EAGER=1` remains a
+> deliberate escape hatch for capture deadlocks; it skips capture entirely and changes the
+> performance profile, so do not publish numbers measured under it.
 
 ## Docker / enroot path (for the benchmarks pipeline)
 

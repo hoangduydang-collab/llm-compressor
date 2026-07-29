@@ -180,7 +180,19 @@ FORCE=0 bash pipeline/slurm/free_gpus.sh  # verify only, kill nothing
 It never touches another user's processes, and it exits 1 if the GPUs are still occupied
 by anyone.
 
-**The serve command** (1 node, 8×H100, TP8 + expert parallelism):
+**Use the repo launcher, not a hand-written command.**
+`pipeline/slurm/run_vllm_http_serve_smoke.sh` produced every published M3 serving result.
+It runs the `--check` preflight, sets the graph-safety env knobs, attaches the parsers, and
+applies the gate-alpha overlay when needed:
+
+```bash
+CKPT="$CKPT" SERVED_NAME=MiniMaxAI/MiniMax-M3 PORT=8000 \
+MAX_MODEL_LEN=65536 \
+LOG=serve.log PID_FILE=serve.pid \
+  bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+```
+
+It expands to the following, which is what to copy if you must serve by hand:
 
 ```bash
 vllm serve "$CKPT" \
@@ -190,17 +202,29 @@ vllm serve "$CKPT" \
   --block-size 128 \
   --kv-cache-dtype fp8 \
   --max-model-len 65536 \
-  --gpu-memory-utilization 0.85 \
-  --enforce-eager \
+  --gpu-memory-utilization 0.9 \
   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 --enable-auto-tool-choice \
   --trust-remote-code \
   --host 0.0.0.0 --port 8000
 ```
 
-`--enforce-eager` (CUDA graphs off) is the conservative default and matches the profile
-the paired quality evals ran under. Dropping it turns graphs on for more speed, but only
-after confirming the graph-safety edits *and* their env knobs are set — notably
-`LLMC_M3_CAPTURE_SYNC=sync`, without which the capture IMA survives every other mitigation.
+**CUDA graphs are ON, and that is the production configuration.** There is no
+`--enforce-eager` in the command above, by design. Every published M3 result — quality
+*and* performance — was measured with `enforce_eager=False` and
+`CUDAGraphMode.FULL_AND_PIECEWISE`. If you serve eager you are not measuring the
+configuration any of our numbers describe.
+
+Graphs-on requires these, which the launcher sets for you:
+
+| Env | Default in the launcher | Why |
+|---|---|---|
+| `LLMC_M3_CAPTURE_SYNC` | **`sync`** | Restores the pre-capture `torch.cuda.synchronize()`. Without it the capture IMA survives every other mitigation |
+| `VLLM_DISABLE_SHARED_EXPERTS_STREAM` | `0` (stream on) | Stream-off was the old workaround; the capture-sync fix made it unnecessary |
+| `ENFORCE_EAGER` | `0` | Set to `1` **only** as an escape hatch if capture deadlocks — it skips capture entirely and changes the perf profile |
+
+Launcher defaults, if you override nothing: `TP=8`, `MAX_MODEL_LEN=8192`, `GPU_UTIL=0.9`,
+`KV_CACHE_DTYPE=fp8`, `BLOCK_SIZE=128`. Set `MAX_MODEL_LEN` explicitly for eval work —
+8192 is a smoke-test default, and the perf windows served at 131072.
 
 **If you are driving the benchmarks repo**, do not hand-write the command — use the
 profile seam, which fails closed without its three inputs:
@@ -256,7 +280,7 @@ Look up what you actually see. `BUGS_AND_FIXES.md` has the long-form post-mortem
 |---|---|---|
 | Empty output, or `\r\n` repeated | The MoE router (`mlp.gate`) got pruned from the saved `quantization_config.ignore`. llm-compressor drops ignore patterns that didn't match a *quantized* module, so vLLM treats the unquantized router as quantized → broken routing | Verify step 2 in [A4](#a4-verify-before-you-trust-it). `quantize.py` now re-adds them via `_persist_ignore_to_config()`; older checkpoints need the repair snippet in `pipeline/README.md` |
 | `NotImplementedError` on activation at startup | Overlay not applied (edits 1–2) | `python pipeline/slurm/patch_vllm_m3_serve.py` |
-| Illegal memory access under concurrency, graphs **on** | One of four capture bugs — most often the dropped pre-capture `synchronize()` | Set `LLMC_M3_CAPTURE_SYNC=sync`; or serve `--enforce-eager` |
+| Illegal memory access under concurrency, graphs **on** | One of four capture bugs — most often the dropped pre-capture `synchronize()` | Set `LLMC_M3_CAPTURE_SYNC=sync` (the launcher's default). `ENFORCE_EAGER=1` is a last-resort escape hatch that changes the perf profile — don't publish numbers from it |
 | Illegal memory access on **0.26.0**, even at k=0 | `topk_indices_buffer` layout regression | Overlay edit 8. See `docs/m3-026-topk-buffer-layout.md` |
 | `Free memory on device cuda:X ... less than gpu_memory_utilization` | Leftover workers from a crashed run holding ~70 GiB/GPU | `bash pipeline/slurm/free_gpus.sh` |
 | A CUDA error names a kernel that makes no sense | **CUDA errors are sticky** — the reported kernel is not the faulting one | Re-run with `CUDA_LAUNCH_BLOCKING=1` to pin the real site. Never trust the first-reported kernel |

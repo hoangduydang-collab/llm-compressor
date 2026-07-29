@@ -22,10 +22,28 @@ pipeline/
 
 ## Install (on the 8xH100 cluster)
 
-A single environment handles quantize + serve + eval (vLLM 0.24.0 stable serves
-W4AFP8 MoE correctly *once the M3 W4A8 Python overlay is applied* via
-`pipeline/slurm/patch_vllm_m3_serve.py` — see the MoE-gate note below and the full
-recipe in `docs/m3-serving-recipe.md`). Using `uv` + a project venv:
+The `quant` venv handles quantize + serve + eval for the **current M3 production
+path** (vLLM 0.24.0 stable serves W4AFP8 MoE correctly *once the M3 W4A8 Python
+overlay is applied* via `pipeline/slurm/patch_vllm_m3_serve.py` — see the MoE-gate
+note below and the full recipe in `docs/m3-serving-recipe.md`).
+
+> **It is no longer one environment.** Several venvs coexist under
+> `/mnt/nfs/hoangduy/venvs/` because engine versions and side-installs cannot share
+> one tree. Pick deliberately; mixing them is a common failure:
+>
+> | venv | Contents | Use for |
+> |---|---|---|
+> | `quant` | vLLM 0.24.0 + `-e .` | Quantization, and the qualified M3 serving path |
+> | `serve` | vLLM 0.23.1rc1 | Older serving comparisons |
+> | `serve-026` | vLLM 0.26.0 + merged humming 0.1.10 | 0.26.0 work (see `docs/m3-serve-venv-026.md`, `docs/m3-dspark-blockers-026.md`) |
+> | `humming-0.1.10-site`, `humming-0.1.11-site` | Patched Humming side-installs on `PYTHONPATH` | Humming MoE-backend arms only — **never** installed into `quant` |
+> | `sglang-eval` | SGLang 0.5.13.post1 + git lm-eval | SGLang-native checkpoints (e.g. GLM-5.2 W4AFP8) |
+> | `benchmarks`, `perf` | aiperf / benchmark client deps | Running the perf suite |
+>
+> There is no system `pip` or `venv` on the nodes — use the prebuilt venvs above, and
+> `"$UV"` from `env.sh` when creating new ones.
+
+Using `uv` + a project venv:
 
 ```bash
 source /mnt/nfs/hoangduy/env.sh                       # sets $UV, caches, WORK_ROOT

@@ -217,17 +217,18 @@
 <header>
   <div class="head-inner">
     <p class="eyebrow">MiniMax-M3 · Quantization quality · Official pipeline</p>
-    <h1>Which M3 quants are safe to ship — and why AWQ isn't yet</h1>
+    <h1>Which M3 quants are safe to ship — and how the AWQ regression was fixed</h1>
     <p class="dek">
       Paired quality evaluations of our in-house quants against the BF16 baseline.
-      GPTQ and MXFP8 recover the baseline cleanly; AWQ carries a large, specific regression on
-      reasoning tasks that turns out to be one mechanism — the model stops terminating its own thinking —
-      not broad capability loss. Serving speed and cost are covered in the companion report,
+      GPTQ and MXFP8 recover the baseline cleanly. AWQ recipe <b>r5</b> carried a large, specific regression on
+      reasoning tasks that turned out to be one mechanism — the model stops terminating its own thinking —
+      not broad capability loss. Recipes <b>r6</b> and <b>r7</b> removed the cause and largely close the gap.
+      Serving speed and cost are covered in the companion report,
       <a href="M3_OFFICIAL_PERF_RESULTS.html"><code>M3_OFFICIAL_PERF_RESULTS.html</code></a>.
     </p>
     <div class="meta">
       <span><b>Pipeline:</b> benchmarks <code>quality.run_ab</code></span>
-      <span><b>Runs:</b> full4 (07-20) · tok64k (07-21) · sampling probe (07-22)</span>
+      <span><b>Runs:</b> full4 (07-20) · tok64k (07-21) · sampling probe (07-22) · <b>tok64k-awqr6 (07-23) · tok64k-awqr7 (07-24)</b></span>
       <span><b>Engine:</b> vLLM 0.24.0 · lm-eval 0.4.10</span>
       <span><b>Baseline:</b> MiniMax-M3 BF16</span>
     </div>
@@ -244,14 +245,24 @@
       <p>
         Across seven tasks, <strong>GPTQ (W4A8) and MXFP8 are ship-grade</strong> — every task recovers
         ≥97.4% of BF16, token spend matches the baseline, and the handful of answer changes are
-        symmetric noise. <strong>In-house AWQ (W4A8, recipe r5) is not shippable as-is:</strong> it loses
-        30 points on GPQA and 6 on IFEval. But the damage is not "AWQ can't reason" — when it produces
-        an answer, its accuracy matches BF16. The loss is that on hard prompts it falls into
-        <strong>runaway thinking loops, exhausts the generation budget, and emits nothing</strong>, which
-        scores as zero. Doubling the budget to 64k did not fix it — but switching from greedy to MiniMax's
-        recommended sampling recovers roughly half the stuck items, so part of the gap is a decoding artifact,
-        not pure recipe damage. A community AWQ quant is worse than ours on every axis, so this is an
-        AWQ-on-M3 problem, not a flaw unique to our recipe.
+        symmetric noise. <strong>In-house AWQ recipe r5 was not shippable:</strong> it lost
+        30 points on GPQA and 6 on IFEval. But the damage was not "AWQ can't reason" — when it produced
+        an answer, its accuracy matched BF16. The loss was that on hard prompts it fell into
+        <strong>runaway thinking loops, exhausted the generation budget, and emitted nothing</strong>, which
+        scores as zero. Doubling the budget to 64k did not fix it, and switching to MiniMax's
+        recommended sampling recovered roughly half the stuck items — showing part of the gap was a decoding
+        artifact rather than pure recipe damage. A community AWQ quant is worse than ours on every axis.
+      </p>
+      <p>
+        <strong>That regression is now fixed at the recipe level.</strong> The cause was an AWQ
+        <em>up→down fold</em>; removing it (<b>r6</b>) and replacing it with a function-preserving
+        gate-path fold (<b>r7</b>) restores near-baseline behaviour on both damaged tasks: GPQA recovery
+        71.7% → <b>98.7%</b> (r6) and <b>104.4%</b> (r7), token spend 2.19× → <b>1.13×</b>/<b>0.93×</b>, and
+        budget exhaustion 38.9% → <b>14.7%</b>/<b>10.6%</b> against a 12.6% BF16 floor. Under plain greedy
+        decoding r6 now reaches a lower non-termination rate than r5 achieved <em>with</em> sampling —
+        the recipe fix did what the decoding workaround was doing. See
+        <a href="#awqfix">the r6/r7 section</a>; note these two runs cover the two damaged tasks only,
+        so the seven-task breadth verdict below still describes r5.
       </p>
       <p>
         Speed is the other half of the trade and is reported separately: see
@@ -271,14 +282,14 @@
         <p class="d">IFEval; spends 20% <em>less</em> than BF16 on GPQA.</p>
       </div>
       <div class="tile crit">
-        <p class="k">AWQ · GPQA recovery</p>
+        <p class="k">AWQ <b>r5</b> · GPQA recovery</p>
         <p class="v">70.2<small>%</small></p>
-        <p class="d">−24.2 points. 100% attributable to non-termination.</p>
+        <p class="d">−24.2 points (full4, 32k). 100% attributable to non-termination. <b>Superseded by r6/r7.</b></p>
       </div>
-      <div class="tile crit">
-        <p class="k">AWQ · GPQA budget-exhausted</p>
-        <p class="v">38.9<small>%</small></p>
-        <p class="d">vs 12.6% for BF16, at a 64k-token budget.</p>
+      <div class="tile good">
+        <p class="k">AWQ <b>r6</b> · GPQA recovery</p>
+        <p class="v">98.7<small>%</small></p>
+        <p class="d">Exhaustion 38.9% → 14.7% (BF16 floor 12.6%); spend 2.19× → 1.13×. Two tasks only.</p>
       </div>
     </div>
   </section>
@@ -289,12 +300,14 @@
     <div class="h2sub">What was measured, and what the numbers do and don't mean</div>
     <div class="col">
       <p>
-        Both runs use the official benchmarks A/B pipeline: each quant is served on its own node and
-        scored against a shared BF16 endpoint. Two complementary runs:
+        Every run uses the official benchmarks A/B pipeline: each quant is served on its own node and
+        scored against the BF16 baseline. Four complementary runs:
       </p>
       <ul>
-        <li><strong>full4</strong> — breadth. Four arms (BF16, GPTQ, MXFP8, AWQ) × seven tasks, 32k-token budget.</li>
-        <li><strong>tok64k</strong> — depth. Five arms (adds a community AWQ, <em>cyankiwi</em> W4A16) × the two most-damaged tasks (GPQA-Diamond, IFEval), 64k-token budget, with per-request token accounting.</li>
+        <li><strong>full4</strong> (07-20) — breadth. Four arms (BF16, GPTQ, MXFP8, AWQ r5) × seven tasks, 32k-token budget.</li>
+        <li><strong>tok64k</strong> (07-21) — depth. Five arms (adds a community AWQ, <em>cyankiwi</em> W4A16) × the two most-damaged tasks (GPQA-Diamond, IFEval), 64k-token budget, with per-request token accounting.</li>
+        <li><strong>tok64k-awqr6</strong> (07-23) and <strong>tok64k-awqr7</strong> (07-24) — the recipe fix. Same two tasks, same 64k budget and protocol, one AWQ arm each.</li>
+        <li><strong>sampling probes</strong> (07-22, and 07-23 for r6) — greedy vs MiniMax-recommended sampling on the exhausted-item subset.</li>
       </ul>
       <p>
         Decoding is <strong>greedy (temperature 0)</strong>, the suite's reproducibility convention.
@@ -314,17 +327,31 @@
         choice matters for the AWQ finding and is the subject of an open follow-up (below).
       </p>
     </div>
+    <div class="note">
+      <p class="t">What the r6 / r7 runs do and don't establish</p>
+      <p>
+        Three limits, stated so the r6/r7 numbers are not over-read. <b>(1)</b> They cover
+        <strong>two tasks</strong> — GPQA-Diamond and IFEval, the two r5 damaged — not the seven-task breadth
+        suite; no arm other than r5 has a full-breadth AWQ measurement. <b>(2)</b> The BF16 comparison uses the
+        <strong>frozen 07-21 baseline</strong> (the <code>_lm_eval</code> result files in both run trees are
+        dated 07-21), which is correct for pairing against a fixed reference but means the baseline was not
+        re-measured alongside the candidate. <b>(3)</b> The generated reports carry
+        <em>"no noise floor provided; significance not assessed"</em> — the deltas are point estimates from a
+        single run per arm, so treat sub-2-point differences (notably r7's IFEval −3.9) as unresolved rather
+        than established.
+      </p>
+    </div>
   </section>
 
   <!-- ============ VERDICTS ============ -->
   <section id="verdicts">
     <h2>Per-arm verdict</h2>
-    <div class="h2sub">Three clean, one blocked</div>
+    <div class="h2sub">Two shipping, one repaired, one blocked, one reference</div>
     <div class="verdict-row">
       <div class="verdict">
         <span class="tag ship">Ship</span>
         <h4>GPTQ · W4A8 (in-house)</h4>
-        <p>Recovery 97.4–101.1% across all seven tasks. Token spend within 2% of BF16. Flips symmetric (wins ≈ losses) — quantization noise, not directional damage.</p>
+        <p>Recovery 97.4–101.1% across all seven tasks. Token spend within 2% of BF16. Flips symmetric (wins ≈ losses) — quantization noise, not directional damage. <b>This remains the one arm with a full-breadth shipping verdict.</b></p>
       </div>
       <div class="verdict">
         <span class="tag ship">Ship</span>
@@ -332,14 +359,19 @@
         <p>Recovery 97.5–100.6%. Matches or beats BF16 on 5 of 7 tasks; actually spends fewer tokens on GPQA. Symmetric flips.</p>
       </div>
       <div class="verdict">
-        <span class="tag caveat">Caveat</span>
+        <span class="tag ship">Repaired</span>
+        <h4>AWQ · W4A8 r6 / r7 (in-house)</h4>
+        <p>The r5 non-termination mechanism is gone: GPQA recovery 98.7% (r6) / 104.4% (r7), spend 1.13×/0.93×, exhaustion 14.7%/10.6% vs a 12.6% BF16 floor. <b>r6 is the balanced arm</b> (flips 11✗/9✓ GPQA, 29✗/22✓ IFEval); r7 wins GPQA (+3.5 pts) but gives back IFEval (−3.9 pts, flips 37✗/16✓). Two tasks only — not yet a breadth verdict.</p>
+      </div>
+      <div class="verdict">
+        <span class="tag caveat">Superseded</span>
         <h4>AWQ · W4A8 r5 (in-house)</h4>
-        <p>GPQA −24.2 pts, IFEval −6.1 pts, both from reasoning non-termination. Capability intact conditional on the model actually finishing. Not shippable until the loop is fixed.</p>
+        <p>GPQA −24.2 pts, IFEval −6.1 pts, both from reasoning non-termination caused by the AWQ up→down fold. <b>Do not serve r5</b> — use r6 or r7. Retained here because the seven-task breadth data and the root-cause analysis are r5's.</p>
       </div>
       <div class="verdict">
         <span class="tag caveat">Reference</span>
         <h4>AWQ · W4A16 (community, cyankiwi)</h4>
-        <p>Included as an external control. Worse than our AWQ on every metric — confirms the failure is intrinsic to AWQ-on-M3, not our recipe.</p>
+        <p>Included as an external control. Worse than every in-house AWQ recipe on every metric, and unlike ours its loops survive sampling — genuine, severe damage.</p>
       </div>
     </div>
   </section>
@@ -347,8 +379,8 @@
   <!-- ============ FULL4 MATRIX ============ -->
   <section id="breadth">
     <h2>Breadth — full4</h2>
-    <div class="h2sub">Recovery vs BF16 across seven tasks</div>
-    <p class="col">Each cell is the candidate's score as a percentage of BF16 on the same task (32k budget, greedy). Green ≥99%, amber 93–97%, red &lt;93%.</p>
+    <div class="h2sub">Recovery vs BF16 across seven tasks — the AWQ column is r5</div>
+    <p class="col">Each cell is the candidate's score as a percentage of BF16 on the same task (32k budget, greedy). Green ≥99%, amber 93–97%, red &lt;93%. <strong>The AWQ column is recipe r5 and has not been re-measured for r6/r7</strong> — this is the only seven-task AWQ data that exists, and the <a href="#awqfix">two-task r6/r7 runs</a> supersede it on GPQA and IFEval only.</p>
     <div class="scroll">
       <table>
         <thead>
@@ -382,8 +414,9 @@
     <p class="col">
       Aggregate recovery hides how many individual answers changed. The <em>direction</em> of change
       separates noise from damage: GPTQ and MXFP8 flip roughly as many wrong→right as right→wrong
-      (churn). AWQ flips heavily <strong>right→wrong</strong> — a systematic loss, most extreme on GPQA
-      (53 lost / 5 gained).
+      (churn). AWQ <b>r5</b> flips heavily <strong>right→wrong</strong> — a systematic loss, most extreme on GPQA
+      (53 lost / 5 gained). r6 restores symmetry on the two re-measured tasks (GPQA 11/9, IFEval 29/22);
+      see <a href="#awqfix">the r6/r7 section</a>.
     </p>
     <div class="scroll">
       <table>
@@ -418,6 +451,8 @@
       <div class="bar-row"><span class="lab">GPTQ</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-ok" style="width:20.2%"></div></div><span class="num">1.01×</span></div>
       <div class="bar-row"><span class="lab">MXFP8</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-ok" style="width:15.9%"></div></div><span class="num">0.80×</span></div>
       <div class="bar-row"><span class="lab">AWQ r5</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-warn" style="width:43.9%"></div></div><span class="num">2.19×</span></div>
+      <div class="bar-row"><span class="lab">AWQ r6</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-ok" style="width:22.7%"></div></div><span class="num">1.13×</span></div>
+      <div class="bar-row"><span class="lab">AWQ r7</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-ok" style="width:18.6%"></div></div><span class="num">0.93×</span></div>
       <div class="bar-row"><span class="lab">cyankiwi AWQ</span><div class="track"><div class="baseline-mark" style="left:20%"></div><div class="fill f-crit" style="width:61.2%"></div></div><span class="num">3.06×</span></div>
     </div>
 
@@ -426,6 +461,8 @@
       <div class="bar-row"><span class="lab">GPTQ</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-ok" style="width:16.3%"></div></div><span class="num">1.02×</span></div>
       <div class="bar-row"><span class="lab">MXFP8</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-ok" style="width:17.2%"></div></div><span class="num">1.08×</span></div>
       <div class="bar-row"><span class="lab">AWQ r5</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-warn" style="width:59%"></div></div><span class="num">3.69×</span></div>
+      <div class="bar-row"><span class="lab">AWQ r6</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-ok" style="width:18.7%"></div></div><span class="num">1.17×</span></div>
+      <div class="bar-row"><span class="lab">AWQ r7</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-ok" style="width:19.9%"></div></div><span class="num">1.25×</span></div>
       <div class="bar-row"><span class="lab">cyankiwi AWQ</span><div class="track"><div class="baseline-mark" style="left:16%"></div><div class="fill f-crit" style="width:81%"></div></div><span class="num">5.09×</span></div>
     </div>
 
@@ -440,6 +477,8 @@
           <tr><td class="arm">GPTQ</td><td class="cell-good">0.803</td><td>11.6%</td><td>0.874</td><td>1.1%</td></tr>
           <tr><td class="arm">MXFP8</td><td class="cell-good">0.828</td><td>7.6%</td><td>0.885</td><td>1.3%</td></tr>
           <tr><td class="arm">AWQ r5</td><td class="cell-crit">0.576</td><td class="cell-crit">38.9%</td><td class="cell-warn">0.812</td><td class="cell-warn">9.2%</td></tr>
+          <tr><td class="arm">AWQ r6 <small>(07-23)</small></td><td class="cell-good">0.793</td><td class="cell-good">14.7%</td><td class="cell-good">0.880</td><td class="cell-good">1.5%</td></tr>
+          <tr><td class="arm">AWQ r7 <small>(07-24)</small></td><td class="cell-good">0.838</td><td class="cell-good">10.6%</td><td class="cell-warn">0.854</td><td class="cell-good">1.9%</td></tr>
           <tr><td class="arm">cyankiwi AWQ</td><td class="cell-crit">0.455</td><td class="cell-crit">55.6%</td><td class="cell-warn">0.782</td><td class="cell-warn">13.7%</td></tr>
         </tbody>
       </table>
@@ -447,6 +486,8 @@
     <p class="col muted" style="margin-top:10px">
       "Exhausted" = the response hit the 64k generation ceiling without emitting a final answer.
       Even BF16 has a ~12% hard core on GPQA (genuinely difficult items) — the signal is the excess above it.
+      The r6 and r7 rows come from the later same-protocol runs and are the reason the AWQ verdict changed;
+      both land inside the BF16 exhaustion band on GPQA and at ~1–2% on IFEval.
     </p>
   </section>
 
@@ -538,15 +579,135 @@
         The external cyankiwi AWQ (W4A16) is worse than our r5 on every axis — more spend, more
         exhaustion (55.6% vs 38.9% on GPQA), lower score (0.455 vs 0.576), more one-sided flips (71/2 vs
         50/5). The failure mode is intrinsic to AWQ on M3's long reasoning, and <strong>our recipe is the
-        better AWQ of the two.</strong>
+        better AWQ of the two.</strong> The r6/r7 result below strengthens this: the loop was <em>our</em>
+        fold's doing and we removed it, while cyankiwi's degenerate loops remain.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ THE FIX (r6 / r7) ============ -->
+  <section id="awqfix">
+    <h2>The fix — AWQ r6 and r7</h2>
+    <div class="h2sub">Removing the up→down fold removes the loop</div>
+    <div class="col">
+      <p>
+        The root cause was located in our own recipe: AWQ was folding smoothing scales through M3's
+        <em>up→down</em> path, which is not function-preserving across M3's clamped GLU
+        (<code>(clamp(up)+1)·glu</code>). Two follow-up recipes were quantized and evaluated on the identical
+        protocol — same two tasks, same 64k budget, same greedy decoding, same frozen BF16 baseline:
+      </p>
+      <ul>
+        <li><strong>r6 — <code>noupdown</code></strong>: the up→down fold is simply dropped.</li>
+        <li><strong>r7 — <code>gatealpha</code></strong>: the down-side smoothing is reintroduced through the
+          gate path, where it <em>is</em> function-preserving. Requires the gate-alpha overlay in the serving
+          vLLM (<code>pipeline/slurm/patch_vllm_m3_serve.py</code>).</li>
+      </ul>
+    </div>
+
+    <h3>Every metric, r5 → r6 / r7</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Metric (64k, greedy)</th><th>BF16</th><th>AWQ r5</th><th>AWQ r6</th><th>AWQ r7</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">GPQA score</td><td>0.803</td><td class="cell-crit">0.576</td><td class="cell-good">0.793</td><td class="cell-good">0.838</td></tr>
+          <tr><td class="arm">GPQA recovery</td><td>—</td><td class="cell-crit">71.7%</td><td class="cell-good">98.7%</td><td class="cell-good">104.4%</td></tr>
+          <tr><td class="arm">GPQA exhausted</td><td>12.6%</td><td class="cell-crit">38.9%</td><td class="cell-good">14.7%</td><td class="cell-good">10.6%</td></tr>
+          <tr><td class="arm">GPQA token spend</td><td>1.00×</td><td class="cell-crit">2.19×</td><td class="cell-good">1.13×</td><td class="cell-good">0.93×</td></tr>
+          <tr><td class="arm">GPQA flips ✗/✓</td><td>—</td><td class="cell-crit">50 / 5</td><td class="cell-good">11 / 9</td><td class="cell-good">9 / 16</td></tr>
+          <tr><td class="arm">IFEval score</td><td>0.893</td><td class="cell-warn">0.811</td><td class="cell-good">0.880</td><td class="cell-warn">0.854</td></tr>
+          <tr><td class="arm">IFEval recovery</td><td>—</td><td class="cell-warn">90.9%</td><td class="cell-good">98.6%</td><td class="cell-warn">95.7%</td></tr>
+          <tr><td class="arm">IFEval exhausted</td><td>0.9%</td><td class="cell-warn">9.2%</td><td class="cell-good">1.5%</td><td class="cell-good">1.9%</td></tr>
+          <tr><td class="arm">IFEval token spend</td><td>1.00×</td><td class="cell-crit">3.69×</td><td class="cell-good">1.17×</td><td class="cell-good">1.25×</td></tr>
+          <tr><td class="arm">IFEval flips ✗/✓</td><td>—</td><td class="cell-warn">62 / 18</td><td class="cell-good">29 / 22</td><td class="cell-warn">37 / 16</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col muted" style="margin-top:10px">
+      Flips are counted against the BF16 baseline on the joined item set (GPQA n=198, IFEval n=541).
+      "Recovery" is candidate ÷ baseline on the same task.
+    </p>
+
+    <div class="note finding">
+      <p class="t">The token-spend collapse is the proof</p>
+      <p>
+        Scores alone would be ambiguous — a recipe can score well for unrelated reasons. The mechanism
+        metrics are what identify this as the <em>same</em> defect being removed: completion-token spend falls
+        from 2.19×/3.69× to 1.13×/1.17× (r6) and 0.93×/1.25× (r7), and budget exhaustion falls from
+        38.9%/9.2% to 14.7%/1.5% and 10.6%/1.9%. r5's excess spend <strong>was</strong> the loop; without the
+        fold, the excess is gone. r7 even spends <em>less</em> than BF16 on GPQA and exhausts less often.
+      </p>
+    </div>
+
+    <h3>Greedy non-termination — the recipe fix replaces the decoding workaround</h3>
+    <div class="col">
+      <p>
+        The r6 sampling probe re-ran the <strong>identical 50 exhausted GPQA items</strong> used for r5 (verified
+        by item id), so this is a like-for-like comparison on the hardest subset:
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="arm">Arm · exhausted subset</th><th>Greedy non-term.</th><th>Sampled non-term.</th><th>Greedy correct</th><th>Sampled correct / draw</th><th>≥1 correct in 3</th><th>Correct when it finishes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="arm">BF16 <small>(control)</small></td><td>64.0%</td><td>62.7%</td><td>36%</td><td>32%</td><td>44%</td><td>86%</td></tr>
+          <tr><td class="arm">GPTQ <small>(control)</small></td><td>52.2%</td><td>58.0%</td><td>30%</td><td>38%</td><td>57%</td><td>90%</td></tr>
+          <tr><td class="arm">AWQ r5</td><td class="cell-crit">76.0%</td><td class="cell-warn">49.3%</td><td class="cell-warn">24%</td><td>42%</td><td>60%</td><td>83%</td></tr>
+          <tr><td class="arm">AWQ r6</td><td class="cell-good">46.0%</td><td class="cell-good">44.0%</td><td class="cell-good">52%</td><td class="cell-good">53%</td><td class="cell-good">66%</td><td class="cell-good">95%</td></tr>
+          <tr><td class="arm">cyankiwi AWQ</td><td class="cell-crit">94.0%</td><td class="cell-crit">87.3%</td><td class="cell-crit">6%</td><td class="cell-crit">5%</td><td class="cell-crit">12%</td><td class="cell-crit">32%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col muted" style="margin-top:10px">
+      Non-termination = <code>finish_reason == "length"</code>. r5/BF16/GPTQ/cyankiwi ran 3 sampled draws;
+      r6 ran 5, so its "≥1 correct in 3" column uses only its first three draws for comparability
+      (with all five draws it reaches 72%). Every non-r6 figure here reproduces the published
+      07-22 probe numbers exactly.
+    </p>
+
+    <div class="note good">
+      <p class="t">r6 under greedy beats r5 under sampling</p>
+      <p>
+        r5 needed MiniMax's recommended sampling to pull non-termination from 76% down to 49%. <strong>r6
+        reaches 46% under plain greedy</strong> — and barely moves under sampling (44%), exactly like the
+        healthy BF16 and GPTQ controls. That is the signature of a fixed model rather than a masked one: the
+        decoding knob has stopped mattering because there is no longer a loop for it to break. r6 also has the
+        highest "correct when it finishes" rate of any arm measured (95%, vs BF16 86% and GPTQ 90%), so the
+        remaining exhaustion on this subset is the genuinely-hard tail every arm shares.
+      </p>
+    </div>
+
+    <div class="note">
+      <p class="t">Which AWQ recipe to serve</p>
+      <p>
+        <strong>r6 is the balanced choice</strong> — it recovers ~98.6% on both tasks with near-symmetric
+        flips, and it is the arm with the corroborating sampling probe. <strong>r7 is the higher-variance
+        choice</strong>: it beats BF16 on GPQA (+3.5 pts, flips 9✗/16✓) but gives back IFEval
+        (−3.9 pts, flips 37✗/16✓), and it additionally requires the gate-alpha serving overlay. With no noise
+        floor established, the r6-vs-r7 difference is not resolved; r7 is the arm carried into the
+        <a href="M3_OFFICIAL_PERF_RESULTS.html">performance work</a>, where the two are speed-identical.
+        Neither has a seven-task breadth measurement yet — that is the open item.
       </p>
     </div>
   </section>
 
   <!-- ============ OPEN QUESTION ============ -->
   <section id="open">
-    <h2>Follow-up — resolved</h2>
-    <div class="h2sub">Sampling breaks the loops for our AWQ, not for the community quant</div>
+    <h2>The r5 decoding diagnostic</h2>
+    <div class="h2sub">Sampling broke the loops for our AWQ, not for the community quant — the clue that led to the fix</div>
+    <div class="note">
+      <p class="t">Read this as diagnosis, not as the remedy</p>
+      <p>
+        This section is the <strong>r5-era</strong> probe. It established that r5's loops were breakable — which
+        is what pointed at a recipe defect rather than intrinsic 4-bit damage — but sampling is no longer the
+        answer to the regression. <a href="#awqfix">r6/r7 fixed it in the recipe</a>, and r6 reaches a lower
+        greedy non-termination rate (46%) than r5 achieved with sampling (49%). Kept because the mechanism
+        evidence and the arm-by-arm controls are still the clearest account of what was wrong.
+      </p>
+    </div>
     <div class="col">
       <p>
         Reasoning models are known to loop under greedy decoding (DeepSeek-R1's card warns of it;
@@ -625,15 +786,17 @@
     </div>
 
     <div class="note">
-      <p class="t">What this means for the verdict</p>
+      <p class="t">What this meant for the verdict — and what happened next</p>
       <p>
-        The paired verdicts stand (greedy is the fixed, shared protocol), but the AWQ regression now splits
-        into a <strong>greedy-induced component</strong> — fixable decode-side (sampling, repetition penalty, or
-        a think-budget cap) — and a <strong>residual recipe component</strong>. GPQA and IFEval share the one
-        root cause, so a single fix addresses both. Thinking stays on throughout: it is the standard, correct
-        setting for a reasoning model, and disabling it would both break convention and hide a real deployment
-        risk. Full reasoning transcripts for every exhausted request are captured, so the loops can be inspected
-        without a rerun.
+        At the time, the r5 regression split into a <strong>greedy-induced component</strong> (apparently fixable
+        decode-side) and a <strong>residual recipe component</strong>, with GPQA and IFEval sharing one root
+        cause so a single fix would address both. <strong>That is what the fix delivered:</strong> the recipe
+        component turned out to be the up→down fold, and removing it collapsed both tasks' token spend and
+        exhaustion back to baseline — see <a href="#awqfix">the r6/r7 section</a>. The decode-side workaround was
+        never needed in production. Thinking stays on throughout: it is the standard, correct setting for a
+        reasoning model, and disabling it would both break convention and hide a real deployment risk. Full
+        reasoning transcripts for every exhausted request are captured, so the loops can be inspected without a
+        rerun.
       </p>
     </div>
   </section>
@@ -653,9 +816,13 @@
     </ul>
     <h3>Raw evidence on disk</h3>
     <ul class="sources col">
-      <li><code>results/m3-official-quality/20260720T165938Z-full4/</code> — 7-task deltas, flips, replay tree.</li>
+      <li><code>results/m3-official-quality/20260720T165938Z-full4/</code> — 7-task deltas, flips, replay tree (BF16 / GPTQ / MXFP8 / AWQ r5).</li>
       <li><code>results/m3-official-quality/20260721T154830Z-tok64k/</code> — token-usage sidecars (<code>usage_delta</code>, <code>task_flips</code>), per-request <code>usage.jsonl</code> with reasoning text.</li>
+      <li><code>results/m3-official-quality/20260723T153532Z-tok64k-awqr6/</code> — <strong>AWQ r6</strong> paired run + <code>results/report.tok64k-awq-r6.html</code>.</li>
+      <li><code>results/m3-official-quality/20260724T053810Z-tok64k-awqr7/</code> — <strong>AWQ r7</strong> paired run + <code>results/report.tok64k-awq-r7.html</code>.</li>
       <li><code>results/m3-sampling-probe/20260722T031036Z/sampling/</code> — greedy-vs-sampled generations per arm (<code>pipeline/sampling_probe.py</code>).</li>
+      <li><code>results/m3-sampling-probe/20260723T125813Z-r6/sampling/awq-r6.jsonl</code> — <strong>r6</strong> probe, 5 sampled draws on the same 50 exhausted items.</li>
+      <li>Checkpoints — r6: <code>results/m3-distributed-awq-full/20260723T092202Z-m3-ddp-awq-full-r6-noupdown/awq/MiniMax-M3-awq-W4AFP8/20260723-092256/checkpoint-vllm-w123</code>; r7: <code>…/20260723T123927Z-m3-ddp-awq-full-r7-gatealpha/awq/MiniMax-M3-awq-W4AFP8/20260723-123953/checkpoint-vllm-w123</code>. Arm registry: <code>docs/m3-benchmark-arms.md</code>.</li>
     </ul>
   </section>
 
@@ -663,6 +830,8 @@
     MiniMax-M3 quantization quality · official benchmarks pipeline · greedy, thinking on,
     paired-comparison valid, not leaderboard-comparable · serving performance in
     <a href="M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a>.
+    Revised 2026-07-29 to add the AWQ r6 / r7 results (runs 07-23 / 07-24), which supersede the
+    r5 "not shippable" verdict on GPQA-Diamond and IFEval.
     Generated for internal collaboration.
   </footer>
 </div>

@@ -6,7 +6,7 @@ handoffs (`*_HANDOFF.md`, `*_PLAN.md`) carry the current work; this file carries
 *why*. Keep the status markers current; do not delete a goal when it completes —
 mark it `DONE` with a pointer to the evidence.
 
-Last reviewed: 2026-07-25.
+Last reviewed: 2026-07-29.
 
 ## Long-term goals
 
@@ -23,21 +23,42 @@ Last reviewed: 2026-07-25.
    harness/gate contracts, and honest raw-evidence returns. See
    `M3_PRODUCTION_EVAL_HANDOFF.md` and the plans/specs under `docs/superpowers/`.
 
-3. **Working AWQ quantized model** — *DONE (2026-07-20).*
-   Root cause of the r4 corruption was an AWQ smoothing-scale degeneracy on dead
-   norm channels (M3 layers 8/10–13 have a post-attention norm gain of exactly
-   −1.0); fixed in `_grid_search_scales` (e87eef77, upstream-candidate) with
-   regression tests and a hardened fail-closed gate suite. Evidence for the
-   full-calibration artifact (r5-deadchan, 512×2048): smooth-fold gate OK on all
-   57 layers, quant-verify + risk-layer dequant sampling OK, coherent TP8 vLLM
-   serving, and a passing official smoke eval on the reasoning_r4 contract
-   (`ready_for_production: true`, 0 empty outputs / 0 loops, paired-manifest
-   scores in BF16's ballpark). Checkpoint:
-   `results/m3-distributed-awq-full/20260720T060340Z-m3-ddp-awq-full-r5-deadchan/`
-   (+ `checkpoint-vllm-w123` for vLLM); eval evidence:
-   `results/m3-quality/20260720T134946Z-m3-inhouse-awq-r5-smoke/`; post-mortem in
-   `BUGS_AND_FIXES.md`. Quality *competitiveness* (≥0.98 macro recovery vs BF16)
-   is goal-2 territory: the production-profile eval is the remaining step.
+3. **Working AWQ quantized model** — *DONE (2026-07-20); quality-competitive as of
+   2026-07-23 (r6) on the two measured tasks.*
+   **Serve `r6` or `r7`, not `r5`.** Two separate defects were fixed in sequence:
+
+   - *Corruption (r4 → r5, 2026-07-20).* An AWQ smoothing-scale degeneracy on dead
+     norm channels (M3 layers 8/10–13 have a post-attention norm gain of exactly
+     −1.0); fixed in `_grid_search_scales` (e87eef77, upstream-candidate) with
+     regression tests and a hardened fail-closed gate suite. r5 evidence
+     (512×2048): smooth-fold gate OK on all 57 layers, quant-verify + risk-layer
+     dequant sampling OK, coherent TP8 vLLM serving, passing official smoke eval
+     (`ready_for_production: true`, 0 empty outputs / 0 loops). Evidence:
+     `results/m3-quality/20260720T134946Z-m3-inhouse-awq-r5-smoke/`.
+   - *Reasoning non-termination (r5 → r6/r7, 2026-07-23/24).* r5 then failed the
+     **paired 64k quality eval**: GPQA recovery 71.7%, token spend 2.19×, budget
+     exhaustion 38.9% vs a 12.6% BF16 floor — runaway thinking loops that burn the
+     budget and emit nothing. Root cause was AWQ folding smoothing scales through
+     M3's **up→down** path, which is not function-preserving across the clamped GLU
+     `(clamp(up)+1)·glu`. `r6` drops that fold; `r7` reintroduces down-side
+     smoothing through the gate path, where it is function-preserving. Both
+     restore near-baseline behaviour: GPQA recovery **98.7% / 104.4%**, IFEval
+     **98.6% / 95.7%**, spend 1.13×/0.93× and 1.17×/1.25×, exhaustion
+     14.7%/10.6%. Under plain greedy, r6's non-termination on the r5 exhausted
+     subset is 46% — better than r5 achieved *with* sampling (49%). Evidence:
+     `results/m3-official-quality/20260723T153532Z-tok64k-awqr6/`,
+     `…/20260724T053810Z-tok64k-awqr7/`,
+     `results/m3-sampling-probe/20260723T125813Z-r6/`.
+
+   Checkpoints and per-arm provenance: `docs/m3-benchmark-arms.md`
+   (r5 is retained there as historical — do not serve it). Post-mortems in
+   `BUGS_AND_FIXES.md`; collaborator-facing writeup in
+   `M3_OFFICIAL_QUALITY_RESULTS.html`.
+
+   **Remaining step:** the r6/r7 evals cover GPQA-Diamond and IFEval only. A
+   seven-task breadth run (the `full4` protocol) has only ever been done for r5, so
+   in-house GPTQ still holds the sole full-breadth shipping verdict. Closing that is
+   goal-2 territory.
 
 4. **Generalize to any quantization method** — *Future work.*
    Extend the pipeline beyond AWQ and GPTQ to arbitrary quantization methods.

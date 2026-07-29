@@ -98,8 +98,17 @@ tok/s/GPU → in-house W4AFP8 = **3.84× BF16 per GPU**.
 ### Serve-ready vs BF16 baseline (per-GPU efficiency)
 
 Serve-ready = in-house GPTQ W4AFP8 on Humming indexed 0.1.10 — the one arm with
-a shipping quality verdict (recovery 97.4–101.1% on all seven tasks). Both
+a **seven-task** shipping quality verdict (recovery 97.4–101.1%). Both
 columns come from this window.
+
+> **Quality-verdict status corrected (2026-07-29).** An earlier revision of this
+> document said in-house AWQ r7 "has no quality verdict yet". That was wrong at the
+> time of writing: paired 64k evals of AWQ **r6** (07-23) and **r7** (07-24) already
+> existed and both largely close the r5 regression — GPQA recovery 98.7% / 104.4%,
+> IFEval 98.6% / 95.7%, token spend 1.13×/0.93× and 1.17×/1.25×, budget exhaustion
+> 14.7%/10.6% against a 12.6% BF16 floor. They cover **two tasks only**
+> (GPQA-Diamond, IFEval), so GPTQ keeps the only breadth verdict, but "no verdict"
+> was not the right description. See `M3_OFFICIAL_QUALITY_RESULTS.html` §The fix.
 
 | metric | BF16 (16×H100, 2 nodes) | serve-ready W4AFP8 (8×H100, 1 node) | advantage |
 |---|---|---|---|
@@ -122,8 +131,8 @@ also 8% better for the quant arm (5.39 s vs 5.88 s).
 Decode-bound work improves 3.4–3.8× per GPU, prefill-bound agentic work 3.0×.
 The other ship-capable options are worse buys: vendor MXFP8 is quality-clean but 272 tok/s/GPU at
 conc-64 (2.6× BF16, vs our 3.8×); in-house AWQ r7 is speed-identical to GPTQ
-(within 1% in every cell) but has no quality verdict yet; cyankiwi is
-quality-disqualified.
+(within 1% in every cell) and clean on the two tasks it was evaluated on, but has no
+seven-task breadth verdict; cyankiwi is quality-disqualified.
 
 ### Agentic (warm / cold) — output speed tok/s (TTFT p50/p95 ms)
 

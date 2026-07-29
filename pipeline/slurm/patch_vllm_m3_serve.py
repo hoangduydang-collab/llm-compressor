@@ -1917,7 +1917,11 @@ def _humming_patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
 
 
 def ensure_vllm_m3_patches(*, apply: bool = True) -> None:
-    """Apply (if needed) and verify all four persistent vLLM M3 serve patches.
+    """Apply (if needed) and verify every persistent vLLM M3 serve patch.
+
+  The set is whatever ``_patch_targets()`` returns (currently eight edits); do not
+  hard-code a count here or in the docs -- ``docs/m3-serving-recipe.md`` drifted
+  behind this list once already.
 
   vLLM worker subprocesses are spawned fresh — in-process monkeypatches in
   ``serve_verify`` do **not** reach ``Worker_TP*``. This must edit site-packages.

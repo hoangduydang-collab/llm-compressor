@@ -359,7 +359,11 @@ def main() -> int:
     for cell, k in (("8k-low", 5), ("8k-high", 2)):
         for kern in ("hum-lmhead", "hum-all", "machete-all"):
             for conc in CONCS:
-                for metric in ("per_user", "step"):
+                # `accepted` belongs here, not just in axis 3: this axis only changes
+                # HOW the drafter's arithmetic is done, so a moved acceptance means the
+                # kernel swap perturbed the drafter's numerics. Reporting per_user and
+                # step without it hides precisely the control this axis rests on.
+                for metric in ("per_user", "step", "accepted"):
                     rows.append((f"{cell} k={k} default -> {kern} ({metric})",
                                  grp(k, "humming", "int4", "default", cell, conc),
                                  grp(k, "humming", "int4", kern, cell, conc),

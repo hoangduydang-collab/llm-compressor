@@ -33,8 +33,8 @@ note below and the full recipe in `docs/m3-serving-recipe.md`).
 >
 > | venv | Contents | Use for |
 > |---|---|---|
-> | `quant` | vLLM 0.24.0 + `-e .` | Quantization, and the qualified M3 serving path |
-> | `serve` | vLLM 0.23.1rc1 | Older serving comparisons |
+> | `quant` | vLLM 0.24.0, llmcompressor `-e .`, lm-eval 0.4.12, torch 2.11.0 | Quantization, and the qualified M3 serving path |
+> | `serve` | vLLM 0.23.1rc1.dev643 | Older serving comparisons |
 > | `serve-026` | vLLM 0.26.0 + merged humming 0.1.10 | 0.26.0 work (see `docs/m3-serve-venv-026.md`, `docs/m3-dspark-blockers-026.md`) |
 > | `humming-0.1.10-site`, `humming-0.1.11-site` | Patched Humming side-installs on `PYTHONPATH` | Humming MoE-backend arms only — **never** installed into `quant` |
 > | `sglang-eval` | SGLang 0.5.13.post1 + git lm-eval | SGLang-native checkpoints (e.g. GLM-5.2 W4AFP8) |

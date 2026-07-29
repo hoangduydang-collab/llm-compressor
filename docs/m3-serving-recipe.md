@@ -1,5 +1,8 @@
 # MiniMax-M3 serving recipe (reproducible)
 
+> New to this? Start with [`M3_COLLABORATOR_GUIDE.md`](../M3_COLLABORATOR_GUIDE.md) for the
+> end-to-end path. This page is the authoritative patch-overlay reference it points at.
+
 **Purpose.** One authoritative record of *how MiniMax-M3 is served* in this repo, so
 the endpoint can be reproduced — including as a pinned Docker/enroot image consumed by
 the external evaluation pipeline (`AICloud/benchmarks`, which talks to an

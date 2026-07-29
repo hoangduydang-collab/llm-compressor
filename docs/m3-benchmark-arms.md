@@ -1,5 +1,9 @@
 # MiniMax-M3 benchmark arms — checkpoint / port / recipe table
 
+> New to this? Start with [`M3_COLLABORATOR_GUIDE.md`](../M3_COLLABORATOR_GUIDE.md) —
+> environment setup, serving, pitfalls, and known results end to end. This page is the
+> arm-provenance reference it points at.
+
 **This table is the owner of M3 arm provenance.** The benchmarks repo holds a single
 in-house profile (`configs/minimax/minimax-m3-inhouse.sh`) plus thin arm bindings; it
 deliberately does **not** carry quantization internals. That keeps the benchmarks repo

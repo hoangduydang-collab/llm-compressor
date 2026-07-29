@@ -323,6 +323,10 @@ One anomaly, recorded not explained: at 8k-high conc 10 the control's TTFT is
 (482.55 → 220.58 ms) and the same prefill-bound mechanism would predict it, but a
 single cell at one concurrency is not enough to claim the magnitude is real.
 
+> **Later correction (2026-07-29, unified run):** the magnitude *is* real and
+> reproducible, but the effect is narrower than "prefill-bound at load" — see
+> [The k=0 / 8k-high / conc-10 TTFT effect](#the-k0--8k-high--conc-10-ttft-effect).
+
 ### Output-budget censoring (measured, affects interpretation)
 
 `max_tokens=2048` truncated a large share of responses, so these are **not**
@@ -793,6 +797,48 @@ against 382–411 ms for every spec-dec config in the same arm. Decode is slower
 so requests queue longer, but that does not obviously account for a 3× gap. This is the
 same unexplained TTFT behaviour flagged in phase D and it does not affect the
 output-rate comparison, which is measured after the first token.
+
+### The k=0 / 8k-high / conc-10 TTFT effect
+
+The unified run (31 serves, 3 windows, gpu-h114) settles what this is. Across every
+serve in the pooled set, TTFT splits into exactly two populations:
+
+| serve class | 8k-high conc 10, TTFT (ms) | n |
+|---|---|---|
+| **k=0** (`L0-cut-*`, `L0-hum-*`) | 835.8, 934.8, 1135.7, 1172.0, 1431.6 | 5 / 5 elevated |
+| **k≥1** (every k, kernel, drafter) | 415.4 – 449.9 | 9 / 9 normal |
+
+Three things are now ruled out that earlier phases left open.
+
+1. **It is not a property of the 8k-high workload.** The same tier at conc 1 is
+   normal in the same serves (431–467 ms), and every k≥1 serve at 8k-high conc 10
+   is normal.
+2. **It is not a property of the k=0 configuration.** Those same five k=0 serves
+   are normal in their other three cells — 8k-high c1 431–467 ms, 8k-low c10
+   361–417 ms (in fact the *lowest* TTFT anywhere in the study).
+3. **It is not an unreplicated cell.** It reproduces 5/5, across two prefill
+   backends and two windows. It is also the noisiest cell in the study by far:
+   sd ≈ 220 ms, ~20% CV, against ≈2% for every other TTFT cell.
+
+So the effect requires the **conjunction** of k=0, the high-entropy tier, and conc 10.
+No single factor produces it. Earlier text in this doc called it "a workload property";
+that was wrong, and the correction is the conjunction.
+
+**Confound that remains, stated because it is not separable from this data.** The
+`L0-*` k=0 serves are the only ones that run all four cells in a single serve; every
+k≥1 serve runs only its own tier's two cells. 8k-high/c10 is therefore the *last*
+cell of a k=0 serve and an early cell everywhere else, so within-serve ordering is
+perfectly collinear with k=0 here. Position-in-window is separately ruled out (window
+`20260729T031914Z` opened with a k=1 serve that measured 438.9 ms in this cell), but
+position-*within-serve* is not. Suggestively, the two CUTLASS values are the two
+lowest and the three Humming values the three highest — consistent with the backend
+mattering, on n=2 vs n=3.
+
+**The one-line experiment that would settle it:** run a single k≥1 serve over all four
+cells in the k=0 cell order. If its 8k-high/c10 TTFT is elevated, the cause is
+within-serve position (accumulated KV/prefix-cache state), not k=0. Cost is one serve.
+Not run, because TTFT is not a metric any decision in this study rests on — every
+throughput comparison here is measured after the first token.
 
 ### The rule that predicts all of it
 

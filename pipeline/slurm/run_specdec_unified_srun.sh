@@ -125,6 +125,10 @@ A2-k5-machall;5;humming;int4;machete-all;8k-low
 A2-k2-humlm;2;humming;int4;hum-lmhead;8k-high
 A2-k2-machall;2;humming;int4;machete-all;8k-high
 A2-k5-humlm-r2;5;humming;int4;hum-lmhead;8k-low
+A2-k5-humall-r2;5;humming;int4;hum-all;8k-low
+A2-k5-machall-r2;5;humming;int4;machete-all;8k-low
+A2-k2-humall;2;humming;int4;hum-all;8k-high
+A2-k2-humall-r2;2;humming;int4;hum-all;8k-high
 LIST
 )
 # Replicates added 2026-07-28 after the 20260728T061839Z window, all n=1 arms whose
@@ -141,12 +145,32 @@ LIST
 #                                      drop against a 0.012 replicate sd. Acceptance
 #                                      is a numerics property, so a kernel shifting it
 #                                      is either a real defect or noise; n=1 cannot say.
+#                                      (Confirmed real: 3.7929 on the replicate.)
+#
+# Added 2026-07-29 after that replicate landed. Spending the first axis-2 replicate on
+# hum-lmhead was a DESIGN ERROR: it is the WORST-performing variant, so replicating it
+# could never change a deployment decision. `hum-all` is the best at both concurrencies
+# (343.4 / 155.9 vs default's 339.3 / 152.0) and is the only variant that could displace
+# `default` -- and it sat at n=1. These four fix that, and also discriminate the
+# mechanism: hum-lmhead and hum-all BOTH use the Humming lm_head, so if the -2.79%
+# acceptance shift were an lm_head-numerics effect, hum-all must show it too. At n=1 it
+# showed roughly half (3.850). One of those two numbers is wrong, and only replication
+# says which.
+#   A2-k5-humall-r2 / A2-k5-machall-r2  -- decision-relevant low-tier legs, both n=1.
+#   A2-k2-humall / A2-k2-humall-r2      -- the high-tier hum-all cell was never in this
+#                                          list at all, so axis 2 had a hole rather than
+#                                          a weak point. Both replicates run together
+#                                          so it arrives at n=2 instead of needing a
+#                                          third window.
+# NOTE machete-all is confounded beyond the kernel: it pads the draft vocab 200064 ->
+# 200704 (LLMC_EAGLE3_LMHEAD_PAD=1024), so it varies two things at once. Its acceptance
+# is interpretable only as "this whole configuration", not "Machete lm_head".
 # L0-hum-k0-r3 is already in the list -- it failed in that window (patcher regression),
 # leaving the k=0 denominator at n=2.
 n_serves=$(printf '%s\n' "$SERVES" | grep -cvE '^\s*(#|$)')
 echo "[controller] serve list: $n_serves serves"
 printf '%s\n' "$SERVES" > "$ROOT/serve-list.txt"
-[ "$n_serves" = 31 ] || fail "serve list is $n_serves entries, expected 31 (edit was unintended?)"
+[ "$n_serves" = 35 ] || fail "serve list is $n_serves entries, expected 35 (edit was unintended?)"
 
 # ============================ PRE-FLIGHT GATES ================================
 for d in "$GPTQ_CKPT" "$SITE_0110" "$DRAFTER_INT4" "$DRAFTER_BF16" "$SB_DIR"; do

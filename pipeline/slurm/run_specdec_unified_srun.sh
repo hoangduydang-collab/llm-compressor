@@ -107,6 +107,7 @@ A1-k5-int4-r3;5;humming;int4;default;8k-low
 A3-k5-bf16-r3;5;humming;bf16;default;8k-low
 A1-k6-r3;6;humming;int4;default;8k-low
 A1-k7-r1;7;humming;int4;default;8k-low
+A1-k7-r2;7;humming;int4;default;8k-low
 # --- axis 1 (high tier) interleaved with axis 3 at the high-entropy k (NEW) ---
 A1-k2-int4-r1;2;humming;int4;default;8k-high
 A3-k2-bf16-r1;2;humming;bf16;default;8k-high
@@ -114,18 +115,38 @@ A1-k2-int4-r2;2;humming;int4;default;8k-high
 A1-k1-r1;1;humming;int4;default;8k-high
 A1-k3-r1;3;humming;int4;default;8k-high
 A1-k2-int4-r3;2;humming;int4;default;8k-high
+A1-k1-r2;1;humming;int4;default;8k-high
+A1-k3-r2;3;humming;int4;default;8k-high
+A3-k2-bf16-r2;2;humming;bf16;default;8k-high
 # --- axis 2: drafter kernel, at BOTH deployment k (k=2 cells are NEW) ---
 A2-k5-humlm;5;humming;int4;hum-lmhead;8k-low
 A2-k5-humall;5;humming;int4;hum-all;8k-low
 A2-k5-machall;5;humming;int4;machete-all;8k-low
 A2-k2-humlm;2;humming;int4;hum-lmhead;8k-high
 A2-k2-machall;2;humming;int4;machete-all;8k-high
+A2-k5-humlm-r2;5;humming;int4;hum-lmhead;8k-low
 LIST
 )
+# Replicates added 2026-07-28 after the 20260728T061839Z window, all n=1 arms whose
+# single sample made a stated conclusion uninterpretable. Run them via ONLY on the
+# SAME node (h114) as the originals -- pooling across nodes would confound the
+# replicate spread these exist to measure. The arm strips a trailing -r<N> to form
+# the grouping key, so `A2-k5-humlm-r2` pools with `A2-k5-humlm` automatically.
+#   A1-k7-r2 / A1-k1-r2 / A1-k3-r2  -- sweep edges, sd unmeasurable at n=1, so the
+#                                      optimal-k claim rests on single points.
+#   A3-k2-bf16-r2                   -- high-tier INT4-vs-bf16 had bf16 at n=1, which
+#                                      forces sd=0 and fabricates a standard error;
+#                                      the "significant" flag there was an artifact.
+#   A2-k5-humlm-r2                  -- acceptance read 3.795 vs 3.903 default, a 0.11
+#                                      drop against a 0.012 replicate sd. Acceptance
+#                                      is a numerics property, so a kernel shifting it
+#                                      is either a real defect or noise; n=1 cannot say.
+# L0-hum-k0-r3 is already in the list -- it failed in that window (patcher regression),
+# leaving the k=0 denominator at n=2.
 n_serves=$(printf '%s\n' "$SERVES" | grep -cvE '^\s*(#|$)')
 echo "[controller] serve list: $n_serves serves"
 printf '%s\n' "$SERVES" > "$ROOT/serve-list.txt"
-[ "$n_serves" = 26 ] || fail "serve list is $n_serves entries, expected 26 (edit was unintended?)"
+[ "$n_serves" = 31 ] || fail "serve list is $n_serves entries, expected 31 (edit was unintended?)"
 
 # ============================ PRE-FLIGHT GATES ================================
 for d in "$GPTQ_CKPT" "$SITE_0110" "$DRAFTER_INT4" "$DRAFTER_BF16" "$SB_DIR"; do

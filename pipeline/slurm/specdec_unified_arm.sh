@@ -340,9 +340,13 @@ PY
     rc_all=1
     return 1
   fi
+  # `m` is an AWK variable, not a shell one: referring to "$m" in these shell notes
+  # is an unbound-variable fatal under `set -u`. That regression killed a whole
+  # window from the gate's SUCCESS path (job 13429, 2026-07-29) -- the floor passed
+  # at 4.62 and the arm then died on the congratulation. Use "$ACC_MIN" here.
   awk -v a="$acc" -v m="$ACC_MIN" 'BEGIN{exit !(a >= m)}' \
-    || { note "$label ABORT-LEVEL: accepted $acc < $m -- numerics suspect"; rc_all=1; return 1; }
-  note "$label: accepted length $acc (>= $m)"
+    || { note "$label ABORT-LEVEL: accepted $acc < $ACC_MIN -- numerics suspect"; rc_all=1; return 1; }
+  note "$label: accepted length $acc (>= $ACC_MIN)"
   return 0
 }
 

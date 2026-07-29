@@ -27,7 +27,14 @@ acceptance-adjusted view and is the right lens for axes 2 and 3, which change on
 the drafter's arithmetic is done and must not be credited with acceptance scatter.
 
 Usage:
-    python pipeline/specdec_unified_aggregate.py --root <window> [--out-json f]
+    python pipeline/specdec_unified_aggregate.py --root <window> [--root <window2> ...]
+        [--out-json f]
+
+--root is repeatable so a follow-up window (launched with ONLY= to add replicates)
+pools with its parent. Pooling is safe because groups are keyed by each serve's
+recorded config, not by window or label: replicates join a group iff the evidence
+says they are the same configuration. Labels are window-qualified in the
+provenance listing so identically-named serves in two windows stay distinguishable.
 """
 
 from __future__ import annotations
@@ -188,56 +195,64 @@ def verdict(c: dict | None) -> str:
 # ---------------------------------------------------------------- main
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", required=True)
+    # Repeatable: a follow-up window that only re-runs some serves (ONLY=...) pools
+    # with its parent window. Grouping is by recorded config, so replicates from
+    # different windows land in the same Group iff they really are the same config.
+    ap.add_argument("--root", required=True, action="append",
+                    help="window root; repeat to pool several windows")
     ap.add_argument("--arm", default="unified")
     ap.add_argument("--out-json", default=None)
     args = ap.parse_args()
 
-    arm = f"{args.root}/arm-{args.arm}"
     groups: dict[tuple, dict[int, Group]] = {}
     served: list[str] = []
-    missing: list[str] = []
+    partial: list[str] = []
+    per_root: list[tuple[str, int, int]] = []
 
-    expected = []
-    slist = f"{args.root}/serve-list.txt"
-    if os.path.exists(slist):
-        with open(slist) as fh:
-            for line in fh:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    expected.append(line.split(";")[0])
+    for root in args.root:
+        arm = f"{root}/arm-{args.arm}"
+        tag = os.path.basename(root.rstrip("/")).split("-")[0]
+        # Only directories that actually exist are considered. A serve named in this
+        # window's serve-list but skipped by ONLY= is not "missing" -- it was never
+        # meant to run here, and another root may well carry it.
+        labels = (sorted(d for d in os.listdir(arm) if os.path.isdir(f"{arm}/{d}"))
+                  if os.path.isdir(arm) else [])
+        n_ok = n_bad = 0
+        for label in labels:
+            sdir = f"{arm}/{label}"
+            # Labels are window-qualified so two windows' L0-hum-k0-r3 stay distinct
+            # in the provenance lists even though they pool into the same Group.
+            qual = f"{tag}/{label}"
+            cfg = read_config(sdir)
+            if cfg is None:
+                partial.append(qual)
+                n_bad += 1
+                continue
+            got_any = False
+            for cell in CELLS:
+                for conc in CONCS:
+                    pf = perf(sdir, cell, conc)
+                    if pf is None:
+                        continue
+                    pf["accepted"] = accepted(sdir, cell, conc)
+                    if pf["accepted"] and pf["itl"]:
+                        pf["step"] = pf["itl"] * pf["accepted"]
+                    groups.setdefault(key_of(cfg, cell), {}).setdefault(conc, Group()).add(qual, pf)
+                    got_any = True
+            if got_any:
+                served.append(qual)
+                n_ok += 1
+            else:
+                partial.append(qual)
+                n_bad += 1
+        per_root.append((root, n_ok, n_bad))
 
-    if expected:
-        labels = expected
-    elif os.path.isdir(arm):
-        labels = sorted(d for d in os.listdir(arm) if os.path.isdir(f"{arm}/{d}"))
-    else:
-        labels = []
-
-    for label in labels:
-        sdir = f"{arm}/{label}"
-        cfg = read_config(sdir)
-        if cfg is None:
-            missing.append(label)
-            continue
-        got_any = False
-        for cell in CELLS:
-            for conc in CONCS:
-                pf = perf(sdir, cell, conc)
-                if pf is None:
-                    continue
-                pf["accepted"] = accepted(sdir, cell, conc)
-                if pf["accepted"] and pf["itl"]:
-                    pf["step"] = pf["itl"] * pf["accepted"]
-                groups.setdefault(key_of(cfg, cell), {}).setdefault(conc, Group()).add(label, pf)
-                got_any = True
-        (served if got_any else missing).append(label)
-
-    print(f"window : {args.root}")
+    for root, n_ok, n_bad in per_root:
+        print(f"window : {root}  ({n_ok} with data, {n_bad} empty/incomplete)")
     print(f"arm    : {args.arm}")
-    print(f"serves : {len(served)} with data, {len(missing)} missing/incomplete")
-    if missing:
-        print(f"         missing: {','.join(missing)}")
+    print(f"serves : {len(served)} with data, {len(partial)} empty/incomplete")
+    if partial:
+        print(f"         empty/incomplete: {','.join(partial)}")
     print("         (a partial window is expected while the allocation is live)\n")
 
     def grp(k, backend, drafter, kernel, cell, conc) -> Group | None:
@@ -266,7 +281,18 @@ def main() -> int:
             print(f"{key_str(key):44s} {conc:>3} {g.n:>2} | {g.mean('per_user'):9.1f} {sds:>6} | "
                   f"{g.mean('itl'):7.3f} | {accs} | {stps}")
 
-    out = {"root": args.root, "served": served, "missing": missing, "axes": {}}
+    # ---------------- provenance: which serves back each group ----------------
+    # With several roots pooled, an unaudited n is not evidence. Show the actual
+    # contributing serves so a wrong pooling is visible rather than averaged away.
+    print("\n" + "=" * 100)
+    print("REPLICATE PROVENANCE (conc 1; window/label of every serve in each group)")
+    print("=" * 100)
+    for key in sorted(groups, key=lambda x: (x[4], x[0], x[1], x[2], x[3])):
+        g = groups[key].get(1)
+        if g:
+            print(f"{key_str(key):44s} n={g.n} <- {', '.join(g.labels)}")
+
+    out = {"roots": args.root, "served": served, "partial": partial, "axes": {}}
 
     def show(title, rows):
         """rows: list of (label, base Group, cand Group, conc)"""

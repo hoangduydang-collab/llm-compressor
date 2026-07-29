@@ -304,13 +304,30 @@ acc_gate() {
   [ "$cell" = 8k-low ] || return 0
   [ "$k" -ge 5 ] || return 0
   local pre=$CUR/metrics/sb-$cell-c1-pre.txt post=$CUR/metrics/sb-$cell-c1-post.txt
-  [ -s "$pre" ] && [ -s "$post" ] || { note "$label WARN: no metrics for acceptance gate"; return 0; }
+  # An unverifiable k>=5 cell is not a pass. This gate is the ONLY numerics check in
+  # the arm -- a broken drafter kernel or a mis-served lm_head collapses acceptance
+  # toward 1.0 while ITL still looks plausible -- so "could not check" must be
+  # consequential rather than a warning.
+  # NOTE: the main loop calls acc_gate without reading $?, so `rc_all=1` (window exit
+  # code) plus the note is the effective signal; the return value is conventional
+  # only. This arm has no smoke serve, so there is nothing to abort early on.
+  if ! { [ -s "$pre" ] && [ -s "$post" ]; }; then
+    note "$label ABORT-LEVEL: no metrics for acceptance gate -- cannot verify numerics"
+    rc_all=1
+    return 1
+  fi
   local acc
   acc=$("$PYBIN" - "$pre" "$post" <<'PY'
 import re, sys
 def g(p, name):
     pat = re.compile(rf"^vllm:{name}(?:\{{.*?\}})?\s+([0-9.eE+]+)$", re.M)
-    return sum(float(v) for v in pat.findall(open(p).read())) or None
+    vals = pat.findall(open(p).read())
+    # NOT `sum(...) or None`: a fresh serve's spec-dec counters are a legitimate
+    # 0.0, and `0.0 or None` is None -- indistinguishable from "metric absent".
+    # That silently disabled this whole gate for every k>=5 cell (it reported
+    # "acceptance not computable" and returned 0), so the numerics floor enforced
+    # nothing for an entire window. Only an EMPTY match list means absent.
+    return sum(float(v) for v in vals) if vals else None
 pre, post = sys.argv[1], sys.argv[2]
 d0, a0 = g(pre, "spec_decode_num_drafts_total"), g(pre, "spec_decode_num_accepted_tokens_total")
 d1, a1 = g(post, "spec_decode_num_drafts_total"), g(post, "spec_decode_num_accepted_tokens_total")
@@ -318,7 +335,11 @@ print("" if None in (d0, a0, d1, a1) or d1 == d0 else f"{1 + (a1 - a0) / (d1 - d
 PY
 )
   printf '%s\n' "${acc:-unknown}" > "$CUR/accepted-$cell-c1.txt"
-  [ -n "$acc" ] || { note "$label WARN: acceptance not computable"; return 0; }
+  if [ -z "$acc" ]; then
+    note "$label ABORT-LEVEL: acceptance not computable (spec-dec counters absent or drafts==0)"
+    rc_all=1
+    return 1
+  fi
   awk -v a="$acc" -v m="$ACC_MIN" 'BEGIN{exit !(a >= m)}' \
     || { note "$label ABORT-LEVEL: accepted $acc < $m -- numerics suspect"; rc_all=1; return 1; }
   note "$label: accepted length $acc (>= $m)"

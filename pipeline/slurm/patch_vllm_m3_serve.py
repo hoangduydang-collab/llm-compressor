@@ -1297,6 +1297,86 @@ def _patch_breakable_capture_sync(text: str) -> tuple[str, bool, bool]:
     return new_text, True, True
 
 
+_TOPK_BUF_MARKER = "llmc M3 topk_indices_buffer layout fix"
+
+_TOPK_BUF_TOKEN_MAJOR = """            self.topk_indices_buffer = torch.empty(
+                padded_num_tokens,
+                num_index_heads,
+                sparse_cfg["sparse_topk_blocks"],
+                dtype=torch.int32,
+            )
+"""
+
+_TOPK_BUF_HEAD_MAJOR = """            self.topk_indices_buffer = torch.empty(
+                num_index_heads,
+                padded_num_tokens,
+                sparse_cfg["sparse_topk_blocks"],
+                dtype=torch.int32,
+            )
+"""
+
+_TOPK_BUF_REPLACEMENT = f'''            # {_TOPK_BUF_MARKER} (0.26.0 regression).
+            # 0.26.0 made this shared buffer token-major [T, H, K] for the rewritten
+            # SM100 MSA top-k (sparse_topk_select max_score_layout="THK"), but the
+            # Triton indexer and Triton attend -- the only impls selected off SM100 --
+            # still index it head-major:
+            #   indexer  minimax_m3_index_topk(..., out=buf[:, nd:, :])
+            #   attend   minimax_m3_sparse_attn_decode(..., topk[:, :nd, :])
+            # sparse_num_index_heads is 4 and is sharded as max(1, 4 // tp), so at
+            # TP4 *and* TP8 num_index_heads == 1. buf[:, nd:, :] with nd >= 1 then
+            # slices the HEAD axis away and yields a ZERO-element view whose base
+            # pointer is still advanced by one head stride; _topk_index_kernel takes
+            # its grid from score.shape rather than from out, so it writes through
+            # that view and the attend then dereferences garbage block ids outside
+            # the KV cache -> CUDA illegal memory access.
+            # Pure prefill has nd == 0 and pure decode passes buf unsliced, so writer
+            # and reader stay mutually consistent and concurrency 1 runs clean; only a
+            # MIXED prefill+decode batch breaks it. Keep token-major on SM100, where
+            # MSA is selected and token-major is the correct layout.
+            # See docs/m3-026-topk-buffer-layout.md.
+            from vllm.platforms import current_platform as _llmc_platform
+
+            if _llmc_platform.is_device_capability_family(100):
+                _llmc_topk_shape = (
+                    padded_num_tokens,
+                    num_index_heads,
+                    sparse_cfg["sparse_topk_blocks"],
+                )
+            else:
+                _llmc_topk_shape = (
+                    num_index_heads,
+                    padded_num_tokens,
+                    sparse_cfg["sparse_topk_blocks"],
+                )
+            self.topk_indices_buffer = torch.empty(
+                *_llmc_topk_shape,
+                dtype=torch.int32,
+            )
+'''
+
+
+def _patch_topk_indices_buffer_layout(text: str) -> tuple[str, bool, bool]:
+    """Restore head-major topk_indices_buffer off SM100 (vLLM 0.26.0 regression).
+
+    Root cause of the 0.26.0 illegal-memory-access that killed every M3 serve on
+    Hopper under concurrency, including plain k=0. Full analysis:
+    docs/m3-026-topk-buffer-layout.md.
+
+    NOT APPLICABLE vs LAYOUT CHANGED. 0.24.0 already allocates head-major, so the
+    token-major anchor is legitimately absent there and there is nothing to fix --
+    report found=True/changed=False so the overlay does not fail on the qualified
+    baseline. Only a file carrying *neither* known form means the code we patch
+    really moved, which is the case that must fail closed.
+    """
+    if _TOPK_BUF_MARKER in text:
+        return text, False, True
+    if _TOPK_BUF_TOKEN_MAJOR in text:
+        return text.replace(_TOPK_BUF_TOKEN_MAJOR, _TOPK_BUF_REPLACEMENT, 1), True, True
+    if _TOPK_BUF_HEAD_MAJOR in text:
+        return text, False, True
+    return text, False, False
+
+
 def _patch_moe_router_cudagraph(text: str) -> tuple[str, bool, bool]:
     """Sanitize NaN router logits at the real MoE routing entry (cudagraph padding).
 
@@ -1797,6 +1877,10 @@ def _patch_targets(vllm_dir: Path) -> list[tuple[str, Path, object]]:
         ("shared-experts record_stream guard", vllm_dir / "model_executor/layers/fused_moe/runner/shared_experts.py", _patch_shared_experts_record_stream),
         ("breakable-capture pre-cleanup sync", vllm_dir / "compilation/breakable_cudagraph.py", _patch_breakable_capture_sync),
         ("cudagraph MoE router", vllm_dir / "model_executor/layers/fused_moe/router/base_router.py", _patch_moe_router_cudagraph),
+        # Required, not optional: without it every 0.26.0 M3 serve on non-SM100 dies
+        # of an illegal memory access on the first mixed prefill+decode batch. It is
+        # a clean no-op on 0.24.0, which already allocates head-major.
+        ("M3 topk_indices_buffer layout", vllm_dir / "models/minimax_m3/nvidia/model.py", _patch_topk_indices_buffer_layout),
     ]
 
 

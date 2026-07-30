@@ -223,8 +223,35 @@ Graphs-on requires these, which the launcher sets for you:
 | `ENFORCE_EAGER` | `0` | Set to `1` **only** as an escape hatch if capture deadlocks — it skips capture entirely and changes the perf profile |
 
 Launcher defaults, if you override nothing: `TP=8`, `MAX_MODEL_LEN=8192`, `GPU_UTIL=0.9`,
-`KV_CACHE_DTYPE=fp8`, `BLOCK_SIZE=128`. Set `MAX_MODEL_LEN` explicitly for eval work —
-8192 is a smoke-test default, and the perf windows served at 131072.
+`KV_CACHE_DTYPE=fp8`, `BLOCK_SIZE=128`, `SERVE_VENV=…/venvs/quant`. Set `MAX_MODEL_LEN`
+explicitly for eval work — 8192 is a smoke-test default, and the perf windows served at
+131072.
+
+### Pick the MoE kernel — the launcher default is *not* the fast one
+
+⚠️ **`M3_W4A8_BACKEND` defaults to `cutlass`.** The qualified production kernel is
+**Humming indexed 0.1.10**, which is ~34% faster at concurrency 1 and is what every
+published perf number was measured on. Serve with the default and you get CUTLASS —
+about **102 tok/s/user instead of 137** — and you will not reproduce our numbers.
+
+```bash
+M3_W4A8_BACKEND=humming \
+CKPT="$CKPT" SERVED_NAME=MiniMaxAI/MiniMax-M3 PORT=8000 MAX_MODEL_LEN=65536 \
+LOG=serve.log PID_FILE=serve.pid \
+  bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+```
+
+With `M3_W4A8_BACKEND=humming` the launcher handles the rest: it adds
+`--quantization humming`, defaults `VLLM_HUMMING_MOE_GEMM_TYPE=indexed` and
+`VLLM_HUMMING_USE_F16_ACCUM=0`, applies the two Humming overlay edits (`--humming`), fixes
+up `LD_LIBRARY_PATH` for the NVRTC builtins that Humming's JIT `dlopen()`s by soname, and
+runs a **fail-closed backend attestation** — so a silent fall back to CUTLASS is not
+possible. On the `quant` venv, Humming 0.1.10 comes from a `PYTHONPATH` side-install; on
+`serve-026` it is merged in-venv.
+
+`VLLM_HUMMING_MOE_GEMM_TYPE=grouped_contiguous` is the other measured option; it is slower
+than `indexed` at low and mid load. Kernel choice is a serving knob only — it does not
+touch the checkpoint or output quality.
 
 **If you are driving the benchmarks repo**, do not hand-write the command — use the
 profile seam, which fails closed without its three inputs:
@@ -264,8 +291,9 @@ curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -
   "messages":[{"role":"user","content":"Name three prime numbers."}],
   "max_tokens":128}' | python -m json.tool
 
-# 4. Record the fingerprint that identifies this exact serving stack
-#    (printed in the server log; looks like vllm-0.24.0-tp8-ep-<hash>)
+# 4. Confirm which MoE kernel you actually got, and record the stack fingerprint
+grep -E 'w4a8-backend|enforce_eager|CUDAGraphMode' serve.log | head -3
+cat serve.log.humming-preflight.json 2>/dev/null   # exists only on Humming arms
 grep -o 'vllm-[0-9.]*-tp[0-9]*-ep-[a-f0-9]*' serve.log | head -1
 ```
 
@@ -285,6 +313,7 @@ Look up what you actually see. `BUGS_AND_FIXES.md` has the long-form post-mortem
 | `Free memory on device cuda:X ... less than gpu_memory_utilization` | Leftover workers from a crashed run holding ~70 GiB/GPU | `bash pipeline/slurm/free_gpus.sh` |
 | A CUDA error names a kernel that makes no sense | **CUDA errors are sticky** — the reported kernel is not the faulting one | Re-run with `CUDA_LAUNCH_BLOCKING=1` to pin the real site. Never trust the first-reported kernel |
 | Benchmark "passes" but numbers are absurd | Exit code ignored the fact that all requests failed | Gate on completed count |
+| Throughput ~25% below the published numbers | Served on **CUTLASS** — `M3_W4A8_BACKEND` defaults to `cutlass`, not the qualified Humming kernel | `M3_W4A8_BACKEND=humming`. Check the backend attestation in `serve.log.humming-preflight.json` |
 | Cross-node NCCL/gloo hangs at init | Hostnames don't route between nodes | `export NCCL_SOCKET_IFNAME=intranet` (and the gloo equivalent) |
 | Model won't load: expert-width error | The CUTLASS W4A8 MoE kernel needs each expert's `moe_intermediate_size` divisible by **256** | See [B4](#b4-pre-quantization-static-gates). Sharding cannot fix it; only padding or a scheme change |
 | Prompt-cache hit columns are blank | aiperf 0.11 reads `usage.prompt_tokens_details.cached_tokens`, which **vLLM 0.24 never emits** — prefix caching *is* on | Use warm-vs-cold deltas or server-counter diffing, not the usage field |
@@ -314,12 +343,15 @@ the mean ITL, and the two diverge by ~1% once speculative decoding adds per-requ
 Against the BF16 baseline (16 GPUs, 2 nodes): weights 225 GB vs 796 GB, and **0.68 vs
 2.61 GPU-hours per 1M tokens** — 3.8× cheaper.
 
-Two independent multipliers stack on top of the format choice:
+Two further multipliers stack on top of the format choice:
 
-- **MoE kernel.** Humming indexed 0.1.10 beats vLLM's CUTLASS W4A8 by **+34% at conc 1**
-  (137 vs 102 tok/s/user), compressing to +24–27% at conc 10. Requires the patched
-  Humming side-install on `PYTHONPATH`.
-- **Speculative decoding (EAGLE3).** A further 1.18–2.53× on top, workload-dependent:
+- **MoE kernel — already included in the table above.** Humming indexed 0.1.10 is the
+  qualified default kernel for `gptq-base` and beats vLLM's CUTLASS W4A8 by **+34% at
+  conc 1** (137 vs 102 tok/s/user), compressing to +24–27% at conc 10. You must opt in
+  with `M3_W4A8_BACKEND=humming` — see the warning in [A3](#a3-serve-it). If your
+  measured conc-1 number is ~102, you are on CUTLASS.
+- **Speculative decoding (EAGLE3) — not included above.** A further 1.18–2.53× on top,
+  workload-dependent:
   best case 345.9 tok/s/user for a single user on code-shaped work, floor 1.50× on loaded
   creative-writing traffic. **There is no single best draft depth** — the optimum moves
   with load and prompt entropy. Read `M3_OFFICIAL_SPECDEC_RESULTS.html` before enabling it.
@@ -333,9 +365,11 @@ Two independent multipliers stack on top of the format choice:
 If you publish a score, these must be recorded — this is a hard requirement of the repo's
 evaluation-harness contract, not a nicety.
 
-**Serving stack:** base vLLM version, overlay `--check` status, the `system_fingerprint`
-(`vllm-0.24.0-tp8-ep-<hash>`), checkpoint path **and** hash, TP/EP topology, graphs
-on/off, `--enforce-eager`.
+**Serving stack:** base vLLM version and serving venv, overlay `--check` status, the
+`system_fingerprint` (`vllm-0.24.0-tp8-ep-<hash>`), checkpoint path **and** hash, TP/EP
+topology, graphs on/off, **`M3_W4A8_BACKEND` and `VLLM_HUMMING_MOE_GEMM_TYPE`**
+(kernel choice alone moves throughput ~34%), `max_model_len`, and — if speculative
+decoding is on — the drafter and draft depth `k`.
 
 **Harness:** tokenizer and chat-template hashes, task aliases and harness version,
 few-shot counts, metrics, generation/sampling parameters, reasoning mode

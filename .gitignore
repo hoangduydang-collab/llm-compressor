@@ -838,3 +838,9 @@ uv.lock
 # aiperf stages public datasets (ShareGPT ~670 MB) under $CWD/.cache/aiperf/datasets.
 # Needed because the `!*.[Cc]ache/` negation above re-includes it despite `artifacts/`.
 artifacts/aiperf-datasets/
+
+# Kubeconfigs carry bearer tokens -- never commit them (live copies: ~/.kube/config,
+# /mnt/nfs/hoangduy/secrets/). A kubeconfig leaked to git history once (2026-07-30).
+*.kubeconfig.yaml
+infermesh-*.yaml
+kubeconfig*

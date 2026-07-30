@@ -168,6 +168,11 @@ def format_calibration_data(
     kwargs: dict[str, Any] = {}
     if num_workers > 0:
         kwargs["persistent_workers"] = True
+    # Shard the dataset across ranks BEFORE building the DataLoader. The old
+    # in-sampler partition rebound only a local variable, so the sampler's
+    # shard-relative indices were applied to the FULL dataset by the DataLoader
+    # and every rank silently calibrated on the same first-partition rows.
+    tokenized_dataset = _partition_dataset_for_dist(args, tokenized_dataset)
     return DataLoader(
         tokenized_dataset,
         batch_size=args.batch_size,
@@ -253,11 +258,9 @@ def _get_partition_start_end(
     return start, end
 
 
-def _make_sampler(args: DatasetArguments, dataset: Dataset) -> Sampler:
-    num_samples = args.num_calibration_samples
-    shuffle = args.shuffle_calibration_samples
-    batch_size = args.batch_size
-
+def _partition_dataset_for_dist(
+    args: DatasetArguments, dataset: Dataset
+) -> Dataset:
     # detect whether we're in a distributed setting
     # but all ranks have the same dataset.
     if _is_dist_and_same_ds(dataset):
@@ -265,11 +268,18 @@ def _make_sampler(args: DatasetArguments, dataset: Dataset) -> Sampler:
             "Detected distributed setting with identical datasets across ranks. "
             "partitioning dataset across ranks."
         )
-        num_samples = num_samples or len(dataset)
+        num_samples = args.num_calibration_samples or len(dataset)
         start, end = _get_partition_start_end(
             num_samples, dist.get_rank(), dist.get_world_size()
         )
         dataset = dataset.select(range(start, end))
+    return dataset
+
+
+def _make_sampler(args: DatasetArguments, dataset: Dataset) -> Sampler:
+    num_samples = args.num_calibration_samples
+    shuffle = args.shuffle_calibration_samples
+    batch_size = args.batch_size
 
     if num_samples is not None and num_samples > len(dataset):
         logger.warning(

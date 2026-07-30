@@ -1,7 +1,15 @@
 # Execution packet: M3 AWQ r6 requant (up->down fold removed) + stuck-item probe
 
+> **HISTORICAL — this packet has been executed and closed.** AWQ r6 was
+> produced, passed the stuck-item probe, and completed paired 64k evaluations on
+> GPQA-Diamond and IFEval. The up→down fold removal restored near-baseline
+> behavior: 98.7% and 98.6% recovery on the two tasks. Do not re-run this packet
+> as written. Current arm status and evidence pointers are in
+> `PROJECT_GOALS.md`, `docs/m3-benchmark-arms.md`, and
+> `M3_OFFICIAL_QUALITY_RESULTS.html`.
+
 - Protocol version: 1
-- State: READY_FOR_EXECUTOR
+- State: HISTORICAL (was READY_FOR_EXECUTOR)
 - Packet revision: 2026-07-23-r2 (r2: enable AWQ landscape telemetry via
   AWQ_LOG_LANDSCAPE_STATS=1 at launch; base commit updated to include it —
   supersedes r1; if the quant was already launched from r1, do NOT restart it

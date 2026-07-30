@@ -1,7 +1,14 @@
 # Execution packet: MiniMax-M3 native distributed quantization smoke
 
+> **HISTORICAL — this packet has been executed and superseded.** Native
+> distributed AWQ and GPTQ integration progressed beyond this representative
+> smoke into successful full calibrations. Do not launch the r7 authorization
+> below. Current measured costs and the remaining save/export bottleneck are
+> recorded in `M3_COLLABORATOR_GUIDE.md` §B3; the durable objective remains Goal
+> 1 in `PROJECT_GOALS.md`.
+
 - Protocol version: 1
-- State: `READY_FOR_EXECUTOR`
+- State: `HISTORICAL` (was `READY_FOR_EXECUTOR`)
 - Packet revision: `2026-07-17-r7`
 - Planner owner: full-stack agent (Claude)
 - Intended executor: full-stack agent (Claude)
@@ -13,15 +20,15 @@
   memory, complete evidence, and enough quantization-time improvement to justify
   a later full run of the quality-selected recipe?
 
-This is the single active packet for MiniMax-M3 quantization speed-up Phase 1.
-It supersedes the informal launch commands in `M3_QUANT_SPEEDUP_PLAN.md`; that
-document remains the rationale and history.
+This was the final active packet for MiniMax-M3 quantization speed-up Phase 1.
+It is retained as execution history. It no longer authorizes cluster work.
+`M3_QUANT_SPEEDUP_PLAN.md` remains the rationale and history.
 
-> **r6 execution notice:** The original r3/r4/r5 packets below are retained as
-> execution history and must not be launched again. The only current
-> authorization and executable command are in **Planner analysis and r6
-> GPTQ/AWQ authorization**
-> at the end of this file.
+> **Historical r6 execution notice:** The original r3/r4/r5 packets below and
+> the later r6/r7 authorization are retained as execution history and must not
+> be launched again. The section titled **Planner analysis and r6 GPTQ/AWQ
+> authorization** at the end of this file records the final command that was
+> authorized at the time; it is no longer active.
 
 ## Archived r3 packet (do not execute)
 

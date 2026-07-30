@@ -78,18 +78,21 @@ Last reviewed: 2026-07-29.
    dense path passes correctness and target-workload throughput gates. See
    `docs/superpowers/specs/2026-07-19-hopper-packed-nvfp4-w4a8-fallback-design.md`.
 
-7. **Native Humming W4A8 serving on Hopper** — *Active: implementation planned.*
-   Qualify Humming's existing GPTQ W4A8 path as a possible faster backend for
-   the in-house MiniMax-M3 checkpoint on H100. Preserve packed INT4 group-128
-   weights, dynamic per-token E4M3 activations, TP8 plus expert parallelism,
-   graphs-on serving, and the existing production benchmark contract. CUTLASS
-   remains the default until Humming passes fail-closed backend attestation,
-   correctness, stability, and the paired performance decision. See
+7. **Native Humming W4A8 serving on Hopper** — *DONE (2026-07-26).*
+   Humming's existing GPTQ W4A8 path is qualified and adopted for the in-house
+   MiniMax-M3 checkpoint on H100. The qualified stack preserves packed INT4
+   group-128 weights, dynamic per-token E4M3 activations, TP8 plus expert
+   parallelism, graphs-on serving, and the production benchmark contract.
+   Indexed Humming 0.1.10 passed fail-closed backend attestation, correctness,
+   and stability qualification, then beat CUTLASS by about 34% at concurrency 1
+   in the paired serving benchmark. It is now the default kernel for the
+   serve-ready `gptq-base` arm. See `M3_HUMMING_W4A8_QUALIFICATION_REPORT.md`,
+   `docs/m3-two-axis-perf.md`, and
    `docs/superpowers/specs/2026-07-25-minimax-m3-humming-native-w4a8-backend-design.md`.
 
 ## Current session focus
 
-**Goal 7.** Goals 1 and 2 remain active long-term work, while Goal 6 remains an
-approved benchmark-gated future project. The immediate objective is qualifying
-Humming as a native W4A8 serving backend without changing the checkpoint or
-benchmark contract.
+**Goals 1 and 2.** Goal 7 is complete. The remaining near-term work is improving
+the save/export portion of distributed quantization and completing the missing
+seven-task breadth evaluation for the quality-clean AWQ recipe. Goal 6 remains
+an approved benchmark-gated future project.

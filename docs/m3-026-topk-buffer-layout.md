@@ -70,17 +70,19 @@ that upstream's M3 coverage is Blackwell, where token-major is the correct layou
 
 ## The fix
 
-`pipeline/slurm/fix_m3_topk_buffer_layout.py` — restore head-major off SM100 (what
-the Triton impls require), keep upstream's token-major on SM100 (where MSA is
-selected). Idempotent, fail-closed, distinguishes *not applicable* (0.24.0, already
-head-major) from *moved anchor*. Verified a no-op against `quant` (0.24.0) and
+`pipeline/slurm/fix_m3_topk_buffer_layout.py` first shipped the fix standalone:
+restore head-major off SM100 (what the Triton impls require), while retaining
+upstream's token-major layout on SM100 (where MSA is selected). It is idempotent
+and fail-closed, distinguishes *not applicable* (0.24.0, already head-major)
+from a *moved anchor*, and was verified as a no-op against `quant` (0.24.0) and
 `serve` (0.23.1).
 
-Shipped standalone rather than as a `patch_vllm_m3_serve.py` target **because that
-patcher is re-run per serve by live benchmark windows**; adding a target mid-window
-already cost the `L0-hum-k0-r3` replicate on 2026-07-28. **TODO: fold it into the
-patcher once no window is running** — until then a `serve-026` rebuild silently
-loses the fix.
+The fix is now also a required target in
+`pipeline/slurm/patch_vllm_m3_serve.py` (commit `ccef9936`), so the normal
+per-serve overlay preserves it after a `serve-026` rebuild. The standalone
+patcher remains useful for diagnosis and explicit repair. It was initially kept
+separate because changing the live per-serve patch set mid-window had already
+cost the `L0-hum-k0-r3` replicate on 2026-07-28.
 
 ### Verification
 

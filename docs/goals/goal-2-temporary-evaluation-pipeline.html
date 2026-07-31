@@ -129,7 +129,7 @@
   <main>
     <article>
 
-      <nav class="toc"><span class="lbl">Contents</span><a href="#purpose">01 Purpose</a><a href="#quality">02 Quality results</a><a href="#performance">03 Performance results</a><a href="#available">04 Harness of record</a><a href="#historical">05 Historical</a><a href="#ledger">06 Evidence</a></nav>
+      <nav class="toc"><span class="lbl">Contents</span><a href="#purpose">01 Purpose</a><a href="#quality">02 Quality results</a><a href="#specdec">03 Speculative decoding</a><a href="#performance">04 Performance results</a><a href="#available">05 Harness of record</a><a href="#historical">06 Historical</a><a href="#appendix">07 Appendix</a><a href="#ledger">08 Evidence</a></nav>
 
       <section id="purpose">
         <h2><span class="number">01 / Purpose</span>Comparable model-to-model evidence</h2>
@@ -144,6 +144,7 @@
           <li class="done">2e · Second quant track — W2A16 vs BF16 paired A/B (GPQA + IFEval, harness check PASS) <span class="wk">wk Jul 27–Aug 02</span></li>
           <li class="done">2f · Collaborator front door — <code>M3_COLLABORATOR_GUIDE.md</code>, every Part-A command executed end-to-end <span class="wk">wk Jul 27–Aug 02</span></li>
           <li class="open">2g · Seven-task breadth run for the quality-clean AWQ r6 recipe (in-house GPTQ still holds the sole full-breadth verdict)</li>
+          <li class="done">2h · Speculative-decoding tuning study — 1.21–2.53× decode speedup on the in-house 4-bit model, no quality cost <span class="wk">wk Jul 27–Aug 02</span></li>
         </ul>
       </section>
 
@@ -163,7 +164,23 @@
             </tbody>
           </table>
         </div>
-        <h3>Newest (23–24 July) · deep-reasoning A/B at 64k tokens</h3>
+        <h3>Newest (31 July) · 2-bit vs baseline A/B on a second quant track (Qwen3-30B MoE)</h3>
+        <p>The same paired protocol, applied to the program's first 2-bit checkpoint (Goal 4). Verdict: <strong>not usable at the smoke-tier tuning budget</strong> — the pipeline's gates blocked it exactly as designed. A longer-tuning retry is queued (4c).</p>
+        <div class="table-scroll">
+          <table>
+            <caption>W2A16 vs BF16 paired A/B · greedy decoding, 4,096-token budget · 31 July 2026</caption>
+            <thead><tr><th>Metric</th><th class="num">BF16</th><th class="num">2-bit (W2A16)</th><th class="num">Delta</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA-Diamond (exact match)</td><td class="num">0.54</td><td class="num worst">0.24</td><td class="num worst">−0.30</td></tr>
+              <tr><td>IFEval (strict accuracy)</td><td class="num">0.84</td><td class="num worst">0.45</td><td class="num worst">−0.39</td></tr>
+              <tr><td>GPQA answers hitting the token cap</td><td class="num">52%</td><td class="num worst">81%</td><td class="num">+29 pts</td></tr>
+              <tr><td>IFEval answers hitting the token cap</td><td class="num">0%</td><td class="num worst">32%</td><td class="num">+32 pts</td></tr>
+              <tr><td>IFEval token spend</td><td class="num">1.00×</td><td class="num worst">3.44×</td><td class="num"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Failure mode: the 2-bit model falls into verbatim repetition loops — the same <em>thinking forever</em> signature the harness caught on AWQ r5. Both arms' GPQA absolute scores are depressed by the 4,096-token budget; the paired deltas are the decision signal.</p>
+        <h3>23–24 July · deep-reasoning A/B at 64k tokens (MiniMax-M3)</h3>
         <p>The hardest test: long reasoning with a 64k-token budget, deterministic decoding, scored side by side per question. This is what caught the AWQ r5 defect and confirmed its fix (r6). A broken quant fails by <em>thinking forever</em>, not just scoring lower — exhaustion rate and token spend are the early-warning metrics.</p>
         <div class="table-scroll">
           <table>
@@ -195,11 +212,78 @@
             </tbody>
           </table>
         </div>
-        <p>Full data (every arm, per-question flip analysis, sampling probes): <a href="../../M3_OFFICIAL_QUALITY_RESULTS.html">M3_OFFICIAL_QUALITY_RESULTS.html</a>. Same protocol on a second family: <a href="../../GLM52_OFFICIAL_EVAL_RESULTS.html">GLM52_OFFICIAL_EVAL_RESULTS.html</a>.</p>
+        <h3>22–23 July · second model family (GLM-5.2, three arms)</h3>
+        <p>The same paired protocol on a different 753B-parameter model, comparing the vendor's FP8 release and a community 4-bit (W4AFP8) checkpoint that was <em>also produced with AWQ</em> — a direct test of whether the M3 AWQ failure is a general AWQ problem. It is not: both quants recover 96–105% on all seven tasks, every difference inside the noise band.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>GLM-5.2 · seven tasks · recovery vs BF16 · run 22–23 July 2026</caption>
+            <thead><tr><th>Task</th><th class="num">BF16 (abs.)</th><th class="num">FP8 (vendor)</th><th class="num">W4AFP8 (community, AWQ)</th></tr></thead>
+            <tbody>
+              <tr><td>GSM8K</td><td class="num">0.958</td><td class="num">98.5%</td><td class="num">99.3%</td></tr>
+              <tr><td>IFEval</td><td class="num">0.882</td><td class="num">100.0%</td><td class="num">99.6%</td></tr>
+              <tr><td>GPQA-Diamond</td><td class="num">0.717</td><td class="num">99.3%</td><td class="num best">101.4%</td></tr>
+              <tr><td>MMLU</td><td class="num">0.448</td><td class="num">105.3%</td><td class="num">99.1%</td></tr>
+              <tr><td>ARC-Challenge</td><td class="num">0.466</td><td class="num">101.8%</td><td class="num">102.4%</td></tr>
+              <tr><td>HellaSwag</td><td class="num">0.755</td><td class="num">100.1%</td><td class="num">100.7%</td></tr>
+              <tr><td>TruthfulQA-mc2</td><td class="num">0.598</td><td class="num">101.1%</td><td class="num">96.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The three early-warning signals that convicted M3's broken AWQ recipe all come back healthy on GLM-5.2 — so "AWQ breaks reasoning models" is the wrong lesson; the M3 failure was one model × recipe interaction, since fixed:</p>
+        <div class="table-scroll">
+          <table>
+            <caption>The M3 failure fingerprint, checked on GLM-5.2</caption>
+            <thead><tr><th>Signal</th><th class="num">M3 · broken AWQ (r5)</th><th class="num">GLM-5.2 · AWQ-produced W4AFP8</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA recovery</td><td class="num worst">70.2%</td><td class="num best">101.4%</td></tr>
+              <tr><td>GPQA answers lost / gained</td><td class="num worst">53 / 5 (one-sided)</td><td class="num">15 / 17 (symmetric)</td></tr>
+              <tr><td>GPQA token spend</td><td class="num worst">2.19×</td><td class="num best">0.86×</td></tr>
+              <tr><td>GPQA budget exhaustion</td><td class="num worst">38.9% (baseline 12.6%)</td><td class="num best">17.2% (baseline 21.2%)</td></tr>
+              <tr><td>IFEval token spend</td><td class="num worst">3.69×</td><td class="num best">0.89×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Full data (every arm, per-question flip analysis, sampling probes): <a href="../../M3_OFFICIAL_QUALITY_RESULTS.html">M3_OFFICIAL_QUALITY_RESULTS.html</a> · <a href="../../GLM52_OFFICIAL_EVAL_RESULTS.html">GLM52_OFFICIAL_EVAL_RESULTS.html</a>. More quality tables: <a href="#appendix">appendix</a>.</p>
+      </section>
+
+      <section id="specdec">
+        <h2><span class="number">03 / Results · speculative decoding</span>Up to 2.5× faster decoding, free of quality risk</h2>
+        <p><strong>Newest (27–29 July).</strong> Speculative decoding pairs the full model with a small "drafter" that proposes several tokens per step; the full model then verifies them all at once. Every token is still checked by the full model, so <strong>output quality is untouched by construction</strong> — the only question is speed. It is the single largest decode-speed lever measured in this program, larger than any kernel or quantization change below.</p>
+        <p>The size of the win is set by <em>what the model is writing</em> — predictable content (code, structured output) drafts easily, creative prose does not — and not by prompt length or load:</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Per-user decode speed with speculation, by traffic type · in-house 4-bit model, one 8-GPU node · off-the-shelf community drafter, quantized to 4-bit in-house</caption>
+            <thead><tr><th>Traffic</th><th class="num">Users</th><th>Best draft depth</th><th class="num">Speed per user, with vs without</th><th class="num">Speedup</th></tr></thead>
+            <tbody>
+              <tr><td>Code / structured</td><td class="num">1</td><td>6 tokens</td><td class="num best">346 vs 137 tok/s</td><td class="num best">2.53×</td></tr>
+              <tr><td>Code / structured</td><td class="num">10</td><td>5 tokens + fast drafter kernel</td><td class="num best">155 vs 75 tok/s</td><td class="num best">2.07×</td></tr>
+              <tr><td>Mixed real chat</td><td class="num">1</td><td>3 tokens</td><td class="num">250 vs 138 tok/s</td><td class="num">1.81×</td></tr>
+              <tr><td>Creative writing</td><td class="num">1</td><td>2 tokens</td><td class="num">186 vs 137 tok/s</td><td class="num">1.36×</td></tr>
+              <tr><td>Creative writing</td><td class="num">10</td><td>2 tokens</td><td class="num">97 vs 81 tok/s</td><td class="num">1.21×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Server capacity rises alongside per-user speed — at ten users on code the same 8 GPUs go from ~706 to ~1,428 total output tok/s — so this is not a latency-for-throughput trade. And the drafter accepts our 4-bit model's guidance exactly as well as the vendor's own 8-bit release, while our stack is 22–40% faster in absolute terms in every measured cell.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>The three tuning levers, in order of value</caption>
+            <thead><tr><th>Lever</th><th>Recommendation</th><th class="num">Worth</th></tr></thead>
+            <tbody>
+              <tr><td>Draft depth (tokens proposed per step)</td><td>Tune per traffic class: 5–6 for code, 2 for creative writing — the reference default (3) is wrong for both</td><td class="num best">up to ~12%</td></tr>
+              <tr><td>Drafter kernel</td><td>Switch the drafter to the Humming kernel only under load</td><td class="num">+2.3% at 10 users; nothing at 1</td></tr>
+              <tr><td>Drafter precision</td><td>Serve the 4-bit drafter — free in draft quality, never hurts</td><td class="num">~2.6% single-user, &lt;1% under load</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warning">
+          <h3>Caveats</h3>
+          <p>Prefill-dominated traffic (long prompts, short answers) gains almost nothing — speculation accelerates the writing, not the reading. Numbers come from NVIDIA's SPEED-Bench (clean subset) and support configuration decisions, not leaderboard comparison. All conclusions were hardened by a replicated re-measurement (35 serves on one node, 29 July) that corrected three earlier readings.</p>
+        </div>
+        <p>Full study: <a href="../../M3_OFFICIAL_SPECDEC_RESULTS.html">M3_OFFICIAL_SPECDEC_RESULTS.html</a>; complete write-up: <a href="../m3-specdec-eagle3.md">docs/m3-specdec-eagle3.md</a>. Detailed sweeps: <a href="#appendix">appendix</a>.</p>
       </section>
 
       <section id="performance">
-        <h2><span class="number">03 / Results · performance</span>How fast it serves, and what it costs</h2>
+        <h2><span class="number">04 / Results · performance</span>How fast it serves, and what it costs</h2>
         <p>Serving throughput across the ready models, from the 26 July paired rerun. At concurrency 1 the number is one user’s speed — what a person actually feels: <strong>137 tok/s</strong> on the lead model vs 81 for the unquantized baseline. The in-house GPTQ + fast kernel leads every load level.</p>
         <div class="table-scroll">
           <table>
@@ -224,11 +308,31 @@
             </tbody>
           </table>
         </div>
-        <p>The fast kernel itself (~34% single-user gain, qualified with fail-closed checks) is <a href="goal-7-native-humming-w4a8.html">Goal 7</a>. Full data: <a href="../../M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a> and <a href="../m3-two-axis-perf.md">docs/m3-two-axis-perf.md</a>.</p>
+        <h3>Against the market</h3>
+        <p>On the matched single-user workload shape, our 4-bit model decodes faster than every commercial MiniMax-M3 endpoint but one (Nebius, whose lead comes from a serving-stack tier — newer silicon plus speculative decoding — that would stack on our checkpoint too). Provider numbers carry live multi-tenant load, so read this as same-ballpark placement, not a ranking.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Single-user decode speed vs commercial MiniMax-M3 endpoints · matched workload shape</caption>
+            <thead><tr><th>Endpoint</th><th class="num">Speed per user (tok/s)</th></tr></thead>
+            <tbody>
+              <tr><td>Nebius (FP8)</td><td class="num">197</td></tr>
+              <tr><td>Ours · in-house 4-bit + fast kernel</td><td class="num best">137</td></tr>
+              <tr><td>Ours · vendor MXFP8</td><td class="num">107</td></tr>
+              <tr><td>Together AI</td><td class="num">97</td></tr>
+              <tr><td>MiniMax first-party</td><td class="num">95</td></tr>
+              <tr><td>Novita</td><td class="num">94</td></tr>
+              <tr><td>SiliconFlow</td><td class="num">92</td></tr>
+              <tr><td>Ours · BF16 baseline (16 GPUs)</td><td class="num">81</td></tr>
+              <tr><td>Parasail</td><td class="num worst">66</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Two operational headlines from the same window: the in-house model holds a <strong>1-second p95 first-token SLO up to 16 concurrent agentic users</strong> (the vendor MXFP8 and community arms miss it), and it still decodes at <strong>131 tok/s with a 100k-token prompt</strong>.</p>
+        <p>The fast kernel itself (~34% single-user gain, qualified with fail-closed checks) is <a href="goal-7-native-humming-w4a8.html">Goal 7</a>. Full data: <a href="../../M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a> and <a href="../m3-two-axis-perf.md">docs/m3-two-axis-perf.md</a>. More performance tables: <a href="#appendix">appendix</a>.</p>
       </section>
 
       <section id="available">
-        <h2><span class="number">04 / Harness of record</span>The official pipeline is now the harness of record</h2>
+        <h2><span class="number">05 / Harness of record</span>The official pipeline is now the harness of record</h2>
         <p>The migration finished: MiniMax-M3 runs on the team's <strong>official evaluation pipeline</strong> (<code>AICloud/benchmarks</code> — lm-eval <code>0.4.10</code> over its API backend against a self-deployed, pinned vLLM 0.24.0 endpoint). On it, the in-house GPTQ arm earned a <strong>seven-task breadth verdict</strong> (recovery 97.4–101.1% on all seven tasks, token spend within 2% of BF16), published in <code>M3_OFFICIAL_QUALITY_RESULTS.html</code>. Because the official pipeline uses different tasks, greedy decoding, and loglikelihood multiple-choice scoring, its numbers are <em>not</em> comparable to the stopgap table above.</p>
         <div class="callout">
           <h3>Since generalized beyond MiniMax-M3</h3>
@@ -237,7 +341,7 @@
       </section>
 
       <section id="historical">
-        <h2><span class="number">05 / Historical · wk Jul 13–19</span>The first four-way comparison (interim harness)</h2>
+        <h2><span class="number">06 / Historical · wk Jul 13–19</span>The first four-way comparison (interim harness)</h2>
         <p>Scores are <strong>mean pass@1 over three generation seeds (42, 1234, 4158)</strong>, generation-based, on seeded stratified subsets: <strong>GPQA-Diamond 100, MMLU-Pro 100, GSM8K-CoT 100, AIME25 30</strong> questions. Higher is better; the best model per row is shaded.</p>
         <div class="table-scroll">
           <table>
@@ -268,13 +372,263 @@
         <p>The preflight contract pins the sample manifest, tokenizer, chat template, rendered prompts, and evaluation config. Cross-run gates require those inputs to match before scores are compared.</p>
       </section>
 
+      <section id="appendix">
+        <h2><span class="number">07 / Appendix</span>Detailed results tables</h2>
+        <p>Everything above is the decision view; the tables below carry the full detail behind it, grouped to match the main sections. Sources are the same official reports listed under <a href="#ledger">Evidence</a>.</p>
+
+        <h3>A1 · Quality detail (MiniMax-M3)</h3>
+        <p><strong>Score and budget exhaustion at the 64k budget, all arms.</strong> "Exhausted" = the answer hit the 64k generation ceiling without finishing; even the baseline has a ~12% hard core on GPQA, so the signal is the excess above it.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Score &amp; budget exhaustion at 64k · all arms</caption>
+            <thead><tr><th>Arm</th><th class="num">GPQA score</th><th class="num">GPQA exhausted</th><th class="num">IFEval score</th><th class="num">IFEval exhausted</th></tr></thead>
+            <tbody>
+              <tr><td>BF16 (baseline)</td><td class="num">0.803</td><td class="num">12.6%</td><td class="num">0.893</td><td class="num">0.9%</td></tr>
+              <tr><td>In-house GPTQ</td><td class="num">0.803</td><td class="num">11.6%</td><td class="num">0.874</td><td class="num">1.1%</td></tr>
+              <tr><td>Vendor MXFP8</td><td class="num">0.828</td><td class="num">7.6%</td><td class="num">0.885</td><td class="num">1.3%</td></tr>
+              <tr><td>In-house AWQ r5</td><td class="num worst">0.576</td><td class="num worst">38.9%</td><td class="num">0.811</td><td class="num worst">9.2%</td></tr>
+              <tr><td>In-house AWQ r6</td><td class="num">0.793</td><td class="num">14.7%</td><td class="num">0.880</td><td class="num">1.5%</td></tr>
+              <tr><td>In-house AWQ r7</td><td class="num best">0.838</td><td class="num best">10.6%</td><td class="num">0.854</td><td class="num">1.9%</td></tr>
+              <tr><td>Community AWQ (cyankiwi)</td><td class="num worst">0.455</td><td class="num worst">55.6%</td><td class="num worst">0.782</td><td class="num worst">13.7%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Token spend per arm (× BF16, same prompts, 64k budget).</strong> A healthy quant spends what the baseline spends; a broken one thinks in circles.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Completion-token spend relative to BF16</caption>
+            <thead><tr><th>Arm</th><th class="num">GPQA spend</th><th class="num">IFEval spend</th></tr></thead>
+            <tbody>
+              <tr><td>In-house GPTQ</td><td class="num best">1.01×</td><td class="num best">1.02×</td></tr>
+              <tr><td>Vendor MXFP8</td><td class="num">0.80×</td><td class="num">1.08×</td></tr>
+              <tr><td>In-house AWQ r5</td><td class="num worst">2.19×</td><td class="num worst">3.69×</td></tr>
+              <tr><td>In-house AWQ r6</td><td class="num">1.13×</td><td class="num">1.17×</td></tr>
+              <tr><td>In-house AWQ r7</td><td class="num">0.93×</td><td class="num">1.25×</td></tr>
+              <tr><td>Community AWQ (cyankiwi)</td><td class="num worst">3.06×</td><td class="num worst">5.09×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Answer-level churn (right→wrong / wrong→right vs the baseline).</strong> Direction separates noise from damage: GPTQ and MXFP8 flip roughly symmetrically; the broken AWQ r5 loses one-sidedly, most extreme on GPQA.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Flips vs BF16 · ✗ = right→wrong, ✓ = wrong→right</caption>
+            <thead><tr><th>Task (questions)</th><th class="num">GPTQ ✗/✓</th><th class="num">MXFP8 ✗/✓</th><th class="num">AWQ r5 ✗/✓</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA (198)</td><td class="num">8 / 7</td><td class="num">10 / 7</td><td class="num worst">53 / 5</td></tr>
+              <tr><td>IFEval (541)</td><td class="num">34 / 27</td><td class="num">31 / 19</td><td class="num">57 / 24</td></tr>
+              <tr><td>MMLU (14,042)</td><td class="num">971 / 695</td><td class="num">622 / 666</td><td class="num">1,416 / 761</td></tr>
+              <tr><td>GSM8K (1,319)</td><td class="num">26 / 27</td><td class="num">17 / 21</td><td class="num">59 / 25</td></tr>
+              <tr><td>HellaSwag (10,042)</td><td class="num">199 / 153</td><td class="num">118 / 137</td><td class="num">400 / 241</td></tr>
+              <tr><td>ARC (1,172)</td><td class="num">37 / 43</td><td class="num">38 / 31</td><td class="num">60 / 53</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Every metric through the AWQ fix (r5 → r6/r7), 64k budget.</strong></p>
+        <div class="table-scroll">
+          <table>
+            <caption>The AWQ fix, all metrics</caption>
+            <thead><tr><th>Metric</th><th class="num">BF16</th><th class="num">AWQ r5</th><th class="num">AWQ r6</th><th class="num">AWQ r7</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA score</td><td class="num">0.803</td><td class="num worst">0.576</td><td class="num">0.793</td><td class="num best">0.838</td></tr>
+              <tr><td>GPQA recovery</td><td class="num">—</td><td class="num worst">71.7%</td><td class="num">98.7%</td><td class="num best">104.4%</td></tr>
+              <tr><td>GPQA exhausted</td><td class="num">12.6%</td><td class="num worst">38.9%</td><td class="num">14.7%</td><td class="num best">10.6%</td></tr>
+              <tr><td>GPQA token spend</td><td class="num">1.00×</td><td class="num worst">2.19×</td><td class="num">1.13×</td><td class="num best">0.93×</td></tr>
+              <tr><td>GPQA flips ✗/✓</td><td class="num">—</td><td class="num worst">50 / 5</td><td class="num">11 / 9</td><td class="num">9 / 16</td></tr>
+              <tr><td>IFEval score</td><td class="num">0.893</td><td class="num worst">0.811</td><td class="num best">0.880</td><td class="num">0.854</td></tr>
+              <tr><td>IFEval recovery</td><td class="num">—</td><td class="num worst">90.9%</td><td class="num best">98.6%</td><td class="num">95.7%</td></tr>
+              <tr><td>IFEval exhausted</td><td class="num">0.9%</td><td class="num worst">9.2%</td><td class="num best">1.5%</td><td class="num">1.9%</td></tr>
+              <tr><td>IFEval token spend</td><td class="num">1.00×</td><td class="num worst">3.69×</td><td class="num best">1.17×</td><td class="num">1.25×</td></tr>
+              <tr><td>IFEval flips ✗/✓</td><td class="num">—</td><td class="num worst">62 / 18</td><td class="num">29 / 22</td><td class="num">37 / 16</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Sampling probe on the hardest (previously stuck) GPQA questions.</strong> Re-runs the exact 50 questions where each arm had hit the budget, under greedy and under the vendor's recommended sampling. The fixed recipe (r6) is the only arm that improves on both decoding modes and is nearly always right when it finishes; the community AWQ stays stuck either way.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Sampling probe · exhausted GPQA subset</caption>
+            <thead><tr><th>Arm</th><th class="num">Greedy non-termination</th><th class="num">Sampled non-termination</th><th class="num">Greedy correct</th><th class="num">≥1 correct in 3 draws</th><th class="num">Correct when it finishes</th></tr></thead>
+            <tbody>
+              <tr><td>BF16 (control)</td><td class="num">64.0%</td><td class="num">62.7%</td><td class="num">36%</td><td class="num">44%</td><td class="num">86%</td></tr>
+              <tr><td>GPTQ (control)</td><td class="num">52.2%</td><td class="num">58.0%</td><td class="num">30%</td><td class="num">57%</td><td class="num">90%</td></tr>
+              <tr><td>AWQ r5</td><td class="num">76.0%</td><td class="num">49.3%</td><td class="num">24%</td><td class="num">60%</td><td class="num">83%</td></tr>
+              <tr><td>AWQ r6</td><td class="num best">46.0%</td><td class="num best">44.0%</td><td class="num best">52%</td><td class="num best">66%</td><td class="num best">95%</td></tr>
+              <tr><td>Community AWQ</td><td class="num worst">94.0%</td><td class="num worst">87.3%</td><td class="num worst">6%</td><td class="num worst">12%</td><td class="num worst">32%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>A2 · Quality detail (GLM-5.2, second family)</h3>
+        <p><strong>Answer-level churn.</strong> Both GLM-5.2 quants flip symmetrically — churn, not directional damage (compare M3's broken AWQ at 53 lost / 5 gained).</p>
+        <div class="table-scroll">
+          <table>
+            <caption>GLM-5.2 flips vs BF16</caption>
+            <thead><tr><th>Task (questions)</th><th class="num">FP8 ✗/✓</th><th class="num">W4AFP8 ✗/✓</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA (198)</td><td class="num">19 / 18</td><td class="num">15 / 17</td></tr>
+              <tr><td>IFEval (541)</td><td class="num">25 / 25</td><td class="num">27 / 25</td></tr>
+              <tr><td>GSM8K (1,319)</td><td class="num">30 / 11</td><td class="num">30 / 21</td></tr>
+              <tr><td>MMLU (14,042)</td><td class="num">1,156 / 1,489</td><td class="num">1,784 / 1,730</td></tr>
+              <tr><td>HellaSwag (10,042)</td><td class="num">244 / 252</td><td class="num">279 / 331</td></tr>
+              <tr><td>ARC (1,172)</td><td class="num">45 / 55</td><td class="num">49 / 62</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Token spend and budget exhaustion at 64k.</strong> About 1 in 5 GPQA questions never finishes under this protocol on <em>any</em> arm, baseline included — the censoring binds all arms equally.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>GLM-5.2 spend distribution &amp; exhaustion</caption>
+            <thead><tr><th>Task · arm</th><th class="num">Mean tokens</th><th class="num">Median</th><th class="num">Exhausted</th><th class="num">Spend × BF16</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA · BF16</td><td class="num">18,985</td><td class="num">5,381</td><td class="num">21.2%</td><td class="num">1.00×</td></tr>
+              <tr><td>GPQA · FP8</td><td class="num">18,718</td><td class="num">4,871</td><td class="num">21.7%</td><td class="num">0.99×</td></tr>
+              <tr><td>GPQA · W4AFP8</td><td class="num">16,410</td><td class="num">4,627</td><td class="num best">17.2%</td><td class="num best">0.86×</td></tr>
+              <tr><td>IFEval · BF16</td><td class="num">5,781</td><td class="num">1,299</td><td class="num">6.5%</td><td class="num">1.00×</td></tr>
+              <tr><td>IFEval · FP8</td><td class="num">5,475</td><td class="num">1,331</td><td class="num">5.9%</td><td class="num">0.95×</td></tr>
+              <tr><td>IFEval · W4AFP8</td><td class="num">5,144</td><td class="num">1,250</td><td class="num best">5.4%</td><td class="num best">0.89×</td></tr>
+              <tr><td>GSM8K · BF16</td><td class="num">1,132</td><td class="num">428</td><td class="num">0.9%</td><td class="num">1.00×</td></tr>
+              <tr><td>GSM8K · FP8</td><td class="num">1,225</td><td class="num">439</td><td class="num">1.1%</td><td class="num">1.08×</td></tr>
+              <tr><td>GSM8K · W4AFP8</td><td class="num">1,272</td><td class="num">444</td><td class="num">1.1%</td><td class="num">1.12×</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>A3 · Speculative-decoding detail</h3>
+        <p><strong>Draft-depth sweep, code/structured content.</strong> "Accepted" = tokens kept per draft-verify step. Speed keeps rising until the extra drafting work outweighs the extra accepted tokens; the knee is at depth 5–6.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Draft depth · code tier · 1 and 10 users</caption>
+            <thead><tr><th>Depth</th><th class="num">Accepted (1 user)</th><th class="num">Speed, 1 user</th><th class="num">Speedup</th><th class="num">Accepted (10 users)</th><th class="num">Speed per user, 10 users</th><th class="num">Speedup</th></tr></thead>
+            <tbody>
+              <tr><td>off</td><td class="num">—</td><td class="num">136.8 tok/s</td><td class="num">1.00×</td><td class="num">—</td><td class="num">74.8 tok/s</td><td class="num">1.00×</td></tr>
+              <tr><td>5</td><td class="num">3.82</td><td class="num">334.1</td><td class="num">2.43×</td><td class="num">3.86</td><td class="num best">153.5</td><td class="num best">2.05×</td></tr>
+              <tr><td>6</td><td class="num">4.11</td><td class="num best">341.6</td><td class="num best">2.50×</td><td class="num">4.08</td><td class="num">149.7</td><td class="num">1.94×</td></tr>
+              <tr><td>7</td><td class="num">4.22</td><td class="num">339.2</td><td class="num">2.48×</td><td class="num">4.31</td><td class="num">152.4</td><td class="num">1.97×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><em>Speedups in the two sweep tables are measured on decode latency, so they can differ by a few percent from the headline table's speed-per-user ratios.</em></p>
+        <p><strong>Draft-depth sweep, creative writing.</strong> Acceptance is much lower, so the optimum is shallow — depth 2, not the reference default of 3.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Draft depth · creative tier · 1 and 10 users</caption>
+            <thead><tr><th>Depth</th><th class="num">Accepted (1 user)</th><th class="num">Speed, 1 user</th><th class="num">Speedup</th><th class="num">Accepted (10 users)</th><th class="num">Speed per user, 10 users</th><th class="num">Speedup</th></tr></thead>
+            <tbody>
+              <tr><td>off</td><td class="num">—</td><td class="num">136.8 tok/s</td><td class="num">1.00×</td><td class="num">—</td><td class="num">80.5 tok/s</td><td class="num">1.00×</td></tr>
+              <tr><td>1</td><td class="num">1.51</td><td class="num">178.0</td><td class="num">1.29×</td><td class="num">1.51</td><td class="num">95.1</td><td class="num">1.17×</td></tr>
+              <tr><td>2</td><td class="num">1.72</td><td class="num best">185.6</td><td class="num best">1.36×</td><td class="num">1.75</td><td class="num best">97.0</td><td class="num best">1.18×</td></tr>
+              <tr><td>3 (default)</td><td class="num">1.82</td><td class="num">187.9</td><td class="num">1.33×</td><td class="num">1.82</td><td class="num">94.7</td><td class="num">1.15×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><em>At 1 user, depths 2 and 3 are tied within noise; depth 2 is the recommendation because it also wins under load.</em></p>
+        <p><strong>Server-side view at each tier's best depth.</strong> Speculation raises total server output too — not a latency-for-throughput trade.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Absolute rates at each tier's best depth</caption>
+            <thead><tr><th>Workload</th><th class="num">Users</th><th class="num">Depth</th><th class="num">Speed per user</th><th class="num">vs off</th><th class="num">Server tok/s</th><th class="num">vs off</th></tr></thead>
+            <tbody>
+              <tr><td>Code</td><td class="num">1</td><td class="num">off</td><td class="num">136.8</td><td class="num">—</td><td class="num">132.1</td><td class="num">—</td></tr>
+              <tr><td>Code</td><td class="num">1</td><td class="num">6</td><td class="num best">341.6</td><td class="num best">2.50×</td><td class="num">316.3</td><td class="num">2.40×</td></tr>
+              <tr><td>Code</td><td class="num">10</td><td class="num">off</td><td class="num">74.8</td><td class="num">—</td><td class="num">706.4</td><td class="num">—</td></tr>
+              <tr><td>Code</td><td class="num">10</td><td class="num">5</td><td class="num best">153.5</td><td class="num best">2.05×</td><td class="num">1,427.8</td><td class="num">2.02×</td></tr>
+              <tr><td>Creative</td><td class="num">1</td><td class="num">off</td><td class="num">136.8</td><td class="num">—</td><td class="num">132.4</td><td class="num">—</td></tr>
+              <tr><td>Creative</td><td class="num">1</td><td class="num">2</td><td class="num">185.6</td><td class="num">1.36×</td><td class="num">175.1</td><td class="num">1.32×</td></tr>
+              <tr><td>Creative</td><td class="num">10</td><td class="num">off</td><td class="num">80.5</td><td class="num">—</td><td class="num">764.9</td><td class="num">—</td></tr>
+              <tr><td>Creative</td><td class="num">10</td><td class="num">2</td><td class="num">97.0</td><td class="num">1.21×</td><td class="num">892.5</td><td class="num">1.17×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Drafter kernel (replicated, code content, depth 5).</strong> Only one variant clears its own noise, and only under load: running the drafter entirely on the Humming kernel is +2.25% per user at 10 users. At a single user, nothing beats the default.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Drafter-kernel cells · replicated 28–29 July</caption>
+            <thead><tr><th>Drafter kernel</th><th class="num">Speed, 1 user</th><th class="num">vs default</th><th class="num">Speed per user, 10 users</th><th class="num">vs default</th></tr></thead>
+            <tbody>
+              <tr><td>Default (Machete + Marlin)</td><td class="num">339.3</td><td class="num">—</td><td class="num">152.0</td><td class="num">—</td></tr>
+              <tr><td>Humming on the output layer only</td><td class="num">334.2</td><td class="num">−1.50%</td><td class="num">153.7</td><td class="num">+1.11% (noise)</td></tr>
+              <tr><td>Humming on all nine layers</td><td class="num">341.5</td><td class="num">+0.66% (noise)</td><td class="num best">155.5</td><td class="num best">+2.25%</td></tr>
+              <tr><td>Machete everywhere (padded)</td><td class="num">340.7</td><td class="num">+0.43% (noise)</td><td class="num">153.9</td><td class="num">+1.20% (noise)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Drafter precision (4-bit vs full-precision drafter), 12-cell A/B.</strong> The 4-bit drafter is free in draft quality (acceptance change −0.21% mean, signs flipping cell to cell) and consistently, if modestly, faster: step cost lower in 12 of 12 cells (mean −1.8%), per-user speed higher in 11 of 12. At the deployment settings it is worth ~2.6% per user single-stream and under 1% under load.</p>
+        <p><strong>Content type, not prompt length, decides the win.</strong> Acceptance moves +75% between content tiers but less than 0.05 over a 32× range of prompt length (1k → 32k tokens), and is flat from 1 to 64 users.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Acceptance profile by content tier · depth 3</caption>
+            <thead><tr><th>Content tier</th><th class="num">Accepted length</th><th class="num">1st / 2nd / 3rd draft token survives</th></tr></thead>
+            <tbody>
+              <tr><td>Code, sorting, structured output</td><td class="num best">3.11</td><td class="num">84% / 70% / 57%</td></tr>
+              <tr><td>Creative writing</td><td class="num">1.78</td><td class="num">47% / 21% / 10%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>A4 · Performance detail</h3>
+        <p><strong>Kernel comparison, model fixed (in-house GPTQ).</strong> Decode latency per token (TPOT, lower is better) with total server output in parentheses. The Humming indexed kernel wins decode at every load; the newer packed-K variant trades single-user speed for loaded throughput and was not adopted.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Kernel axis · reasoning · TPOT ms (total output tok/s)</caption>
+            <thead><tr><th>Users</th><th class="num">CUTLASS</th><th class="num">Humming 0.1.10 (adopted)</th><th class="num">Humming grouped</th><th class="num">0.1.11 packed-K</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td class="num">9.73 ms (102)</td><td class="num best">7.29 ms (137)</td><td class="num">8.48 ms (117)</td><td class="num">7.59 ms (131)</td></tr>
+              <tr><td>4</td><td class="num">11.91 ms (335)</td><td class="num best">8.82 ms (452)</td><td class="num">9.91 ms (402)</td><td class="num">8.90 ms (448)</td></tr>
+              <tr><td>16</td><td class="num">15.28 ms (1,042)</td><td class="num best">12.22 ms (1,302)</td><td class="num">13.28 ms (1,198)</td><td class="num">12.23 ms (1,300)</td></tr>
+              <tr><td>64</td><td class="num">22.28 ms (2,849)</td><td class="num">19.43 ms (3,262)</td><td class="num">20.64 ms (3,046)</td><td class="num best">19.21 ms (3,299)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Server output rate per GPU (the efficiency axis).</strong> Total output tok/s with per-GPU rate in parentheses — quant arms run 8 GPUs, BF16 runs 16.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Total output tok/s (per GPU)</caption>
+            <thead><tr><th>Workload · users</th><th class="num">GPTQ + fast kernel</th><th class="num">AWQ r7</th><th class="num">Community AWQ</th><th class="num">MXFP8</th><th class="num">BF16</th></tr></thead>
+            <tbody>
+              <tr><td>Reasoning · 64</td><td class="num best">3,267 (408)</td><td class="num">3,262 (408)</td><td class="num">2,923 (365)</td><td class="num">2,177 (272)</td><td class="num worst">1,700 (106)</td></tr>
+              <tr><td>Agentic warm · 1</td><td class="num best">112 (14.0)</td><td class="num">109 (13.7)</td><td class="num">104 (13.0)</td><td class="num">91 (11.3)</td><td class="num worst">70 (4.4)</td></tr>
+              <tr><td>Agentic warm · 16</td><td class="num best">727 (90.9)</td><td class="num">727 (90.9)</td><td class="num">662 (82.8)</td><td class="num">576 (72.0)</td><td class="num worst">490 (30.6)</td></tr>
+              <tr><td>Agentic warm · 32</td><td class="num best">1,036 (129.5)</td><td class="num">1,036 (129.6)</td><td class="num">931 (116.4)</td><td class="num">825 (103.2)</td><td class="num worst">708 (44.3)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Agentic multi-turn serving (speed per user, with p95 first-token latency).</strong> Warm = the conversation prefix is cached, the production case. The in-house arms hold the 1-second p95 first-token SLO to 16 users; without caching, no arm holds it past a single user — cache reuse is mandatory at any precision.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Agentic warm · speed per user tok/s (p95 first-token latency) · ✗ = misses the 1 s SLO</caption>
+            <thead><tr><th>Users (warm)</th><th class="num">GPTQ + fast kernel</th><th class="num">AWQ r7</th><th class="num">Community AWQ</th><th class="num">MXFP8</th><th class="num">BF16 (16 GPUs)</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td class="num best">138.9 (209 ms)</td><td class="num">138.2 (225 ms)</td><td class="num">127.5 (212 ms)</td><td class="num">108.1 (206 ms)</td><td class="num worst">80.8 (226 ms)</td></tr>
+              <tr><td>4</td><td class="num">106.5 (487 ms)</td><td class="num best">107.8 (433 ms)</td><td class="num">101.0 (423 ms)</td><td class="num">84.0 (439 ms)</td><td class="num worst">60.3 (420 ms)</td></tr>
+              <tr><td>16</td><td class="num">72.2 (893 ms)</td><td class="num best">73.2 (898 ms)</td><td class="num">69.0 (1,085 ms ✗)</td><td class="num">55.6 (1,062 ms ✗)</td><td class="num worst">41.4 (783 ms)</td></tr>
+              <tr><td>32</td><td class="num best">49.1 (1,314 ms ✗)</td><td class="num">47.3 (1,231 ms ✗)</td><td class="num">48.1 (1,836 ms ✗)</td><td class="num">38.8 (1,647 ms ✗)</td><td class="num worst">27.3 (808 ms)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>BF16 buys its low first-token latency with twice the GPUs.</p>
+        <p><strong>Prompt-length sweep (speed per user; first-token latency in parentheses).</strong> Decode speed barely moves from a 1k to a 100k-token prompt on the in-house arm; a 100k prompt takes ~5.4 s to first token. The community AWQ arm is omitted here: on long prompts it decodes to the token cap (its quality pathology made performance-visible), so its cells are not a comparable workload.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Prompt-length sweep · speed per user tok/s (first-token latency)</caption>
+            <thead><tr><th>Prompt × users</th><th class="num">GPTQ + fast kernel</th><th class="num">AWQ r7</th><th class="num">MXFP8</th><th class="num">BF16</th></tr></thead>
+            <tbody>
+              <tr><td>1k × 1</td><td class="num best">137.3 (114 ms)</td><td class="num">137.0 (117 ms)</td><td class="num">107.7 (118 ms)</td><td class="num worst">80.9 (129 ms)</td></tr>
+              <tr><td>1k × 10</td><td class="num best">92.2 (423 ms)</td><td class="num">90.6 (428 ms)</td><td class="num">71.1 (638 ms)</td><td class="num worst">50.5 (491 ms)</td></tr>
+              <tr><td>10k × 1</td><td class="num best">137.1 (554 ms)</td><td class="num">137.1 (549 ms)</td><td class="num">107.6 (836 ms)</td><td class="num worst">80.6 (583 ms)</td></tr>
+              <tr><td>10k × 10</td><td class="num best">75.8 (2.7 s)</td><td class="num">70.4 (2.2 s)</td><td class="num">55.8 (4.4 s)</td><td class="num worst">44.3 (2.4 s)</td></tr>
+              <tr><td>100k × 1</td><td class="num">130.9 (5.4 s)</td><td class="num best">133.4 (5.4 s)</td><td class="num">104.9 (8.3 s)</td><td class="num worst">78.4 (5.9 s)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="ledger">
-        <h2><span class="number">06 / Evidence</span>Sources</h2>
+        <h2><span class="number">08 / Evidence</span>Sources</h2>
         <ul class="ledger">
           <li><span class="t">Official pipeline</span><a href="https://gitlab.bitdeer.vip/AICloud/benchmarks">AICloud/benchmarks</a> — lm-eval 0.4.10 + distribution/reliability/agentic</li>
           <li><span class="t">Serving · this fork</span><a href="../m3-serving-recipe.md">M3 serving recipe</a> — pinned vLLM 0.24.0 + W4A8 overlay</li>
           <li><span class="t">Report · this fork</span><a href="../../M3_PRODUCTION_EVAL_HANDOFF.md">M3_PRODUCTION_EVAL_HANDOFF.md</a> — completed model evidence and harness qualification</li>
           <li><span class="t">Breadth verdict · this fork</span><a href="../../M3_OFFICIAL_QUALITY_RESULTS.html">M3_OFFICIAL_QUALITY_RESULTS.html</a> — seven-task official-pipeline results (2b)</li>
+          <li><span class="t">Speculative decoding · this fork</span><a href="../../M3_OFFICIAL_SPECDEC_RESULTS.html">M3_OFFICIAL_SPECDEC_RESULTS.html</a>, <a href="../m3-specdec-eagle3.md">docs/m3-specdec-eagle3.md</a> — EAGLE3 tuning study (2h)</li>
           <li><span class="t">Second family · this fork</span><a href="../../GLM52_OFFICIAL_EVAL_RESULTS.html">GLM52_OFFICIAL_EVAL_RESULTS.html</a> — three-arm GLM-5.2 eval (2d)</li>
           <li><span class="t">Collaborators · this fork</span><a href="../../M3_COLLABORATOR_GUIDE.md">M3_COLLABORATOR_GUIDE.md</a> — serving-first onboarding, live-verified (2f)</li>
           <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/eval_minimax_m3_reasoning_r4.yaml">eval_minimax_m3_reasoning_r4.yaml</a>, <a href="../../pipeline/configs/minimax_m3_inhouse_awq_r5_smoke.yaml">minimax_m3_inhouse_awq_r5_smoke.yaml</a></li>

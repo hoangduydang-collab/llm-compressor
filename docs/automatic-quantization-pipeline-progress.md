@@ -38,6 +38,7 @@ One fail-closed harness: our model vs existing quants vs the unquantized baselin
 - [x] 2e · Second quant track — 2-bit vs baseline A/B `wk Jul 27–Aug 02`
 - [x] 2f · Collaborator guide, live-verified `wk Jul 27–Aug 02`
 - [ ] 2g · Seven-task run for the fixed AWQ model
+- [x] 2h · Speculative-decoding tuning study — up to 2.5× faster decoding, no quality cost `wk Jul 27–Aug 02`
 
 ### Goal 3 — Working AWQ quantized model · Done (quality-competitive 2026-07-23)
 Shipped broken twice, fixed twice; the current recipe (`r6`) is within ~1% of
@@ -78,6 +79,7 @@ One line per achievement, newest first. IDs point at the sub-tasks above; the
 durable copy lives in `PROJECT_GOALS.md`.
 
 ### wk 2026-07-27 – 08-02
+- **2h** · Speculative decoding tuned on the 4-bit model: 1.2–2.5× faster decoding depending on content type, no quality cost.
 - **1c / 4a** · Third quant method onboarded: 30B MoE quantized in 1 h 40 m, serves coherently.
 - **4b / 2e** · First 2-bit quality A/B — no-ship verdict; retry queued.
 - **2f** · Collaborator guide live-verified; handoff-ready.

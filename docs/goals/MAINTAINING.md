@@ -32,7 +32,8 @@ an `.html`/`.md` **twin pair with identical content** — edit both or neither.
    results sections, above older ones; superseded results move to (or stay in)
    the Historical section, clearly marked not-comparable.
 5. **Numbers must trace to a source.** Every figure comes from
-   `M3_OFFICIAL_QUALITY_RESULTS.html`, `M3_OFFICIAL_PERF_RESULTS.html`, or an
+   `M3_OFFICIAL_QUALITY_RESULTS.html`, `M3_OFFICIAL_PERF_RESULTS.html`,
+   `M3_OFFICIAL_SPECDEC_RESULTS.html`, `GLM52_OFFICIAL_EVAL_RESULTS.html`, or an
    evidence directory — re-check against the source when copying, and keep the
    "Updated <date>" stamps current.
 6. **Every page keeps a Contents block** at the top; update it when sections

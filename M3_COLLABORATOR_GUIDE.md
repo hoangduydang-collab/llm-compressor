@@ -6,7 +6,8 @@ pipeline produced and how good it is. **Part A** is the serving path you will us
 **Part B** is the quantization pipeline as reference — read it to understand where a
 checkpoint came from, or if you need to make one.
 
-Written 2026-07-29. **Assumes you are on the Iceland cluster** with access to
+Written 2026-07-29; audited and re-verified against the owner docs, scripts, and disk on
+2026-07-31. **Assumes you are on the Iceland cluster** with access to
 `/mnt/nfs/hoangduy/`. Every path below was verified to exist there on that date. Nothing
 here is portable as-written to another cluster — the venvs, checkpoints, and the
 `srun`-only scheduler constraint are all Iceland-specific.

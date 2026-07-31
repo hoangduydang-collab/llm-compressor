@@ -124,6 +124,9 @@
         <h2><span class="number">01 / Objective</span>Full quantization within one working session</h2>
         <p class="lead dropcap">The target is a complete MiniMax-M3 AWQ or GPTQ run in <strong>4–8 hours</strong>, including a saved checkpoint that survives correctness gates.</p>
         <p>The implementation uses the fork's existing distributed calibration paths: AWQ shares calibration statistics across ranks, GPTQ distributes modules, and disk offload keeps host memory bounded. This is now the production direction for both methods.</p>
+        <!-- EXTENSION POINT: append new sub-tasks as <li> here (class="done" +
+             <span class="wk">wk …</span> when landed, class="open" otherwise).
+             Keep IDs in sync with PROJECT_GOALS.md goal 1. -->
         <ul class="subs">
           <li class="done">1a · Distributed AWQ/GPTQ calibration path — full AWQ run, all gates green, <strong>7 h 22 m</strong> on one 8×H100 node <span class="wk">wk Jul 20–26</span></li>
           <li class="done">1b · DDP rank-partition correctness fix — the partition was applied to a local variable only, so all ranks had calibrated on the same rows (<code>ddd4f9f9</code>) <span class="wk">wk Jul 27–Aug 02</span></li>

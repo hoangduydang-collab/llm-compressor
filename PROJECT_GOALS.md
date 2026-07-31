@@ -13,6 +13,14 @@ visible at a glance. A goal is `DONE` when its current sub-task list is complete
 adding a later sub-task reopens the list, not the definition. Do not delete a goal
 or a finished sub-task — evidence pointers stay.
 
+**When something lands, update three places (one minute total):**
+1. tick its sub-task checkbox under the goal (or append a new `Ng — title` line —
+   next letter, one bold title, evidence pointer, `*(done DATE, wk …)*` stamp);
+2. add a one-liner to the **Weekly log** below under the current week (create the
+   week heading if it is the first entry that week);
+3. mirror both in `docs/automatic-quantization-pipeline-progress.html` (goal card
+   `<li>` + weekly-log line — marked extension points in the HTML).
+
 Last reviewed: 2026-07-31.
 
 ## Long-term goals
@@ -148,6 +156,42 @@ Last reviewed: 2026-07-31.
    - [x] **7b — Adoption**: beat CUTLASS by ~34% at concurrency 1 in the paired
      serving benchmark (`docs/m3-two-axis-perf.md`); now the default kernel for
      the serve-ready `gptq-base` arm. *(done 2026-07-26, wk 07-20–07-26)*
+
+## Weekly log
+
+One line per achievement, newest week first. Details, numbers, and evidence live
+in the referenced sub-tasks above (and the per-goal field notes under
+`docs/goals/`) — this list only answers "what moved this week".
+
+### wk 2026-07-27 – 08-02
+- **1c / 4a** — First new method onboarded (AutoRound): DDP W2A16 quant of a 30B
+  MoE in 1 h 40 m; checkpoint serves coherently.
+- **4b** — W2A16 `iters=200` quality A/B measured: NO-SHIP verdict; `iters=1000`
+  requant queued as 4c.
+- **2e** — Paired A/B protocol proven on a second quant track (W2A16 vs BF16).
+- **2f** — Collaborator guide finished and live-verified end-to-end; handoff-ready.
+- **1b** — DDP rank-partition correctness fix (all ranks had calibrated on the
+  same rows).
+- Ops — goals tracking restructured into week-stamped sub-tasks; curated ~591 GB
+  workspace archive to the ai-lab jump host launched
+  (`/mnt/nfs/hoangduy/workspace-transfer/`).
+
+### wk 2026-07-20 – 07-26
+- **1a** — Distributed calibration hit the 4–8 h target: full AWQ run in 7 h 22 m.
+- **3a / 3b** — Both AWQ defects root-caused and fixed; r6 is quality-competitive
+  (GPQA 98.7%, IFEval 98.6%). Goal 3 complete.
+- **2a / 2b** — Official smoke gate cleared, then the seven-task breadth verdict
+  for in-house GPTQ (recovery 97.4–101.1%).
+- **2c** — Two-axis perf report (kernel × model, ten arms).
+- **2d** — Second model family: three-arm GLM-5.2 eval.
+- **7a / 7b** — Humming W4A8 qualified and adopted (+34% at concurrency 1).
+  Goal 7 complete.
+
+### wk 2026-07-13 – 07-19
+- Stopgap four-way quality comparison (in-house GPTQ / cyankiwi / MXFP8 / BF16)
+  on the seeded-subset harness — historical, superseded by 2b.
+- DDP full-run rehearsals r1–r3; planner–executor protocol and the distributed
+  speedup execution packet signed.
 
 ## Current session focus
 

@@ -59,6 +59,12 @@
     .subs li.done::before{content:"✓";color:var(--verified);}
     .subs li.open{color:var(--muted);}
     .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 9.5px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
+    .weeklog{max-width:var(--reading);}
+    .weeklog h3{margin:34px 0 12px;padding:8px 12px;display:inline-block;border:1px solid var(--ink);background:rgba(250,247,239,.72);font:800 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;}
+    .weeklog ul{margin:0;padding:0;list-style:none;}
+    .weeklog li{position:relative;margin:0 0 9px;padding-left:20px;font-size:15.5px;line-height:1.5;}
+    .weeklog li::before{content:"—";position:absolute;left:0;color:var(--oxide);font-weight:800;}
+    .weeklog .ref{font:800 12px/1 var(--mono);color:var(--oxide-dark);}
     .status{display:inline-block;white-space:nowrap;padding:5px 8px;font:800 9px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
     .status.done{color:#fff;background:var(--ink);}
     .status.working{color:#fff;background:var(--verified);}
@@ -114,6 +120,9 @@
 
       <section id="goals">
         <h2><span class="number">The list</span>Seven long-term goals</h2>
+        <!-- EXTENSION POINT: to record progress, edit the goal card's <ul class="subs">:
+             mark an <li> class="done" and append <span class="wk">wk …</span>, or add a
+             new <li class="open"> with the next sub-task ID. Mirror PROJECT_GOALS.md. -->
         <div class="goal-grid">
 
           <a class="goal-card link" href="goals/goal-1-fast-parallel-quantization.html">
@@ -202,6 +211,40 @@
           <h3>Current focus: Goals 1, 2 and 4</h3>
           <p>Goals 3 and 7 are complete — a quality-competitive in-house AWQ checkpoint and native Humming W4A8 serving. The near-term queue, by sub-task: <strong>4c</strong> (W2A16 <code>iters=1000</code> requant), <strong>2g</strong> (seven-task breadth evaluation for the quality-clean AWQ r6 recipe), and <strong>1d</strong> (distributed save/export). During the owner's absence, <code>M3_COLLABORATOR_GUIDE.md</code> — every Part-A command executed end-to-end on 2026-07-31 — is the continuity anchor for the evaluation side.</p>
         </div>
+      </section>
+
+      <section id="weeklog" class="weeklog">
+        <h2><span class="number">Week by week</span>Weekly log</h2>
+        <p>One line per achievement, newest week first. The <span class="ref">bold IDs</span> point at the goal sub-tasks above, which carry the numbers and evidence; the durable version of this log lives in <code>PROJECT_GOALS.md</code>.</p>
+        <!-- EXTENSION POINT: to log a new week, copy an <h3>+<ul> block to the
+             top of this list; to log a new achievement, add an <li> with its
+             sub-task ID in <span class="ref">…</span>. Mirror PROJECT_GOALS.md. -->
+
+        <h3>wk 2026-07-27 – 08-02</h3>
+        <ul>
+          <li><span class="ref">1c / 4a</span> · First new method onboarded (AutoRound): DDP W2A16 quant of a 30B MoE in 1 h 40 m; checkpoint serves coherently.</li>
+          <li><span class="ref">4b</span> · W2A16 <code>iters=200</code> quality A/B measured — no-ship verdict; <code>iters=1000</code> requant queued as 4c.</li>
+          <li><span class="ref">2e</span> · Paired A/B protocol proven on a second quant track (W2A16 vs BF16).</li>
+          <li><span class="ref">2f</span> · Collaborator guide finished and live-verified end-to-end; handoff-ready.</li>
+          <li><span class="ref">1b</span> · DDP rank-partition correctness fix.</li>
+          <li>Ops · goals tracking restructured into week-stamped sub-tasks; curated ~591 GB workspace archive launched.</li>
+        </ul>
+
+        <h3>wk 2026-07-20 – 07-26</h3>
+        <ul>
+          <li><span class="ref">1a</span> · Distributed calibration hit the 4–8 h target: full AWQ run in 7 h 22 m.</li>
+          <li><span class="ref">3a / 3b</span> · Both AWQ defects root-caused and fixed; r6 quality-competitive. <strong>Goal 3 complete.</strong></li>
+          <li><span class="ref">2a / 2b</span> · Official smoke gate cleared, then the seven-task breadth verdict for in-house GPTQ (recovery 97.4–101.1%).</li>
+          <li><span class="ref">2c</span> · Two-axis perf report (kernel × model, ten arms).</li>
+          <li><span class="ref">2d</span> · Second model family: three-arm GLM-5.2 eval.</li>
+          <li><span class="ref">7a / 7b</span> · Humming W4A8 qualified and adopted (+34% at concurrency 1). <strong>Goal 7 complete.</strong></li>
+        </ul>
+
+        <h3>wk 2026-07-13 – 07-19</h3>
+        <ul>
+          <li>Stopgap four-way quality comparison (in-house GPTQ / cyankiwi / MXFP8 / BF16) on the seeded-subset harness — historical, superseded by 2b.</li>
+          <li>DDP full-run rehearsals r1–r3; planner–executor protocol and the distributed speedup execution packet signed.</li>
+        </ul>
       </section>
 
       <section id="how">

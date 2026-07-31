@@ -1,0 +1,47 @@
+{
+  "contract_version": "1.0",
+  "kind": "distribution",
+  "profile": "qwen3-30b-a3b-2507-w2a16",
+  "role": "candidate",
+  "engine": "vllm",
+  "run": {
+    "run_id": "qwen3-30b-w2a16-vs-bf16-g100",
+    "timestamp": null,
+    "seeds": []
+  },
+  "metadata": {
+    "engine": "vllm",
+    "engine_version": "0.26.0-serve-sub4+pr48918+humming-main",
+    "model_name": "qwen3-30b-w2a16",
+    "quant_recipe": "autoround-w2a16-g128-ddp8-iters200-n512",
+    "gpu_sku": "H100-80GB",
+    "base_url": "http://localhost:8411/v1",
+    "tokenizer": null,
+    "chat_template": null,
+    "sampling": {},
+    "top_logprobs_k": 20,
+    "harness_version": null,
+    "agent_scaffold": "mini-swe-agent",
+    "scaffold_version": null,
+    "container_digests": {}
+  },
+  "payload": {
+    "vs_ref": "qwen3-30b-a3b-2507-bf16",
+    "n_examples": 10,
+    "flip_rate": {
+      "baseline_to_quant": 0.0,
+      "quant_to_baseline": 0.0,
+      "net": 0.0
+    },
+    "top1_agreement": 0.7750556792873051,
+    "topk_agreement": {
+      "k": 20,
+      "value": 0.9955456570155902
+    },
+    "truncated_kl": {
+      "k": 20,
+      "mean": 0.4914854928408846,
+      "p95": 2.2431019783881005
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "check": "sub4bit-w2a16-vs-bf16 gpqa+ifeval paired subset",
+  "lm_eval_version": "0.4.10",
+  "tasks": {
+    "gpqa_diamond_cot_zeroshot": "/mnt/nfs/hoangduy/venvs/benchmarks/lib/python3.12/site-packages/lm_eval/tasks/gpqa/cot_zeroshot/gpqa_diamond_cot_zeroshot.yaml",
+    "ifeval": "/mnt/nfs/hoangduy/venvs/benchmarks/lib/python3.12/site-packages/lm_eval/tasks/ifeval/ifeval.yaml"
+  },
+  "num_fewshot": {
+    "gpqa_diamond_cot_zeroshot": 0,
+    "ifeval": 0
+  },
+  "metrics": {
+    "gpqa_diamond_cot_zeroshot": "exact_match,flexible-extract",
+    "ifeval": "prompt_level_strict_acc"
+  },
+  "tokenizer": {
+    "bf16": {
+      "tokenizer_json_sha256_provenance": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "vocab_sha256": "145980efdfb01c53b3f7ae954c2a305dc6ec9081bcfb3ef844cab642632bd007",
+      "chat_template_sha256": "64f85b198065d0fba2a81f37e10ed68161ce2c19a754c7100e67e0ca2ee9c326",
+      "vocab_size": 151643
+    },
+    "w2a16": {
+      "tokenizer_json_sha256_provenance": "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506",
+      "vocab_sha256": "145980efdfb01c53b3f7ae954c2a305dc6ec9081bcfb3ef844cab642632bd007",
+      "chat_template_sha256": "64f85b198065d0fba2a81f37e10ed68161ce2c19a754c7100e67e0ca2ee9c326",
+      "vocab_size": 151643
+    }
+  },
+  "generation": {
+    "temperature": 0,
+    "seed": 0,
+    "max_gen_toks": 4096,
+    "num_concurrent": 16,
+    "reasoning_mode": "nonreasoning (Instruct-2507, no thinking tags)"
+  },
+  "serving": {
+    "backend": "vllm 0.26.0 serve-sub4 (candidate: +PR48918 port +humming main)",
+    "bf16": "TP2, 2xH100, port 8410",
+    "w2a16": "TP1, 1xH100, port 8411",
+    "same_node": true
+  },
+  "dataset_caches": [
+    "/mnt/nfs/hoangduy/cache/huggingface/datasets/Idavidrein___gpqa",
+    "/mnt/nfs/hoangduy/cache/huggingface/datasets/google___if_eval"
+  ],
+  "hf_offline": {
+    "HF_HOME": "/mnt/nfs/hoangduy/cache/huggingface",
+    "HF_HUB_OFFLINE": "1"
+  },
+  "endpoints": {
+    "qwen3-30b-bf16": "http://localhost:8410",
+    "qwen3-30b-w2a16": "http://localhost:8411"
+  },
+  "sample_manifest": "lm-eval --limit 100 --seed 0: first 100 docs in the task's deterministic doc order for the pinned task version; identical across arms by construction (paired subset).",
+  "comparability": "PAIRED-SUBSET ONLY: valid for W2A16-vs-BF16 model-to-model decisions. NOT directly comparable to public leaderboard numbers (greedy decoding, 100-sample subsets, max_gen_toks 4096).",
+  "failures": []
+}

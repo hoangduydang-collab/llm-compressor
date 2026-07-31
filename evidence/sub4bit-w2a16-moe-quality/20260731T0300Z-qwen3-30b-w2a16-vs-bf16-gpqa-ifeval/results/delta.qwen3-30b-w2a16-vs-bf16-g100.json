@@ -1,0 +1,42 @@
+{
+  "contract_version": "1.0",
+  "baseline_ref": "qwen3-30b-a3b-2507-bf16",
+  "candidate_ref": "qwen3-30b-a3b-2507-w2a16",
+  "noise_floor": null,
+  "quality_dimensions": [
+    {
+      "name": "gpqa_diamond_cot_zeroshot",
+      "kind": "general",
+      "baseline": 0.54,
+      "candidate": 0.24,
+      "delta": -0.3,
+      "above_noise": null,
+      "regression": null
+    },
+    {
+      "name": "ifeval",
+      "kind": "general",
+      "baseline": 0.84,
+      "candidate": 0.45,
+      "delta": -0.39,
+      "above_noise": null,
+      "regression": null
+    }
+  ],
+  "flip_rate": {
+    "value": 0.0,
+    "budget": 0.03,
+    "within_budget": true
+  },
+  "perf_gain": null,
+  "thresholds": {
+    "min_perf_gain_pct": 10.0,
+    "min_dollar_saving_pct": 10.0,
+    "flip_rate_budget": 0.03
+  },
+  "verdict": "CAVEAT",
+  "verdict_reasons": [
+    "flip-rate 0.000 within budget 0.030",
+    "no perf/cost gain measured yet"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "gpqa_diamond_cot_zeroshot": {
+    "n_joined": 100,
+    "baseline_score": 0.54,
+    "candidate_score": 0.24,
+    "delta": -0.3,
+    "recovery_pct": 44.44,
+    "binary": true,
+    "flips_correct_to_incorrect": 35,
+    "flips_incorrect_to_correct": 5,
+    "flip_rate": 0.4,
+    "net_flip_rate": -0.3,
+    "correctness_agreement": 0.19
+  },
+  "ifeval": {
+    "n_joined": 100,
+    "baseline_score": 0.84,
+    "candidate_score": 0.45,
+    "delta": -0.39,
+    "recovery_pct": 53.57,
+    "binary": true,
+    "flips_correct_to_incorrect": 43,
+    "flips_incorrect_to_correct": 4,
+    "flip_rate": 0.47,
+    "net_flip_rate": -0.39,
+    "correctness_agreement": 0.41
+  }
+}

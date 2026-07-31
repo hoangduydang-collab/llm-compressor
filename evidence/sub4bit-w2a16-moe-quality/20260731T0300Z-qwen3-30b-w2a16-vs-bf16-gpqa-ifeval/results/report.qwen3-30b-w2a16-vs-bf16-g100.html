@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval report — qwen3-30b-a3b-2507-bf16 vs qwen3-30b-a3b-2507-w2a16</title>
+<style>
+
+    * { box-sizing: border-box; }
+    body.viz-root {
+      margin: 0; background: var(--page); color: var(--text-primary);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+    header.report-head { margin-bottom: 8px; }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.01em; }
+    .subtitle { color: var(--text-secondary); font-size: 14px; margin: 0 0 20px; }
+    section.view { background: var(--surface-1); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px 20px 14px; margin: 22px 0; }
+    section.view > h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+    .caption { color: var(--text-secondary); font-size: 12.5px; margin: 0 0 12px; }
+    .chart { width: 100%; height: 420px; margin-top: 4px; }
+    .chart.tall { height: 500px; }
+    /* verdict reason chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+      padding: 4px 12px; border-radius: 999px; border: 1.5px solid; background: transparent; }
+    .chip b { font-weight: 600; }
+    .repro-group { margin: 10px 0 4px; }
+    .repro-group h3 { font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 4px; }
+    /* verdict badge */
+    .badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
+      font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); }
+    .badge .ico { font-size: 13px; }
+    .badge.SHIP    { color: var(--status-good);     background: color-mix(in srgb, var(--status-good) 12%, transparent); }
+    .badge.CAVEAT  { color: var(--status-warning);  background: color-mix(in srgb, var(--status-warning) 16%, transparent); }
+    .badge.NO_SHIP { color: var(--status-critical); background: color-mix(in srgb, var(--status-critical) 12%, transparent); }
+    /* scorecard + table */
+    table.grid { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+    table.grid th, table.grid td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    table.grid th:first-child, table.grid td:first-child { text-align: left; }
+    table.grid thead th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+    .pos { color: var(--good-text); } .neg { color: var(--status-critical); }
+    .reasons { margin: 12px 0 6px; padding-left: 18px; color: var(--text-secondary); font-size: 12.5px; }
+    .reasons li { margin: 2px 0; }
+    /* hero verdict */
+    .hero { display: flex; gap: 16px; align-items: flex-start; margin: 4px 0 8px; }
+    .hero-badge { font-size: 17px; font-weight: 700; padding: 9px 18px; border-radius: 10px;
+      border: 2px solid; white-space: nowrap; letter-spacing: 0.01em; }
+    /* the long explanation is muted, underneath the chips — the chips are the scannable row */
+    .hero-summary { font-size: 13px; color: var(--text-secondary); margin: 8px 0 0; font-weight: 400; line-height: 1.5; }
+    .hero-why { font-size: 12.5px; color: var(--text-secondary); margin: 0; }
+    /* artifacts */
+    a.dl { color: var(--series-baseline); text-decoration: none; font-size: 12.5px; margin-right: 14px; }
+    a.dl:hover { text-decoration: underline; }
+    code.cmd { display: block; background: var(--page); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; font-size: 11.5px; overflow-x: auto; white-space: pre;
+      color: var(--text-secondary); margin: 6px 0; }
+    details.tableview { margin: 4px 0 12px; } details.tableview summary { cursor: pointer; color: var(--text-secondary); font-size: 12.5px; }
+    footer.report-foot { color: var(--muted); font-size: 11.5px; margin-top: 28px; }
+    .viz-root {
+      --surface-1: #fcfcfb;
+      --page: #f9f9f7;
+      --text-primary: #0b0b0b;
+      --text-secondary: #52514e;
+      --muted: #898781;
+      --grid: #e1e0d9;
+      --axis: #c3c2b7;
+      --border: rgba(11,11,11,0.10);
+      --series-baseline: #2a78d6;
+      --series-candidate: #eb6834;
+      --series-alt: #1baf7a;
+      --area-baseline: rgba(42,120,214,0.10);
+      --area-candidate: rgba(235,104,52,0.10);
+      --status-good: #0ca30c;
+      --status-warning: #fab219;
+      --status-critical: #d03b3b;
+      --good-text: #006300;
+      --ship-zone: rgba(12,163,12,0.07);
+      --band-fill: rgba(137,135,129,0.16);
+    }
+    @media (prefers-color-scheme: dark) {
+      .viz-root {
+        --surface-1: #1a1a19;
+        --page: #0d0d0d;
+        --text-primary: #ffffff;
+        --text-secondary: #c3c2b7;
+        --muted: #898781;
+        --grid: #2c2c2a;
+        --axis: #383835;
+        --border: rgba(255,255,255,0.10);
+        --series-baseline: #3987e5;
+        --series-candidate: #d95926;
+        --series-alt: #199e70;
+        --area-baseline: rgba(57,135,229,0.14);
+        --area-candidate: rgba(217,89,38,0.14);
+        --status-good: #0ca30c;
+        --status-warning: #fab219;
+        --status-critical: #d03b3b;
+        --good-text: #0ca30c;
+        --ship-zone: rgba(12,163,12,0.10);
+        --band-fill: rgba(137,135,129,0.22);
+      }
+    }
+
+</style>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+    <script>
+    var __CHARTS__ = [];
+    function __rt(o){
+      if (typeof o === "string"){
+        if (o.indexOf("--") === 0){
+          var v = getComputedStyle(document.body).getPropertyValue(o).trim();
+          return v || o;
+        }
+        return o;
+      }
+      if (Array.isArray(o)) return o.map(__rt);
+      if (o && typeof o === "object"){ var r = {}; for (var k in o) r[k] = __rt(o[k]); return r; }
+      return o;
+    }
+    function __renderAll(){
+      if (typeof Plotly === "undefined") return;
+      __CHARTS__.forEach(function(c){
+        Plotly.react(c.id, __rt(c.data), __rt(c.layout), {responsive:true, displayModeBar:false});
+      });
+    }
+    if (window.matchMedia){
+      try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", __renderAll); }
+      catch (e) { /* older Safari */ }
+    }
+    if (document.readyState !== "loading") __renderAll();
+    else document.addEventListener("DOMContentLoaded", __renderAll);
+    </script>
+    
+</head>
+<body class="viz-root">
+  <div class="wrap">
+    <header class="report-head">
+      <h1>Eval report — qwen3-30b-a3b-2507-bf16 vs qwen3-30b-a3b-2507-w2a16</h1>
+      <p class="subtitle">baseline-vs-quantized comparison · quality lost vs speed/cost gained</p>
+    </header>
+    <section class="view"><h2>Verdict</h2>
+<div class="hero"><div class="hero-badge" style="color:var(--status-warning);border-color:var(--status-warning)">⚠ CAVEAT</div><div class="hero-text"><div class="chips"><span class="chip" style="color:var(--status-good);border-color:var(--status-good)"><b>Quality</b> pass</span><span class="chip" style="color:var(--status-good);border-color:var(--status-good)"><b>Flip-rate</b> within budget</span></div><p class="hero-summary">qwen3-30b-a3b-2507-w2a16 vs qwen3-30b-a3b-2507-bf16 — qwen3-30b-a3b-2507-w2a16, with no above-noise regression assessed (no noise floor provided).</p><p class="hero-why"><b>Why:</b> flip-rate 0.000 within budget 0.030; no perf/cost gain measured yet</p></div></div></section>
+<section class="view"><h2>Summary</h2><p class="caption">Key deltas at a glance. ↑/↓ marks the good direction; status is vs the ship thresholds.</p>
+<table class="grid"><thead><tr><th>Metric</th><th>Baseline</th><th>Candidate</th><th>Δ</th><th>Good</th><th>Status</th></tr></thead><tbody><tr><td>Quality (mean general)</td><td>0.690</td><td>0.345</td><td>-0.345</td><td style='color:var(--muted)'>↑ higher</td><td><span style="color:var(--status-good);font-weight:600">✓ pass · no noise floor; significance not assessed</span></td></tr><tr><td>Worst quality dim (ifeval)</td><td>0.840</td><td>0.450</td><td>-0.390</td><td style='color:var(--muted)'>↑ higher</td><td>no noise floor</td></tr><tr><td>Flip-rate vs baseline</td><td>0 (def)</td><td>0.000</td><td>budget 0.030</td><td style='color:var(--muted)'>↓ lower</td><td><span style="color:var(--status-good);font-weight:600">✓ pass · within budget</span></td></tr></tbody></table><details class="tableview"><summary>Table view</summary><table class="grid"><thead><tr><th>Dimension</th><th>Kind</th><th>Baseline</th><th>Candidate</th><th>Δ</th><th>Above noise?</th></tr></thead><tbody><tr><td>gpqa_diamond_cot_zeroshot</td><td>general</td><td>0.540</td><td>0.240</td><td><span class="neg">-0.300</span></td><td>—</td></tr><tr><td>ifeval</td><td>general</td><td>0.840</td><td>0.450</td><td><span class="neg">-0.390</span></td><td>—</td></tr></tbody></table></details></section>
+<section class="view"><h2>Quality delta vs baseline</h2><p class="caption">Bars = candidate − baseline. No noise-floor band was supplied, so significance is not assessed.</p>
+<div id="q-delta" class="chart"></div>
+<script>__CHARTS__.push({id:"q-delta", data:[{"type": "bar", "x": ["gpqa_diamond_cot_zeroshot", "ifeval"], "y": [-0.3, -0.39], "showlegend": false, "marker": {"color": ["--muted", "--muted"], "cornerradius": 4}, "hovertemplate": "%{x}<br>\u0394 %{y:.3f}<br>noise band \u00b1%{customdata:.3f}<extra></extra>", "customdata": [0, 0]}, {"type": "bar", "x": [null], "y": [null], "name": "regression (beyond noise)", "marker": {"color": "--status-critical"}, "showlegend": true}, {"type": "bar", "x": [null], "y": [null], "name": "improvement (beyond noise)", "marker": {"color": "--status-good"}, "showlegend": true}, {"type": "bar", "x": [null], "y": [null], "name": "within noise floor", "marker": {"color": "--muted"}, "showlegend": true}, {"type": "scatter", "mode": "markers", "x": [null], "y": [null], "name": "noise-floor band", "marker": {"color": "--band-fill", "size": 12, "symbol": "square"}, "showlegend": true}], layout:{"paper_bgcolor": "rgba(0,0,0,0)", "plot_bgcolor": "rgba(0,0,0,0)", "font": {"family": "system-ui, -apple-system, \"Segoe UI\", sans-serif", "color": "--text-secondary", "size": 12}, "margin": {"l": 60, "r": 22, "t": 14, "b": 46}, "xaxis": {"gridcolor": "--grid", "zerolinecolor": "--axis", "linecolor": "--axis", "tickcolor": "--axis", "tickfont": {"color": "--text-secondary", "size": 13}, "showgrid": true, "zeroline": true}, "yaxis": {"gridcolor": "--grid", "zerolinecolor": "--axis", "linecolor": "--axis", "tickcolor": "--axis", "tickfont": {"color": "--text-secondary", "size": 13}, "showgrid": true, "zeroline": true, "title": {"text": "\u0394 score (candidate \u2212 baseline)", "font": {"color": "--text-secondary", "size": 13}}}, "hovermode": "closest", "showlegend": true, "legend": {"orientation": "h", "y": 1.12, "x": 0, "font": {"color": "--text-secondary", "size": 12}, "bgcolor": "rgba(0,0,0,0)"}, "barmode": "overlay", "shapes": []}});</script></section>
+<section class="view"><h2>Reproducibility</h2><p class="caption">Pinned run metadata — engine, quant recipe, GPU, sampling, scaffold, seeds (DESIGN §7).</p>
+<details class="tableview"><summary>Show pinned run metadata (models · hardware · run &amp; data · provenance)</summary><div class="repro-group"><h3>Models</h3><table class="grid"><thead><tr><th>Field</th><th>Baseline</th><th>Candidate</th></tr></thead><tbody><tr><td>profile</td><td>qwen3-30b-a3b-2507-bf16</td><td>qwen3-30b-a3b-2507-w2a16</td></tr><tr><td>engine</td><td>vllm 0.26.0-serve-sub4</td><td>vllm 0.26.0-serve-sub4+pr48918+humming-main</td></tr><tr><td>quant recipe</td><td>None</td><td>autoround-w2a16-g128-ddp8-iters200-n512</td></tr></tbody></table></div><div class="repro-group"><h3>Hardware</h3><table class="grid"><thead><tr><th>Field</th><th>Baseline</th><th>Candidate</th></tr></thead><tbody><tr><td>GPU SKU</td><td>H100-80GB</td><td>H100-80GB</td></tr></tbody></table></div><div class="repro-group"><h3>Run &amp; data</h3><table class="grid"><thead><tr><th>Field</th><th>Baseline</th><th>Candidate</th></tr></thead><tbody><tr><td>tokenizer</td><td>None</td><td>None</td></tr><tr><td>sampling</td><td>—</td><td>—</td></tr><tr><td>scaffold</td><td>mini-swe-agent </td><td>mini-swe-agent </td></tr><tr><td>harness</td><td>None</td><td>None</td></tr><tr><td>seeds</td><td>—</td><td>—</td></tr><tr><td>run id</td><td>qwen3-30b-w2a16-vs-bf16-g100</td><td>qwen3-30b-w2a16-vs-bf16-g100</td></tr><tr><td>timestamp</td><td>None</td><td>None</td></tr></tbody></table></div><div class="repro-group"><h3>Provenance</h3><table class="grid"><tbody><tr><td>benchmarks commit</td><td>0b6e5c7</td></tr></tbody></table></div></details></section>
+<section class="view"><h2>Artifacts</h2>
+<details class="tableview"><summary>Show generating command + raw inputs/outputs (5 files)</summary><p class="caption">Generating command:</p><code class="cmd">python3 -m report.generate --results /mnt/nfs/hoangduy/projects/benchmarks/results --baseline qwen3-30b-a3b-2507-bf16 --candidate qwen3-30b-a3b-2507-w2a16 --out /mnt/nfs/hoangduy/projects/benchmarks/results/report.qwen3-30b-w2a16-vs-bf16-g100.html --run-id qwen3-30b-w2a16-vs-bf16-g100</code><p class="caption">Embedded raw inputs + computed outputs:</p><div><a class="dl" download="qwen3-30b-a3b-2507-bf16.general.qwen3-30b-w2a16-vs-bf16-g100.json" href="data:application/json;base64,ewogICJjb250cmFjdF92ZXJzaW9uIjogIjEuMCIsCiAgImtpbmQiOiAiZ2VuZXJhbCIsCiAgInByb2ZpbGUiOiAicXdlbjMtMzBiLWEzYi0yNTA3LWJmMTYiLAogICJyb2xlIjogImJhc2VsaW5lIiwKICAiZW5naW5lIjogInZsbG0iLAogICJydW4iOiB7CiAgICAicnVuX2lkIjogInF3ZW4zLTMwYi13MmExNi12cy1iZjE2LWcxMDAiLAogICAgInRpbWVzdGFtcCI6IG51bGwsCiAgICAic2VlZHMiOiBbXQogIH0sCiAgIm1ldGFkYXRhIjogewogICAgImVuZ2luZSI6ICJ2bGxtIiwKICAgICJlbmdpbmVfdmVyc2lvbiI6ICIwLjI2LjAtc2VydmUtc3ViNCIsCiAgICAibW9kZWxfbmFtZSI6ICJxd2VuMy0zMGItYmYxNiIsCiAgICAicXVhbnRfcmVjaXBlIjogbnVsbCwKICAgICJncHVfc2t1IjogIkgxMDAtODBHQiIsCiAgICAiYmFzZV91cmwiOiAiaHR0cDovL2xvY2FsaG9zdDo4NDEwL3YxIiwKICAgICJ0b2tlbml6ZXIiOiBudWxsLAogICAgImNoYXRfdGVtcGxhdGUiOiBudWxsLAogICAgInNhbXBsaW5nIjoge30sCiAgICAidG9wX2xvZ3Byb2JzX2siOiAyMCwKICAgICJoYXJuZXNzX3ZlcnNpb24iOiBudWxsLAogICAgImFnZW50X3NjYWZmb2xkIjogIm1pbmktc3dlLWFnZW50IiwKICAgICJzY2FmZm9sZF92ZXJzaW9uIjogbnVsbCwKICAgICJjb250YWluZXJfZGlnZXN0cyI6IHt9CiAgfSwKICAicGF5bG9hZCI6IHsKICAgICJ0YXNrcyI6IHsKICAgICAgImdwcWFfZGlhbW9uZF9jb3RfemVyb3Nob3QiOiB7CiAgICAgICAgIm1ldHJpYyI6ICJleGFjdF9tYXRjaCIsCiAgICAgICAgInZhbHVlIjogMC41NCwKICAgICAgICAic3RkZXJyIjogMC4wNTAwOTA4MjY1OTYyMDMzMywKICAgICAgICAibiI6IDEwMCwKICAgICAgICAidGFza192ZXJzaW9uIjogMS4wLAogICAgICAgICJudW1fZmV3c2hvdCI6IDAKICAgICAgfSwKICAgICAgImlmZXZhbCI6IHsKICAgICAgICAibWV0cmljIjogInByb21wdF9sZXZlbF9zdHJpY3RfYWNjIiwKICAgICAgICAidmFsdWUiOiAwLjg0LAogICAgICAgICJzdGRlcnIiOiAwLjAzNjg0NTI5NDkxNzc0NzA2LAogICAgICAgICJuIjogMTAwLAogICAgICAgICJ0YXNrX3ZlcnNpb24iOiA0LjAsCiAgICAgICAgIm51bV9mZXdzaG90IjogMAogICAgICB9CiAgICB9CiAgfQp9">qwen3-30b-a3b-2507-bf16.general.qwen3-30b-w2a16-vs-bf16-g100.json</a><a class="dl" download="qwen3-30b-a3b-2507-w2a16.distribution.qwen3-30b-w2a16-vs-bf16-g100.json" href="data:application/json;base64,ewogICJjb250cmFjdF92ZXJzaW9uIjogIjEuMCIsCiAgImtpbmQiOiAiZGlzdHJpYnV0aW9uIiwKICAicHJvZmlsZSI6ICJxd2VuMy0zMGItYTNiLTI1MDctdzJhMTYiLAogICJyb2xlIjogImNhbmRpZGF0ZSIsCiAgImVuZ2luZSI6ICJ2bGxtIiwKICAicnVuIjogewogICAgInJ1bl9pZCI6ICJxd2VuMy0zMGItdzJhMTYtdnMtYmYxNi1nMTAwIiwKICAgICJ0aW1lc3RhbXAiOiBudWxsLAogICAgInNlZWRzIjogW10KICB9LAogICJtZXRhZGF0YSI6IHsKICAgICJlbmdpbmUiOiAidmxsbSIsCiAgICAiZW5naW5lX3ZlcnNpb24iOiAiMC4yNi4wLXNlcnZlLXN1YjQrcHI0ODkxOCtodW1taW5nLW1haW4iLAogICAgIm1vZGVsX25hbWUiOiAicXdlbjMtMzBiLXcyYTE2IiwKICAgICJxdWFudF9yZWNpcGUiOiAiYXV0b3JvdW5kLXcyYTE2LWcxMjgtZGRwOC1pdGVyczIwMC1uNTEyIiwKICAgICJncHVfc2t1IjogIkgxMDAtODBHQiIsCiAgICAiYmFzZV91cmwiOiAiaHR0cDovL2xvY2FsaG9zdDo4NDExL3YxIiwKICAgICJ0b2tlbml6ZXIiOiBudWxsLAogICAgImNoYXRfdGVtcGxhdGUiOiBudWxsLAogICAgInNhbXBsaW5nIjoge30sCiAgICAidG9wX2xvZ3Byb2JzX2siOiAyMCwKICAgICJoYXJuZXNzX3ZlcnNpb24iOiBudWxsLAogICAgImFnZW50X3NjYWZmb2xkIjogIm1pbmktc3dlLWFnZW50IiwKICAgICJzY2FmZm9sZF92ZXJzaW9uIjogbnVsbCwKICAgICJjb250YWluZXJfZGlnZXN0cyI6IHt9CiAgfSwKICAicGF5bG9hZCI6IHsKICAgICJ2c19yZWYiOiAicXdlbjMtMzBiLWEzYi0yNTA3LWJmMTYiLAogICAgIm5fZXhhbXBsZXMiOiAxMCwKICAgICJmbGlwX3JhdGUiOiB7CiAgICAgICJiYXNlbGluZV90b19xdWFudCI6IDAuMCwKICAgICAgInF1YW50X3RvX2Jhc2VsaW5lIjogMC4wLAogICAgICAibmV0IjogMC4wCiAgICB9LAogICAgInRvcDFfYWdyZWVtZW50IjogMC43NzUwNTU2NzkyODczMDUxLAogICAgInRvcGtfYWdyZWVtZW50IjogewogICAgICAiayI6IDIwLAogICAgICAidmFsdWUiOiAwLjk5NTU0NTY1NzAxNTU5MDIKICAgIH0sCiAgICAidHJ1bmNhdGVkX2tsIjogewogICAgICAiayI6IDIwLAogICAgICAibWVhbiI6IDAuNDkxNDg1NDkyODQwODg0NiwKICAgICAgInA5NSI6IDIuMjQzMTAxOTc4Mzg4MTAwNQogICAgfQogIH0KfQ==">qwen3-30b-a3b-2507-w2a16.distribution.qwen3-30b-w2a16-vs-bf16-g100.json</a><a class="dl" download="qwen3-30b-a3b-2507-w2a16.general.qwen3-30b-w2a16-vs-bf16-g100.json" href="data:application/json;base64,ewogICJjb250cmFjdF92ZXJzaW9uIjogIjEuMCIsCiAgImtpbmQiOiAiZ2VuZXJhbCIsCiAgInByb2ZpbGUiOiAicXdlbjMtMzBiLWEzYi0yNTA3LXcyYTE2IiwKICAicm9sZSI6ICJjYW5kaWRhdGUiLAogICJlbmdpbmUiOiAidmxsbSIsCiAgInJ1biI6IHsKICAgICJydW5faWQiOiAicXdlbjMtMzBiLXcyYTE2LXZzLWJmMTYtZzEwMCIsCiAgICAidGltZXN0YW1wIjogbnVsbCwKICAgICJzZWVkcyI6IFtdCiAgfSwKICAibWV0YWRhdGEiOiB7CiAgICAiZW5naW5lIjogInZsbG0iLAogICAgImVuZ2luZV92ZXJzaW9uIjogIjAuMjYuMC1zZXJ2ZS1zdWI0K3ByNDg5MTgraHVtbWluZy1tYWluIiwKICAgICJtb2RlbF9uYW1lIjogInF3ZW4zLTMwYi13MmExNiIsCiAgICAicXVhbnRfcmVjaXBlIjogImF1dG9yb3VuZC13MmExNi1nMTI4LWRkcDgtaXRlcnMyMDAtbjUxMiIsCiAgICAiZ3B1X3NrdSI6ICJIMTAwLTgwR0IiLAogICAgImJhc2VfdXJsIjogImh0dHA6Ly9sb2NhbGhvc3Q6ODQxMS92MSIsCiAgICAidG9rZW5pemVyIjogbnVsbCwKICAgICJjaGF0X3RlbXBsYXRlIjogbnVsbCwKICAgICJzYW1wbGluZyI6IHt9LAogICAgInRvcF9sb2dwcm9ic19rIjogMjAsCiAgICAiaGFybmVzc192ZXJzaW9uIjogbnVsbCwKICAgICJhZ2VudF9zY2FmZm9sZCI6ICJtaW5pLXN3ZS1hZ2VudCIsCiAgICAic2NhZmZvbGRfdmVyc2lvbiI6IG51bGwsCiAgICAiY29udGFpbmVyX2RpZ2VzdHMiOiB7fQogIH0sCiAgInBheWxvYWQiOiB7CiAgICAidGFza3MiOiB7CiAgICAgICJncHFhX2RpYW1vbmRfY290X3plcm9zaG90IjogewogICAgICAgICJtZXRyaWMiOiAiZXhhY3RfbWF0Y2giLAogICAgICAgICJ2YWx1ZSI6IDAuMjQsCiAgICAgICAgInN0ZGVyciI6IDAuMDQyOTIzNDY5NTk5MDkyODE2LAogICAgICAgICJuIjogMTAwLAogICAgICAgICJ0YXNrX3ZlcnNpb24iOiAxLjAsCiAgICAgICAgIm51bV9mZXdzaG90IjogMAogICAgICB9LAogICAgICAiaWZldmFsIjogewogICAgICAgICJtZXRyaWMiOiAicHJvbXB0X2xldmVsX3N0cmljdF9hY2MiLAogICAgICAgICJ2YWx1ZSI6IDAuNDUsCiAgICAgICAgInN0ZGVyciI6IDAuMDUsCiAgICAgICAgIm4iOiAxMDAsCiAgICAgICAgInRhc2tfdmVyc2lvbiI6IDQuMCwKICAgICAgICAibnVtX2Zld3Nob3QiOiAwCiAgICAgIH0KICAgIH0KICB9Cn0=">qwen3-30b-a3b-2507-w2a16.general.qwen3-30b-w2a16-vs-bf16-g100.json</a><a class="dl" download="delta.json" href="data:application/json;base64,ewogICJjb250cmFjdF92ZXJzaW9uIjogIjEuMCIsCiAgImJhc2VsaW5lX3JlZiI6ICJxd2VuMy0zMGItYTNiLTI1MDctYmYxNiIsCiAgImNhbmRpZGF0ZV9yZWYiOiAicXdlbjMtMzBiLWEzYi0yNTA3LXcyYTE2IiwKICAibm9pc2VfZmxvb3IiOiBudWxsLAogICJxdWFsaXR5X2RpbWVuc2lvbnMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogImdwcWFfZGlhbW9uZF9jb3RfemVyb3Nob3QiLAogICAgICAia2luZCI6ICJnZW5lcmFsIiwKICAgICAgImJhc2VsaW5lIjogMC41NCwKICAgICAgImNhbmRpZGF0ZSI6IDAuMjQsCiAgICAgICJkZWx0YSI6IC0wLjMsCiAgICAgICJhYm92ZV9ub2lzZSI6IG51bGwsCiAgICAgICJyZWdyZXNzaW9uIjogbnVsbAogICAgfSwKICAgIHsKICAgICAgIm5hbWUiOiAiaWZldmFsIiwKICAgICAgImtpbmQiOiAiZ2VuZXJhbCIsCiAgICAgICJiYXNlbGluZSI6IDAuODQsCiAgICAgICJjYW5kaWRhdGUiOiAwLjQ1LAogICAgICAiZGVsdGEiOiAtMC4zOSwKICAgICAgImFib3ZlX25vaXNlIjogbnVsbCwKICAgICAgInJlZ3Jlc3Npb24iOiBudWxsCiAgICB9CiAgXSwKICAiZmxpcF9yYXRlIjogewogICAgInZhbHVlIjogMC4wLAogICAgImJ1ZGdldCI6IDAuMDMsCiAgICAid2l0aGluX2J1ZGdldCI6IHRydWUKICB9LAogICJwZXJmX2dhaW4iOiBudWxsLAogICJ0aHJlc2hvbGRzIjogewogICAgIm1pbl9wZXJmX2dhaW5fcGN0IjogMTAuMCwKICAgICJtaW5fZG9sbGFyX3NhdmluZ19wY3QiOiAxMC4wLAogICAgImZsaXBfcmF0ZV9idWRnZXQiOiAwLjAzCiAgfSwKICAidmVyZGljdCI6ICJDQVZFQVQiLAogICJ2ZXJkaWN0X3JlYXNvbnMiOiBbCiAgICAiZmxpcC1yYXRlIDAuMDAwIHdpdGhpbiBidWRnZXQgMC4wMzAiLAogICAgIm5vIHBlcmYvY29zdCBnYWluIG1lYXN1cmVkIHlldCIKICBdCn0=">delta.json</a><a class="dl" download="summary.csv" href="data:text/csv;base64,bWV0cmljLGJhc2VsaW5lLGNhbmRpZGF0ZSxkZWx0YSxnb29kX2RpcmVjdGlvbixzdGF0dXMsbm90ZQ0KUXVhbGl0eSAobWVhbiBnZW5lcmFsKSwwLjY5MCwwLjM0NSwtMC4zNDUsaGlnaGVyLHBhc3Msbm8gbm9pc2UgZmxvb3I7IHNpZ25pZmljYW5jZSBub3QgYXNzZXNzZWQNCldvcnN0IHF1YWxpdHkgZGltIChpZmV2YWwpLDAuODQwLDAuNDUwLC0wLjM5MCxoaWdoZXIsLG5vIG5vaXNlIGZsb29yDQpGbGlwLXJhdGUgdnMgYmFzZWxpbmUsMCAoZGVmKSwwLjAwMCxidWRnZXQgMC4wMzAsbG93ZXIscGFzcyx3aXRoaW4gYnVkZ2V0DQo=">summary.csv</a></div></details></section>
+    <footer class="report-foot">Generated by benchmarks/report · static HTML + Plotly.js · shared/contract v1.0</footer>
+  </div>
+</body>
+</html>

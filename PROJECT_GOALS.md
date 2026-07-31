@@ -82,6 +82,16 @@ Last reviewed: 2026-07-31.
    - [ ] **2g — Seven-task breadth run for the quality-clean AWQ r6 recipe** (the
      `full4` protocol has only ever been run for r5; in-house GPTQ still holds the
      sole full-breadth shipping verdict).
+   - [x] **2h — Speculative-decoding tuning study** (EAGLE3 drafter on the
+     in-house GPTQ W4AFP8 target, SPEED-Bench, aiperf): per-user decode speedup
+     **1.21×–2.53×** depending on content type (code 2.53× at conc 1 / 2.07× at
+     conc 10; creative writing 1.21–1.36×; mixed ShareGPT 1.81×), zero quality
+     cost by construction. Draft depth per traffic class is the dominant lever
+     (k≈5–6 code, k=2 creative — the recipe default k=3 is wrong for both);
+     the INT4 drafter is free in acceptance; Humming-×9 drafter kernel +2.25%
+     at conc 10 only. Conclusions revised 2026-07-29 by a replicated 35-serve
+     re-measurement. `M3_OFFICIAL_SPECDEC_RESULTS.html`,
+     `docs/m3-specdec-eagle3.md`. *(done 2026-07-29, wk 07-27–08-02)*
 
 3. **Working AWQ quantized model** — *DONE (all current sub-tasks complete);
    quality-competitive as of 2026-07-23 (r6).* **Serve `r6` or `r7`, not `r5`.**
@@ -172,6 +182,9 @@ in the referenced sub-tasks above (and the per-goal field notes under
 `docs/goals/`) — this list only answers "what moved this week".
 
 ### wk 2026-07-27 – 08-02
+- **2h** — Speculative decoding tuned on the in-house 4-bit M3: 1.21–2.53×
+  per-user decode speedup, workload-dependent, no quality cost; replicated
+  re-measurement (35 serves) hardened the conclusions.
 - **1c / 4a** — First new method onboarded (AutoRound): DDP W2A16 quant of a 30B
   MoE in 1 h 40 m; checkpoint serves coherently.
 - **4b** — W2A16 `iters=200` quality A/B measured: NO-SHIP verdict; `iters=1000`

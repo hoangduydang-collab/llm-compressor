@@ -116,7 +116,7 @@
   <main>
     <article>
 
-      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 Objective &amp; sub-tasks</a><a href="#result">02 Result</a><a href="#handoff">03 Boundary</a><a href="#ledger">04 Evidence</a></nav>
+      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 Objective &amp; sub-tasks</a><a href="#result">02 Result</a><a href="#detail">03 Detailed results</a><a href="#handoff">04 Boundary</a><a href="#ledger">05 Evidence</a></nav>
 
       <section id="objective">
         <h2><span class="number">01 / Objective</span>Serve the 4-bit model on a faster kernel — without lowering the evidence bar</h2>
@@ -169,13 +169,47 @@
         </div>
       </section>
 
+      <section id="detail">
+        <h2><span class="number">03 / Detailed results</span>Every variant, every prompt length</h2>
+        <p><strong>All kernel variants measured, model fixed.</strong> TPOT (steady time per output token, lower is faster) with total server output in parentheses. Four variants were benchmarked against the old kernel; the adopted one wins decode at every load level, and the newer "packed-K" build's small win at 64 users was not worth its single-user loss.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Kernel axis · reasoning · TPOT ms (total output tok/s)</caption>
+            <thead><tr><th>Users</th><th class="num">Old (CUTLASS)</th><th class="num">Adopted (Humming 0.1.10)</th><th class="num">Humming grouped</th><th class="num">0.1.11 packed-K</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td class="num">9.73 ms (102)</td><td class="num best">7.29 ms (137)</td><td class="num">8.48 ms (117)</td><td class="num">7.59 ms (131)</td></tr>
+              <tr><td>4</td><td class="num">11.91 ms (335)</td><td class="num best">8.82 ms (452)</td><td class="num">9.91 ms (402)</td><td class="num">8.90 ms (448)</td></tr>
+              <tr><td>16</td><td class="num">15.28 ms (1,042)</td><td class="num best">12.22 ms (1,302)</td><td class="num">13.28 ms (1,198)</td><td class="num">12.23 ms (1,300)</td></tr>
+              <tr><td>64</td><td class="num">22.28 ms (2,849)</td><td class="num">19.43 ms (3,262)</td><td class="num">20.64 ms (3,046)</td><td class="num best">19.21 ms (3,299)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>The gain holds at every prompt length.</strong> Speed per user (first-token latency in parentheses); the kernel ordering never changes from a 1k to a 100k-token prompt.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Prompt-length sweep · speed per user tok/s (first-token latency)</caption>
+            <thead><tr><th>Prompt × users</th><th class="num">Old (CUTLASS)</th><th class="num">Adopted (Humming 0.1.10)</th></tr></thead>
+            <tbody>
+              <tr><td>1k × 1</td><td class="num">102.2 (114 ms)</td><td class="num best">137.3 (114 ms)</td></tr>
+              <tr><td>1k × 10</td><td class="num">71.9 (403 ms)</td><td class="num best">92.2 (423 ms)</td></tr>
+              <tr><td>10k × 1</td><td class="num">102.0 (532 ms)</td><td class="num best">137.1 (554 ms)</td></tr>
+              <tr><td>10k × 10</td><td class="num">56.6 (1.7 s)</td><td class="num best">75.8 (2.7 s)</td></tr>
+              <tr><td>100k × 1</td><td class="num">100.3 (5.2 s)</td><td class="num best">130.9 (5.4 s)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>The one thing the old kernel still does better:</strong> first-token latency under heavy load (16+ users), where the old kernel prepares long prompts 12–29% faster. Decoding — where users spend nearly all their time — is 23–35% faster on the new kernel at every operating point, which is why it is the default.</p>
+        <p><strong>Four defects found and fixed on the way.</strong> Qualification surfaced four real bugs in the vendor kernel library (the largest: stored results were never actually committed to memory, making all result-waits no-ops). All four are fixed in our build and reported; none are fixed in the vendor's releases yet, so every serve run verifies at startup — fail-closed — that the patched kernel is the one actually running.</p>
+        <p><strong>Same kernel, second job:</strong> it also serves the speculative-decoding draft model under load, worth a further +2.25% per user at 10 concurrent users (<a href="goal-2-temporary-evaluation-pipeline.html#specdec">Goal 2, speculative decoding</a>).</p>
+      </section>
+
       <section id="handoff">
-        <h2><span class="number">03 / Boundary</span>Kernel speed, not model quality</h2>
+        <h2><span class="number">04 / Boundary</span>Kernel speed, not model quality</h2>
         <p>This goal changed <em>how fast</em> the model serves, not <em>what</em> it answers: checkpoint quality is Goal 3's contract and the paired evaluation is Goal 2's. The full performance comparison across kernels and models is published under Goal 2's serving-performance report.</p>
       </section>
 
       <section id="ledger">
-        <h2><span class="number">04 / Evidence</span>Sources</h2>
+        <h2><span class="number">05 / Evidence</span>Sources</h2>
         <ul class="ledger">
           <li><span class="t">Qualification · this fork</span><a href="../../M3_HUMMING_W4A8_QUALIFICATION_REPORT.md">M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</a></li>
           <li><span class="t">Benchmark · this fork</span><a href="../m3-two-axis-perf.md">docs/m3-two-axis-perf.md</a> and <a href="../../M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a></li>

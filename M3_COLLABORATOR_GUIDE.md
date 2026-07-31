@@ -30,7 +30,8 @@ them, because those are maintained and will drift ahead of this one:
 
 We quantize **MiniMax-M3** (a ~920 GB BF16 VL-MoE reasoning model) to **W4AFP8** — INT4
 group-128 weights with dynamic per-token FP8 activations — so it runs on **one 8×H100
-node** instead of two. Weights go 796 GB → 225 GB, and decode throughput improves
+node** instead of two. The safetensors weight payload goes 796 GB → 225 GB (the ~920 GB
+figure is the full BF16 memory footprint), and decode throughput improves
 **~3.8× per GPU** against the BF16 baseline.
 
 The result is a standard `compressed-tensors` checkpoint served by **released vLLM 0.24.0
@@ -70,11 +71,18 @@ export HOME=/mnt/nfs/hoangduy                          # 3. Iceland's HOME is no
 | `serve-026` | vLLM 0.26.0 + merged humming 0.1.10 | 0.26.0 work — has open blockers, see [A8](#a8-known-broken--do-not-use) |
 | `humming-0.1.10-site`, `humming-0.1.11-site` | Patched Humming side-installs | Put on `PYTHONPATH` for Humming-kernel arms. **Never** install into `quant` |
 | `sglang-eval` | SGLang 0.5.13.post1 | SGLang-native checkpoints (e.g. GLM-5.2). Do **not** `pip install -e .` here — it upgrades torch and breaks FlashInfer |
+| `benchmarks` | lm-eval **0.4.10** + openai; HTTP client only — no torch, no vLLM | What the quality arms drive lm-eval from, over HTTP. Its lm-eval is **older than `quant`'s 0.4.12** — don't assume versions match |
+
+You will also see `quant-sub4`, `serve-sub4`, and `humming-main-site` in `ls
+…/venvs`: they belong to the separate, in-flight **sub-4-bit (W2A16 AutoRound) track on a
+different model line** — not part of the M3 story; don't use them for M3 work. (`perf` is
+where aiperf lives; `main` and `quant-tf514-trial` are older/experimental.)
 
 **Scheduler.** Iceland accepts top-level **`srun` only** — `sbatch` is not
 supported. Long runs must be launched from a persistent detached controller (normally
-`tmux`), or they die with your SSH session. (The `.sbatch` files under `pipeline/slurm/`
-predate this constraint and do not work here; use the `run_*_srun.sh` launchers.)
+`tmux`), or they die with your SSH session. (The `.sbatch` files under `pipeline/slurm/` —
+and the `submit_*.sh` wrappers that drive them — predate this constraint and do not work
+here; use the `run_*_srun.sh` launchers.)
 
 **Give your srun step CPUs.** Without an explicit `--cpus-per-task`, Iceland's Slurm 21.08 binds
 the whole step to **one physical core** even on an exclusive node. Pass
@@ -94,12 +102,17 @@ you:
 |---|---|---|---|
 | **`gptq-base`** | GPTQ W4AFP8 | 7 tasks + 2-task 64k depth | ✅ **Default.** Recovery 97.4–101.1% on all seven tasks; spend within 2% of BF16; symmetric flips. The only arm with a **breadth** verdict |
 | **`r6`** | AWQ W4AFP8 | 2 tasks (GPQA, IFEval) + sampling probe | ✅ Clean and balanced on what was measured: GPQA 98.7%, IFEval 98.6%. No breadth run |
-| `r7` | AWQ W4AFP8 | 2 tasks | ⚠️ GPQA 104.4% but IFEval 95.7%. Also needs the gate-alpha overlay |
+| `r7` | AWQ W4AFP8 | 2 tasks | ⚠️ GPQA 104.4% but IFEval 95.7% with **one-sided flips** (37✗/16✓ — directional damage, not noise). Also needs the gate-alpha overlay |
 | `r5` | AWQ W4AFP8 | 7 tasks + 2-task depth | ❌ **Do not serve.** GPQA recovery 71.7% from reasoning non-termination |
-| `r8-fp8rest`, `r8-uniformqkv` | GPTQ W4AFP8 | **none** | ⚠️ Perf-only. Different recipe from `gptq-base` — do not reuse its recovery figures |
+| `r8-fp8rest`, `r8-uniformqkv` | GPTQ W4AFP8 | **none** | ⚠️ Perf-only. One quant run, two exports; different recipe from `gptq-base` (FP8 non-expert layers) — do not reuse its recovery figures |
 | MXFP8 (vendor) | W8A16 | 7 tasks | ✅ Recovery 97.5–100.6%. Useful external control |
 | cyankiwi (community) | W4A16 | 7 tasks + depth | ❌ Quality-disqualified; runaway generations |
 | BF16 | — | baseline | Reference only — needs **2 nodes, TP16** (Ray) |
+
+An **arm is not a checkpoint**: the registry also lists three kernel-backend arms
+(`cutlass-w4afp8`, `humming-w4afp8-indexed`, `humming-w4afp8-grouped`) that all serve the
+`gptq-base` checkpoint with different MoE kernels. That choice is made at serve time —
+see [A3](#a3-serve-it).
 
 Two canonical paths to copy:
 
@@ -139,9 +152,12 @@ Python layered on the released wheel's precompiled binaries: **no CUDA recompila
 | Group | Edits | What it buys |
 |---|---|---|
 | **W4A8 kernel admission** | 2 | Declares `SWIGLUOAI_UNINTERLEAVE` supported and defaults the clamp scalars (`limit=7.0, alpha=1.702, beta=1.0`). **Required always** — without these the model cannot load |
-| **CUDA-graph safety** | 5 | Fixes an illegal-memory-access during graph capture, from four separate causes: FlashInfer fused all-reduce, `record_stream` under multi-stream capture, a dropped `torch.cuda.synchronize()` before capture cleanup, and NaN router logits from padding tokens producing out-of-bounds expert IDs (vLLM #39288/#39391). Needed only with graphs **on** |
+| **CUDA-graph safety** | 5 | Fixes an illegal-memory-access during graph capture, from four separate causes: FlashInfer fused all-reduce, `record_stream` under multi-stream capture, a dropped `torch.cuda.synchronize()` before capture cleanup, and NaN router logits from padding tokens producing out-of-bounds expert IDs (vLLM #39288/#39391). Graphs are **on** for every published result, so treat these as required in practice |
 | **0.26.0 regression** | 1 | Restores head-major `topk_indices_buffer` allocation off SM100. A no-op on 0.24.0 |
 | **Arm-specific** | 2 + 1 | Humming MoE-backend admission; gate-alpha fold support (**required for AWQ `r7`**) |
+
+There is also one *optional*, release-conditional edit (a `QuantKey.__str__` diagnostics
+fallback whose anchor exists only on 0.26.0); it never gates the patched/unpatched status.
 
 **Removal criteria:** delete the overlay once a vLLM release serves M3 W4A8
 (SwiGLU-OAI uninterleaved) natively.
@@ -150,15 +166,18 @@ Python layered on the released wheel's precompiled binaries: **no CUDA recompila
 
 ```bash
 python pipeline/slurm/patch_vllm_m3_serve.py            # idempotent, fail-loud
-python pipeline/slurm/patch_vllm_m3_serve.py --check    # exit 1 if unpatched
+python pipeline/slurm/patch_vllm_m3_serve.py --check    # non-zero if unhealthy: 1 = unpatched, 2 = file/anchor missing
 ```
 
 Run `--check` **before every serve**. Expected tail on a healthy `quant` venv:
 
 ```
 vLLM 0.24.0 at /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm
+flashinfer <version>
 already patched: .../fused_moe/experts/cutlass_moe.py
 ... (eight required edits) ...
+optional QuantKey.__str__ ScalarType fallback: file absent, skipped   # 0.26.0-only anchor
+MoE quality probe: <status>
 r7 gate-alpha: utils.py: already injected
 STATUS: patched
 ```
@@ -178,7 +197,9 @@ FORCE=0 bash pipeline/slurm/free_gpus.sh  # verify only, kill nothing
 ```
 
 It never touches another user's processes, and it exits 1 if the GPUs are still occupied
-by anyone.
+by anyone. It **will** kill your own *other* vLLM/pipeline processes on that node (the
+pattern sweep matches any of your `vllm` processes) — don't run it where you have a
+healthy serve you want to keep.
 
 **Use the repo launcher, not a hand-written command.**
 `pipeline/slurm/run_vllm_http_serve_smoke.sh` produced every published M3 serving result.
@@ -189,8 +210,11 @@ applies the gate-alpha overlay when needed:
 CKPT="$CKPT" SERVED_NAME=MiniMaxAI/MiniMax-M3 PORT=8000 \
 MAX_MODEL_LEN=65536 \
 LOG=serve.log PID_FILE=serve.pid \
-  bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+  bash pipeline/slurm/run_vllm_http_serve_smoke.sh |& tee launcher.log
 ```
+
+(Tee the launcher's stdout — `serve.log` receives only the vLLM child's output, and the
+launcher prints its effective config, including which MoE backend it chose, to stdout.)
 
 It expands to the following, which is what to copy if you must serve by hand:
 
@@ -203,10 +227,15 @@ vllm serve "$CKPT" \
   --kv-cache-dtype fp8 \
   --max-model-len 65536 \
   --gpu-memory-utilization 0.9 \
+  --disable-custom-all-reduce \
+  --language-model-only \
   --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 --enable-auto-tool-choice \
   --trust-remote-code \
   --host 0.0.0.0 --port 8000
 ```
+
+(`--disable-custom-all-reduce` and `--language-model-only` are launcher defaults too —
+every published result was measured with them; the latter skips the VL multimodal budget.)
 
 **CUDA graphs are ON, and that is the production configuration.** There is no
 `--enforce-eager` in the command above, by design. Every published M3 result — quality
@@ -225,7 +254,10 @@ Graphs-on requires these, which the launcher sets for you:
 Launcher defaults, if you override nothing: `TP=8`, `MAX_MODEL_LEN=8192`, `GPU_UTIL=0.9`,
 `KV_CACHE_DTYPE=fp8`, `BLOCK_SIZE=128`, `SERVE_VENV=…/venvs/quant`. Set `MAX_MODEL_LEN`
 explicitly for eval work — 8192 is a smoke-test default, and the perf windows served at
-131072.
+131072. Two more defaults worth knowing: `PATCH_CKPT_CONFIG=1` edits the checkpoint's own
+`config.json` in place on serve (sets `hidden_act=swigluoai`, copies VL processor
+artifacts), and if `$PID_FILE` names a live process the launcher **exits 0 with "Serve
+already running" without serving** — delete stale pid files.
 
 ### Pick the MoE kernel — the launcher default is *not* the fast one
 
@@ -235,26 +267,43 @@ published perf number was measured on. Serve with the default and you get CUTLAS
 about **102 tok/s/user instead of 137** — and you will not reproduce our numbers.
 
 ```bash
+export PYTHONPATH=/mnt/nfs/hoangduy/venvs/humming-0.1.10-site${PYTHONPATH:+:$PYTHONPATH}
 M3_W4A8_BACKEND=humming \
 CKPT="$CKPT" SERVED_NAME=MiniMaxAI/MiniMax-M3 PORT=8000 MAX_MODEL_LEN=65536 \
 LOG=serve.log PID_FILE=serve.pid \
-  bash pipeline/slurm/run_vllm_http_serve_smoke.sh
+  bash pipeline/slurm/run_vllm_http_serve_smoke.sh |& tee launcher.log
 ```
 
-With `M3_W4A8_BACKEND=humming` the launcher handles the rest: it adds
+With `M3_W4A8_BACKEND=humming` the launcher handles most of the rest: it adds
 `--quantization humming`, defaults `VLLM_HUMMING_MOE_GEMM_TYPE=indexed` and
 `VLLM_HUMMING_USE_F16_ACCUM=0`, applies the two Humming overlay edits (`--humming`), fixes
 up `LD_LIBRARY_PATH` for the NVRTC builtins that Humming's JIT `dlopen()`s by soname, and
-runs a **fail-closed backend attestation** — so a silent fall back to CUTLASS is not
-possible. On the `quant` venv, Humming 0.1.10 comes from a `PYTHONPATH` side-install; on
-`serve-026` it is merged in-venv.
+runs a **fail-closed preflight** (vLLM/Humming versions, SM90, source integrity, declared
+patches), recorded in `serve.log.humming-preflight.json`. Two things it does **not** do:
+
+1. **It does not set `PYTHONPATH`.** On the `quant` venv, Humming 0.1.10 is a side-install
+   you must export yourself — the first line above. Forgetting it fails closed at
+   preflight (`HUMMING_VERSION_MISMATCH`) rather than silently serving CUTLASS. On
+   `serve-026`, Humming is merged in-venv and no export is needed.
+2. **It does not run the backend attestation** that proves which kernel actually served —
+   the arm scripts run that after the server is up, and if you serve by hand you should
+   too:
+
+   ```bash
+   python -m pipeline.m3_humming_w4a8 attest \
+     --preflight serve.log.humming-preflight.json \
+     --log serve.log --out backend-attestation.json
+   ```
+
+   It fails non-zero on any CUTLASS/Marlin/unquantized fallback marker in the serve log.
 
 `VLLM_HUMMING_MOE_GEMM_TYPE=grouped_contiguous` is the other measured option; it is slower
 than `indexed` at low and mid load. Kernel choice is a serving knob only — it does not
 touch the checkpoint or output quality.
 
-**If you are driving the benchmarks repo**, do not hand-write the command — use the
-profile seam, which fails closed without its three inputs:
+**If you are driving the benchmarks repo** (`/mnt/nfs/hoangduy/projects/benchmarks`), do
+not hand-write the command — use the profile seam, which fails closed without its three
+inputs:
 
 ```bash
 M3_ARM=r6 \
@@ -292,9 +341,11 @@ curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -
   "max_tokens":128}' | python -m json.tool
 
 # 4. Confirm which MoE kernel you actually got, and record the stack fingerprint
-grep -E 'w4a8-backend|enforce_eager|CUDAGraphMode' serve.log | head -3
-cat serve.log.humming-preflight.json 2>/dev/null   # exists only on Humming arms
-grep -o 'vllm-[0-9.]*-tp[0-9]*-ep-[a-f0-9]*' serve.log | head -1
+grep -E 'enforce_eager|CUDAGraphMode' serve.log | head -2   # vLLM's own config dump
+grep 'w4a8-backend' launcher.log                  # launcher stdout, NOT serve.log — tee it (A3)
+cat serve.log.humming-preflight.json 2>/dev/null  # exists only on Humming arms
+# system_fingerprint (vllm-0.24.0-tp8-ep-<hash>) is in each chat response body —
+# read it from step 3's curl output; it is not written to any log
 ```
 
 **`rc=0` is not evidence.** We have had `aiperf` exit 0 with every single request
@@ -347,14 +398,17 @@ Two further multipliers stack on top of the format choice:
 
 - **MoE kernel — already included in the table above.** Humming indexed 0.1.10 is the
   qualified default kernel for `gptq-base` and beats vLLM's CUTLASS W4A8 by **+34% at
-  conc 1** (137 vs 102 tok/s/user), compressing to +24–27% at conc 10. You must opt in
+  conc 1** (137 vs 102 tok/s/user), holding at +28–34% at conc 10 on 1k/10k prompts (the
+  100k×10 saturation cell inverts and is not a valid A/B). You must opt in
   with `M3_W4A8_BACKEND=humming` — see the warning in [A3](#a3-serve-it). If your
   measured conc-1 number is ~102, you are on CUTLASS.
 - **Speculative decoding (EAGLE3) — not included above.** A further 1.18–2.53× on top,
   workload-dependent:
   best case 345.9 tok/s/user for a single user on code-shaped work, floor 1.50× on loaded
   creative-writing traffic. **There is no single best draft depth** — the optimum moves
-  with load and prompt entropy. Read `M3_OFFICIAL_SPECDEC_RESULTS.html` before enabling it.
+  with load and prompt entropy. Note the drafter was trained on and measured against the
+  **MXFP8** endpoint — MXFP8, not BF16, is its on-distribution reference. Read
+  `M3_OFFICIAL_SPECDEC_RESULTS.html` before enabling it.
 
 > **Do not compare numbers across serving configs.** Kernel, concurrency, workload tier,
 > graphs on/off, and draft depth each move throughput by more than the differences you are
@@ -435,14 +489,17 @@ python -m pipeline.run --config pipeline/configs/minimax_m3.yaml
 ```
 
 Stages are `quantize → serve-verify → eval-gate`; run one with
-`--stage quantize|serve|eval`, reuse a checkpoint with `--checkpoint <dir>`, override any
+`--stage quantize|serve|eval`, reuse a checkpoint with `--checkpoint <dir>` (honored for
+`serve`/`eval` only — silently ignored by `quantize`/`all`), override any
 field with `--set a.b.c=value`. Output lands in `artifacts/<run_slug>/<timestamp>/`
 with `checkpoint/`, the resolved `config.yaml`, `recipe.json`, `metadata.json` (git SHA,
 package versions, GPU SM), `serve_report.json`, `eval_report.json`.
 
 `quantization.method` ∈ {`gptq`, `awq`, `smoothquant+{gptq,awq}`, `autoround`,
-`spinquant+{gptq,awq}`}; `quantization.scheme` ∈ {`W4AFP8`, `W4A8`}. Both Hopper-native,
-saved as `pack-quantized`.
+`spinquant+{gptq,awq}`} (validated). `quantization.scheme`: `W4AFP8` and `W4A8` are the
+production choices (`W4A16`, `W8A8`, and FP8 variants are also known — the field is not
+validated). W4-family schemes save as `pack-quantized`, **except** recipes that set
+`fp8_dynamic_targets` (the r8 configs), which save as `mixed-precision`.
 
 ## B2. Launching a full M3 quantization
 
@@ -451,7 +508,9 @@ just needs a `torchrun`-style launch, which the wrapper handles. Do not write be
 expert-parallel code; that detour is documented in `CLAUDE.md` as a worked example of what
 not to do.
 
-Always dry-run first (prints the exact `srun` command and runs the preflights):
+Always dry-run first — it prints the exact `srun` command it would run. (The preflights
+below run on the allocated node at real launch, **not** during a dry-run; a clean dry-run
+validates nothing about the target node.)
 
 ```bash
 export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-m3-ddp-awq-full-r6-noupdown"
@@ -463,16 +522,19 @@ DRY_RUN=1 METHODS=awq EVIDENCE_ONLY=0 \
   bash pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh
 ```
 
-Drop `DRY_RUN=1` to launch, **from a `tmux` controller**. `METHODS="gptq awq"` runs both
+Drop `DRY_RUN=1` to launch, **from a `tmux` controller outside any Slurm allocation**
+(the controller exits if `SLURM_JOB_ID` is set). `METHODS="gptq awq"` runs both
 concurrently on separate exclusive nodes. `EVIDENCE_ONLY=0` is what saves a checkpoint
-(the default `1` writes metrics only).
+(the default `1` writes metrics only — and no `recipe.json`). Note this distributed path
+is **quantize-only**: `serve_report.json`/`eval_report.json` never come from it — serving
+and eval happen separately via Part A.
 
 Preflights that exist because they each cost us a failed multi-hour run:
 
 - **`/dev/shm` must hold the whole checkpoint (~869 GB), not an IPC floor.** The
   distributed CPU offload keeps one full shared model copy in `/dev/shm`. A 128 GB floor
   once let AWQ launch on a node with 213 GB free and die mid-load. `MIN_SHM_AVAILABLE_BYTES=auto`
-  sizes the gate from the safetensors index.
+  sizes the gate from the safetensors index (total × 1.05 ≈ 913 GB for M3).
 - **`CPUS_PER_TASK=192`** — see the one-core binding trap in [A0](#a0-environment-preconditions).
 - **`MIN_MEM_AVAILABLE_BYTES`** guards host RAM.
 
@@ -525,12 +587,15 @@ its accuracy matched BF16. It fell into reasoning loops, burned the budget, and 
 nothing — which scores zero. The root cause was AWQ folding smoothing scales through M3's
 **up→down** path, which is not function-preserving across the clamped GLU
 `(clamp(up)+1)·glu`. Removing the fold collapsed token spend from 2.19×/3.69× back to
-~1.1×, which is the proof it was the same defect. Full story with transcripts:
+1.13×/1.17×, which is the proof it was the same defect. Full story with transcripts:
 `M3_OFFICIAL_QUALITY_RESULTS.html`.
 
 ## B4. Pre-quantization static gates
 
-Two checks fail fast, before any GPU time:
+Two checks to run before burning GPU time. (The *automated* width gate fires at the
+**serve-verify** stage against the saved checkpoint — `preflight_serve_check()` in
+`pipeline/serve_verify.py` — so to catch a doomed model before quantizing, run the
+one-liner below or `pipeline/prequant_compatibility.py` yourself.)
 
 **1. Expert width must be a multiple of 256.** The vLLM CUTLASS W4A8 grouped-GEMM MoE
 kernel requires each routed expert's `moe_intermediate_size` divisible by 256, on the

@@ -7,7 +7,11 @@ Unlike ``pipeline/vllm_m3_patches.py`` (an in-process monkeypatch used by
 that any launch path -- including the production ``vllm serve`` HTTP server --
 works without a runtime hook.
 
-Two edits (see BUGS_AND_FIXES.md "W4A8 MoE ... SWIGLUOAI_UNINTERLEAVE"):
+The authoritative, ordered edit list is ``_patch_targets()`` below — currently eight
+required edits, plus ``_optional_patch_targets`` / ``_humming_patch_targets`` /
+``ensure_m3_gate_alpha`` extras. The items below are docstring highlights only; their
+numbers are NOT ``_patch_targets()`` indices (see BUGS_AND_FIXES.md
+"W4A8 MoE ... SWIGLUOAI_UNINTERLEAVE"):
 
   1. fused_moe/experts/cutlass_moe.py
      Add ``MoEActivation.SWIGLUOAI_UNINTERLEAVE`` to

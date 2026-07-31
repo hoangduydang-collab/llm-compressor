@@ -7,7 +7,10 @@ pipeline produced and how good it is. **Part A** is the serving path you will us
 checkpoint came from, or if you need to make one.
 
 Written 2026-07-29; audited and re-verified against the owner docs, scripts, and disk on
-2026-07-31. **Assumes you are on the Iceland cluster** with access to
+2026-07-31, and **Part A was executed end-to-end that day** (fresh node → Humming serve →
+verification → attestation, evidence in
+`/mnt/nfs/hoangduy/results/m3-collab-guide-walkthrough/20260731T063542Z/`).
+**Assumes you are on the Iceland cluster** with access to
 `/mnt/nfs/hoangduy/`. Every path below was verified to exist there on that date. Nothing
 here is portable as-written to another cluster — the venvs, checkpoints, and the
 `srun`-only scheduler constraint are all Iceland-specific.
@@ -63,7 +66,10 @@ source /mnt/nfs/hoangduy/venvs/quant/bin/activate      # 2. AFTER env.sh so it w
 export HOME=/mnt/nfs/hoangduy                          # 3. Iceland's HOME is not writable
 ```
 
-**Order matters** — `env.sh` first, then the venv, then `HOME`.
+**Order matters** — `env.sh` first, then the venv, then `HOME`. All commands in this
+guide also assume your working directory is the **repo root**
+(`/mnt/nfs/hoangduy/projects/llm-compressor`) — the `python -m pipeline.…` invocations
+fail from anywhere else.
 
 | venv | Engine | Use for |
 |---|---|---|
@@ -174,19 +180,36 @@ Run `--check` **before every serve**. Expected tail on a healthy `quant` venv:
 
 ```
 vLLM 0.24.0 at /mnt/nfs/hoangduy/venvs/quant/lib/python3.12/site-packages/vllm
-flashinfer <version>
+flashinfer 0.6.12
 already patched: .../fused_moe/experts/cutlass_moe.py
-... (eight required edits) ...
-optional QuantKey.__str__ ScalarType fallback: file absent, skipped   # 0.26.0-only anchor
-MoE quality probe: <status>
+... (nine `already patched` lines: the eight required edits, then the optional
+     QuantKey diagnostics edit, which prints identically when its file exists
+     and `optional ...: file absent, skipped` otherwise) ...
+MoE quality probe: model.py: already injected; model.py: already injected
 r7 gate-alpha: utils.py: already injected
 STATUS: patched
 ```
+
+(Output above reproduced from a live `--check` on the `quant` venv, 2026-07-31.)
 
 The overlay edits `site-packages` on purpose: vLLM worker subprocesses are spawned fresh,
 so in-process monkeypatches never reach `Worker_TP*`.
 
 ## A3. Serve it
+
+**Get a node first.** Part A assumes you are on an 8×H100 node. Allocate one the way the
+published runs did — from `tmux` (the allocation dies with your SSH session):
+
+```bash
+srun -w <node> --exclusive --nodes=1 --ntasks=1 --gres=gpu:8 --cpus-per-task=192 \
+  --time=04:00:00 --pty bash
+```
+
+Two traps here (both verified live on 2026-07-31): **`sinfo` "idle" does not mean the
+GPUs are free** — Iceland nodes carry non-Slurm rogue processes the scheduler cannot see
+(two of seven "idle" nodes were half-occupied that day). Let the `free_gpus.sh` gate below
+be the arbiter, and if the occupants belong to **another user**, it refuses by design —
+pick a different node; never try to kill them.
 
 **Free the GPUs first.** A crashed run leaves workers holding ~70 GiB/GPU and the next
 serve dies with a confusing `Free memory on device cuda:X ... less than
@@ -216,6 +239,20 @@ LOG=serve.log PID_FILE=serve.pid \
 
 (Tee the launcher's stdout — `serve.log` receives only the vLLM child's output, and the
 launcher prints its effective config, including which MoE backend it chose, to stdout.)
+
+Despite the name, the launcher **returns immediately** after backgrounding the server —
+it does not wait for readiness or run a smoke request. Loading 225 GB from NFS takes
+**~10–30 min**; wait before running the A4 checks:
+
+```bash
+until curl -sf localhost:8000/v1/models >/dev/null; do
+  kill -0 "$(cat serve.pid)" || { echo "serve died — check serve.log"; break; }
+  sleep 10
+done
+```
+
+(or `tail -f serve.log` until `Application startup complete`).
+`pipeline/slurm/smoke_chat_completions.sh` is the canonical quick smoke once it's up.
 
 It expands to the following, which is what to copy if you must serve by hand:
 
@@ -331,7 +368,7 @@ python pipeline/slurm/patch_vllm_m3_serve.py --check && echo OVERLAY-OK
 python -c "
 import json,sys
 ig=json.load(open('$CKPT/config.json'))['quantization_config']['ignore']
-print('ignore:', ig)
+print(len(ig), 'ignore rules; router rules:', [p for p in ig if 'gate' in p])
 assert any('gate' in p for p in ig), 'MoE ROUTER MISSING FROM ignore -- output will be garbage'
 print('IGNORE-OK')"
 
@@ -339,10 +376,12 @@ print('IGNORE-OK')"
 curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{
   "model":"MiniMaxAI/MiniMax-M3",
   "messages":[{"role":"user","content":"Name three prime numbers."}],
-  "max_tokens":128}' | python -m json.tool
+  "max_tokens":512}' | python -m json.tool
+# (M3 thinks before answering — reasoning eats the token budget, so a small
+#  max_tokens truncates the visible answer and looks like a failure when it isn't)
 
 # 4. Confirm which MoE kernel you actually got, and record the stack fingerprint
-grep -E 'enforce_eager|CUDAGraphMode' serve.log | head -2   # vLLM's own config dump
+grep -oE 'enforce_eager=[A-Za-z]+|CUDAGraphMode\.[A-Z_]+' serve.log | head -2  # from vLLM's config dump
 grep 'w4a8-backend' launcher.log                  # launcher stdout, NOT serve.log — tee it (A3)
 cat serve.log.humming-preflight.json 2>/dev/null  # exists only on Humming arms
 # system_fingerprint (vllm-0.24.0-tp8-ep-<hash>) is in each chat response body —

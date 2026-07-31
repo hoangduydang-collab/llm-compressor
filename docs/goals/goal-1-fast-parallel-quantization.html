@@ -85,6 +85,10 @@
     .subs li.done::before{content:"✓";color:var(--verified);}
     .subs li.open{color:var(--muted);}
     .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 10px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
+    .toc{margin:0 0 64px;padding:16px 22px;border:1px solid var(--rule);background:rgba(250,247,239,.6);max-width:var(--reading);font:700 12px/2.1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .toc a{margin-right:16px;white-space:nowrap;text-decoration:none;}
+    .toc a:hover{text-decoration:underline;}
+    .toc .lbl{margin-right:14px;color:var(--muted);}
     footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
     footer strong{color:#fff;}
     @media (max-width:620px){
@@ -104,6 +108,8 @@
     <a href="goal-2-temporary-evaluation-pipeline.html">Goal 2</a>
     <span class="sep">·</span>
     <a href="goal-6-hopper-packed-nvfp4-w4a8.html">Goal 6</a>
+  <span class="sep">·</span>
+    <a href="goal-7-native-humming-w4a8.html">Goal 7</a>
   </nav>
 
   <header class="hero">
@@ -119,6 +125,8 @@
 
   <main>
     <article>
+
+      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 Objective &amp; sub-tasks</a><a href="#result">02 Result</a><a href="#handoff">03 Boundary</a><a href="#ledger">04 Evidence</a></nav>
 
       <section id="objective">
         <h2><span class="number">01 / Objective</span>Full quantization within one working session</h2>
@@ -138,6 +146,23 @@
       <section id="result">
         <h2><span class="number">02 / Full-calibration result</span>The time target is met, and the checkpoint passed its gates</h2>
         <p>The full-calibration AWQ run quantized end-to-end in <strong>7 h 22 m on one 8×H100 node</strong> — about 19 min to load, 6 h 40 m of calibration (≈7 min per layer across all <strong>57 MoE layers</strong>), and 19 min to save plus run the in-line gates — covering all <strong>21,888 routed-expert Linears</strong> and landing inside the 4–8 hour target.</p>
+        <div class="tiles">
+          <div class="tile"><b>19 m</b><span>load the ~920 GB model</span></div>
+          <div class="tile"><b>6 h 40 m</b><span>calibrate · ≈7 min × 57 layers</span></div>
+          <div class="tile"><b>19 m</b><span>save + in-line gates</span></div>
+        </div>
+        <h3>Distributed runs to date</h3>
+        <div class="table-scroll">
+          <table>
+            <caption>Every full distributed quantization run · newest first</caption>
+            <thead><tr><th>Model</th><th>Method · bits</th><th>Hardware</th><th class="num">Wall time</th><th>Output</th><th>When</th></tr></thead>
+            <tbody>
+              <tr><td>Qwen3-30B MoE</td><td>AutoRound · 2-bit</td><td>8×H100, 1 node</td><td class="num best">1 h 40 m</td><td>8.6 GB checkpoint, serves coherently</td><td>wk Jul 27–Aug 02</td></tr>
+              <tr><td>MiniMax-M3 (~460B MoE)</td><td>AWQ · 4-bit</td><td>8×H100, 1 node</td><td class="num best">7 h 22 m</td><td>225 GB checkpoint, all gates green</td><td>wk Jul 20–26</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Between the two runs, a subtle correctness defect was found and fixed (sub-task 1b): every GPU had been calibrating on the <em>same</em> data slice instead of its own. Outputs looked fine — which is exactly why it needed a code-level audit, not just output checks.</p>
         <div class="callout">
           <h3><span class="chip obs">Observed in this fork</span> The artifact landed and passed every gate</h3>
           <p>The checkpoint cleared every fail-closed gate (smoothing-scale fold on all 57 layers, plus quant-verify and dequant sampling on the riskiest layers), served coherent chat on single-node vLLM TP8, and passed Goal 2's smoke evaluation (<code>ready_for_production: true</code>). An earlier run had been rejected by these gates: AWQ's scale search had inflated smoothing scales by ~100× on dead (zero-activation) norm channels in five layers. The dead-channel fix (commit <code>e87eef77</code>), with a related qparam-broadcast fix (<code>25a0324d</code>), resolved it — both are candidates to contribute back upstream to llm-compressor.</p>

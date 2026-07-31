@@ -89,6 +89,10 @@
     .subs li.done::before{content:"\2713";color:var(--verified);}
     .subs li.open{color:var(--muted);}
     .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 10px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
+    .toc{margin:0 0 64px;padding:16px 22px;border:1px solid var(--rule);background:rgba(250,247,239,.6);max-width:var(--reading);font:700 12px/2.1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .toc a{margin-right:16px;white-space:nowrap;text-decoration:none;}
+    .toc a:hover{text-decoration:underline;}
+    .toc .lbl{margin-right:14px;color:var(--muted);}
     footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
     footer strong{color:#fff;}
     @media (max-width:620px){
@@ -107,6 +111,8 @@
     <a class="here">Goal 2 · Evaluation pipeline</a>
     <span class="sep">·</span>
     <a href="goal-6-hopper-packed-nvfp4-w4a8.html">Goal 6</a>
+  <span class="sep">·</span>
+    <a href="goal-7-native-humming-w4a8.html">Goal 7</a>
   </nav>
 
   <header class="hero">
@@ -122,6 +128,8 @@
 
   <main>
     <article>
+
+      <nav class="toc"><span class="lbl">Contents</span><a href="#purpose">01 Purpose</a><a href="#quality">02 Quality results</a><a href="#performance">03 Performance results</a><a href="#available">04 Harness of record</a><a href="#historical">05 Historical</a><a href="#ledger">06 Evidence</a></nav>
 
       <section id="purpose">
         <h2><span class="number">01 / Purpose</span>Comparable model-to-model evidence</h2>
@@ -142,9 +150,97 @@
         </ul>
       </section>
 
-      <section id="results">
-        <h2><span class="number">02 / Results</span>The four-way comparison (stopgap harness, historical)</h2>
-        <p><em>Historical (wk Jul 13–19): these are the stopgap harness's numbers, kept for the record. The current authoritative quality evidence is the official-pipeline breadth run in <code>M3_OFFICIAL_QUALITY_RESULTS.html</code> — a different protocol whose numbers are not comparable to this table.</em></p>
+      <section id="quality">
+        <h2><span class="number">02 / Results · quality</span>Which models are safe to serve</h2>
+        <div class="table-scroll">
+          <table>
+            <caption>Per-model verdicts · as of 31 July 2026</caption>
+            <thead><tr><th>Model</th><th>Verdict</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td>In-house GPTQ (4-bit)</td><td class="best">✅ Serve — default</td><td>97–101% recovery on all seven tasks; token spend within 2% of baseline</td></tr>
+              <tr><td>In-house AWQ r6 (4-bit)</td><td class="best">✅ Serve</td><td>GPQA 98.7%, IFEval 98.6% recovery; seven-task run queued (2g)</td></tr>
+              <tr><td>In-house AWQ r7 (4-bit)</td><td>⚠️ Usable, watch it</td><td>GPQA 104.4% but IFEval 95.7% with one-sided losses</td></tr>
+              <tr><td>Vendor MXFP8 (8-bit)</td><td class="best">✅ Reference</td><td>97.5–100.6% recovery; strongest external control</td></tr>
+              <tr><td>In-house AWQ r5</td><td class="worst">❌ Do not serve</td><td>Runaway reasoning: GPQA recovery 71.7%, 2.2× token spend</td></tr>
+              <tr><td>Community AWQ (cyankiwi)</td><td class="worst">❌ Disqualified</td><td>Runaway generations; 55.6% of GPQA answers hit the token budget</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Newest (23–24 July) · deep-reasoning A/B at 64k tokens</h3>
+        <p>The hardest test: long reasoning with a 64k-token budget, scored greedy and paired per question. This is what caught the AWQ r5 defect and confirmed its fix (r6). A broken quant fails by <em>thinking forever</em>, not just scoring lower — exhaustion rate and token spend are the early-warning metrics.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>64k paired A/B · recovery, budget exhaustion, token spend</caption>
+            <thead><tr><th>Metric</th><th class="num">BF16</th><th class="num">AWQ r5</th><th class="num">AWQ r6</th><th class="num">AWQ r7</th></tr></thead>
+            <tbody>
+              <tr><td>GPQA recovery</td><td class="num">—</td><td class="num worst">71.7%</td><td class="num best">98.7%</td><td class="num best">104.4%</td></tr>
+              <tr><td>GPQA exhausted</td><td class="num">12.6%</td><td class="num worst">38.9%</td><td class="num">14.7%</td><td class="num best">10.6%</td></tr>
+              <tr><td>GPQA token spend</td><td class="num">1.00×</td><td class="num worst">2.19×</td><td class="num">1.13×</td><td class="num best">0.93×</td></tr>
+              <tr><td>IFEval recovery</td><td class="num">—</td><td class="num worst">90.9%</td><td class="num best">98.6%</td><td class="num">95.7%</td></tr>
+              <tr><td>IFEval token spend</td><td class="num">1.00×</td><td class="num worst">3.69×</td><td class="num best">1.17×</td><td class="num">1.25×</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>21–23 July · seven-task validation</h3>
+        <p>Recovery relative to the unquantized baseline (100% = no quality loss). This run made the in-house GPTQ model the default.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Seven tasks · baseline score and recovery per arm</caption>
+            <thead><tr><th>Task</th><th class="num">BF16 (abs.)</th><th class="num">GPTQ</th><th class="num">MXFP8</th><th class="num">AWQ r5</th></tr></thead>
+            <tbody>
+              <tr><td>GSM8K</td><td class="num">0.949</td><td class="num best">100.1%</td><td class="num best">100.3%</td><td class="num">97.3%</td></tr>
+              <tr><td>MMLU</td><td class="num">0.750</td><td class="num">97.4%</td><td class="num best">100.4%</td><td class="num worst">93.8%</td></tr>
+              <tr><td>ARC-Challenge</td><td class="num">0.469</td><td class="num best">101.1%</td><td class="num">98.7%</td><td class="num">98.7%</td></tr>
+              <tr><td>HellaSwag</td><td class="num">0.705</td><td class="num best">99.4%</td><td class="num best">100.3%</td><td class="num">97.8%</td></tr>
+              <tr><td>TruthfulQA-mc2</td><td class="num">0.640</td><td class="num">98.3%</td><td class="num best">100.6%</td><td class="num">96.7%</td></tr>
+              <tr><td>IFEval</td><td class="num">0.874</td><td class="num best">98.3%</td><td class="num">97.5%</td><td class="num worst">93.0%</td></tr>
+              <tr><td>GPQA-Diamond</td><td class="num">0.813</td><td class="num best">99.4%</td><td class="num">98.1%</td><td class="num worst">70.2%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Full data (every arm, per-question flip analysis, sampling probes): <a href="../../M3_OFFICIAL_QUALITY_RESULTS.html">M3_OFFICIAL_QUALITY_RESULTS.html</a>. Same protocol on a second family: <a href="../../GLM52_OFFICIAL_EVAL_RESULTS.html">GLM52_OFFICIAL_EVAL_RESULTS.html</a>.</p>
+      </section>
+
+      <section id="performance">
+        <h2><span class="number">03 / Results · performance</span>How fast it serves, and what it costs</h2>
+        <p>Speed per user (the number a person feels) across the serving-ready models, from the 26 July single-controller rerun. The in-house GPTQ + fast kernel leads every concurrency level.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Output speed per user, tok/s (total server output tok/s) · 1k in / 8k out</caption>
+            <thead><tr><th>Concurrency</th><th class="num">GPTQ · fast kernel</th><th class="num">AWQ r7</th><th class="num">Community AWQ</th><th class="num">MXFP8</th><th class="num">BF16 (16 GPUs)</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td class="num best">137</td><td class="num best">136</td><td class="num">118</td><td class="num">107</td><td class="num worst">81</td></tr>
+              <tr><td>4</td><td class="num best">451</td><td class="num best">453</td><td class="num">415</td><td class="num">349</td><td class="num worst">246</td></tr>
+              <tr><td>16</td><td class="num best">1,300</td><td class="num best">1,303</td><td class="num">1,268</td><td class="num">968</td><td class="num worst">711</td></tr>
+              <tr><td>64</td><td class="num best">3,267</td><td class="num best">3,262</td><td class="num">2,923</td><td class="num">2,177</td><td class="num worst">1,700</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <caption>4-bit vs the unquantized baseline · economics</caption>
+            <thead><tr><th>Metric</th><th class="num">BF16 · 16 GPUs, 2 nodes</th><th class="num">In-house 4-bit · 8 GPUs, 1 node</th><th>Advantage</th></tr></thead>
+            <tbody>
+              <tr><td>Model weights</td><td class="num">796 GB</td><td class="num best">225 GB</td><td>3.5× smaller</td></tr>
+              <tr><td>Speed per user (conc 1)</td><td class="num">81 tok/s</td><td class="num best">137 tok/s</td><td>1.7× faster on half the GPUs</td></tr>
+              <tr><td>GPU-hours per 1M tokens</td><td class="num">2.61</td><td class="num best">0.68</td><td>3.8× cheaper</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The fast kernel itself (~34% single-user gain, qualified with fail-closed checks) is <a href="goal-7-native-humming-w4a8.html">Goal 7</a>. Full data: <a href="../../M3_OFFICIAL_PERF_RESULTS.html">M3_OFFICIAL_PERF_RESULTS.html</a> and <a href="../m3-two-axis-perf.md">docs/m3-two-axis-perf.md</a>.</p>
+      </section>
+
+      <section id="available">
+        <h2><span class="number">04 / Harness of record</span>The official pipeline is now the harness of record</h2>
+        <p>The migration finished: MiniMax-M3 runs on the team's <strong>official evaluation pipeline</strong> (<code>AICloud/benchmarks</code> — lm-eval <code>0.4.10</code> over its API backend against a self-deployed, pinned vLLM 0.24.0 endpoint). On it, the in-house GPTQ arm earned a <strong>seven-task breadth verdict</strong> (recovery 97.4–101.1% on all seven tasks, token spend within 2% of BF16), published in <code>M3_OFFICIAL_QUALITY_RESULTS.html</code>. Because the official pipeline uses different tasks, greedy decoding, and loglikelihood multiple-choice scoring, its numbers are <em>not</em> comparable to the stopgap table above.</p>
+        <div class="callout">
+          <h3>Since generalized beyond MiniMax-M3</h3>
+          <p>The same paired protocol produced a <strong>three-arm GLM-5.2 evaluation</strong> (BF16 vs community W4AFP8 checkpoints, self-hosted on SGLang — <code>GLM52_OFFICIAL_EVAL_RESULTS.html</code>: Phala's AWQ-produced W4AFP8 is clean, the M3 AWQ pathology does not replicate) and a <strong>W2A16-vs-BF16 A/B</strong> on the sub-4-bit track (Goal 4). The remaining sub-task is <strong>2g</strong>: the seven-task breadth run for the quality-clean AWQ r6 recipe.</p>
+        </div>
+      </section>
+
+      <section id="historical">
+        <h2><span class="number">05 / Historical · wk Jul 13–19</span>The first four-way comparison (interim harness)</h2>
         <p>Scores are <strong>mean pass@1 over three generation seeds (42, 1234, 4158)</strong>, generation-based, on seeded stratified subsets: <strong>GPQA-Diamond 100, MMLU-Pro 100, GSM8K-CoT 100, AIME25 30</strong> questions. Higher is better; the best model per row is shaded.</p>
         <div class="table-scroll">
           <table>
@@ -164,10 +260,7 @@
           <h3>What the result supports</h3>
           <p>Our <strong>in-house GPTQ W4A8 remains within a few points of BF16</strong> on every task. Official MXFP8 is roughly baseline-equivalent and is the strongest quant overall. The external AWQ comparator loses materially more quality, especially on GPQA and AIME25.</p>
         </div>
-      </section>
-
-      <section id="harness">
-        <h2><span class="number">03 / Harness</span>Reproducible setup</h2>
+        <h3>Harness setup (interim)</h3>
         <ul>
           <li><strong>Framework:</strong> EleutherAI <code>lm-evaluation-harness 0.4.12</code>, direct vLLM backend.</li>
           <li><strong>Models:</strong> in-house GPTQ W4A8, in-house AWQ W4AFP8 (smoke-gated), cyankiwi AWQ W4A16, official MXFP8 W8A16, and official BF16.</li>
@@ -178,17 +271,8 @@
         <p>The preflight contract pins the sample manifest, tokenizer, chat template, rendered prompts, and evaluation config. Cross-run gates require those inputs to match before scores are compared.</p>
       </section>
 
-      <section id="available">
-        <h2><span class="number">04 / Migration</span>The official pipeline is now the harness of record</h2>
-        <p>The migration finished: MiniMax-M3 runs on the team's <strong>official evaluation pipeline</strong> (<code>AICloud/benchmarks</code> — lm-eval <code>0.4.10</code> over its API backend against a self-deployed, pinned vLLM 0.24.0 endpoint). On it, the in-house GPTQ arm earned a <strong>seven-task breadth verdict</strong> (recovery 97.4–101.1% on all seven tasks, token spend within 2% of BF16), published in <code>M3_OFFICIAL_QUALITY_RESULTS.html</code>. Because the official pipeline uses different tasks, greedy decoding, and loglikelihood multiple-choice scoring, its numbers are <em>not</em> comparable to the stopgap table above.</p>
-        <div class="callout">
-          <h3>Since generalized beyond MiniMax-M3</h3>
-          <p>The same paired protocol produced a <strong>three-arm GLM-5.2 evaluation</strong> (BF16 vs community W4AFP8 checkpoints, self-hosted on SGLang — <code>GLM52_OFFICIAL_EVAL_RESULTS.html</code>: Phala's AWQ-produced W4AFP8 is clean, the M3 AWQ pathology does not replicate) and a <strong>W2A16-vs-BF16 A/B</strong> on the sub-4-bit track (Goal 4). The remaining sub-task is <strong>2g</strong>: the seven-task breadth run for the quality-clean AWQ r6 recipe.</p>
-        </div>
-      </section>
-
       <section id="ledger">
-        <h2><span class="number">05 / Evidence</span>Sources</h2>
+        <h2><span class="number">06 / Evidence</span>Sources</h2>
         <ul class="ledger">
           <li><span class="t">Official pipeline</span><a href="https://gitlab.bitdeer.vip/AICloud/benchmarks">AICloud/benchmarks</a> — lm-eval 0.4.10 + distribution/reliability/agentic</li>
           <li><span class="t">Serving · this fork</span><a href="../m3-serving-recipe.md">M3 serving recipe</a> — pinned vLLM 0.24.0 + W4A8 overlay</li>

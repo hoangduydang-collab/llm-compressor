@@ -1,7 +1,7 @@
 # Goal 7 · Native Humming W4A8 Serving — Field Note
 
-> **Done · 2026-07-26** · markdown twin of
-> [`goal-7-native-humming-w4a8.html`](goal-7-native-humming-w4a8.html) — keep in sync.
+> **Done · 2026-07-26** · web version:
+> [`goal-7-native-humming-w4a8.html`](goal-7-native-humming-w4a8.html).
 > [← Program overview](../automatic-quantization-pipeline-progress.md)
 
 **Contents:** [Objective](#objective) · [Sub-tasks](#sub-tasks) ·
@@ -19,7 +19,6 @@ we ship.
 
 ## Sub-tasks
 
-<!-- EXTENSION POINT: append sub-tasks here AND in the HTML twin; IDs from PROJECT_GOALS.md goal 7. -->
 
 - [x] 7a · Qualified — backend attestation, correctness, stability `wk Jul 20–26`
 - [x] 7b · Adopted — ~34% faster for a single user; now the default kernel `wk Jul 20–26`

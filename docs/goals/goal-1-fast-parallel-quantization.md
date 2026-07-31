@@ -1,17 +1,16 @@
 # Goal 1 · Fast Parallel Quantization — Field Note
 
-> **Work in progress** · markdown twin of
-> [`goal-1-fast-parallel-quantization.html`](goal-1-fast-parallel-quantization.html) — keep in sync.
+> **Work in progress** · web version:
+> [`goal-1-fast-parallel-quantization.html`](goal-1-fast-parallel-quantization.html).
 > [← Program overview](../automatic-quantization-pipeline-progress.md)
 
 **Contents:** [Objective](#objective) · [Sub-tasks](#sub-tasks) ·
 [Result](#result) · [Boundary](#boundary) · [Evidence](#evidence)
 
-The core target landed: distributed AWQ met the 4–8 hour window with a
-**7 h 22 m** full run, and the multi-GPU path has since been proven on a second
-model and a third quant method (**1 h 40 m** for a 30B MoE). Open: distributed
-save/export. Checkpoint quality itself belongs to Goals 3 and 2, not
-parallelization.
+The core target landed for both methods: a full AWQ run in **7 h 22 m** and a
+full GPTQ run in **3 h 14 m**, both inside the 4–8 hour window — and the
+parallel path has since quantized a second model with a third method in
+**1 h 40 m**. Open: distributed save/export.
 
 ## Objective
 
@@ -21,7 +20,6 @@ distributed calibration paths rather than bespoke parallel code.
 
 ## Sub-tasks
 
-<!-- EXTENSION POINT: append sub-tasks here AND in the HTML twin; IDs from PROJECT_GOALS.md goal 1. -->
 
 - [x] 1a · Distributed calibration — full AWQ run, all gates green, **7 h 22 m** on one 8-GPU node `wk Jul 20–26`
 - [x] 1b · Multi-GPU calibration correctness fix (all GPUs had been calibrating on the same data) `wk Jul 27–Aug 02`
@@ -44,6 +42,7 @@ gates catching it is the system working.
 | Model | Method · bits | Hardware | Wall time | Output | When |
 |---|---|---|---|---|---|
 | Qwen3-30B MoE | AutoRound · 2-bit | 8×H100, 1 node | **1 h 40 m** | 8.6 GB checkpoint, serves coherently | wk Jul 27–Aug 02 |
+| MiniMax-M3 (~460B MoE) | GPTQ · 4-bit | 8×H100, 1 node | **3 h 14 m** | 215 GB checkpoint + export variants | wk Jul 20–26 |
 | MiniMax-M3 (~460B MoE) | AWQ · 4-bit | 8×H100, 1 node | **7 h 22 m** | 225 GB checkpoint, all gates green | wk Jul 20–26 |
 
 Between the two runs, a subtle correctness defect was found and fixed

@@ -115,7 +115,7 @@
   <header class="hero">
     <p class="kicker">Goal 01 / engineering field note · <span class="status working">Work in progress</span></p>
     <h1>Fast <em>parallel</em> quantization</h1>
-    <p class="deck">The core target landed: distributed AWQ met the 4–8 hour window with a 7 h 22 m full run, and the DDP path has since been proven on a second model and a third quant method (AutoRound, 30B MoE in 1 h 40 m). One sub-task remains open — distributed save/export. Checkpoint quality itself belongs to Goal 3 and Goal 2, not parallelization.</p>
+    <p class="deck">The core target landed for both methods: a full AWQ run in 7 h 22 m and a full GPTQ run in 3 h 14 m, both inside the 4–8 hour window — and the parallel path has since quantized a second model with a third method in 1 h 40 m. One sub-task remains open: distributed save/export.</p>
     <div class="hero-meta">
       <span class="stamp">Target: full run in 4–8 h</span>
       <span class="stamp">AWQ + GPTQ</span>
@@ -132,9 +132,6 @@
         <h2><span class="number">01 / Objective</span>Full quantization within one working session</h2>
         <p class="lead dropcap">The target is a complete MiniMax-M3 AWQ or GPTQ run in <strong>4–8 hours</strong>, including a saved checkpoint that survives correctness gates.</p>
         <p>The implementation uses the fork's existing distributed calibration paths: AWQ shares calibration statistics across ranks, GPTQ distributes modules, and disk offload keeps host memory bounded. This is now the production direction for both methods.</p>
-        <!-- EXTENSION POINT: append new sub-tasks as <li> here (class="done" +
-             <span class="wk">wk …</span> when landed, class="open" otherwise).
-             Keep IDs in sync with PROJECT_GOALS.md goal 1. -->
         <ul class="subs">
           <li class="done">1a · Distributed AWQ/GPTQ calibration path — full AWQ run, all gates green, <strong>7 h 22 m</strong> on one 8×H100 node <span class="wk">wk Jul 20–26</span></li>
           <li class="done">1b · DDP rank-partition correctness fix — the partition was applied to a local variable only, so all ranks had calibrated on the same rows (<code>ddd4f9f9</code>) <span class="wk">wk Jul 27–Aug 02</span></li>
@@ -158,6 +155,7 @@
             <thead><tr><th>Model</th><th>Method · bits</th><th>Hardware</th><th class="num">Wall time</th><th>Output</th><th>When</th></tr></thead>
             <tbody>
               <tr><td>Qwen3-30B MoE</td><td>AutoRound · 2-bit</td><td>8×H100, 1 node</td><td class="num best">1 h 40 m</td><td>8.6 GB checkpoint, serves coherently</td><td>wk Jul 27–Aug 02</td></tr>
+              <tr><td>MiniMax-M3 (~460B MoE)</td><td>GPTQ · 4-bit</td><td>8×H100, 1 node</td><td class="num best">3 h 14 m</td><td>215 GB checkpoint + export variants</td><td>wk Jul 20–26</td></tr>
               <tr><td>MiniMax-M3 (~460B MoE)</td><td>AWQ · 4-bit</td><td>8×H100, 1 node</td><td class="num best">7 h 22 m</td><td>225 GB checkpoint, all gates green</td><td>wk Jul 20–26</td></tr>
             </tbody>
           </table>

@@ -1,7 +1,7 @@
 # Goal 2 · Evaluation Pipeline — Field Note
 
-> **Work in progress** · markdown twin of
-> [`goal-2-temporary-evaluation-pipeline.html`](goal-2-temporary-evaluation-pipeline.html) — keep in sync.
+> **Work in progress** · web version:
+> [`goal-2-temporary-evaluation-pipeline.html`](goal-2-temporary-evaluation-pipeline.html).
 > [← Program overview](../automatic-quantization-pipeline-progress.md)
 
 **Contents:** [Purpose](#purpose) · [Quality results](#quality-results) ·
@@ -18,7 +18,6 @@ Comparable model-to-model evidence: every checkpoint gets the same prompts,
 examples, decoding settings, and scoring. These are paired fidelity signals for
 internal ship decisions — deliberately **not** public-leaderboard scores.
 
-<!-- EXTENSION POINT: append sub-tasks here AND in the HTML twin; IDs from PROJECT_GOALS.md goal 2. -->
 
 - [x] 2a · Paired harness + smoke gate live `wk Jul 20–26`
 - [x] 2b · GPTQ validated on all seven tasks — 97–101% recovery `wk Jul 20–26`

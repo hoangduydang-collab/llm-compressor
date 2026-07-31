@@ -1,8 +1,7 @@
 # MiniMax-M3 Quantization & Evaluation · Program Overview
 
-> **Updated 31 July 2026.** Markdown twin of
-> [`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html) —
-> keep the two in sync. Source of truth: [`PROJECT_GOALS.md`](../PROJECT_GOALS.md).
+> **Updated 31 July 2026.** Web version:
+> [`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html).
 
 Automatic quantization is hard because three systems must agree — a new model
 architecture, a quantization algorithm, and an inference engine — and the
@@ -20,14 +19,12 @@ quant method (4).**
 [Current focus](#current-focus-goals-1-2-and-4) · [Weekly log](#weekly-log) ·
 [Field notes](#field-notes)
 
-<!-- EXTENSION POINT: tick/append sub-tasks and weekly-log lines here AND in the
-     HTML twin. Same IDs as PROJECT_GOALS.md. -->
 
 ## Seven long-term goals
 
 ### Goal 1 — Fast parallel quantization · Work in progress · [field note](goals/goal-1-fast-parallel-quantization.md)
 Full quantization run in 4–8 hours, any method.
-- [x] 1a · Distributed calibration — full AWQ run, all gates green, **7 h 22 m** on one node `wk Jul 20–26`
+- [x] 1a · Distributed calibration — AWQ **7 h 22 m**, GPTQ **3 h 14 m**, all gates green, one node `wk Jul 20–26`
 - [x] 1b · Multi-GPU calibration correctness fix `wk Jul 27–Aug 02`
 - [x] 1c · Proven on a second model + third method — 30B MoE in **1 h 40 m** `wk Jul 27–Aug 02`
 - [ ] 1d · Distributed save/export

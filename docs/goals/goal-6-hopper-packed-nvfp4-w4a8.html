@@ -72,6 +72,12 @@
     .ledger{columns:2;column-gap:40px;margin:0;padding:0;list-style:none;max-width:none;}
     .ledger li{break-inside:avoid;margin:0 0 11px;padding:0 0 11px;border-bottom:1px solid var(--rule);font:600 13px/1.45 var(--mono);}
     .ledger .t{display:block;margin-bottom:4px;color:var(--muted);font-size:9px;letter-spacing:.1em;text-transform:uppercase;}
+    .subs{margin:26px 0 0;padding:0;list-style:none;max-width:var(--reading);}
+    .subs li{position:relative;margin:0 0 12px;padding-left:26px;font-size:16px;line-height:1.5;}
+    .subs li::before{content:"\25CB";position:absolute;left:0;top:0;color:var(--muted);font:800 15px/1.5 var(--mono);}
+    .subs li.done::before{content:"\2713";color:var(--verified);}
+    .subs li.open{color:var(--muted);}
+    .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 10px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
     footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
     footer strong{color:#fff;}
     @media (max-width:620px){
@@ -131,6 +137,9 @@
           <li><strong>Performance:</strong> useful improvement in at least one decision-relevant serving bucket without materially slowing the primary bucket.</li>
         </ul>
         <p>If correctness or memory fails, stop. If performance is not useful, retain the evidence but do not begin production integration.</p>
+        <ul class="subs">
+          <li class="open">6a · Dense proof of concept vs upstream NVFP4 W4A16 Marlin and load-expanded W8A8 — the gate for all MoE production work</li>
+        </ul>
       </section>
 
       <section id="next">
@@ -159,7 +168,7 @@
   </main>
 
   <footer>
-    <strong>Goal 6 field note.</strong> Benchmark-gated future project; design + committed CPU prototype only. Zero hardware measurements exist; all figures are upstream facts or design-time arithmetic. Scoped to repository evidence dated on or before 20 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
+    <strong>Goal 6 field note.</strong> Benchmark-gated future project; design + committed CPU prototype only. Zero hardware measurements exist; all figures are upstream facts or design-time arithmetic. Reviewed 2026-07-31 (no status change); evidence scoped on or before 20 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
   </footer>
 </body>
 </html>

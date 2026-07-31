@@ -1,248 +1,120 @@
-# Toward a Day-Zero Quantization Pipeline
+# Automatic Quantization Pipeline — Progress
 
-> **Engineering field note · 14 July 2026 · status updates through 31 July 2026**  
-> Building a path from a newly released model to multiple validated, inference-ready quantized checkpoints.
->
-> Current status at a glance: the program overview
-> ([`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html))
-> and [`PROJECT_GOALS.md`](../PROJECT_GOALS.md), which carry per-goal progress and
-> a weekly log. This note is the pipeline *design* story — kept as written on
-> 14 July, with the section below recording what changed since.
+> **Updated as of 31 July 2026.**
+> Program status for PM readers. Per-goal detail and the week-by-week log live in
+> [`PROJECT_GOALS.md`](../PROJECT_GOALS.md); the visual overview is
+> [`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html).
 
-## Status updates
+<!-- EXTENSION POINT: keep this file current-state only. When something ships,
+     refresh the headline bullets, the status table, and the date above.
+     History belongs in PROJECT_GOALS.md's weekly log, not here. -->
 
-<!-- EXTENSION POINT: add new dated entries at the TOP of this list. One short
-     paragraph per date, written for PM readers; defer technical detail and
-     evidence to PROJECT_GOALS.md and the goal pages. -->
+## What we are building
 
-**2026-07-31.** Most of what this note laid out as a plan has since shipped.
-The in-house AWQ model — listed as *unresolved* below — was diagnosed and fixed
-(two distinct root causes) and now scores within ~1% of the unquantized
-baseline on the tasks measured. Our GPTQ model is fully validated: it recovers
-97–101% of baseline quality across all seven benchmark tasks and now serves
-about 34% faster after a kernel upgrade. The speed goal was met — a full
-quantization run fits inside the 4–8 hour target — and the same machinery has
-already onboarded a third quantization method and produced its first 2-bit
-model (quality not yet acceptable; a longer-tuning retry is the named next
-step). The evaluation pipeline also proved itself on a second model family
-(GLM-5.2). The NVFP4 idea sketched under "Problem 3" is now an approved,
-benchmark-gated project of its own. Week-by-week detail: the weekly log in
-`PROJECT_GOALS.md`.
+A pipeline that takes a newly released model, a target quantization method, and a
+target serving stack, and returns compressed checkpoints that have **proven** they
+are safe to ship — structurally valid, loadable by the inference engine, and
+quality-checked against the unquantized baseline. The hard part is not the
+compression itself; it is making a new model architecture, a quantization
+algorithm, and an inference engine agree — and catching every disagreement with
+evidence before it reaches users.
 
-The hard part of “automatic quantization” is not selecting four bits instead of sixteen. It is making three independently evolving systems agree: a new model architecture, a quantization algorithm, and an inference engine.
+## Where we are (31 July 2026)
 
-Our fork of `llm-compressor` is becoming the control plane for that agreement. The intended end state is straightforward to describe: provide a newly released model, request one or more target formats, and receive quantized candidates that have passed structural, runtime, and quality checks. The path to that end state is necessarily staged and conservative.
+- **Our 4-bit GPTQ model is fully validated and in service.** It recovers
+  **97–101% of baseline quality across all seven benchmark tasks**, and a kernel
+  upgrade made it about **34% faster** for a single user. This is the default
+  served model.
+- **The 4-bit AWQ model is fixed.** It shipped broken twice for two different
+  root causes; both were diagnosed and repaired. The current recipe scores
+  **within ~1% of baseline** on the tasks measured so far (full seven-task run
+  still queued).
+- **The speed target is met.** A complete quantization run finishes in
+  **7 h 22 m** on one 8-GPU node — inside the 4–8 hour goal. The same
+  parallel machinery then quantized a 30B model with a *different* method in
+  **1 h 40 m**.
+- **A third quantization method is onboarded** (AutoRound, targeting 2-bit
+  models). The pipeline runs it end to end: quantize → serve → quality check.
+  The first 2-bit model **did not pass the quality bar**; a longer-tuning retry
+  is the named next step. The important part for the program: the pipeline
+  measured this and blocked the ship, exactly as designed.
+- **The evaluation pipeline works beyond one model.** It produced a paired
+  three-way comparison on a second model family (GLM-5.2) with no rework of the
+  method.
+- **One approved future project:** running vendor-released NVFP4 checkpoints
+  efficiently on current-generation (Hopper) GPUs. Design is done; all further
+  investment is gated on a benchmark proof.
 
-This note summarizes where we are, what MiniMax-M3 exposed, and the three-layer pipeline we are building around those lessons.
+## How the pipeline decides a checkpoint is safe
 
-## The goal
-
-The pipeline should accept:
-
-- a source model and architecture;
-- a target quantization algorithm, such as GPTQ or AWQ;
-- a target numerical format, such as W4A16 or W4AFP8; and
-- a target runtime and hardware profile.
-
-It should return several candidate checkpoints with enough evidence to answer four separate questions:
-
-1. Can the model representation satisfy the quantizer's expectations?
-2. Did quantization execute the intended transformations across the intended layers?
-3. Does the exported checkpoint satisfy the inference engine's loading contract?
-4. Does the served model retain acceptable behavior relative to a baseline?
-
-That separation matters. A checkpoint can be structurally valid but low quality; it can be numerically healthy but exported under the wrong names; or it can load successfully while silently omitting or misclassifying model components.
-
-## The compatibility gap
-
-New model releases regularly arrive before every quantization framework and inference backend has implemented an explicit profile for them. `llm-compressor` already advertises GPTQ, AWQ, W4AFP8, NVFP4, MXFP4, FP8, and other schemes, but a framework supporting a *format* does not imply that every new *architecture* is immediately safe under that format. [Supported upstream: LLM Compressor capabilities](https://github.com/vllm-project/llm-compressor)
-
-We own the adaptation at two boundaries.
-
-### Before quantization: adapt the model to the quantizer
-
-The source model's configuration and module representation must match what the chosen algorithm expects. The compatibility layer needs to resolve, rather than guess:
-
-- target and ignore rules;
-- fused and linearized module layouts;
-- group-size divisibility;
-- AWQ smooth/balance mappings and hook targets;
-- GPTQ weighted targets; and
-- model-family details such as custom norms and MoE expert representation.
-
-AWQ makes this boundary particularly algorithm-specific. The original AWQ method uses activation statistics to identify salient channels and applies equivalent per-channel scaling to reduce weight-quantization error. A wrong smooth/balance mapping can therefore produce a plausible-looking run that applies the wrong transformation. [Supported upstream: AWQ paper](https://arxiv.org/abs/2306.00978)
-
-GPTQ interacts with the model differently: it uses approximate second-order information to quantize weights while compensating error within a block. A GPTQ-compatible target layout does not prove that an AWQ smoothing layout is correct, and vice versa. [Supported upstream: GPTQ paper](https://arxiv.org/abs/2210.17323)
-
-### After quantization: adapt the checkpoint to the runtime
-
-The inference engine is the fixed target. Our exporter or checkpoint-repair path must produce the names, packing, metadata, ignored-module policy, and tensor layout that the selected runtime expects.
-
-The **post-quantization gate** checks whether the saved checkpoint's metadata and tensors match what the inference engine expects. It covers more than `config.json`: module namespaces, packed weights, scales, unquantized components, target declarations, ignored modules, and backend-specific loading expectations must agree.
-
-This boundary is why “the quantization job finished” is not an acceptance criterion.
-
-## The three-layer pipeline
-
-This is the high-level system we are implementing.
+Every candidate must pass three layers; failing any layer stops the run with an
+evidence report rather than a half-working model.
 
 ```mermaid
 flowchart TB
-    A[New model + target format + runtime profile] --> B[Architecture and format intake]
+    A[New model + target format + runtime profile] --> B[Intake]
 
-    subgraph L1A[Layer 1 · Pre-quantization static gate]
-      B --> C{Model representation matches quantizer contract?}
+    subgraph L1[Layer 1 · Static compatibility gate]
+      B --> C{Model matches the quantizer's expectations?}
       C -- No --> C1[Stop: compatibility report]
-      C -- Yes --> D[Resolved recipe + provenance]
+      C -- Yes --> D[Approved recipe]
     end
 
-    subgraph L2[Layer 2 · All-layer smoke quantization]
-      D --> E[Reduced calibration workload across the full layer path]
-      E --> F{Embedded probes healthy?}
-      F -- No --> F1[Stop early: preserve layer diagnostics]
-      F -- Yes --> G[Smoke-qualified recipe]
+    subgraph L2[Layer 2 · Smoke quantization]
+      D --> E[Reduced-workload run across every layer, with live probes]
+      E --> F{Probes healthy?}
+      F -- No --> F1[Stop early: diagnostics preserved]
+      F -- Yes --> G[Qualified recipe]
     end
 
     subgraph L3[Layer 3 · Full run and acceptance]
-      G --> H[Full-calibration quantization]
-      H --> I[Candidate checkpoint]
-      I --> J{Post-quantization gate}
-      J -- No --> J1[Hold: export / packing / metadata report]
-      J -- Yes --> K[Inference-engine load + serve smoke]
-      K --> L{Runtime and generation health?}
-      L -- No --> L1[Hold: loader / kernel / generation diagnosis]
-      L -- Yes --> M[Teacher-forced probe + paired evaluation]
-      M --> N{Quality thresholds met?}
+      G --> H[Full quantization] --> I[Candidate checkpoint]
+      I --> J{Checkpoint matches the serving engine's contract?}
+      J -- No --> J1[Hold: export/metadata report]
+      J -- Yes --> K[Live serving smoke test]
+      K --> L{Serves coherently?}
+      L -- No --> L1[Hold: runtime diagnosis]
+      L -- Yes --> M[Paired quality evaluation vs baseline]
+      M --> N{Quality bar met?}
       N -- No --> N1[Hold: quality report]
-      N -- Yes --> O[Publish validated quantized artifact]
+      N -- Yes --> O[Publish validated artifact]
     end
-
-    I -. checkpoint boundary .-> J
 ```
 
-**Plain-text path:** intake → pre-quantization static gate → all-layer smoke quantization with live probes → full-calibration run → post-quantization gate → runtime smoke → paired quality evaluation → publish or hold with evidence.
+Two principles worth restating because they have caught real defects:
 
-### Layer 1 — static compatibility gates
+- **"The job finished" is not acceptance.** A checkpoint can be structurally
+  valid but low quality, numerically healthy but exported under names the
+  serving engine rejects, or loadable while silently mis-serving parts of the
+  model. Each layer targets one of those failure classes.
+- **Negative results are deliverables.** The 2-bit no-ship verdict and the
+  disqualification of an external community checkpoint (runaway generations)
+  are the gates doing their job — both were measured, documented, and blocked.
 
-The pre-quantization gate operates before calibration data, real weights, or GPU work. It checks whether the model representation and the exact AWQ/GPTQ recipe can be combined structurally. The current implementation covers AWQ and GPTQ, with MiniMax-M3 as its first regression profile.
+## Status by area
 
-The post-quantization gate reads checkpoint metadata and tensor inventory without starting a GPU server. For the documented MiniMax-M3 `compressed-tensors` profile, it checks source-to-runtime aliases, packed/plain collisions, scales, ignore rules, and target policy.
+| Area | Status |
+|---|---|
+| 4-bit GPTQ model (MiniMax-M3) | ✅ Validated on seven tasks; default served model; faster kernel adopted |
+| 4-bit AWQ model (MiniMax-M3) | ✅ Fixed and near-baseline on measured tasks; full seven-task run queued |
+| Quantization speed (4–8 h target) | ✅ Met (7 h 22 m); distributed path extended to a third method |
+| Third method / 2-bit track (AutoRound) | ⏳ Pipeline complete end to end; first model failed the quality bar; retry queued |
+| Evaluation pipeline | ✅ In production; proven on a second model family (GLM-5.2) |
+| Compatibility gates for other model families | ⏳ Planned — gates are still MiniMax-M3-specific |
+| Multimodal (image+text) calibration | ⏸ Deferred |
+| NVFP4 on Hopper GPUs | 🔒 Approved, benchmark-gated; no hardware results yet |
 
-These checkers are not yet universal. The direction is explicit model-family and format profiles—versioned adapters for common dense, MoE, and multimodal families—inside a model-agnostic orchestration layer. Unknown architectures, formats, or backends must fail as unsupported rather than silently pass.
+## Next up
 
-### Layer 2 — all-layer smoke quantization with embedded probes
+1. **2-bit retry with longer tuning** — the named fix for the failed quality bar.
+2. **Seven-task quality run for the AWQ model** — closes its remaining evidence gap.
+3. **Distributed save/export** — the last rough edge of the parallel quantization path.
 
-The earlier representative-layer canary is no longer the main path. A canary can accidentally exercise a different trace or lifecycle from production, making the diagnostic itself a confounder.
+## Where the details live
 
-The replacement is a guarded, **all-layer** quantization using a reduced calibration workload. It follows the production layer path while saving time. Embedded probes verify that:
-
-- sequential targets actually partition and execute;
-- intended AWQ/GPTQ mappings are resolved and completed;
-- calibration reaches the expected modules;
-- scales and reconstructed values remain numerically healthy; and
-- per-layer progress and provenance are durable before the next expensive step.
-
-A confirmed violation writes the diagnostic record first, then terminates the run. The objective is not merely to fail faster; it is to fail with enough localization that the next run tests a specific hypothesis.
-
-### Layer 3 — full calibration and end-to-end acceptance
-
-Only a smoke-qualified recipe advances to the full calibration set. The resulting checkpoint then passes through the post-quantization gate, a bounded inference-engine smoke, generation-health checks, a paired teacher-forced distributional probe, and task evaluation against comparator checkpoints.
-
-Static success remains necessary but insufficient. It cannot prove tensor values, activation semantics, kernel correctness, KV-cache behavior, or model quality. The final acceptance decision belongs to the paired runtime and evaluation evidence.
-
-## What MiniMax-M3 taught us
-
-MiniMax-M3 compressed a large amount of debugging into one useful lesson: different failure boundaries need different discriminators.
-
-| Artifact | What the evidence says | Current use |
-|---|---|---|
-| In-house GPTQ | The checkpoint initially failed the CPU-only post-quantization gate with 228 runtime namespace/ignore mismatches. A portable overlay then repaired its configuration metadata while preserving the tensor payload and Safetensors index; the same checkpoint passed preflight and produced coherent smoke generations. | *Update 07-31:* fully validated — 97–101% baseline recovery across seven tasks — and now the default served model. |
-| External AWQ control | Passed the same static preflight and completed the paired 2,047-token teacher-forced probe and small smoke suite without empty outputs or periodic loops. | Comparator/control only. *Update 07-31:* disqualified on quality in the full paired evaluation (runaway generations). |
-| In-house AWQ W4AFP8 | Full-calibration output remained unhealthy; later repair builds did not produce a completed replacement checkpoint, and some diagnostic harnesses exposed their own tracing/lifecycle failures. | *Update 07-31:* resolved — two root causes found and fixed; the current recipe scores within ~1% of baseline on the tasks measured. |
-
-**Observed in this fork:** the repaired GPTQ and external AWQ control each completed the small five-task smoke workflow and generation-health checks. Those scores are diagnostic samples, not statistically meaningful benchmark conclusions. See [the compact GPTQ/AWQ report](../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md).
-
-The direct GPTQ failure was not a harmless warning. The checker found 21,888 routed-expert modules packed under one namespace while 57 routers and 171 shared-expert projections were plain under runtime names not covered by the checkpoint's ignore rules. The metadata-only overlay added the runtime aliases without changing tensor payloads; coherent generation after repair validated the boundary diagnosis. See the [static gate report](../M3_STATIC_ABI_GATE_REPORT.md), [repaired preflight report](../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md), and [status/roadmap](quantization-static-serving-preflight-status-and-roadmap.md).
-
-The first real pre-quantization CLI run also justified Layer 1: it stopped on a meta-device MoE offload incompatibility before loading calibration data or allocating a GPU. A narrow guard and CPU regression coverage now exist, while cluster verification of the real command remains pending. See [the pre-quantization report](../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md).
-
-### Current implementation status
-
-| Area | Status | Boundary |
-|---|---|---|
-| Pre-quant AWQ/GPTQ structural planner | Implemented; MiniMax-M3 regression profile; real cluster rerun pending after local fix | Model → quantizer |
-| MiniMax-M3 post-quantization gate | Proven on the documented `compressed-tensors` profile | Checkpoint → vLLM loader |
-| Guarded all-layer diagnostic runner | Implemented with durable abort/progress evidence | Quantization lifecycle |
-| Repaired in-house GPTQ smoke | *07-31:* fully validated; default served model | Runtime health |
-| In-house AWQ W4AFP8 | *07-31:* resolved; quality-competitive recipe shipped | Algorithm-specific quality |
-| Distributed multi-GPU quantization | *07-31:* 4–8 h target met; a third method onboarded | Speed |
-| General model-family profiles | Planned (evaluation side proven on a second family, GLM-5.2) | Coverage expansion |
-| Multimodal calibration | Deferred | Future work |
-
-## Problem 2: multimodality
-
-Multimodal models add a second calibration problem: the text and non-text token streams can have materially different activation distributions and sensitivity to quantization error. Recent VLM quantization research reports exactly this calibration mismatch between visual and text tokens. [Supported upstream: VLM calibration study](https://arxiv.org/abs/2602.07899)
-
-A robust multimodal pipeline will eventually need modality-aware sample construction, processor artifacts, placeholder/token alignment, and evaluation that exercises each supported modality. For now, we are deliberately hardening the text path first. Multimodal quantization remains future work rather than an implied capability of the current gates.
-
-## Problem 3: official-checkpoint fallback
-
-Official NVFP4 checkpoints are valuable as quality and memory baselines, especially when reproducing the original quantization recipe is expensive.
-
-### FP4 Marlin on Hopper
-
-Current vLLM includes an FP4 Marlin path that supports FP4 weight-only execution on SM80+ hardware, including Hopper. The kernel consumes packed FP4 weights and higher-precision activations, making this an **NVFP4-weight / A16-style execution path** rather than a runtime conversion of the checkpoint into a new W4A16 checkpoint. The storage benefit remains, and weight bandwidth can still improve, but Hopper does not gain Blackwell's native NVFP4 Tensor Core path. [Supported upstream: vLLM FP4 Marlin source/API](https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/) and [vLLM hardware table](https://docs.vllm.ai/en/stable/features/quantization/index.html)
-
-NVIDIA's own CUDA documentation distinguishes NVFP4 GEMM support on Blackwell from FP8 inputs on Hopper. [Supported upstream: CUDA library release notes](https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf)
-
-There is also a separate vLLM emulation utility that dequantizes NVFP4 tensors back to a higher-precision dtype. That is useful for compatibility and diagnostics, but it is not the desired fast W4AFP8 compute path. [Supported upstream: vLLM NVFP4 emulation API](https://docs.vllm.ai/en/latest/api/vllm/model_executor/layers/quantization/utils/nvfp4_emulation_utils/)
-
-**Proposed work:** investigate whether an official NVFP4 checkpoint can be adapted at load time into a W4AFP8/W4A8 execution path on Hopper—preserving four-bit weight storage while using FP8 activations and accepting a measurable quality trade-off. vLLM already contains a `compressed-tensors` W4A8-FP8 scheme, but we found no official path that directly and faithfully converts an arbitrary NVFP4 checkpoint into that scheme at runtime. NVFP4's block scales and semantics make this more than a dtype cast. It likely requires an explicit loader/repacking adapter and possibly a custom kernel or kernel integration.
-
-This would be a stronger comparator for our in-house W4AFP8 checkpoints than a weight-only A16 fallback, because it would compare two four-bit-weight/eight-bit-activation execution paths. It is also specialized systems work, so the next step is to review feasibility with colleagues who have kernel expertise before committing to implementation.
-
-## Near-term plan
-
-The immediate milestone is not “support every model.” It is narrower and measurable
-(*status stamps added 2026-07-31*):
-
-1. ✅ Run all-layer smoke quantization with embedded probes to qualify each recipe before committing to a full-calibration run.
-2. ✅ Run full-calibration quantization for qualified recipes to produce working in-house MiniMax-M3 checkpoints, starting with repaired GPTQ and a healthy AWQ path.
-3. ✅ Export each candidate through a versioned MiniMax-M3/runtime compatibility profile.
-4. ✅ Compare in-house candidates against the BF16 source, the external AWQ control, and relevant official checkpoints using identical prompts, probe corpora, manifests, runtime settings, and task definitions.
-5. ✅ Report quality, memory, and throughput separately; do not use successful loading as a proxy for quality or reduced checkpoint size as a proxy for compute speed. (Published as the official quality and performance reports.)
-6. ⏳ Generalize the gates one model family and storage format at a time, with corrupted and valid fixtures for every supported profile. (The evaluation side has run on a second family; the gates themselves are still MiniMax-M3-specific.)
-
-The longer-term product is model-agnostic orchestration backed by explicit compatibility knowledge—not a universal checker that guesses.
-
-## Evidence and references
-
-### Observed in this fork
-
-- [Pre-quantization real CLI failure and local fix status](../M3_PREQUANT_REAL_CLI_FAILURE_REPORT.md)
-- [Static post-quantization gate result](../M3_STATIC_ABI_GATE_REPORT.md)
-- [Repaired GPTQ preflight](../M3_GPTQ_REPAIRED_ABI_PREFLIGHT_REPORT.md)
-- [Compact repaired-GPTQ versus external-AWQ smoke result](../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md)
-- [AWQ re-quantization status](../M3_AWQ_REQUANTIZATION_REPORT.md)
-- [AWQ representative diagnostic and why it was superseded](../M3_AWQ_REPRESENTATIVE_RERUN_REPORT.md)
-- [Static preflight status and model-family roadmap](quantization-static-serving-preflight-status-and-roadmap.md)
-- Implemented entry points: [`prequant_compatibility.py`](../pipeline/prequant_compatibility.py), [`m3_serve_abi.py`](../pipeline/m3_serve_abi.py), and [`m3_guarded_full.py`](../pipeline/m3_guarded_full.py)
-
-### Supported upstream
-
-- [LLM Compressor repository and supported schemes](https://github.com/vllm-project/llm-compressor)
-- [vLLM: LLM Compressor integration](https://docs.vllm.ai/en/latest/features/quantization/llm_compressor/)
-- [AWQ paper](https://arxiv.org/abs/2306.00978)
-- [GPTQ paper](https://arxiv.org/abs/2210.17323)
-- [vLLM quantization hardware compatibility](https://docs.vllm.ai/en/stable/features/quantization/index.html)
-- [vLLM FP4 Marlin implementation reference](https://docs.vllm.ai/en/v0.11.2/api/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4/)
-- [vLLM NVFP4 emulation implementation reference](https://docs.vllm.ai/en/latest/api/vllm/model_executor/layers/quantization/utils/nvfp4_emulation_utils/)
-- [NVIDIA CUDA toolkit release notes](https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf)
-- [VLM calibration study](https://arxiv.org/abs/2602.07899)
-
-### Proposed work
-
-- Model-family and format adapters behind a model-agnostic orchestrator.
-- Healthy in-house AWQ W4AFP8 quantization for MiniMax-M3.
-- Modality-aware calibration and evaluation.
-- Feasibility study for NVFP4-checkpoint adaptation to a Hopper W4AFP8/W4A8 execution path.
+- [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) — goals, sub-tasks, and the weekly log.
+- [Program overview (HTML)](automatic-quantization-pipeline-progress.html) with
+  per-goal field notes under [`docs/goals/`](goals/).
+- Published results: [`M3_OFFICIAL_QUALITY_RESULTS.html`](../M3_OFFICIAL_QUALITY_RESULTS.html),
+  [`M3_OFFICIAL_PERF_RESULTS.html`](../M3_OFFICIAL_PERF_RESULTS.html),
+  [`GLM52_OFFICIAL_EVAL_RESULTS.html`](../GLM52_OFFICIAL_EVAL_RESULTS.html).

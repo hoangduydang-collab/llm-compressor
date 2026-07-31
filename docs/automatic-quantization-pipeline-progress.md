@@ -1,120 +1,109 @@
-# Automatic Quantization Pipeline — Progress
+# MiniMax-M3 Quantization & Evaluation · Program Overview
 
-> **Updated as of 31 July 2026.**
-> Program status for PM readers. Per-goal detail and the week-by-week log live in
-> [`PROJECT_GOALS.md`](../PROJECT_GOALS.md); the visual overview is
-> [`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html).
+> **Updated 31 July 2026.** Markdown twin of
+> [`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html) —
+> keep the two in sync. Source of truth: [`PROJECT_GOALS.md`](../PROJECT_GOALS.md).
 
-<!-- EXTENSION POINT: keep this file current-state only. When something ships,
-     refresh the headline bullets, the status table, and the date above.
-     History belongs in PROJECT_GOALS.md's weekly log, not here. -->
+Automatic quantization is hard because three systems must agree — a new model
+architecture, a quantization algorithm, and an inference engine — and the
+agreement must be proven, not assumed. Our `llm-compressor` fork is the control
+plane; MiniMax-M3 is the first case study. Each goal is a sub-task checklist;
+finished sub-tasks carry the week they landed, so weekly progress reads directly
+off this page.
 
-## What we are building
+**Seven goals, tracked as week-stamped sub-tasks. Two complete: a
+quality-competitive in-house AWQ model (3) and 34%-faster native W4A8 serving
+(7). Active: parallel quantization (1), the evaluation pipeline (2), a third
+quant method (4).**
 
-A pipeline that takes a newly released model, a target quantization method, and a
-target serving stack, and returns compressed checkpoints that have **proven** they
-are safe to ship — structurally valid, loadable by the inference engine, and
-quality-checked against the unquantized baseline. The hard part is not the
-compression itself; it is making a new model architecture, a quantization
-algorithm, and an inference engine agree — and catching every disagreement with
-evidence before it reaches users.
+**Contents:** [Seven goals](#seven-long-term-goals) ·
+[Current focus](#current-focus-goals-1-2-and-4) · [Weekly log](#weekly-log) ·
+[Field notes](#field-notes)
 
-## Where we are (31 July 2026)
+<!-- EXTENSION POINT: tick/append sub-tasks and weekly-log lines here AND in the
+     HTML twin. Same IDs as PROJECT_GOALS.md. -->
 
-- **Our 4-bit GPTQ model is fully validated and in service.** It recovers
-  **97–101% of baseline quality across all seven benchmark tasks**, and a kernel
-  upgrade made it about **34% faster** for a single user. This is the default
-  served model.
-- **The 4-bit AWQ model is fixed.** It shipped broken twice for two different
-  root causes; both were diagnosed and repaired. The current recipe scores
-  **within ~1% of baseline** on the tasks measured so far (full seven-task run
-  still queued).
-- **The speed target is met.** A complete quantization run finishes in
-  **7 h 22 m** on one 8-GPU node — inside the 4–8 hour goal. The same
-  parallel machinery then quantized a 30B model with a *different* method in
-  **1 h 40 m**.
-- **A third quantization method is onboarded** (AutoRound, targeting 2-bit
-  models). The pipeline runs it end to end: quantize → serve → quality check.
-  The first 2-bit model **did not pass the quality bar**; a longer-tuning retry
-  is the named next step. The important part for the program: the pipeline
-  measured this and blocked the ship, exactly as designed.
-- **The evaluation pipeline works beyond one model.** It produced a paired
-  three-way comparison on a second model family (GLM-5.2) with no rework of the
-  method.
-- **One approved future project:** running vendor-released NVFP4 checkpoints
-  efficiently on current-generation (Hopper) GPUs. Design is done; all further
-  investment is gated on a benchmark proof.
+## Seven long-term goals
 
-## How the pipeline decides a checkpoint is safe
+### Goal 1 — Fast parallel quantization · Work in progress · [field note](goals/goal-1-fast-parallel-quantization.md)
+Full quantization run in 4–8 hours, any method.
+- [x] 1a · Distributed calibration — full AWQ run, all gates green, **7 h 22 m** on one node `wk Jul 20–26`
+- [x] 1b · Multi-GPU calibration correctness fix `wk Jul 27–Aug 02`
+- [x] 1c · Proven on a second model + third method — 30B MoE in **1 h 40 m** `wk Jul 27–Aug 02`
+- [ ] 1d · Distributed save/export
 
-Every candidate must pass three layers; failing any layer stops the run with an
-evidence report rather than a half-working model.
+### Goal 2 — Evaluation pipeline · Work in progress · [field note](goals/goal-2-temporary-evaluation-pipeline.md)
+One fail-closed harness: our model vs existing quants vs the unquantized baseline.
+- [x] 2a · Paired harness + smoke gate live `wk Jul 20–26`
+- [x] 2b · GPTQ validated on all seven tasks — 97–101% recovery `wk Jul 20–26`
+- [x] 2c · Serving-performance report (ten arms) `wk Jul 20–26`
+- [x] 2d · Second model family — GLM-5.2, three arms `wk Jul 20–26`
+- [x] 2e · Second quant track — 2-bit vs baseline A/B `wk Jul 27–Aug 02`
+- [x] 2f · Collaborator guide, live-verified `wk Jul 27–Aug 02`
+- [ ] 2g · Seven-task run for the fixed AWQ model
 
-```mermaid
-flowchart TB
-    A[New model + target format + runtime profile] --> B[Intake]
+### Goal 3 — Working AWQ quantized model · Done (quality-competitive 2026-07-23)
+Shipped broken twice, fixed twice; the current recipe (`r6`) is within ~1% of
+baseline. **Serve r6 or r7, never r5.**
+- [x] 3a · Checkpoint corruption root-caused and fixed `wk Jul 20–26`
+- [x] 3b · Runaway-reasoning defect root-caused; r6 fixes it (GPQA 98.7%, IFEval 98.6%) `wk Jul 20–26`
 
-    subgraph L1[Layer 1 · Static compatibility gate]
-      B --> C{Model matches the quantizer's expectations?}
-      C -- No --> C1[Stop: compatibility report]
-      C -- Yes --> D[Approved recipe]
-    end
+### Goal 4 — Generalize to any quant method · Work in progress
+Extend beyond AWQ and GPTQ. First new method: AutoRound, on a 2-bit track (30B MoE).
+- [x] 4a · Quantize→serve loop closed — 2-bit checkpoint serves coherently `wk Jul 27–Aug 02`
+- [x] 4b · First quality A/B — no-ship; the gate blocked it as designed `wk Jul 27–Aug 02`
+- [ ] 4c · Retry with longer tuning + re-eval
 
-    subgraph L2[Layer 2 · Smoke quantization]
-      D --> E[Reduced-workload run across every layer, with live probes]
-      E --> F{Probes healthy?}
-      F -- No --> F1[Stop early: diagnostics preserved]
-      F -- Yes --> G[Qualified recipe]
-    end
+### Goal 5 — Generalize gates to any model family · Future work
+Make the compatibility gates work for any model family, not just MiniMax-M3.
 
-    subgraph L3[Layer 3 · Full run and acceptance]
-      G --> H[Full quantization] --> I[Candidate checkpoint]
-      I --> J{Checkpoint matches the serving engine's contract?}
-      J -- No --> J1[Hold: export/metadata report]
-      J -- Yes --> K[Live serving smoke test]
-      K --> L{Serves coherently?}
-      L -- No --> L1[Hold: runtime diagnosis]
-      L -- Yes --> M[Paired quality evaluation vs baseline]
-      M --> N{Quality bar met?}
-      N -- No --> N1[Hold: quality report]
-      N -- Yes --> O[Publish validated artifact]
-    end
-```
+### Goal 6 — Packed NVFP4 W4A8 on Hopper · Planned, benchmark-gated · [field note](goals/goal-6-hopper-packed-nvfp4-w4a8.md)
+Run vendor NVFP4 checkpoints efficiently on current (Hopper) GPUs — weights stay
+packed at 4 bits, compute in FP8. Design done; investment gated on a benchmark proof.
+- [ ] 6a · Dense proof of concept — the gate for all further work
 
-Two principles worth restating because they have caught real defects:
+### Goal 7 — Native Humming W4A8 serving · Done 2026-07-26 · [field note](goals/goal-7-native-humming-w4a8.md)
+A faster serving kernel (Humming W4A8), qualified and adopted for the in-house
+model on H100.
+- [x] 7a · Qualified — attestation, correctness, stability `wk Jul 20–26`
+- [x] 7b · Adopted — ~34% faster for a single user; now the default kernel `wk Jul 20–26`
 
-- **"The job finished" is not acceptance.** A checkpoint can be structurally
-  valid but low quality, numerically healthy but exported under names the
-  serving engine rejects, or loadable while silently mis-serving parts of the
-  model. Each layer targets one of those failure classes.
-- **Negative results are deliverables.** The 2-bit no-ship verdict and the
-  disqualification of an external community checkpoint (runaway generations)
-  are the gates doing their job — both were measured, documented, and blocked.
+## Current focus: Goals 1, 2 and 4
 
-## Status by area
+Next up: **4c** (2-bit retry), **2g** (seven-task run for the fixed AWQ model),
+**1d** (distributed save/export). While the owner is away,
+[`M3_COLLABORATOR_GUIDE.md`](../M3_COLLABORATOR_GUIDE.md) (live-verified
+2026-07-31) is the front door for collaborators.
 
-| Area | Status |
-|---|---|
-| 4-bit GPTQ model (MiniMax-M3) | ✅ Validated on seven tasks; default served model; faster kernel adopted |
-| 4-bit AWQ model (MiniMax-M3) | ✅ Fixed and near-baseline on measured tasks; full seven-task run queued |
-| Quantization speed (4–8 h target) | ✅ Met (7 h 22 m); distributed path extended to a third method |
-| Third method / 2-bit track (AutoRound) | ⏳ Pipeline complete end to end; first model failed the quality bar; retry queued |
-| Evaluation pipeline | ✅ In production; proven on a second model family (GLM-5.2) |
-| Compatibility gates for other model families | ⏳ Planned — gates are still MiniMax-M3-specific |
-| Multimodal (image+text) calibration | ⏸ Deferred |
-| NVFP4 on Hopper GPUs | 🔒 Approved, benchmark-gated; no hardware results yet |
+## Weekly log
 
-## Next up
+One line per achievement, newest first. IDs point at the sub-tasks above; the
+durable copy lives in `PROJECT_GOALS.md`.
 
-1. **2-bit retry with longer tuning** — the named fix for the failed quality bar.
-2. **Seven-task quality run for the AWQ model** — closes its remaining evidence gap.
-3. **Distributed save/export** — the last rough edge of the parallel quantization path.
+### wk 2026-07-27 – 08-02
+- **1c / 4a** · Third quant method onboarded: 30B MoE quantized in 1 h 40 m, serves coherently.
+- **4b / 2e** · First 2-bit quality A/B — no-ship verdict; retry queued.
+- **2f** · Collaborator guide live-verified; handoff-ready.
+- **1b** · Multi-GPU calibration correctness fix.
+- Ops · goal tracking restructured into week-stamped sub-tasks; ~591 GB workspace archive launched.
 
-## Where the details live
+### wk 2026-07-20 – 07-26
+- **1a** · Speed target met: full quantization in 7 h 22 m (goal: 4–8 h).
+- **3a / 3b** · Both AWQ defects fixed; model near-baseline. **Goal 3 complete.**
+- **2a / 2b** · GPTQ model validated on all seven tasks (97–101% recovery).
+- **2c** · Serving-performance report published (ten arms).
+- **2d** · Evaluation proven on a second model family (GLM-5.2).
+- **7a / 7b** · Faster kernel qualified + adopted (+34% single-user). **Goal 7 complete.**
 
-- [`PROJECT_GOALS.md`](../PROJECT_GOALS.md) — goals, sub-tasks, and the weekly log.
-- [Program overview (HTML)](automatic-quantization-pipeline-progress.html) with
-  per-goal field notes under [`docs/goals/`](goals/).
-- Published results: [`M3_OFFICIAL_QUALITY_RESULTS.html`](../M3_OFFICIAL_QUALITY_RESULTS.html),
-  [`M3_OFFICIAL_PERF_RESULTS.html`](../M3_OFFICIAL_PERF_RESULTS.html),
-  [`GLM52_OFFICIAL_EVAL_RESULTS.html`](../GLM52_OFFICIAL_EVAL_RESULTS.html).
+### wk 2026-07-13 – 07-19
+- First four-way quality comparison on the interim harness (superseded by 2b).
+- Distributed-run rehearsals; execution protocol signed.
+
+## Field notes
+
+Each note records the goal's boundary, evidence, and handoffs (md + html pairs):
+
+- [Goal 1 — Fast parallel quantization](goals/goal-1-fast-parallel-quantization.md)
+- [Goal 2 — Evaluation pipeline](goals/goal-2-temporary-evaluation-pipeline.md)
+- [Goal 6 — Packed NVFP4 W4A8 on Hopper](goals/goal-6-hopper-packed-nvfp4-w4a8.md)
+- [Goal 7 — Native Humming W4A8 serving](goals/goal-7-native-humming-w4a8.md)

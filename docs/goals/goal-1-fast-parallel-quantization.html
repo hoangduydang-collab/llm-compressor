@@ -85,6 +85,10 @@
     .subs li.done::before{content:"✓";color:var(--verified);}
     .subs li.open{color:var(--muted);}
     .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 10px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
+    .toc{margin:0 0 64px;padding:16px 22px;border:1px solid var(--rule);background:rgba(250,247,239,.6);max-width:var(--reading);font:700 12px/2.1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .toc a{margin-right:16px;white-space:nowrap;text-decoration:none;}
+    .toc a:hover{text-decoration:underline;}
+    .toc .lbl{margin-right:14px;color:var(--muted);}
     footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
     footer strong{color:#fff;}
     @media (max-width:620px){
@@ -104,6 +108,8 @@
     <a href="goal-2-temporary-evaluation-pipeline.html">Goal 2</a>
     <span class="sep">·</span>
     <a href="goal-6-hopper-packed-nvfp4-w4a8.html">Goal 6</a>
+  <span class="sep">·</span>
+    <a href="goal-7-native-humming-w4a8.html">Goal 7</a>
   </nav>
 
   <header class="hero">
@@ -119,6 +125,8 @@
 
   <main>
     <article>
+
+      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 Objective &amp; sub-tasks</a><a href="#result">02 Result</a><a href="#handoff">03 Boundary</a><a href="#ledger">04 Evidence</a></nav>
 
       <section id="objective">
         <h2><span class="number">01 / Objective</span>Full quantization within one working session</h2>

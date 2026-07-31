@@ -24,8 +24,12 @@ or a finished sub-task — evidence pointers stay.
    next letter, one bold title, evidence pointer, `*(done DATE, wk …)*` stamp);
 2. add a one-liner to the **Weekly log** below under the current week (create the
    week heading if it is the first entry that week);
-3. mirror both in `docs/automatic-quantization-pipeline-progress.html` (goal card
-   `<li>` + weekly-log line — marked extension points in the HTML).
+3. mirror both in the presentation pages — every page is an `.html`/`.md` twin
+   pair that must stay identical in content:
+   `docs/automatic-quantization-pipeline-progress.{html,md}` (goal card/checklist
+   + weekly-log line) and, if the goal has a field note, its pair under
+   `docs/goals/` (marked `EXTENSION POINT` in each file). New results tables go
+   into the goal-2 pair's results sections, latest first.
 
 Last reviewed: 2026-07-31.
 

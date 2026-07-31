@@ -24,12 +24,9 @@ or a finished sub-task — evidence pointers stay.
    next letter, one bold title, evidence pointer, `*(done DATE, wk …)*` stamp);
 2. add a one-liner to the **Weekly log** below under the current week (create the
    week heading if it is the first entry that week);
-3. mirror both in the presentation pages — every page is an `.html`/`.md` twin
-   pair that must stay identical in content:
-   `docs/automatic-quantization-pipeline-progress.{html,md}` (goal card/checklist
-   + weekly-log line) and, if the goal has a field note, its pair under
-   `docs/goals/` (marked `EXTENSION POINT` in each file). New results tables go
-   into the goal-2 pair's results sections, latest first.
+3. mirror both in the PM-facing presentation pages, following
+   [`docs/goals/MAINTAINING.md`](docs/goals/MAINTAINING.md) — twin `.html`/`.md`
+   pairs, PM voice, latest results first, no maintainer notes inside the pages.
 
 Last reviewed: 2026-07-31.
 
@@ -43,7 +40,8 @@ Last reviewed: 2026-07-31.
 
    - [x] **1a — Distributed AWQ/GPTQ calibration path integrated** (`torchrun` DDP
      through `pipeline.run`): full-calibration AWQ run, all gates green, in
-     **7 h 22 m** on one 8×H100 node — inside the 4–8 h target.
+     **7 h 22 m** on one 8×H100 node — inside the 4–8 h target; the GPTQ leg
+     completed in **3 h 14 m** (r8 full run, 2026-07-23).
      *(done 2026-07-20, wk 07-20–07-26)*
    - [x] **1b — DDP rank-partition correctness fix**: the partition was applied to
      a local variable only, so all ranks calibrated on the same rows; fixed in

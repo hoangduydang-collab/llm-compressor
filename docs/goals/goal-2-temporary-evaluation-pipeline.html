@@ -136,9 +136,6 @@
         <p class="lead dropcap">Every checkpoint receives the same rendered prompts, exact examples, generation seeds, decoding settings, and scoring implementation.</p>
         <p>The completed deliverable is a working paired evaluation pipeline with fail-closed contract checks and reproducible raw evidence. It provides a controlled quantization-fidelity signal for internal decisions.</p>
         <p>It is deliberately <strong>not a public-leaderboard score</strong>: the evaluation uses seeded subsets and a fixed internal contract rather than each benchmark's full public protocol.</p>
-        <!-- EXTENSION POINT: append new sub-tasks as <li> here (class="done" +
-             <span class="wk">wk …</span> when landed, class="open" otherwise).
-             Keep IDs in sync with PROJECT_GOALS.md goal 2. -->
         <ul class="subs">
           <li class="done">2a · Fail-closed paired harness + official smoke gate (in-house AWQ cleared it, <code>ready_for_production: true</code>) <span class="wk">wk Jul 20–26</span></li>
           <li class="done">2b · Seven-task breadth verdict for in-house GPTQ vs BF16/MXFP8/cyankiwi — recovery 97.4–101.1%, spend within 2% of BF16 <span class="wk">wk Jul 20–26</span></li>

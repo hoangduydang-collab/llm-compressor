@@ -125,9 +125,6 @@
 
       <section id="goals">
         <h2><span class="number">The list</span>Seven long-term goals</h2>
-        <!-- EXTENSION POINT: to record progress, edit the goal card's <ul class="subs">:
-             mark an <li> class="done" and append <span class="wk">wk …</span>, or add a
-             new <li class="open"> with the next sub-task ID. Mirror PROJECT_GOALS.md. -->
         <div class="goal-grid">
 
           <a class="goal-card link" href="goals/goal-1-fast-parallel-quantization.html">
@@ -135,7 +132,7 @@
             <h3>Fast parallel quantization</h3>
             <p>Full quantization run in 4–8 hours, any method.</p>
             <ul class="subs">
-              <li class="done">1a · Distributed calibration — full AWQ run, all gates green, <strong>7 h 22 m</strong> on one node <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">1a · Distributed calibration — AWQ <strong>7 h 22 m</strong>, GPTQ <strong>3 h 14 m</strong>, all gates green, one node <span class="wk">wk Jul 20–26</span></li>
               <li class="done">1b · Multi-GPU calibration correctness fix <span class="wk">wk Jul 27–Aug 02</span></li>
               <li class="done">1c · Proven on a second model + third method — 30B MoE in <strong>1 h 40 m</strong> <span class="wk">wk Jul 27–Aug 02</span></li>
               <li class="open">1d · Distributed save/export</li>
@@ -221,9 +218,6 @@
       <section id="weeklog" class="weeklog">
         <h2><span class="number">Week by week</span>Weekly log</h2>
         <p>One line per achievement, newest first. <span class="ref">IDs</span> point at the sub-tasks above; the durable copy lives in <code>PROJECT_GOALS.md</code>.</p>
-        <!-- EXTENSION POINT: to log a new week, copy an <h3>+<ul> block to the
-             top of this list; to log a new achievement, add an <li> with its
-             sub-task ID in <span class="ref">…</span>. Mirror PROJECT_GOALS.md. -->
 
         <h3>wk 2026-07-27 – 08-02</h3>
         <ul>
@@ -260,7 +254,6 @@
           <li><a href="goals/goal-6-hopper-packed-nvfp4-w4a8.html">Goal 6 — Packed NVFP4 W4A8 fallback on Hopper</a></li>
           <li><a href="goals/goal-7-native-humming-w4a8.html">Goal 7 — Native Humming W4A8 serving</a></li>
         </ul>
-        <p>Every page here has a markdown twin with the same name (<code>.md</code>) — keep each pair in sync.</p>
       </section>
     </article>
   </main>

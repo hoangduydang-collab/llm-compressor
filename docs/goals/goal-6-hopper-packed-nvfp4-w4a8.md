@@ -1,7 +1,7 @@
 # Goal 6 · Packed NVFP4 W4A8 on Hopper — Field Note
 
-> **Planned · benchmark-gated** · markdown twin of
-> [`goal-6-hopper-packed-nvfp4-w4a8.html`](goal-6-hopper-packed-nvfp4-w4a8.html) — keep in sync.
+> **Planned · benchmark-gated** · web version:
+> [`goal-6-hopper-packed-nvfp4-w4a8.html`](goal-6-hopper-packed-nvfp4-w4a8.html).
 > [← Program overview](../automatic-quantization-pipeline-progress.md)
 
 **Contents:** [Why](#why) · [Sub-tasks](#sub-tasks) ·
@@ -23,7 +23,6 @@ still run fast?
 
 ## Sub-tasks
 
-<!-- EXTENSION POINT: append sub-tasks here AND in the HTML twin; IDs from PROJECT_GOALS.md goal 6. -->
 
 - [ ] 6a · Dense proof of concept vs the existing compatibility paths — the gate for all further work
 

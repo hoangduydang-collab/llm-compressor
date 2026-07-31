@@ -34,7 +34,7 @@ that returns wrong numbers would be a regression, not a win; qualification
 (correctness, stability) came before the benchmark comparison counted.
 
 **Before / after, by concurrency** (26 July paired rerun — same model, same
-node, only the kernel changes; TPOT ms with total output tok/s in parentheses):
+node, only the kernel changes). TPOT is the steady time per output token — lower is faster; the parenthesized number is the whole server’s output rate, tok/s:
 
 | Concurrency | Before (CUTLASS) | After (Humming) | Server-throughput gain |
 |---|---|---|---|

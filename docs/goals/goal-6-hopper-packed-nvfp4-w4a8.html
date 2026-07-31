@@ -134,6 +134,20 @@
         <h2><span class="number">02 / Direction</span>Extend an existing backend, fail closed to Marlin</h2>
         <p>The preferred path is a narrow specialization of the existing <strong>Humming</strong> packed E2M1/FP8 backend. It already provides the closest upstream machinery for packed weights, dynamic FP8 activations, and Hopper WGMMA.</p>
         <p>The established vLLM <strong>Marlin W4A16</strong> path remains the compatibility baseline and fallback. Unsupported shapes, scale layouts, or model structures must route to Marlin rather than silently selecting an unqualified kernel.</p>
+        <h3>What exists today</h3>
+        <div class="table-scroll">
+          <table>
+            <caption>Deliverables so far · no hardware results yet, by design</caption>
+            <thead><tr><th>Deliverable</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Design specification</td><td>✅ Committed and reviewed</td></tr>
+              <tr><td>CPU reference prototype (numerics)</td><td>✅ Committed (<code>pipeline/hopper_nvfp4_w4a8/</code>)</td></tr>
+              <tr><td>GPU probe harness + preflight</td><td>✅ Committed, ready to run when scheduled</td></tr>
+              <tr><td>Hardware measurements</td><td>❌ None — the 6a benchmark is the gate</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The prize, in design-time arithmetic: 4-bit packed weights are half the memory and bandwidth of the 8-bit expansion Hopper would otherwise use — if, and only if, the in-kernel conversion is cheap enough. That "if" is exactly what 6a measures.</p>
       </section>
 
       <section id="gates">

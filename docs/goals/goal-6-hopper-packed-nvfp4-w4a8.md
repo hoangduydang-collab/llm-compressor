@@ -5,7 +5,8 @@
 > [← Program overview](../automatic-quantization-pipeline-progress.md)
 
 **Contents:** [Why](#why) · [Sub-tasks](#sub-tasks) ·
-[Decision gates](#decision-gates) · [Evidence](#evidence)
+[What exists today](#what-exists-today) · [Decision gates](#decision-gates) ·
+[Evidence](#evidence)
 
 Future work: run vendor-released NVFP4 (4-bit) checkpoints efficiently on
 current-generation (Hopper) GPUs, which lack native 4-bit compute — keep the
@@ -25,6 +26,20 @@ still run fast?
 <!-- EXTENSION POINT: append sub-tasks here AND in the HTML twin; IDs from PROJECT_GOALS.md goal 6. -->
 
 - [ ] 6a · Dense proof of concept vs the existing compatibility paths — the gate for all further work
+
+## What exists today
+
+| Deliverable | Status |
+|---|---|
+| Design specification | ✅ Committed and reviewed |
+| CPU reference prototype (numerics) | ✅ Committed (`pipeline/hopper_nvfp4_w4a8/`) |
+| GPU probe harness + preflight | ✅ Committed, ready to run when scheduled |
+| Hardware measurements | ❌ None — the 6a benchmark is the gate |
+
+The prize, in design-time arithmetic: 4-bit packed weights are half the memory
+and bandwidth of the 8-bit expansion Hopper would otherwise use — if, and only
+if, the in-kernel conversion is cheap enough. That "if" is exactly what 6a
+measures.
 
 ## Decision gates
 

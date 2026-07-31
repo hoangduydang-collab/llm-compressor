@@ -32,10 +32,24 @@ distributed calibration paths rather than bespoke parallel code.
 
 The full-calibration AWQ run finished in **7 h 22 m on one 8×H100 node** —
 inside the target — covering all 57 MoE layers and 21,888 expert weight
-matrices. The checkpoint cleared every fail-closed gate, served coherently, and
-passed the smoke evaluation. An earlier run had been correctly *rejected* by
-those gates (a scale-search defect on dead channels, since fixed and a candidate
-for upstream contribution) — the gates catching it is the system working.
+matrices: ~19 min to load the ~920 GB model, 6 h 40 m of calibration (≈7 min per
+layer), 19 min to save and run the in-line gates. The checkpoint cleared every
+fail-closed gate, served coherently, and passed the smoke evaluation. An
+earlier run had been correctly *rejected* by those gates (a scale-search defect
+on dead channels, since fixed and a candidate for upstream contribution) — the
+gates catching it is the system working.
+
+**Distributed runs to date** (newest first):
+
+| Model | Method · bits | Hardware | Wall time | Output | When |
+|---|---|---|---|---|---|
+| Qwen3-30B MoE | AutoRound · 2-bit | 8×H100, 1 node | **1 h 40 m** | 8.6 GB checkpoint, serves coherently | wk Jul 27–Aug 02 |
+| MiniMax-M3 (~460B MoE) | AWQ · 4-bit | 8×H100, 1 node | **7 h 22 m** | 225 GB checkpoint, all gates green | wk Jul 20–26 |
+
+Between the two runs, a subtle correctness defect was found and fixed
+(sub-task 1b): every GPU had been calibrating on the *same* data slice instead
+of its own. Outputs looked fine — which is exactly why it needed a code-level
+audit, not just output checks.
 
 ## Boundary
 

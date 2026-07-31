@@ -54,6 +54,15 @@
     .tile{padding:20px 20px 18px;border:1px solid var(--ink);background:rgba(250,247,239,.7);}
     .tile b{display:block;font:800 30px/1 var(--serif);color:var(--oxide-dark);letter-spacing:-.02em;}
     .tile span{display:block;margin-top:8px;font:600 12px/1.35 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+    .table-scroll{overflow-x:auto;margin:28px 0;border-top:6px solid var(--ink);}
+    table{width:100%;border-collapse:collapse;background:rgba(250,247,239,.56);font-size:14.5px;line-height:1.45;}
+    caption{padding:13px 0;color:var(--muted);font:700 11px/1.3 var(--mono);text-align:left;letter-spacing:.08em;text-transform:uppercase;}
+    th,td{padding:12px 13px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top;}
+    th{color:var(--muted);font:800 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+    td:first-child{font-weight:700;}
+    .best{background:rgba(47,106,83,.14);font-weight:750;}
+    .worst{color:var(--oxide-dark);}
     .callout{margin:32px 0;padding:24px 26px;border:1px solid var(--rule);border-top:7px solid var(--verified);background:var(--verified-light);max-width:var(--reading);}
     .callout h3{margin:0 0 9px;font-size:21px;}
     .callout p:last-child{margin-bottom:0;}
@@ -128,6 +137,34 @@
           <div class="tile"><b>+34%</b><span>single-user speed vs the prior kernel</span></div>
           <div class="tile"><b>137</b><span>tokens/s per user (was 102)</span></div>
           <div class="tile"><b>Default</b><span>kernel for the served GPTQ model</span></div>
+        </div>
+        <h3>Before / after, by concurrency</h3>
+        <p>From the 26 July paired rerun — same model, same node, only the kernel changes. TPOT is the steady time per output token; total tok/s is the whole server's output rate.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Prior kernel (CUTLASS) vs adopted kernel (Humming indexed) · TPOT ms (total output tok/s)</caption>
+            <thead><tr><th>Concurrency</th><th class="num">Before</th><th class="num">After</th><th class="num">Server-throughput gain</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td class="num">9.73 (102)</td><td class="num best">7.29 (137)</td><td class="num best">+34%</td></tr>
+              <tr><td>4</td><td class="num">11.91 (335)</td><td class="num best">8.82 (452)</td><td class="num best">+35%</td></tr>
+              <tr><td>16</td><td class="num">15.28 (1,042)</td><td class="num best">12.22 (1,302)</td><td class="num best">+25%</td></tr>
+              <tr><td>64</td><td class="num">22.28 (2,849)</td><td class="num best">19.43 (3,262)</td><td class="num best">+14%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The gain holds at long context: with 100k-token inputs at concurrency 1, per-user speed is 131 tok/s on the new kernel vs 100 on the old (+31%).</p>
+        <h3>How the single-user number moved</h3>
+        <div class="table-scroll">
+          <table>
+            <caption>Kernel journey · concurrency-1 TPOT</caption>
+            <thead><tr><th>Stage</th><th class="num">TPOT</th><th>What changed</th></tr></thead>
+            <tbody>
+              <tr><td>0 · Original stack</td><td class="num">10.3–10.5 ms</td><td>The kernel behind the first published results</td></tr>
+              <tr><td>1 · Scheduling fix</td><td class="num">9.7 ms</td><td>A GPU-stream defect root-caused and fixed</td></tr>
+              <tr><td>2 · Humming indexed (adopted)</td><td class="num best">7.29 ms</td><td>Hopper-native W4A8 kernel — this goal</td></tr>
+              <tr><td>3 · Newer variant (optional)</td><td class="num">7.59 ms</td><td>Evaluated, slightly slower — not adopted</td></tr>
+            </tbody>
+          </table>
         </div>
         <div class="callout">
           <h3>Why this was gated</h3>

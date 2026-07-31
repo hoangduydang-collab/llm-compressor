@@ -1,0 +1,17 @@
+=== node: h104-gpu-polaris.pod4.lab.bitdeer.ai, gpu: GPU 0: NVIDIA H100 80GB HBM3 (UUID: GPU-53da93ba-ae30-02b1-c971-b175068d3bd1)
+=== vllm: 0.26.0
+=== humming: 0.1.11.post25+ga9747951e
+=== server healthy after 28x5s
+=== backend selection evidence:
+(EngineCore pid=65787) INFO 07-31 02:44:34 [compressed_tensors_wNa16.py:137] Using HummingLinearKernel for CompressedTensorsWNA16
+(EngineCore pid=65787) INFO 07-31 02:44:34 [compressed_tensors_moe.py:175] Using CompressedTensorsWNA16MarlinMoEMethod
+(EngineCore pid=65787) INFO 07-31 02:44:34 [fused_humming_moe.py:108] Using indexed gemm for humming moe
+(EngineCore pid=65787) INFO 07-31 02:44:34 [int_wna16.py:206] Using 'HUMMING' WNA16 MoE backend.
+=== probe 1: arithmetic
+42
+usage: {'prompt_tokens': 24, 'total_tokens': 27, 'completion_tokens': 3, 'prompt_tokens_details': None}
+=== probe 2: factual
+Paris
+=== probe 3: fluency
+A mixture-of-experts model is a machine learning approach where different specialized models (or "experts") are combined to make predictions, with each expert responsible for handling different parts of the data or different conditions.
+SMOKE_RESULT: PASS

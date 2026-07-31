@@ -53,6 +53,18 @@
     .goal-card h3{margin:12px 0 10px;font:720 25px/1.12 var(--serif);}
     .goal-card p{margin:0 0 16px;font-size:15.5px;line-height:1.5;color:var(--muted);max-width:none;}
     .goal-card .foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .subs{margin:0 0 18px;padding:0;list-style:none;}
+    .subs li{position:relative;margin:0 0 8px;padding-left:22px;font-size:14.5px;line-height:1.45;color:var(--ink);}
+    .subs li::before{content:"○";position:absolute;left:0;top:0;color:var(--muted);font:800 13px/1.5 var(--mono);}
+    .subs li.done::before{content:"✓";color:var(--verified);}
+    .subs li.open{color:var(--muted);}
+    .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 9.5px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
+    .weeklog{max-width:var(--reading);}
+    .weeklog h3{margin:34px 0 12px;padding:8px 12px;display:inline-block;border:1px solid var(--ink);background:rgba(250,247,239,.72);font:800 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;}
+    .weeklog ul{margin:0;padding:0;list-style:none;}
+    .weeklog li{position:relative;margin:0 0 9px;padding-left:20px;font-size:15.5px;line-height:1.5;}
+    .weeklog li::before{content:"—";position:absolute;left:0;color:var(--oxide);font-weight:800;}
+    .weeklog .ref{font:800 12px/1 var(--mono);color:var(--oxide-dark);}
     .status{display:inline-block;white-space:nowrap;padding:5px 8px;font:800 9px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
     .status.done{color:#fff;background:var(--ink);}
     .status.working{color:#fff;background:var(--verified);}
@@ -82,14 +94,14 @@
 </head>
 <body>
   <div class="issue-strip">
-    <span>Internal engineering update · Program overview · 20 July 2026</span>
+    <span>Internal engineering update · Program overview · 31 July 2026</span>
     <span class="live">Research &amp; implementation in progress</span>
   </div>
 
   <header class="hero">
     <p class="kicker">MiniMax-M3 quantization &amp; evaluation / program field notes</p>
     <h1>The current <em>goals</em>, and where each one stands</h1>
-    <p class="deck">Six long-term goals with clear boundaries: parallel quantization (Goal 1) and a correct in-house AWQ checkpoint (Goal 3) landed 2026-07-20; migrating MiniMax-M3 onto the team's official evaluation pipeline (Goal 2) is the active focus.</p>
+    <p class="deck">Seven long-term goals with clear boundaries: the in-house AWQ checkpoint (Goal 3) is quality-competitive since 2026-07-23, native Humming W4A8 serving (Goal 7) landed 2026-07-26, and the pipeline is now generalizing — a third quant method (Goal 4) and a second model family are in flight alongside the evaluation pipeline (Goal 2).</p>
     <div class="hero-meta" aria-label="Program metadata">
       <span class="stamp">Fork of llm-compressor</span>
       <span class="stamp">MiniMax-M3 case study</span>
@@ -103,23 +115,42 @@
       <section id="intro">
         <p class="lead dropcap">The hard part of automatic quantization is not choosing four bits instead of sixteen. It is making a new model architecture, a quantization algorithm, and an inference engine agree on the same contract — then proving, with evidence, that the agreement held.</p>
         <p>Our fork of <code>llm-compressor</code> is the control plane for that agreement, with MiniMax-M3 as the first case study. The durable goal definitions live in <code>PROJECT_GOALS.md</code>; this overview presents the current research-update boundaries and links the goals with dedicated field notes. Everything here is scoped to evidence already in the repository.</p>
+        <p>Each goal carries an explicit <strong>sub-task list</strong> — the unit of progress. New sub-tasks may be added to a goal at any time without rewriting its history; every finished sub-task is stamped with the week it landed, so weekly achievement reads directly off the cards.</p>
       </section>
 
       <section id="goals">
-        <h2><span class="number">The list</span>Six long-term goals</h2>
+        <h2><span class="number">The list</span>Seven long-term goals</h2>
+        <!-- EXTENSION POINT: to record progress, edit the goal card's <ul class="subs">:
+             mark an <li> class="done" and append <span class="wk">wk …</span>, or add a
+             new <li class="open"> with the next sub-task ID. Mirror PROJECT_GOALS.md. -->
         <div class="goal-grid">
 
           <a class="goal-card link" href="goals/goal-1-fast-parallel-quantization.html">
             <span class="gnum">Goal 01</span>
             <h3>Fast parallel quantization</h3>
-            <p>Completed the distributed AWQ/GPTQ path; the AWQ leg landed 2026-07-20 — a full-calibration run, all gates green, in 7 h 22 m on one node, inside the 4–8 hour target.</p>
-            <div class="foot"><span class="status done">Done</span><span class="open">Open field note →</span></div>
+            <p>Parallel AWQ/GPTQ (and, via Goal 4, any method) with a full quantization in 4–8 hours.</p>
+            <ul class="subs">
+              <li class="done">1a · Distributed calibration path — full AWQ run, all gates green, <strong>7 h 22 m</strong> on one node <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">1b · DDP rank-partition correctness fix (all ranks had calibrated on the same rows) <span class="wk">wk Jul 27–Aug 02</span></li>
+              <li class="done">1c · Proven beyond M3 &amp; AWQ/GPTQ — DDP AutoRound, 30B MoE in <strong>1 h 40 m</strong> <span class="wk">wk Jul 27–Aug 02</span></li>
+              <li class="open">1d · Distributed save/export</li>
+            </ul>
+            <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
           </a>
 
           <a class="goal-card link" href="goals/goal-2-temporary-evaluation-pipeline.html">
             <span class="gnum">Goal 02</span>
             <h3>Evaluation pipeline</h3>
-            <p>Built a reproducible, fail-closed paired harness comparing in-house checkpoints with existing quants and the BF16 baseline. The in-house AWQ checkpoint cleared the official smoke gate 2026-07-20; its full production run and the migration to the team's official pipeline are in progress.</p>
+            <p>A reproducible, fail-closed paired harness: in-house checkpoint vs existing quants vs the BF16 baseline.</p>
+            <ul class="subs">
+              <li class="done">2a · Fail-closed paired harness + official smoke gate <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">2b · Seven-task breadth verdict for in-house GPTQ — recovery 97.4–101.1% <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">2c · Two-axis perf report (kernel × model, ten arms) <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">2d · Second model family — three-arm GLM-5.2 eval <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">2e · Second quant track — W2A16 vs BF16 paired A/B <span class="wk">wk Jul 27–Aug 02</span></li>
+              <li class="done">2f · Collaborator guide, every command live-verified <span class="wk">wk Jul 27–Aug 02</span></li>
+              <li class="open">2g · Seven-task breadth run for the quality-clean AWQ r6 recipe</li>
+            </ul>
             <div class="foot"><span class="status working">Work in progress</span><span class="open">Open field note →</span></div>
           </a>
 
@@ -127,21 +158,33 @@
             <span class="gnum">Goal 06</span>
             <h3>Packed NVFP4 W4A8 on Hopper</h3>
             <p>Run official NVFP4 checkpoints on H100/H200 with weights kept packed at four bits, dynamic FP8 activations, and in-kernel E2M1→FP8 conversion feeding FP8 Tensor Cores — a benchmark-gated systems investigation.</p>
+            <ul class="subs">
+              <li class="open">6a · Dense proof of concept vs NVFP4 W4A16 Marlin and load-expanded W8A8 (gate for all MoE work)</li>
+            </ul>
             <div class="foot"><span class="status planned">Planned · benchmark-gated</span><span class="open">Open field note →</span></div>
           </a>
 
           <div class="goal-card plain">
             <span class="gnum">Goal 03</span>
             <h3>Working AWQ quantized model</h3>
-            <p>Achieved 2026-07-20. The earlier checkpoint corruption traced to an AWQ smoothing-scale degeneracy on dead (zero-activation) norm channels, fixed in <code>e87eef77</code> with regression tests and hardened gates. The full-calibration artifact now passes every gate on all 57 layers, serves coherently on vLLM TP8, and cleared the smoke evaluation (<code>ready_for_production: true</code>). Its quality against the BF16 baseline is measured under Goal 2.</p>
-            <div class="foot"><span class="status done">Done · 2026-07-20</span></div>
+            <p>Two defects fixed in sequence; the <code>r6</code> recipe is quality-competitive. <strong>Serve r6 or r7, never r5.</strong></p>
+            <ul class="subs">
+              <li class="done">3a · Checkpoint corruption root-caused — AWQ smoothing-scale degeneracy on dead norm channels, fixed in <code>e87eef77</code> <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">3b · Reasoning non-termination root-caused — up→down fold across the clamped GLU; r6 drops it (GPQA 98.7%, IFEval 98.6%) <span class="wk">wk Jul 20–26</span></li>
+            </ul>
+            <div class="foot"><span class="status done">Done · quality-competitive 2026-07-23</span></div>
           </div>
 
           <div class="goal-card plain">
             <span class="gnum">Goal 04</span>
             <h3>Generalize to any quant method</h3>
-            <p>Extend the pipeline beyond AWQ and GPTQ to arbitrary quantization methods.</p>
-            <div class="foot"><span class="status future">Future work</span></div>
+            <p>Extend the pipeline beyond AWQ and GPTQ. First concrete method: AutoRound, on a sub-4-bit W2A16 track (Qwen3-30B MoE).</p>
+            <ul class="subs">
+              <li class="done">4a · AutoRound quant→serve loop closed — 8.6 GB int2-g128 checkpoint serves coherently on vLLM 0.26 <span class="wk">wk Jul 27–Aug 02</span></li>
+              <li class="done">4b · W2A16 quality A/B at <code>iters=200</code> — verdict no-ship (GPQA −0.30, IFEval −0.39); a completed measurement with a negative outcome <span class="wk">wk Jul 27–Aug 02</span></li>
+              <li class="open">4c · <code>iters=1000</code> requant + paired re-eval</li>
+            </ul>
+            <div class="foot"><span class="status working">Work in progress</span></div>
           </div>
 
           <div class="goal-card plain">
@@ -151,12 +194,57 @@
             <div class="foot"><span class="status future">Future work</span></div>
           </div>
 
+          <div class="goal-card plain">
+            <span class="gnum">Goal 07</span>
+            <h3>Native Humming W4A8 serving on Hopper</h3>
+            <p>Humming's GPTQ W4A8 path qualified and adopted for the in-house checkpoint on H100: packed INT4 group-128 weights, dynamic per-token FP8 activations, TP8 + expert parallelism, graphs-on serving. See <code>M3_HUMMING_W4A8_QUALIFICATION_REPORT.md</code>.</p>
+            <ul class="subs">
+              <li class="done">7a · Qualification — fail-closed backend attestation, correctness, stability <span class="wk">wk Jul 20–26</span></li>
+              <li class="done">7b · Adoption — ~34% faster than CUTLASS at concurrency 1; default kernel for <code>gptq-base</code> <span class="wk">wk Jul 20–26</span></li>
+            </ul>
+            <div class="foot"><span class="status done">Done · 2026-07-26</span></div>
+          </div>
+
         </div>
 
         <div class="focus-band">
-          <h3>Current session focus: Goal 2</h3>
-          <p>Goals 1 and 3 landed on 2026-07-20 — the distributed AWQ path and a correct, gate-passing in-house AWQ checkpoint. The active work is Goal 2: running the full production evaluation of that checkpoint and migrating MiniMax-M3 onto the team's official evaluation pipeline. Goals 4–6 remain future or benchmark-gated work.</p>
+          <h3>Current focus: Goals 1, 2 and 4</h3>
+          <p>Goals 3 and 7 are complete — a quality-competitive in-house AWQ checkpoint and native Humming W4A8 serving. The near-term queue, by sub-task: <strong>4c</strong> (W2A16 <code>iters=1000</code> requant), <strong>2g</strong> (seven-task breadth evaluation for the quality-clean AWQ r6 recipe), and <strong>1d</strong> (distributed save/export). During the owner's absence, <code>M3_COLLABORATOR_GUIDE.md</code> — every Part-A command executed end-to-end on 2026-07-31 — is the continuity anchor for the evaluation side.</p>
         </div>
+      </section>
+
+      <section id="weeklog" class="weeklog">
+        <h2><span class="number">Week by week</span>Weekly log</h2>
+        <p>One line per achievement, newest week first. The <span class="ref">bold IDs</span> point at the goal sub-tasks above, which carry the numbers and evidence; the durable version of this log lives in <code>PROJECT_GOALS.md</code>.</p>
+        <!-- EXTENSION POINT: to log a new week, copy an <h3>+<ul> block to the
+             top of this list; to log a new achievement, add an <li> with its
+             sub-task ID in <span class="ref">…</span>. Mirror PROJECT_GOALS.md. -->
+
+        <h3>wk 2026-07-27 – 08-02</h3>
+        <ul>
+          <li><span class="ref">1c / 4a</span> · First new method onboarded (AutoRound): DDP W2A16 quant of a 30B MoE in 1 h 40 m; checkpoint serves coherently.</li>
+          <li><span class="ref">4b</span> · W2A16 <code>iters=200</code> quality A/B measured — no-ship verdict; <code>iters=1000</code> requant queued as 4c.</li>
+          <li><span class="ref">2e</span> · Paired A/B protocol proven on a second quant track (W2A16 vs BF16).</li>
+          <li><span class="ref">2f</span> · Collaborator guide finished and live-verified end-to-end; handoff-ready.</li>
+          <li><span class="ref">1b</span> · DDP rank-partition correctness fix.</li>
+          <li>Ops · goals tracking restructured into week-stamped sub-tasks; curated ~591 GB workspace archive launched.</li>
+        </ul>
+
+        <h3>wk 2026-07-20 – 07-26</h3>
+        <ul>
+          <li><span class="ref">1a</span> · Distributed calibration hit the 4–8 h target: full AWQ run in 7 h 22 m.</li>
+          <li><span class="ref">3a / 3b</span> · Both AWQ defects root-caused and fixed; r6 quality-competitive. <strong>Goal 3 complete.</strong></li>
+          <li><span class="ref">2a / 2b</span> · Official smoke gate cleared, then the seven-task breadth verdict for in-house GPTQ (recovery 97.4–101.1%).</li>
+          <li><span class="ref">2c</span> · Two-axis perf report (kernel × model, ten arms).</li>
+          <li><span class="ref">2d</span> · Second model family: three-arm GLM-5.2 eval.</li>
+          <li><span class="ref">7a / 7b</span> · Humming W4A8 qualified and adopted (+34% at concurrency 1). <strong>Goal 7 complete.</strong></li>
+        </ul>
+
+        <h3>wk 2026-07-13 – 07-19</h3>
+        <ul>
+          <li>Stopgap four-way quality comparison (in-house GPTQ / cyankiwi / MXFP8 / BF16) on the seeded-subset harness — historical, superseded by 2b.</li>
+          <li>DDP full-run rehearsals r1–r3; planner–executor protocol and the distributed speedup execution packet signed.</li>
+        </ul>
       </section>
 
       <section id="how">
@@ -172,7 +260,7 @@
   </main>
 
   <footer>
-    <strong>Field note status:</strong> internal research update, not a product-support statement. <code>PROJECT_GOALS.md</code> provides the durable goal definitions; the status boundaries shown here reflect repository evidence dated on or before 20 July 2026.
+    <strong>Field note status:</strong> internal research update, not a product-support statement. <code>PROJECT_GOALS.md</code> provides the durable goal definitions; the status boundaries shown here reflect repository evidence dated on or before 31 July 2026.
   </footer>
 </body>
 </html>

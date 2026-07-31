@@ -83,6 +83,12 @@
     .ledger{columns:2;column-gap:40px;margin:0;padding:0;list-style:none;max-width:none;}
     .ledger li{break-inside:avoid;margin:0 0 11px;padding:0 0 11px;border-bottom:1px solid var(--rule);font:600 13px/1.45 var(--mono);}
     .ledger .t{display:block;margin-bottom:4px;color:var(--muted);font-size:9px;letter-spacing:.1em;text-transform:uppercase;}
+    .subs{margin:26px 0 0;padding:0;list-style:none;max-width:var(--reading);}
+    .subs li{position:relative;margin:0 0 12px;padding-left:26px;font-size:16px;line-height:1.5;}
+    .subs li::before{content:"\25CB";position:absolute;left:0;top:0;color:var(--muted);font:800 15px/1.5 var(--mono);}
+    .subs li.done::before{content:"\2713";color:var(--verified);}
+    .subs li.open{color:var(--muted);}
+    .wk{white-space:nowrap;margin-left:6px;padding:2px 6px;font:700 10px/1 var(--mono);letter-spacing:.05em;color:var(--verified);background:var(--verified-light);border-radius:2px;}
     footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
     footer strong{color:#fff;}
     @media (max-width:620px){
@@ -106,10 +112,10 @@
   <header class="hero">
     <p class="kicker">Goal 02 / engineering field note · <span class="status working">Work in progress</span></p>
     <h1>The <em>evaluation</em> pipeline</h1>
-    <p class="deck">The reproducible, fail-closed paired harness is built and has produced its four-way comparison against BF16. A fifth in-house-AWQ arm and the migration onto the team's official pipeline are in progress.</p>
+    <p class="deck">The fail-closed paired harness is built, the migration onto the team's official pipeline is done, and in-house GPTQ holds a seven-task breadth verdict. The harness has since generalized to a second model family (GLM-5.2) and a second quant track (W2A16). Open: the breadth run for the quality-clean AWQ r6 recipe.</p>
     <div class="hero-meta">
-      <span class="stamp">4 checkpoints compared</span>
-      <span class="stamp">lm-eval-harness 0.4.12 · vLLM</span>
+      <span class="stamp">7-task breadth verdict · in-house GPTQ</span>
+      <span class="stamp">Official pipeline (AICloud/benchmarks)</span>
       <span class="stamp">Paired fidelity, not leaderboard scores</span>
     </div>
   </header>
@@ -122,10 +128,23 @@
         <p class="lead dropcap">Every checkpoint receives the same rendered prompts, exact examples, generation seeds, decoding settings, and scoring implementation.</p>
         <p>The completed deliverable is a working paired evaluation pipeline with fail-closed contract checks and reproducible raw evidence. It provides a controlled quantization-fidelity signal for internal decisions.</p>
         <p>It is deliberately <strong>not a public-leaderboard score</strong>: the evaluation uses seeded subsets and a fixed internal contract rather than each benchmark's full public protocol.</p>
+        <!-- EXTENSION POINT: append new sub-tasks as <li> here (class="done" +
+             <span class="wk">wk …</span> when landed, class="open" otherwise).
+             Keep IDs in sync with PROJECT_GOALS.md goal 2. -->
+        <ul class="subs">
+          <li class="done">2a · Fail-closed paired harness + official smoke gate (in-house AWQ cleared it, <code>ready_for_production: true</code>) <span class="wk">wk Jul 20–26</span></li>
+          <li class="done">2b · Seven-task breadth verdict for in-house GPTQ vs BF16/MXFP8/cyankiwi — recovery 97.4–101.1%, spend within 2% of BF16 <span class="wk">wk Jul 20–26</span></li>
+          <li class="done">2c · Two-axis perf report (kernel × model, ten arms, one controller) <span class="wk">wk Jul 20–26</span></li>
+          <li class="done">2d · Second model family — paired three-arm GLM-5.2 eval on SGLang; the M3 AWQ pathology does not replicate <span class="wk">wk Jul 20–26</span></li>
+          <li class="done">2e · Second quant track — W2A16 vs BF16 paired A/B (GPQA + IFEval, harness check PASS) <span class="wk">wk Jul 27–Aug 02</span></li>
+          <li class="done">2f · Collaborator front door — <code>M3_COLLABORATOR_GUIDE.md</code>, every Part-A command executed end-to-end <span class="wk">wk Jul 27–Aug 02</span></li>
+          <li class="open">2g · Seven-task breadth run for the quality-clean AWQ r6 recipe (in-house GPTQ still holds the sole full-breadth verdict)</li>
+        </ul>
       </section>
 
       <section id="results">
-        <h2><span class="number">02 / Results</span>The four-way comparison</h2>
+        <h2><span class="number">02 / Results</span>The four-way comparison (stopgap harness, historical)</h2>
+        <p><em>Historical (wk Jul 13–19): these are the stopgap harness's numbers, kept for the record. The current authoritative quality evidence is the official-pipeline breadth run in <code>M3_OFFICIAL_QUALITY_RESULTS.html</code> — a different protocol whose numbers are not comparable to this table.</em></p>
         <p>Scores are <strong>mean pass@1 over three generation seeds (42, 1234, 4158)</strong>, generation-based, on seeded stratified subsets: <strong>GPQA-Diamond 100, MMLU-Pro 100, GSM8K-CoT 100, AIME25 30</strong> questions. Higher is better; the best model per row is shaded.</p>
         <div class="table-scroll">
           <table>
@@ -160,12 +179,11 @@
       </section>
 
       <section id="available">
-        <h2><span class="number">04 / Next</span>A fifth arm, then the official pipeline</h2>
-        <p>The harness itself is built and appropriate for paired internal decisions — though its confidence intervals are wider than full benchmark runs, and the numbers should not be quoted as leaderboard results. Two things remain in progress.</p>
-        <p><strong>A fifth arm.</strong> The in-house full-calibration AWQ checkpoint (W4AFP8 — Goal 3's artifact) cleared the pipeline's smoke gate on <strong>2026-07-20</strong>, validated as directly comparable to the BF16 baseline run: every scoring-relevant hash matched, and the one configuration difference is a harmless NCCL timeout setting added after the baseline (recorded in the run's <code>COMPARABILITY.md</code>). Its full production scores are still pending.</p>
-        <div class="callout blue">
-          <h3>From stopgap to the official pipeline</h3>
-          <p>The team's <strong>official evaluation pipeline now exists as its own repository</strong> (<code>AICloud/benchmarks</code>) — lm-eval <code>0.4.10</code> run over its API backend against a self-deployed OpenAI-compatible endpoint, plus distribution, reliability, and agentic test layers this stopgap lacks. Because it uses <strong>different tasks, greedy decoding, and loglikelihood multiple-choice scoring</strong>, its numbers are <em>not</em> comparable to the results table above. Migrating MiniMax-M3 onto it — serving the checkpoint on a pinned, patched vLLM 0.24.0 image and wiring up the four comparator profiles — is the active work; this stopgap harness holds only until M3 runs there.</p>
+        <h2><span class="number">04 / Migration</span>The official pipeline is now the harness of record</h2>
+        <p>The migration finished: MiniMax-M3 runs on the team's <strong>official evaluation pipeline</strong> (<code>AICloud/benchmarks</code> — lm-eval <code>0.4.10</code> over its API backend against a self-deployed, pinned vLLM 0.24.0 endpoint). On it, the in-house GPTQ arm earned a <strong>seven-task breadth verdict</strong> (recovery 97.4–101.1% on all seven tasks, token spend within 2% of BF16), published in <code>M3_OFFICIAL_QUALITY_RESULTS.html</code>. Because the official pipeline uses different tasks, greedy decoding, and loglikelihood multiple-choice scoring, its numbers are <em>not</em> comparable to the stopgap table above.</p>
+        <div class="callout">
+          <h3>Since generalized beyond MiniMax-M3</h3>
+          <p>The same paired protocol produced a <strong>three-arm GLM-5.2 evaluation</strong> (BF16 vs community W4AFP8 checkpoints, self-hosted on SGLang — <code>GLM52_OFFICIAL_EVAL_RESULTS.html</code>: Phala's AWQ-produced W4AFP8 is clean, the M3 AWQ pathology does not replicate) and a <strong>W2A16-vs-BF16 A/B</strong> on the sub-4-bit track (Goal 4). The remaining sub-task is <strong>2g</strong>: the seven-task breadth run for the quality-clean AWQ r6 recipe.</p>
         </div>
       </section>
 
@@ -175,6 +193,9 @@
           <li><span class="t">Official pipeline</span><a href="https://gitlab.bitdeer.vip/AICloud/benchmarks">AICloud/benchmarks</a> — lm-eval 0.4.10 + distribution/reliability/agentic</li>
           <li><span class="t">Serving · this fork</span><a href="../m3-serving-recipe.md">M3 serving recipe</a> — pinned vLLM 0.24.0 + W4A8 overlay</li>
           <li><span class="t">Report · this fork</span><a href="../../M3_PRODUCTION_EVAL_HANDOFF.md">M3_PRODUCTION_EVAL_HANDOFF.md</a> — completed model evidence and harness qualification</li>
+          <li><span class="t">Breadth verdict · this fork</span><a href="../../M3_OFFICIAL_QUALITY_RESULTS.html">M3_OFFICIAL_QUALITY_RESULTS.html</a> — seven-task official-pipeline results (2b)</li>
+          <li><span class="t">Second family · this fork</span><a href="../../GLM52_OFFICIAL_EVAL_RESULTS.html">GLM52_OFFICIAL_EVAL_RESULTS.html</a> — three-arm GLM-5.2 eval (2d)</li>
+          <li><span class="t">Collaborators · this fork</span><a href="../../M3_COLLABORATOR_GUIDE.md">M3_COLLABORATOR_GUIDE.md</a> — serving-first onboarding, live-verified (2f)</li>
           <li><span class="t">Config · this fork</span><a href="../../pipeline/configs/eval_minimax_m3_reasoning_r4.yaml">eval_minimax_m3_reasoning_r4.yaml</a>, <a href="../../pipeline/configs/minimax_m3_inhouse_awq_r5_smoke.yaml">minimax_m3_inhouse_awq_r5_smoke.yaml</a></li>
           <li><span class="t">Goals · this fork</span><a href="../../PROJECT_GOALS.md">PROJECT_GOALS.md</a> — goal 2 contract</li>
           <li><span class="t">Upstream</span><a href="https://github.com/EleutherAI/lm-evaluation-harness">lm-evaluation-harness</a></li>
@@ -185,7 +206,7 @@
   </main>
 
   <footer>
-    <strong>Goal 2 field note.</strong> Scores are model-to-model paired signals on seeded subsets (N = 100 / 30), not public-leaderboard-comparable. Scoped to repository evidence dated on or before 20 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
+    <strong>Goal 2 field note.</strong> Scores are model-to-model paired signals, not public-leaderboard-comparable; the official pipeline (<code>AICloud/benchmarks</code>) is the harness of record since wk Jul 20–26. Open: 2g. Scoped to repository evidence dated on or before 31 July 2026. ← <a href="../automatic-quantization-pipeline-progress.html" style="color:#c9d4cf;">Back to program overview</a>
   </footer>
 </body>
 </html>

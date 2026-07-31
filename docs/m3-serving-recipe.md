@@ -58,8 +58,10 @@ the code disagree, the code wins.
 | `ensure_m3_moe_probe()` / `_load_audit()` / `_layer_boundary()` | Diagnostic instrumentation, env-gated (`M3_MOE_PROBE=1`, `M3_LAYER_BOUNDARY=1`) | Never for production serving |
 
 Check status without applying: `python pipeline/slurm/patch_vllm_m3_serve.py --check`
-(exit 1 if unpatched). A serving run prints `STATUS: patched` and a
-`system_fingerprint` like `vllm-0.24.0-tp8-ep-<hash>`.
+(exit 1 if unpatched, 2 if a file/anchor is missing). A healthy check prints
+`STATUS: patched`. The `system_fingerprint` (`vllm-0.24.0-tp8-ep-<hash>`) is returned in
+every `/v1/chat/completions` response body — it is not written to any log; read it from a
+response, not from `serve.log`.
 
 **Which edits matter when.** Edits 1–2 are required for the **W4A8** kernel path
 regardless of runtime mode. Edits 3–7 matter when **CUDA graphs are enabled** — which is
@@ -155,7 +157,8 @@ and independent of the mutable `quant` dev venv.
 ## Reproducibility record
 
 Pin and record, per run: base vLLM version (`0.24.0`), overlay `--check` status, the
-`system_fingerprint` (`vllm-0.24.0-tp8-ep-<hash>`), and the checkpoint hash. The
+`system_fingerprint` (`vllm-0.24.0-tp8-ep-<hash>`, taken from a chat response body — it
+is not in `serve.log`), and the checkpoint hash. The
 quality-eval `run_manifest.json` currently records only `lm_eval_version`; the vLLM
 version + patch status live in the serving-diagnostic run dirs
 (`results/m3-shared-expert-repair/`, `results/m3-layer-boundary/`). Persisting the full

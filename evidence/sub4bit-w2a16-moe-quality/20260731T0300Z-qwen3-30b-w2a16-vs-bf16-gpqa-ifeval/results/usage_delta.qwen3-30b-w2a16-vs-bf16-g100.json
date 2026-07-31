@@ -1,0 +1,20 @@
+{
+  "gpqa_diamond_cot_zeroshot": {
+    "n_joined": 100,
+    "baseline_completion_tokens": 292693,
+    "candidate_completion_tokens": 352624,
+    "token_spend_ratio": 1.2048,
+    "baseline_exhausted_rate": 0.52,
+    "candidate_exhausted_rate": 0.81,
+    "exhausted_rate_delta": 0.29
+  },
+  "ifeval": {
+    "n_joined": 100,
+    "baseline_completion_tokens": 45259,
+    "candidate_completion_tokens": 155695,
+    "token_spend_ratio": 3.4401,
+    "baseline_exhausted_rate": 0.0,
+    "candidate_exhausted_rate": 0.32,
+    "exhausted_rate_delta": 0.32
+  }
+}

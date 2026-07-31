@@ -1,0 +1,454 @@
+=== node: h104-gpu-polaris.pod4.lab.bitdeer.ai
+=== model: /mnt/nfs/hoangduy/hf_assets/Qwen/Qwen3-0.6B -> /mnt/nfs/hoangduy/projects/llm-compressor/artifacts/Qwen3-0.6B-autoround-W2A16-ddp2-smoke (nproc=2 nsamples=64 iters=10)
+=== versions: llmc 0.12.1.dev92+g8cec0acc | auto-round 0.14.1 | ct 0.17.2a20260707
+=== GPU state before launch:
+0, 0 MiB
+1, 0 MiB
+2, 0 MiB
+3, 0 MiB
+4, 0 MiB
+5, 0 MiB
+6, 0 MiB
+7, 0 MiB
+W0730 09:30:06.058000 3486081 torch/distributed/run.py:851] 
+W0730 09:30:06.058000 3486081 torch/distributed/run.py:851] *****************************************
+W0730 09:30:06.058000 3486081 torch/distributed/run.py:851] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0730 09:30:06.058000 3486081 torch/distributed/run.py:851] *****************************************
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:  14%|█▍        | 43/311 [00:00<00:00, 410.22it/s]Loading weights:  14%|█▍        | 45/311 [00:00<00:00, 419.55it/s]Loading weights:  31%|███       | 95/311 [00:00<00:00, 472.25it/s]Loading weights:  30%|██▉       | 93/311 [00:00<00:00, 437.29it/s]Loading weights:  46%|████▌     | 143/311 [00:00<00:00, 469.53it/s]Loading weights:  50%|████▉     | 154/311 [00:00<00:00, 513.03it/s]Loading weights:  61%|██████▏   | 191/311 [00:00<00:00, 459.78it/s]Loading weights:  66%|██████▌   | 206/311 [00:00<00:00, 499.52it/s]Loading weights:  80%|████████  | 249/311 [00:00<00:00, 496.10it/s]Loading weights:  85%|████████▍ | 263/311 [00:00<00:00, 500.61it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 528.61it/s]
+Loading weights: 100%|██████████| 311/311 [00:00<00:00, 526.24it/s]
+Dispatching model:   0%|          | 0/427 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/427 [00:00<?, ?it/s]Dispatching model:   1%|          | 3/427 [00:00<01:45,  4.02it/s]Dispatching model:   1%|          | 3/427 [00:00<01:47,  3.94it/s]Dispatching model:   7%|▋         | 30/427 [00:00<00:08, 45.76it/s]Dispatching model:   7%|▋         | 30/427 [00:00<00:08, 46.52it/s]Dispatching model:  14%|█▍        | 59/427 [00:00<00:04, 91.42it/s]Dispatching model:  14%|█▍        | 59/427 [00:00<00:04, 90.20it/s]Dispatching model:  20%|██        | 86/427 [00:01<00:02, 128.61it/s]Dispatching model:  20%|██        | 86/427 [00:01<00:02, 127.25it/s]Dispatching model:  27%|██▋       | 114/427 [00:01<00:01, 162.29it/s]Dispatching model:  27%|██▋       | 114/427 [00:01<00:01, 160.97it/s]Dispatching model:  33%|███▎      | 142/427 [00:01<00:01, 189.52it/s]Dispatching model:  33%|███▎      | 142/427 [00:01<00:01, 188.36it/s]Dispatching model:  39%|███▉      | 168/427 [00:01<00:01, 204.92it/s]Dispatching model:  39%|███▉      | 168/427 [00:01<00:01, 205.84it/s]Dispatching model:  46%|████▌     | 195/427 [00:01<00:01, 222.25it/s]Dispatching model:  46%|████▌     | 195/427 [00:01<00:01, 222.98it/s]Dispatching model:  52%|█████▏    | 224/427 [00:01<00:00, 239.95it/s]Dispatching model:  52%|█████▏    | 224/427 [00:01<00:00, 240.10it/s]Dispatching model:  59%|█████▉    | 251/427 [00:01<00:00, 247.88it/s]Dispatching model:  59%|█████▉    | 251/427 [00:01<00:00, 248.03it/s]Dispatching model:  65%|██████▌   | 279/427 [00:01<00:00, 255.23it/s]Dispatching model:  65%|██████▌   | 279/427 [00:01<00:00, 254.70it/s]Dispatching model:  72%|███████▏  | 306/427 [00:01<00:00, 258.57it/s]Dispatching model:  72%|███████▏  | 306/427 [00:01<00:00, 258.95it/s]Dispatching model:  78%|███████▊  | 333/427 [00:01<00:00, 254.24it/s]Dispatching model:  78%|███████▊  | 333/427 [00:01<00:00, 254.50it/s]Dispatching model:  84%|████████▍ | 360/427 [00:02<00:00, 257.95it/s]Dispatching model:  84%|████████▍ | 360/427 [00:02<00:00, 257.75it/s]Dispatching model:  91%|█████████ | 389/427 [00:02<00:00, 266.30it/s]Dispatching model:  91%|█████████ | 389/427 [00:02<00:00, 266.16it/s]Dispatching model:  98%|█████████▊| 417/427 [00:02<00:00, 269.80it/s]Dispatching model:  98%|█████████▊| 417/427 [00:02<00:00, 269.89it/s]Dispatching model: 100%|██████████| 427/427 [00:02<00:00, 150.42it/s]
+Dispatching model: 100%|██████████| 427/427 [00:02<00:00, 149.62it/s]
+[38;20m2026-07-30 09:30:33 INFO calib_dataset.py L977: Preprocessing calibration dataset in a subprocess to avoid memory leaks...[0m
+[38;20m2026-07-30 09:30:33 INFO calib_dataset.py L977: Preprocessing calibration dataset in a subprocess to avoid memory leaks...[0m
+Using the latest cached version of the dataset since NeelNanda/pile-10k couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /mnt/nfs/hoangduy/hf_assets/xet/datasets/NeelNanda___pile-10k/default/0.0.0/127bfedcd5047750df5ccf3a12979a47bfa0bafa (last modified on Thu Jul 30 09:27:48 2026).
+Using the latest cached version of the dataset since NeelNanda/pile-10k couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /mnt/nfs/hoangduy/hf_assets/xet/datasets/NeelNanda___pile-10k/default/0.0.0/127bfedcd5047750df5ccf3a12979a47bfa0bafa (last modified on Thu Jul 30 09:27:48 2026).
+Map:   0%|          | 0/10000 [00:00<?, ? examples/s]Map:   0%|          | 0/10000 [00:00<?, ? examples/s]Map:  10%|█         | 1000/10000 [00:03<00:34, 260.52 examples/s]Map:  10%|█         | 1000/10000 [00:03<00:34, 257.70 examples/s]Map:  20%|██        | 2000/10000 [00:06<00:24, 320.38 examples/s]Map:  20%|██        | 2000/10000 [00:06<00:25, 315.59 examples/s]Map:  30%|███       | 3000/10000 [00:12<00:30, 230.25 examples/s]Map:  30%|███       | 3000/10000 [00:12<00:31, 225.55 examples/s]Map:  40%|████      | 4000/10000 [00:14<00:21, 281.44 examples/s]Map:  40%|████      | 4000/10000 [00:14<00:21, 275.82 examples/s]Map:  50%|█████     | 5000/10000 [00:17<00:16, 308.00 examples/s]Map:  50%|█████     | 5000/10000 [00:17<00:16, 301.49 examples/s]Map:  60%|██████    | 6000/10000 [00:19<00:11, 340.18 examples/s]Map:  60%|██████    | 6000/10000 [00:20<00:12, 332.79 examples/s]Map:  70%|███████   | 7000/10000 [00:23<00:09, 314.02 examples/s]Map:  70%|███████   | 7000/10000 [00:23<00:09, 307.45 examples/s]Map:  80%|████████  | 8000/10000 [00:26<00:06, 330.75 examples/s]Map:  80%|████████  | 8000/10000 [00:26<00:06, 323.65 examples/s]Map:  90%|█████████ | 9000/10000 [00:28<00:02, 343.95 examples/s]Map:  90%|█████████ | 9000/10000 [00:29<00:02, 336.15 examples/s]Map: 100%|██████████| 10000/10000 [00:31<00:00, 343.48 examples/s]Map: 100%|██████████| 10000/10000 [00:31<00:00, 315.58 examples/s]
+Filter:   0%|          | 0/10000 [00:00<?, ? examples/s]Filter:  10%|█         | 1000/10000 [00:00<00:03, 2321.78 examples/s]Map: 100%|██████████| 10000/10000 [00:32<00:00, 336.10 examples/s]Map: 100%|██████████| 10000/10000 [00:32<00:00, 309.30 examples/s]
+Filter:   0%|          | 0/10000 [00:00<?, ? examples/s]Filter:  20%|██        | 2000/10000 [00:00<00:03, 2444.07 examples/s]Filter:  10%|█         | 1000/10000 [00:00<00:03, 2377.68 examples/s]Filter:  30%|███       | 3000/10000 [00:01<00:02, 2416.27 examples/s]Filter:  20%|██        | 2000/10000 [00:00<00:03, 2491.34 examples/s]Filter:  40%|████      | 4000/10000 [00:01<00:02, 2457.93 examples/s]Filter:  30%|███       | 3000/10000 [00:01<00:02, 2431.81 examples/s]Filter:  50%|█████     | 5000/10000 [00:02<00:02, 2450.17 examples/s]Filter:  40%|████      | 4000/10000 [00:01<00:02, 2458.89 examples/s]Filter:  60%|██████    | 6000/10000 [00:02<00:01, 2460.74 examples/s]Filter:  50%|█████     | 5000/10000 [00:02<00:02, 2454.22 examples/s]Filter:  70%|███████   | 7000/10000 [00:02<00:01, 2453.67 examples/s]Filter:  60%|██████    | 6000/10000 [00:02<00:01, 2463.69 examples/s]Filter:  80%|████████  | 8000/10000 [00:03<00:00, 2428.87 examples/s]Filter:  70%|███████   | 7000/10000 [00:02<00:01, 2413.50 examples/s]Filter:  90%|█████████ | 9000/10000 [00:03<00:00, 2450.73 examples/s]Filter:  80%|████████  | 8000/10000 [00:03<00:00, 2431.02 examples/s]Filter: 100%|██████████| 10000/10000 [00:04<00:00, 2490.73 examples/s]Filter: 100%|██████████| 10000/10000 [00:04<00:00, 2453.67 examples/s]
+Casting the dataset:   0%|          | 0/1216 [00:00<?, ? examples/s]Filter:  90%|█████████ | 9000/10000 [00:03<00:00, 2457.88 examples/s]Filter: 100%|██████████| 10000/10000 [00:04<00:00, 2491.39 examples/s]Filter: 100%|██████████| 10000/10000 [00:04<00:00, 2458.04 examples/s]
+Casting the dataset:   0%|          | 0/1216 [00:00<?, ? examples/s]Casting the dataset:  82%|████████▏ | 1000/1216 [00:02<00:00, 465.01 examples/s]Casting the dataset: 100%|██████████| 1216/1216 [00:02<00:00, 467.51 examples/s]Casting the dataset: 100%|██████████| 1216/1216 [00:02<00:00, 456.36 examples/s]
+Casting the dataset:  82%|████████▏ | 1000/1216 [00:02<00:00, 456.31 examples/s]Using the latest cached version of the dataset since NeelNanda/pile-10k couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /mnt/nfs/hoangduy/hf_assets/xet/datasets/NeelNanda___pile-10k/default/0.0.0/127bfedcd5047750df5ccf3a12979a47bfa0bafa (last modified on Thu Jul 30 09:31:12 2026).
+Casting the dataset: 100%|██████████| 1216/1216 [00:02<00:00, 464.27 examples/s]Casting the dataset: 100%|██████████| 1216/1216 [00:02<00:00, 452.62 examples/s]
+Using the latest cached version of the dataset since NeelNanda/pile-10k couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /mnt/nfs/hoangduy/hf_assets/xet/datasets/NeelNanda___pile-10k/default/0.0.0/127bfedcd5047750df5ccf3a12979a47bfa0bafa (last modified on Thu Jul 30 09:31:12 2026).
+[Rank 0] 2026-07-30T09:31:13.4660 | _make_sampler | INFO - Detected distributed setting with identical datasets across ranks. partitioning dataset across ranks.
+[Rank 1] 2026-07-30T09:31:13.4660 | _make_sampler | INFO - Detected distributed setting with identical datasets across ranks. partitioning dataset across ranks.
+[Rank 0] 2026-07-30T09:31:13.4676 | _make_sampler | WARNING - Requested 64 samples but the provided dataset only has 32 samples.
+[Rank 1] 2026-07-30T09:31:13.4692 | _make_sampler | WARNING - Requested 64 samples but the provided dataset only has 32 samples.
+[Rank 0] 2026-07-30T09:31:13.4726 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-07-30T09:31:13.4761 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 1] 2026-07-30T09:31:13.4769 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-07-30T09:31:13.4818 | from_modifiers | INFO - Creating recipe from modifiers
+Applying quantization config:   0%|          | 0/196 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/196 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 196/196 [00:00<00:00, 15149.70it/s]
+Applying quantization config: 100%|██████████| 196/196 [00:00<00:00, 12072.07it/s]
+[Rank 0] 2026-07-30T09:31:13.5342 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 0] 2026-07-30T09:31:13.5343 | IndependentPipeline | INFO - Inferred `SequentialPipeline` for `AutoRoundModifier`
+[Rank 1] 2026-07-30T09:31:13.5434 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 1] 2026-07-30T09:31:13.5436 | IndependentPipeline | INFO - Inferred `SequentialPipeline` for `AutoRoundModifier`
+[rank0]:W0730 09:31:13.598000 3486124 torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank1]:W0730 09:31:13.632000 3486125 torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+Preparing cache:   0%|          | 0/32 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 32/32 [00:00<00:00, 2923.43it/s]
+(1/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s]Preparing cache:   0%|          | 0/32 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 32/32 [00:00<00:00, 2077.96it/s]
+(1/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](1/29): Calibrating:   3%|▎         | 1/32 [00:00<00:05,  5.67it/s](1/29): Calibrating:   3%|▎         | 1/32 [00:00<00:04,  6.22it/s](1/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 128.19it/s](1/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 111.24it/s]
+(2/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](1/29): Calibrating:  75%|███████▌  | 24/32 [00:00<00:00, 109.93it/s](1/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 106.96it/s]
+(2/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](2/29): Calibrating:   3%|▎         | 1/32 [00:00<00:09,  3.12it/s](2/29): Calibrating:   3%|▎         | 1/32 [00:00<00:08,  3.47it/s](2/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 75.99it/s](2/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 71.00it/s]
+[Rank 0] 2026-07-30T09:31:14.4371 | apply_autoround | INFO - Applying AutoRound on layer model.layers.0
+(2/29): Calibrating:  66%|██████▌   | 21/32 [00:00<00:00, 67.65it/s][38;20m2026-07-30 09:31:14 INFO entry.py L748: Using LLM mode.[0m
+(2/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 71.18it/s]
+[Rank 1] 2026-07-30T09:31:14.5135 | apply_autoround | INFO - Applying AutoRound on layer model.layers.0
+[38;20m2026-07-30 09:31:14 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:14 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:14 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:15 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:15 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:15 WARNING distributed.py L68: AutoRound DDP is an experimental feature, please use with caution.[0m
+[33;1m2026-07-30 09:31:15 WARNING distributed.py L68: AutoRound DDP is an experimental feature, please use with caution.[0m
+/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/autograd/graph.py:869: UserWarning: cuDNN Attention defaults to a non-deterministic algorithm. To explicitly enable determinism call torch.use_deterministic_algorithms(True, warn_only=False). (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/attention_backward.cu:212.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.021165 -> iter 0: 0.021165[0m
+/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/autograd/graph.py:869: UserWarning: cuDNN Attention defaults to a non-deterministic algorithm. To explicitly enable determinism call torch.use_deterministic_algorithms(True, warn_only=False). (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/attention_backward.cu:212.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.021165 -> iter 0: 0.021165[0m
+(3/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](3/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](3/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 245.89it/s](3/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 242.96it/s](3/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 247.89it/s]
+[Rank 1] 2026-07-30T09:31:17.5819 | apply_autoround | INFO - Applying AutoRound on layer model.layers.1
+[38;20m2026-07-30 09:31:17 INFO entry.py L748: Using LLM mode.[0m
+(3/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 244.39it/s]
+[Rank 0] 2026-07-30T09:31:17.5888 | apply_autoround | INFO - Applying AutoRound on layer model.layers.1
+[38;20m2026-07-30 09:31:17 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:17 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:17 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:18 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:18 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.048991 -> iter 9: 0.032452[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.048991 -> iter 9: 0.032452[0m
+(4/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](4/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](4/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 312.98it/s](4/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 312.56it/s]
+[Rank 0] 2026-07-30T09:31:19.1188 | apply_autoround | INFO - Applying AutoRound on layer model.layers.2
+(4/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 286.14it/s][38;20m2026-07-30 09:31:19 INFO entry.py L748: Using LLM mode.[0m
+(4/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 289.93it/s]
+[Rank 1] 2026-07-30T09:31:19.1322 | apply_autoround | INFO - Applying AutoRound on layer model.layers.2
+[38;20m2026-07-30 09:31:19 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:19 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:19 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:19 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:19 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 4.589723 -> iter 9: 0.392915[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 4.589723 -> iter 9: 0.392915[0m
+(5/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](5/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](5/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 244.89it/s](5/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 264.86it/s](5/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 268.73it/s]
+[Rank 0] 2026-07-30T09:31:20.7007 | apply_autoround | INFO - Applying AutoRound on layer model.layers.3
+(5/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 253.85it/s]
+[Rank 1] 2026-07-30T09:31:20.7032 | apply_autoround | INFO - Applying AutoRound on layer model.layers.3
+[38;20m2026-07-30 09:31:20 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:20 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:21 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:21 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:21 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:21 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.479807 -> iter 3: 0.394808[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.479807 -> iter 3: 0.394808[0m
+(6/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](6/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](6/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 266.70it/s](6/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 263.47it/s](6/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 271.37it/s]
+[Rank 0] 2026-07-30T09:31:22.3419 | apply_autoround | INFO - Applying AutoRound on layer model.layers.4
+[38;20m2026-07-30 09:31:22 INFO entry.py L748: Using LLM mode.[0m
+(6/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 265.80it/s]
+[Rank 1] 2026-07-30T09:31:22.3486 | apply_autoround | INFO - Applying AutoRound on layer model.layers.4
+[38;20m2026-07-30 09:31:22 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:22 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:22 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:22 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:22 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.509695 -> iter 9: 0.454855[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.509695 -> iter 9: 0.454855[0m
+(7/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](7/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](7/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 268.56it/s](7/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 269.86it/s](7/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 272.20it/s]
+[Rank 0] 2026-07-30T09:31:23.9261 | apply_autoround | INFO - Applying AutoRound on layer model.layers.5
+(7/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 278.32it/s]
+[Rank 1] 2026-07-30T09:31:23.9275 | apply_autoround | INFO - Applying AutoRound on layer model.layers.5
+[38;20m2026-07-30 09:31:23 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:23 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:24 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:24 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:24 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:24 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.567948 -> iter 9: 0.499184[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.567948 -> iter 9: 0.499184[0m
+(8/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](8/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](8/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 272.04it/s](8/29): Calibrating:  69%|██████▉   | 22/32 [00:00<00:00, 216.74it/s](8/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 277.95it/s]
+[Rank 0] 2026-07-30T09:31:25.5316 | apply_autoround | INFO - Applying AutoRound on layer model.layers.6
+[38;20m2026-07-30 09:31:25 INFO entry.py L748: Using LLM mode.[0m
+(8/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 225.28it/s]
+[Rank 1] 2026-07-30T09:31:25.5628 | apply_autoround | INFO - Applying AutoRound on layer model.layers.6
+[38;20m2026-07-30 09:31:25 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:25 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:25 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:25 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:25 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.598303 -> iter 9: 0.543487[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.598303 -> iter 9: 0.543487[0m
+(9/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](9/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](9/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 277.38it/s](9/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 249.40it/s](9/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 282.02it/s]
+[Rank 0] 2026-07-30T09:31:27.1167 | apply_autoround | INFO - Applying AutoRound on layer model.layers.7
+[38;20m2026-07-30 09:31:27 INFO entry.py L748: Using LLM mode.[0m
+(9/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 257.25it/s]
+[Rank 1] 2026-07-30T09:31:27.1320 | apply_autoround | INFO - Applying AutoRound on layer model.layers.7
+[38;20m2026-07-30 09:31:27 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:27 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:27 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:27 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:27 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.636532 -> iter 9: 0.586339[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.636532 -> iter 9: 0.586339[0m
+(10/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](10/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](10/29): Calibrating:  81%|████████▏ | 26/32 [00:00<00:00, 257.92it/s](10/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 272.14it/s](10/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 278.12it/s]
+[Rank 0] 2026-07-30T09:31:28.7017 | apply_autoround | INFO - Applying AutoRound on layer model.layers.8
+(10/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 263.81it/s]
+[Rank 1] 2026-07-30T09:31:28.7038 | apply_autoround | INFO - Applying AutoRound on layer model.layers.8
+[38;20m2026-07-30 09:31:28 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:28 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:29 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:29 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:29 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:29 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.682831 -> iter 9: 0.636394[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.682831 -> iter 9: 0.636394[0m
+(11/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](11/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](11/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 278.05it/s](11/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 267.54it/s](11/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 283.36it/s]
+[Rank 0] 2026-07-30T09:31:30.2724 | apply_autoround | INFO - Applying AutoRound on layer model.layers.9
+[38;20m2026-07-30 09:31:30 INFO entry.py L748: Using LLM mode.[0m
+(11/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 276.49it/s]
+[Rank 1] 2026-07-30T09:31:30.2798 | apply_autoround | INFO - Applying AutoRound on layer model.layers.9
+[38;20m2026-07-30 09:31:30 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:30 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:30 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:30 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:30 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.765224 -> iter 9: 0.748188[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.765224 -> iter 9: 0.748188[0m
+(12/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](12/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](12/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 276.06it/s](12/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 249.59it/s](12/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 279.30it/s]
+[Rank 0] 2026-07-30T09:31:31.8420 | apply_autoround | INFO - Applying AutoRound on layer model.layers.10
+[38;20m2026-07-30 09:31:31 INFO entry.py L748: Using LLM mode.[0m
+(12/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 262.60it/s]
+[Rank 1] 2026-07-30T09:31:31.8536 | apply_autoround | INFO - Applying AutoRound on layer model.layers.10
+[38;20m2026-07-30 09:31:31 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:32 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:32 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:32 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:32 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.925202 -> iter 9: 0.902312[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 0.925202 -> iter 9: 0.902312[0m
+(13/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](13/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](13/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 284.79it/s](13/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 262.75it/s](13/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 288.24it/s]
+[Rank 0] 2026-07-30T09:31:33.4244 | apply_autoround | INFO - Applying AutoRound on layer model.layers.11
+[38;20m2026-07-30 09:31:33 INFO entry.py L748: Using LLM mode.[0m
+(13/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 270.06it/s]
+[Rank 1] 2026-07-30T09:31:33.4358 | apply_autoround | INFO - Applying AutoRound on layer model.layers.11
+[38;20m2026-07-30 09:31:33 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:33 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:33 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:33 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:33 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.223178 -> iter 9: 1.204070[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.223178 -> iter 9: 1.204070[0m
+(14/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](14/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](14/29): Calibrating:  75%|███████▌  | 24/32 [00:00<00:00, 236.20it/s](14/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 269.04it/s](14/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 276.50it/s]
+[Rank 1] 2026-07-30T09:31:35.0056 | apply_autoround | INFO - Applying AutoRound on layer model.layers.12
+[38;20m2026-07-30 09:31:35 INFO entry.py L748: Using LLM mode.[0m
+(14/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 240.60it/s]
+[Rank 0] 2026-07-30T09:31:35.0184 | apply_autoround | INFO - Applying AutoRound on layer model.layers.12
+[38;20m2026-07-30 09:31:35 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:35 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:35 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:35 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:35 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.233923 -> iter 9: 1.164721[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.233923 -> iter 9: 1.164721[0m
+(15/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](15/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](15/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 266.03it/s](15/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 267.33it/s](15/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 272.65it/s]
+[Rank 1] 2026-07-30T09:31:36.5899 | apply_autoround | INFO - Applying AutoRound on layer model.layers.13
+(15/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 274.36it/s]
+[Rank 0] 2026-07-30T09:31:36.5937 | apply_autoround | INFO - Applying AutoRound on layer model.layers.13
+[38;20m2026-07-30 09:31:36 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:36 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:36 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:36 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:37 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:37 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.374810 -> iter 9: 1.325251[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.374810 -> iter 9: 1.325251[0m
+(16/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](16/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](16/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 267.06it/s](16/29): Calibrating:  94%|█████████▍| 30/32 [00:00<00:00, 288.75it/s](16/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 290.84it/s]
+[Rank 0] 2026-07-30T09:31:38.1794 | apply_autoround | INFO - Applying AutoRound on layer model.layers.14
+(16/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 276.08it/s]
+[Rank 1] 2026-07-30T09:31:38.1808 | apply_autoround | INFO - Applying AutoRound on layer model.layers.14
+[38;20m2026-07-30 09:31:38 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:38 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:38 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:38 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:38 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:38 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.492189 -> iter 9: 1.381658[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.492189 -> iter 9: 1.381658[0m
+(17/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](17/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](17/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 286.63it/s](17/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 264.73it/s](17/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 289.90it/s]
+[Rank 0] 2026-07-30T09:31:39.7451 | apply_autoround | INFO - Applying AutoRound on layer model.layers.15
+[38;20m2026-07-30 09:31:39 INFO entry.py L748: Using LLM mode.[0m
+(17/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 273.81it/s]
+[Rank 1] 2026-07-30T09:31:39.7558 | apply_autoround | INFO - Applying AutoRound on layer model.layers.15
+[38;20m2026-07-30 09:31:39 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:40 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:40 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:40 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:40 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.792833 -> iter 9: 1.702798[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 1.792833 -> iter 9: 1.702798[0m
+(18/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](18/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](18/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 278.19it/s](18/29): Calibrating:  94%|█████████▍| 30/32 [00:00<00:00, 292.08it/s](18/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 282.20it/s]
+[Rank 1] 2026-07-30T09:31:41.3859 | apply_autoround | INFO - Applying AutoRound on layer model.layers.16
+(18/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 293.78it/s]
+[Rank 0] 2026-07-30T09:31:41.3864 | apply_autoround | INFO - Applying AutoRound on layer model.layers.16
+[38;20m2026-07-30 09:31:41 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:41 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:41 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:41 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:41 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:41 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 2.902865 -> iter 9: 2.749650[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 2.902865 -> iter 9: 2.749650[0m
+(19/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](19/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](19/29): Calibrating:  94%|█████████▍| 30/32 [00:00<00:00, 292.93it/s](19/29): Calibrating:  81%|████████▏ | 26/32 [00:00<00:00, 256.96it/s](19/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 294.76it/s]
+[Rank 0] 2026-07-30T09:31:42.9553 | apply_autoround | INFO - Applying AutoRound on layer model.layers.17
+[38;20m2026-07-30 09:31:42 INFO entry.py L748: Using LLM mode.[0m
+(19/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 269.19it/s]
+[Rank 1] 2026-07-30T09:31:42.9700 | apply_autoround | INFO - Applying AutoRound on layer model.layers.17
+[38;20m2026-07-30 09:31:42 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:43 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:43 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:43 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:43 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 4.224526 -> iter 9: 3.959409[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 4.224526 -> iter 9: 3.959409[0m
+(20/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](20/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](20/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 264.78it/s](20/29): Calibrating:  94%|█████████▍| 30/32 [00:00<00:00, 296.12it/s](20/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 297.79it/s]
+[Rank 0] 2026-07-30T09:31:44.5326 | apply_autoround | INFO - Applying AutoRound on layer model.layers.18
+[38;20m2026-07-30 09:31:44 INFO entry.py L748: Using LLM mode.[0m
+(20/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 271.16it/s]
+[Rank 1] 2026-07-30T09:31:44.5388 | apply_autoround | INFO - Applying AutoRound on layer model.layers.18
+[38;20m2026-07-30 09:31:44 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:44 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:44 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:44 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:44 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 6.179657 -> iter 9: 5.771581[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 6.179657 -> iter 9: 5.771581[0m
+(21/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](21/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](21/29): Calibrating:  84%|████████▍ | 27/32 [00:00<00:00, 266.19it/s](21/29): Calibrating:  94%|█████████▍| 30/32 [00:00<00:00, 296.49it/s](21/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 297.85it/s]
+[Rank 0] 2026-07-30T09:31:46.1064 | apply_autoround | INFO - Applying AutoRound on layer model.layers.19
+(21/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 275.21it/s]
+[Rank 1] 2026-07-30T09:31:46.1110 | apply_autoround | INFO - Applying AutoRound on layer model.layers.19
+[38;20m2026-07-30 09:31:46 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:46 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:46 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:46 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:46 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:46 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 9.691536 -> iter 9: 8.987322[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 9.691536 -> iter 9: 8.987322[0m
+(22/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](22/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](22/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 274.49it/s](22/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 286.40it/s](22/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 281.17it/s]
+[Rank 1] 2026-07-30T09:31:47.6863 | apply_autoround | INFO - Applying AutoRound on layer model.layers.20
+(22/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 289.77it/s]
+[Rank 0] 2026-07-30T09:31:47.6874 | apply_autoround | INFO - Applying AutoRound on layer model.layers.20
+[38;20m2026-07-30 09:31:47 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:47 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:48 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:48 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:48 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:48 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 14.860712 -> iter 9: 13.839838[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 14.860712 -> iter 9: 13.839838[0m
+(23/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](23/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](23/29): Calibrating:  94%|█████████▍| 30/32 [00:00<00:00, 292.05it/s](23/29): Calibrating:  88%|████████▊ | 28/32 [00:00<00:00, 274.82it/s](23/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 293.83it/s]
+[Rank 0] 2026-07-30T09:31:49.2492 | apply_autoround | INFO - Applying AutoRound on layer model.layers.21
+[38;20m2026-07-30 09:31:49 INFO entry.py L748: Using LLM mode.[0m
+(23/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 276.75it/s]
+[Rank 1] 2026-07-30T09:31:49.2604 | apply_autoround | INFO - Applying AutoRound on layer model.layers.21
+[38;20m2026-07-30 09:31:49 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:49 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:49 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:49 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:49 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 20.999039 -> iter 9: 20.311918[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 20.999039 -> iter 9: 20.311918[0m
+(24/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](24/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](24/29): Calibrating:  72%|███████▏  | 23/32 [00:00<00:00, 227.40it/s](24/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 281.83it/s](24/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 285.74it/s]
+[Rank 0] 2026-07-30T09:31:50.8317 | apply_autoround | INFO - Applying AutoRound on layer model.layers.22
+[38;20m2026-07-30 09:31:50 INFO entry.py L748: Using LLM mode.[0m
+(24/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 237.38it/s]
+[Rank 1] 2026-07-30T09:31:50.8502 | apply_autoround | INFO - Applying AutoRound on layer model.layers.22
+[38;20m2026-07-30 09:31:50 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:51 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:51 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:51 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:51 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 28.120499 -> iter 0: 28.120499[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 28.120499 -> iter 0: 28.120499[0m
+(25/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](25/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](25/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 283.93it/s](25/29): Calibrating:  81%|████████▏ | 26/32 [00:00<00:00, 254.93it/s](25/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 285.79it/s]
+[Rank 0] 2026-07-30T09:31:52.4165 | apply_autoround | INFO - Applying AutoRound on layer model.layers.23
+[38;20m2026-07-30 09:31:52 INFO entry.py L748: Using LLM mode.[0m
+(25/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 265.38it/s]
+[Rank 1] 2026-07-30T09:31:52.4295 | apply_autoround | INFO - Applying AutoRound on layer model.layers.23
+[38;20m2026-07-30 09:31:52 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:52 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:52 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:52 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:52 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 41.092323 -> iter 9: 38.399185[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 41.092323 -> iter 9: 38.399185[0m
+(26/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](26/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](26/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 284.83it/s](26/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 286.67it/s](26/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 288.44it/s]
+[Rank 0] 2026-07-30T09:31:53.9947 | apply_autoround | INFO - Applying AutoRound on layer model.layers.24
+(26/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 290.52it/s]
+[Rank 1] 2026-07-30T09:31:53.9979 | apply_autoround | INFO - Applying AutoRound on layer model.layers.24
+[38;20m2026-07-30 09:31:54 INFO entry.py L748: Using LLM mode.[0m
+[38;20m2026-07-30 09:31:54 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:54 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:54 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:54 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:54 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 50.822948 -> iter 9: 50.809742[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 50.822948 -> iter 9: 50.809742[0m
+(27/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](27/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](27/29): Calibrating:  97%|█████████▋| 31/32 [00:00<00:00, 302.82it/s](27/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 303.34it/s]
+[Rank 1] 2026-07-30T09:31:55.5733 | apply_autoround | INFO - Applying AutoRound on layer model.layers.25
+(27/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 285.27it/s][38;20m2026-07-30 09:31:55 INFO entry.py L748: Using LLM mode.[0m
+(27/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 288.81it/s]
+[Rank 0] 2026-07-30T09:31:55.5832 | apply_autoround | INFO - Applying AutoRound on layer model.layers.25
+[38;20m2026-07-30 09:31:55 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:55 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:55 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:55 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:55 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 65.439270 -> iter 9: 65.408325[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 65.439270 -> iter 9: 65.408325[0m
+(28/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](28/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](28/29): Calibrating:  78%|███████▊  | 25/32 [00:00<00:00, 249.86it/s](28/29): Calibrating:  91%|█████████ | 29/32 [00:00<00:00, 283.41it/s](28/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 287.55it/s]
+[Rank 1] 2026-07-30T09:31:57.1556 | apply_autoround | INFO - Applying AutoRound on layer model.layers.26
+[38;20m2026-07-30 09:31:57 INFO entry.py L748: Using LLM mode.[0m
+(28/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 254.46it/s]
+[Rank 0] 2026-07-30T09:31:57.1655 | apply_autoround | INFO - Applying AutoRound on layer model.layers.26
+[38;20m2026-07-30 09:31:57 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:57 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:57 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:57 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:57 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 77.698013 -> iter 9: 75.661934[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 77.698013 -> iter 9: 75.661934[0m
+(29/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](29/29): Calibrating:   0%|          | 0/32 [00:00<?, ?it/s](29/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 380.73it/s]
+[Rank 0] 2026-07-30T09:31:58.7290 | apply_autoround | INFO - Applying AutoRound on layer model.layers.27
+[38;20m2026-07-30 09:31:58 INFO entry.py L748: Using LLM mode.[0m
+(29/29): Calibrating: 100%|██████████| 32/32 [00:00<00:00, 374.73it/s]
+[Rank 1] 2026-07-30T09:31:58.7349 | apply_autoround | INFO - Applying AutoRound on layer model.layers.27
+[38;20m2026-07-30 09:31:58 INFO entry.py L748: Using LLM mode.[0m
+[33;1m2026-07-30 09:31:59 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:59 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[33;1m2026-07-30 09:31:59 WARNING device.py L634: cuda in `device_map` dose not match any modules, please have a check[0m
+[38;20m2026-07-30 09:31:59 INFO base.py L767: 'enable_torch_compile' is set to `False` by default. Enabling it can reduce tuning cost by 20%, but it might throw an exception.[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 128.821793 -> iter 0: 128.821793[0m
+[38;20mquantized 7/7 layers in the block, loss iter 0: 128.821793 -> iter 0: 128.821793[0m
+[Rank 0] 2026-07-30T09:32:00.1964 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 1] 2026-07-30T09:32:00.2006 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/mnt/nfs/hoangduy/projects/llm-compressor/evidence/sub4bit-w2a16-moe-quant/20260730T1005Z-qwen3-30b-a3b-w2a16-ddp8/quant_w2a16_ddp.py", line 72, in <module>
+[rank1]:     model.save_pretrained(SAVE_DIR, save_compressed=True)
+[rank1]:   File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/llmcompressor/transformers/compression/compressed_tensors_utils.py", line 133, in save_pretrained_wrapper
+[rank1]:     compressor.compress_model(model, skip_compressed=True)
+[rank1]: TypeError: ModelCompressor.compress_model() got an unexpected keyword argument 'skip_compressed'
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/mnt/nfs/hoangduy/projects/llm-compressor/evidence/sub4bit-w2a16-moe-quant/20260730T1005Z-qwen3-30b-a3b-w2a16-ddp8/quant_w2a16_ddp.py", line 72, in <module>
+[rank0]:     model.save_pretrained(SAVE_DIR, save_compressed=True)
+[rank0]:   File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/llmcompressor/transformers/compression/compressed_tensors_utils.py", line 133, in save_pretrained_wrapper
+[rank0]:     compressor.compress_model(model, skip_compressed=True)
+[rank0]: TypeError: ModelCompressor.compress_model() got an unexpected keyword argument 'skip_compressed'
+[rank0]:[W730 09:32:00.326724813 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W0730 09:32:02.095000 3486081 torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 3486124 closing signal SIGTERM
+E0730 09:32:02.311000 3486081 torch/distributed/elastic/multiprocessing/api.py:986] failed (exitcode: 1) local_rank: 1 (pid: 3486125) of binary: /mnt/nfs/hoangduy/venvs/quant-sub4/bin/python3
+Traceback (most recent call last):
+  File "/mnt/nfs/hoangduy/venvs/quant-sub4/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/distributed/run.py", line 990, in main
+    run(args)
+  File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/distributed/run.py", line 981, in run
+    elastic_launch(
+  File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/nfs/hoangduy/venvs/quant-sub4/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/mnt/nfs/hoangduy/projects/llm-compressor/evidence/sub4bit-w2a16-moe-quant/20260730T1005Z-qwen3-30b-a3b-w2a16-ddp8/quant_w2a16_ddp.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-07-30_09:32:02
+  host      : h104-gpu-polaris.pod4.lab.bitdeer.ai
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 3486124)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-07-30_09:32:02
+  host      : h104-gpu-polaris.pod4.lab.bitdeer.ai
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 3486125)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+srun: error: gpu-h104: task 0: Exited with exit code 1

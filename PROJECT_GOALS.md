@@ -6,7 +6,7 @@ handoffs (`*_HANDOFF.md`, `*_PLAN.md`) carry the current work; this file carries
 *why*. Keep the status markers current; do not delete a goal when it completes —
 mark it `DONE` with a pointer to the evidence.
 
-Last reviewed: 2026-07-29.
+Last reviewed: 2026-07-31.
 
 ## Long-term goals
 
@@ -15,6 +15,11 @@ Last reviewed: 2026-07-29.
    **full quantization process in 4–8 hours**. See `M3_QUANT_SPEEDUP_PLAN.md` and
    the distributed/multi-GPU calibration path (llm-compressor multi-GPU + GPTQModel;
    do not rebuild bespoke expert-parallel code — see the CLAUDE.md worked example).
+   *2026-07-30/31:* the DDP calibration path is now proven beyond M3 and beyond
+   AWQ/GPTQ — an 8×H100 DDP AutoRound run quantized Qwen3-30B-A3B (W2A16) end to
+   end in **1h40m** (`evidence/sub4bit-w2a16-moe-quant/20260730T1005Z-…-ddp8/`),
+   and a correctness bug was fixed on the way (ddd4f9f9: the rank partition was
+   applied to a local variable only, so all ranks calibrated on the same rows).
 
 2. **Complete the evaluation pipeline** — *Work in progress.*
    A pipeline to compare our **in-house quantized model** against **other existing
@@ -22,6 +27,14 @@ Last reviewed: 2026-07-29.
    paired GPTQ-vs-AWQ reasoning eval, the BF16 companion baseline, fail-closed
    harness/gate contracts, and honest raw-evidence returns. See
    `M3_PRODUCTION_EVAL_HANDOFF.md` and the plans/specs under `docs/superpowers/`.
+   *2026-07-29/31:* the pipeline generalized to a second model family — a paired
+   three-arm GLM-5.2 eval (BF16 vs community W4AFP8 checkpoints on SGLang) shipped
+   in `GLM52_OFFICIAL_EVAL_RESULTS.html` (Phala's AWQ-produced W4AFP8 is clean;
+   the M3 AWQ pathology does not replicate) — and to a second quant track: the
+   W2A16-vs-BF16 paired A/B
+   (`evidence/sub4bit-w2a16-moe-quality/20260731T0300Z-…-gpqa-ifeval/`).
+   `M3_COLLABORATOR_GUIDE.md` is now the collaborator front door for all of it,
+   with every Part-A command executed end-to-end on 2026-07-31.
 
 3. **Working AWQ quantized model** — *DONE (2026-07-20); quality-competitive as of
    2026-07-23 (r6) on the two measured tasks.*
@@ -60,8 +73,17 @@ Last reviewed: 2026-07-29.
    in-house GPTQ still holds the sole full-breadth shipping verdict. Closing that is
    goal-2 territory.
 
-4. **Generalize to any quantization method** — *Future work.*
-   Extend the pipeline beyond AWQ and GPTQ to arbitrary quantization methods.
+4. **Generalize to any quantization method** — *Work in progress (started
+   2026-07-30).* Extend the pipeline beyond AWQ and GPTQ to arbitrary
+   quantization methods. First concrete step: **AutoRound** (sub-4-bit W2A16
+   track on Qwen3-30B-A3B-Instruct-2507). The full quant→serve loop is closed —
+   DDP AutoRound quant (8×H100, 1h40m, LLMC main + auto-round 0.14.1) produced
+   an 8.6 GB CT pack-quantized int2-g128 checkpoint that serves coherently on
+   vLLM 0.26 + PR#48918 port + Humming main — but quality at `iters=200` is
+   **NO-SHIP** (GPQA −0.30, IFEval −0.39 vs BF16, greedy repetition loops;
+   IFEval token spend 3.44×). Next candidate step: `iters=1000` requant.
+   Evidence: `evidence/sub4bit-w2a16-moe-quant/` and
+   `evidence/sub4bit-w2a16-moe-quality/`.
 
 5. **Generalize the gates to any model family** — *Future work.*
    Generalize the serving-ABI gate and the pre-quantization static gate so they
@@ -92,7 +114,12 @@ Last reviewed: 2026-07-29.
 
 ## Current session focus
 
-**Goals 1 and 2.** Goal 7 is complete. The remaining near-term work is improving
-the save/export portion of distributed quantization and completing the missing
-seven-task breadth evaluation for the quality-clean AWQ recipe. Goal 6 remains
-an approved benchmark-gated future project.
+**Goals 1, 2 and 4.** Goal 7 is complete. The owner is away for a few weeks
+starting 2026-08; `M3_COLLABORATOR_GUIDE.md` (live-verified 2026-07-31) is the
+continuity anchor for the evaluation-side collaborators, and a curated ~590 GB
+workspace archive (both servable M3 checkpoints + all code/evidence) is being
+mirrored to the ai-lab jump host (`rancher-transfer/README.md`). Near-term
+work queue: the W2A16 `iters=1000` requant (goal 4), the missing seven-task
+breadth evaluation for the quality-clean AWQ r6 recipe (goals 2/3), and the
+save/export portion of distributed quantization (goal 1). Goal 6 remains an
+approved benchmark-gated future project.

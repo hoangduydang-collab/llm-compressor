@@ -42,7 +42,7 @@ internal ship decisions — deliberately **not** public-leaderboard scores.
 | Community AWQ (cyankiwi) | ❌ Disqualified | Runaway generations; 55.6% of GPQA answers hit the token budget |
 
 **Newest (23–24 July) · deep-reasoning A/B at 64k tokens.** The hardest test:
-long reasoning with a 64k-token budget, scored greedy and paired per question.
+long reasoning with a 64k-token budget, deterministic decoding, scored side by side per question.
 This caught the AWQ r5 defect and confirmed its fix (r6). A broken quant fails
 by *thinking forever*, not just scoring lower — exhaustion rate and token spend
 are the early-warning metrics.
@@ -76,9 +76,10 @@ Same protocol on a second family:
 
 ## Performance results
 
-Speed per user (the number a person feels) across the serving-ready models,
-from the 26 July single-controller rerun. The in-house GPTQ + fast kernel leads
-every concurrency level.
+Serving throughput across the ready models, from the 26 July paired rerun. At
+concurrency 1 the number is one user’s speed — what a person actually feels:
+**137 tok/s** on the lead model vs 81 for the unquantized baseline. The
+in-house GPTQ + fast kernel leads every load level.
 
 | Concurrency | GPTQ · fast kernel | AWQ r7 | Community AWQ | MXFP8 | BF16 (16 GPUs) |
 |---|---|---|---|---|---|
@@ -87,7 +88,7 @@ every concurrency level.
 | 16 | **1,300** | **1,303** | 1,268 | 968 | 711 |
 | 64 | **3,267** | **3,262** | 2,923 | 2,177 | 1,700 |
 
-*Output speed per user, tok/s · 1k in / 8k out.*
+*Total server output, tok/s · 1k-token input / 8k-token output; at concurrency 1 this equals one user’s speed.*
 
 **4-bit vs the unquantized baseline · economics:**
 

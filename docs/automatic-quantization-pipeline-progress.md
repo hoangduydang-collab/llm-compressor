@@ -1,7 +1,33 @@
 # Toward a Day-Zero Quantization Pipeline
 
-> **Engineering field note · 14 July 2026**  
+> **Engineering field note · 14 July 2026 · status updates through 31 July 2026**  
 > Building a path from a newly released model to multiple validated, inference-ready quantized checkpoints.
+>
+> Current status at a glance: the program overview
+> ([`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html))
+> and [`PROJECT_GOALS.md`](../PROJECT_GOALS.md), which carry per-goal progress and
+> a weekly log. This note is the pipeline *design* story — kept as written on
+> 14 July, with the section below recording what changed since.
+
+## Status updates
+
+<!-- EXTENSION POINT: add new dated entries at the TOP of this list. One short
+     paragraph per date, written for PM readers; defer technical detail and
+     evidence to PROJECT_GOALS.md and the goal pages. -->
+
+**2026-07-31.** Most of what this note laid out as a plan has since shipped.
+The in-house AWQ model — listed as *unresolved* below — was diagnosed and fixed
+(two distinct root causes) and now scores within ~1% of the unquantized
+baseline on the tasks measured. Our GPTQ model is fully validated: it recovers
+97–101% of baseline quality across all seven benchmark tasks and now serves
+about 34% faster after a kernel upgrade. The speed goal was met — a full
+quantization run fits inside the 4–8 hour target — and the same machinery has
+already onboarded a third quantization method and produced its first 2-bit
+model (quality not yet acceptable; a longer-tuning retry is the named next
+step). The evaluation pipeline also proved itself on a second model family
+(GLM-5.2). The NVFP4 idea sketched under "Problem 3" is now an approved,
+benchmark-gated project of its own. Week-by-week detail: the weekly log in
+`PROJECT_GOALS.md`.
 
 The hard part of “automatic quantization” is not selecting four bits instead of sixteen. It is making three independently evolving systems agree: a new model architecture, a quantization algorithm, and an inference engine.
 
@@ -130,9 +156,9 @@ MiniMax-M3 compressed a large amount of debugging into one useful lesson: differ
 
 | Artifact | What the evidence says | Current use |
 |---|---|---|
-| In-house GPTQ | The checkpoint initially failed the CPU-only post-quantization gate with 228 runtime namespace/ignore mismatches. A portable overlay then repaired its configuration metadata while preserving the tensor payload and Safetensors index; the same checkpoint passed preflight and produced coherent smoke generations. | Working candidate for controlled evaluation. |
-| External AWQ control | Passed the same static preflight and completed the paired 2,047-token teacher-forced probe and small smoke suite without empty outputs or periodic loops. | Comparator/control, not evidence that our in-house AWQ recipe is correct. |
-| In-house AWQ W4AFP8 | Full-calibration output remained unhealthy; later repair builds did not produce a completed replacement checkpoint, and some diagnostic harnesses exposed their own tracing/lifecycle failures. | Unresolved; continue through guarded all-layer diagnostics. |
+| In-house GPTQ | The checkpoint initially failed the CPU-only post-quantization gate with 228 runtime namespace/ignore mismatches. A portable overlay then repaired its configuration metadata while preserving the tensor payload and Safetensors index; the same checkpoint passed preflight and produced coherent smoke generations. | *Update 07-31:* fully validated — 97–101% baseline recovery across seven tasks — and now the default served model. |
+| External AWQ control | Passed the same static preflight and completed the paired 2,047-token teacher-forced probe and small smoke suite without empty outputs or periodic loops. | Comparator/control only. *Update 07-31:* disqualified on quality in the full paired evaluation (runaway generations). |
+| In-house AWQ W4AFP8 | Full-calibration output remained unhealthy; later repair builds did not produce a completed replacement checkpoint, and some diagnostic harnesses exposed their own tracing/lifecycle failures. | *Update 07-31:* resolved — two root causes found and fixed; the current recipe scores within ~1% of baseline on the tasks measured. |
 
 **Observed in this fork:** the repaired GPTQ and external AWQ control each completed the small five-task smoke workflow and generation-health checks. Those scores are diagnostic samples, not statistically meaningful benchmark conclusions. See [the compact GPTQ/AWQ report](../M3_3MODEL_GPTQ_AWQ_FINAL_REPORT.md).
 
@@ -147,9 +173,10 @@ The first real pre-quantization CLI run also justified Layer 1: it stopped on a 
 | Pre-quant AWQ/GPTQ structural planner | Implemented; MiniMax-M3 regression profile; real cluster rerun pending after local fix | Model → quantizer |
 | MiniMax-M3 post-quantization gate | Proven on the documented `compressed-tensors` profile | Checkpoint → vLLM loader |
 | Guarded all-layer diagnostic runner | Implemented with durable abort/progress evidence | Quantization lifecycle |
-| Repaired in-house GPTQ smoke | Coherent, suitable for the next controlled comparison | Runtime health |
-| In-house AWQ W4AFP8 | Unresolved | Algorithm-specific quality |
-| General model-family profiles | Planned | Coverage expansion |
+| Repaired in-house GPTQ smoke | *07-31:* fully validated; default served model | Runtime health |
+| In-house AWQ W4AFP8 | *07-31:* resolved; quality-competitive recipe shipped | Algorithm-specific quality |
+| Distributed multi-GPU quantization | *07-31:* 4–8 h target met; a third method onboarded | Speed |
+| General model-family profiles | Planned (evaluation side proven on a second family, GLM-5.2) | Coverage expansion |
 | Multimodal calibration | Deferred | Future work |
 
 ## Problem 2: multimodality
@@ -176,14 +203,15 @@ This would be a stronger comparator for our in-house W4AFP8 checkpoints than a w
 
 ## Near-term plan
 
-The immediate milestone is not “support every model.” It is narrower and measurable:
+The immediate milestone is not “support every model.” It is narrower and measurable
+(*status stamps added 2026-07-31*):
 
-1. Run all-layer smoke quantization with embedded probes to qualify each recipe before committing to a full-calibration run.
-2. Run full-calibration quantization for qualified recipes to produce working in-house MiniMax-M3 checkpoints, starting with repaired GPTQ and a healthy AWQ path.
-3. Export each candidate through a versioned MiniMax-M3/runtime compatibility profile.
-4. Compare in-house candidates against the BF16 source, the external AWQ control, and relevant official checkpoints using identical prompts, probe corpora, manifests, runtime settings, and task definitions.
-5. Report quality, memory, and throughput separately; do not use successful loading as a proxy for quality or reduced checkpoint size as a proxy for compute speed.
-6. Generalize the gates one model family and storage format at a time, with corrupted and valid fixtures for every supported profile.
+1. ✅ Run all-layer smoke quantization with embedded probes to qualify each recipe before committing to a full-calibration run.
+2. ✅ Run full-calibration quantization for qualified recipes to produce working in-house MiniMax-M3 checkpoints, starting with repaired GPTQ and a healthy AWQ path.
+3. ✅ Export each candidate through a versioned MiniMax-M3/runtime compatibility profile.
+4. ✅ Compare in-house candidates against the BF16 source, the external AWQ control, and relevant official checkpoints using identical prompts, probe corpora, manifests, runtime settings, and task definitions.
+5. ✅ Report quality, memory, and throughput separately; do not use successful loading as a proxy for quality or reduced checkpoint size as a proxy for compute speed. (Published as the official quality and performance reports.)
+6. ⏳ Generalize the gates one model family and storage format at a time, with corrupted and valid fixtures for every supported profile. (The evaluation side has run on a second family; the gates themselves are still MiniMax-M3-specific.)
 
 The longer-term product is model-agnostic orchestration backed by explicit compatibility knowledge—not a universal checker that guesses.
 

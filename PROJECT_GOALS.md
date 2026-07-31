@@ -5,6 +5,12 @@ any fresh planner/executor/full-stack agent shares the same north star. Task-lev
 handoffs (`*_HANDOFF.md`, `*_PLAN.md`) carry the current work; this file carries
 *why*.
 
+PM-facing presentation of this file:
+[`docs/automatic-quantization-pipeline-progress.html`](docs/automatic-quantization-pipeline-progress.html)
+(program overview — goal cards + weekly log), with per-goal field notes under
+[`docs/goals/`](docs/goals/). This md is the source of truth; edit it first, then
+mirror (the update recipe below).
+
 **Structure convention (since 2026-07-31):** each goal is a durable aim with an
 explicit **sub-task list**. Sub-tasks are the unit of progress — new ones may be
 added at any time without rewriting the goal's status history, and every finished

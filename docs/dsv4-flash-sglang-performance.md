@@ -179,7 +179,7 @@ scaled from a measured comparison run that took **2.05 hours** on one 8-GPU node
 |--:|---|---|---|
 | 1 | **Measure lever 2 on long-reasoning traffic**, and both levers together | ~half a day, one 8-GPU node | Replaces the predicted 1.13× with a measurement, and tells us whether the two levers add up — nobody has run them together, and production would use both |
 | 2 | **Try one more free server setting** (`--enable-mixed-chunk`) that lets the server process prompts *without* fully stopping users mid-answer | ~3 hours, one node | This is the standard fix for the interruption problem — vLLM enables it by default and SGLang does not. One setting, no new hardware. It may overlap with lever 2 rather than add to it |
-| 3 | 🆕 **Raise the prompt-chunk size** from its current value, alone and combined with the graph lever | ~3 hours, one node | Today's value is an out-of-memory workaround, not a tuning choice, and it makes a 32,000-token prompt take **17 passes** instead of ~5 — each paying the fixed overhead the graph lever removes. Modelled: raising it captures ~80% of what graphs capture on its own, and the two together are ~12% better than graphs alone. ⚠️ They compete for the same memory at very long context, so the answer is expected to depend on context length |
+| 3 | **Raise the prompt-chunk size** from its current value, alone and combined with the graph lever | ~3 hours, one node | Today's value is an out-of-memory workaround, not a tuning choice, and it makes a 32,000-token prompt take **17 passes** instead of ~5 — each paying the fixed overhead the graph lever removes. Modelled: raising it captures ~80% of what graphs capture on its own, and the two together are ~12% better than graphs alone. ⚠️ They compete for the same memory at very long context, so the answer is expected to depend on context length |
 | 4 | **A one-line kernel tuning change** targeting the small loss at moderate load | ~1 hour, 1 GPU | Could remove lever 1's only regression. The appendix explains why one line is plausibly enough |
 | 5 | **Quality evaluation** | scoped separately, needs the evaluation pipeline | Unblocks shipping either lever |
 | 6 | **Speculative decoding** | a study, not an experiment | ⚠️ **Probably the largest prize on the table and completely untouched here.** Unusually, its acceptance rates **do** carry from the vLLM work, because they are a property of this checkpoint's own draft layers — 81% of first guesses accepted, decaying with depth, best at **5** tokens ahead where vLLM production ran 7. SGLang already exposes every metric needed to tune it. For the *size* of the end-to-end gain we only have a different model to go on, where it measured 1.2–2.5× faster output at no quality cost by design — indicative, not transferable |
@@ -238,6 +238,16 @@ The compute floor is 75.3 ms. So today roughly **121 ms per pass is not
 arithmetic at all** — it is the cost of *launching* thousands of small GPU
 operations one at a time, which is exactly what a CUDA graph exists to collapse
 into a single launch. Turning graphs on removes ~107 of those 121 ms.
+
+**Why this bites hardest on long prompts — and why our 32,000-token figure looks
+slow.** A prompt is processed in chunks of 2,048 tokens, so a 32,000-token prompt
+is **17 passes**, each paying that ~121 ms. That accounts for essentially all of
+the 3,355 ms in section 02, and it is why our figure is roughly double
+MiniMax-M3's at the same prompt length on the same hardware: M3 uses a chunk about
+four times larger, so it pays the overhead about four times less often. With
+graphs on we land at 1,583 ms — at or slightly better than M3. So the model is not
+slower; the configuration is. Our chunk size is itself an out-of-memory workaround
+rather than a tuning choice, which is why raising it is item 3 in the roadmap.
 
 The reason they are off is a rule in SGLang that disables prefill graphs for this
 model family. Its own source comment says the model *"is BCG-compatible but

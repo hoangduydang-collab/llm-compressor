@@ -288,6 +288,7 @@
           </table>
         </div>
         <p>So today roughly <strong>121 ms per pass is not arithmetic at all</strong> — it is the cost of <em>launching</em> thousands of small GPU operations one at a time, which is exactly what a CUDA graph exists to collapse into a single launch. Turning graphs on removes ~107 of those 121 ms.</p>
+        <p><strong>Why this bites hardest on long prompts — and why our 32,000-token figure looks slow.</strong> A prompt is processed in chunks of 2,048 tokens, so a 32,000-token prompt is <strong>17 passes</strong>, each paying that ~121 ms. That accounts for essentially all of the 3,355 ms in §02, and it is why our figure is roughly double MiniMax-M3’s at the same prompt length on the same hardware: M3 uses a chunk about four times larger, so it pays the overhead about four times less often. With graphs on we land at 1,583 ms — at or slightly better than M3. So the model is not slower; the configuration is. Our chunk size is itself an out-of-memory workaround rather than a tuning choice, which is why raising it is item 3 in the roadmap.</p>
         <p>The reason they are off is a rule in SGLang that disables prefill graphs for this model family. Its own source comment says the model <em>“is BCG-compatible but introduces heavy memory pressure”</em> — i.e. it is a <strong>memory guard, not a correctness guard</strong>, which is why paying for it out of conversation-history memory is a legitimate answer rather than a workaround.</p>
 
         <h4>A.2 · Lever 1’s origin: expert-multiplication time per decode step</h4>

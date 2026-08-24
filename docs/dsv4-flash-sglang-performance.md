@@ -101,8 +101,8 @@ processing faster shortens those interruptions.
 ⚠️ **The 1.9× figure depends on the traffic mix.** It was measured on
 short-prompt/short-answer traffic, where interruptions are most frequent. On
 long-reasoning traffic our model predicts closer to **1.13×** — still a real gain,
-but not 90%. **That prediction is not yet measured**, and measuring it is the top
-item in §05.
+but not 90%. **That prediction is not yet measured**, and measuring it is the
+first thing on our list.
 
 ---
 
@@ -156,9 +156,9 @@ full 1-million-token context with essentially the same memory headroom as today
   start-up, the server does **not** fail — it quietly falls back to 0.1.10 and
   runs 20.8% slower. Any deployment must assert the loaded version at start-up.
   We have that check built and used it in every experiment.
-* **Capacity reduction at long context** from lever 2 (§03).
+* **Capacity reduction at long context** from lever 2 — the capacity table above.
 * **One quoted figure is a prediction, not a measurement** — lever 2's gain on
-  long-reasoning traffic (§02). Named as such wherever it appears.
+  long-reasoning traffic, the 1.13×. Named as such wherever it appears.
 * **A small measured loss inside lever 1.** At moderate load (8–16 concurrent
   users) `humming` 0.1.13 is 2.4–3.6% *slower* than marlin. Real, small, and it
   should be quoted alongside the wins rather than dropped.
@@ -172,9 +172,9 @@ scaled from a measured comparison run that took **2.05 hours** on one 8-GPU node
 
 | # | next step | cost | what it would settle |
 |--:|---|---|---|
-| 1 | **Measure lever 2 on long-reasoning traffic**, and both levers together | ~half a day, one 8-GPU node | Replaces §02's predicted 1.13× with a measurement, and tells us whether the two levers add up — nobody has run them together, and production would use both |
+| 1 | **Measure lever 2 on long-reasoning traffic**, and both levers together | ~half a day, one 8-GPU node | Replaces the predicted 1.13× with a measurement, and tells us whether the two levers add up — nobody has run them together, and production would use both |
 | 2 | **Try one more free server setting** (`--enable-mixed-chunk`) that lets the server process prompts *without* fully stopping users mid-answer | ~3 hours, one node | This is the standard fix for the interruption problem — vLLM enables it by default and SGLang does not. One setting, no new hardware. It may overlap with lever 2 rather than add to it |
-| 3 | **A one-line kernel tuning change** targeting the 8–16-user loss in §04 | ~1 hour, 1 GPU | Could remove lever 1's only regression — see the appendix for why one line is plausibly enough |
+| 3 | **A one-line kernel tuning change** targeting the small loss at moderate load | ~1 hour, 1 GPU | Could remove lever 1's only regression. The appendix explains why one line is plausibly enough |
 | 4 | **Quality evaluation** | scoped separately, needs the evaluation pipeline | Unblocks shipping either lever |
 | 5 | **Speculative decoding** | a study, not an experiment | ⚠️ **Probably the largest prize on the table and completely untouched here.** Unusually, its acceptance rates **do** carry from the vLLM work, because they are a property of this checkpoint's own draft layers — 81% of first guesses accepted, decaying with depth, best at **5** tokens ahead where vLLM production ran 7. SGLang already exposes every metric needed to tune it. For the *size* of the end-to-end gain we only have a different model to go on, where it measured 1.2–2.5× faster output at no quality cost by design — indicative, not transferable |
 | 6 | **Splitting prompt-processing and text-generation onto separate GPU pools** | multiple nodes + network configuration; changes the deployment shape | The textbook fix for the interruption problem, and it works — but it buys speed with **hardware**, and its value *shrinks* once items 1–2 land. Price it against what is left, not against today |
@@ -237,7 +237,7 @@ The reason they are off is a rule in SGLang that disables prefill graphs for thi
 model family. Its own source comment says the model *"is BCG-compatible but
 introduces heavy memory pressure"* — i.e. it is a **memory guard, not a
 correctness guard**, which is why paying for it out of conversation-history
-memory (§03) is a legitimate answer rather than a workaround.
+memory is a legitimate answer rather than a workaround.
 
 ### A.2 Lever 1's origin: expert-multiplication time per decode step
 
@@ -285,9 +285,9 @@ shows two opposite stories. Ratios are 0.1.13 against 0.1.10:
 
 **So the regression is the tunable half.** Keeping 0.1.13's "down" setting while
 forcing "gate/up" back to the old tile is a one-line override — which is why
-item 3 in §05 costs an hour rather than a study. There is also an unreleased
-upstream fix titled *"Fix SM90 indexed A16 large-M scheduling"* aimed at exactly
-this, not yet evaluated.
+that tuning change is an hour of work rather than a study. An upstream fix aimed
+at the same weakness also exists, but it is unreleased and we have not evaluated
+it.
 
 ### A.4 What the profiling can and cannot tell us
 
@@ -298,7 +298,7 @@ versions — including correctly predicting that the two versions differ in
 node on a benchmark ladder.
 
 **Cannot:** the size, or anything user-facing. Two hard limits, both respected in
-every figure quoted in §02:
+every figure quoted in the results above:
 
 1. **Magnitudes are unusable** — the kernel ratio over-predicts the end-to-end
    effect by roughly 2–3× (it says 1.433× at 16 users where the real serving
@@ -307,5 +307,5 @@ every figure quoted in §02:
 2. **The two instruments run the GPUs differently.** Profiling pins GPU clocks at
    a fixed frequency; the serving benchmarks leave them free, as production does.
    Kernel milliseconds therefore **cannot be multiplied into user-facing
-   latency**, and no figure in this document does so. Everything in §02 is
+   latency**, and no figure in this document does so. Everything in the results is
    measured end-to-end on the serving benchmark.

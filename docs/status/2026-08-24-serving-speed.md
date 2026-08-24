@@ -90,33 +90,44 @@ there.
 
 ### Plan for the next two weeks
 
-**Week 1 (25–29 Aug) — close the open measurement, then the free settings**
+**Week 1 (25–29 Aug) — GLM-5.2 through our own quantization pipeline, end to end**
 
-1. **Measure the graph lever on reasoning traffic, and both levers together** —
+1. **Quantize GLM-5.2 ourselves, then validate it the way we validated
+   MiniMax-M3** — quantization run, then a paired **quality** evaluation against
+   the BF16 original, then a **performance** benchmark. We have evaluated *other
+   people's* GLM-5.2 quantizations but never produced one, so this is the first
+   end-to-end pass on a family that is not MiniMax-M3 — our pre-quantization and
+   serving gates are still M3-specific. It also gets us ready for **day-0 support
+   of GLM-5.3**: if no W4A8 release exists at launch we would have to produce one
+   ourselves, and launch day is the wrong moment to discover a pipeline problem.
+
+   Cheaper than it sounds — our earlier GLM-5.2 evaluation already built the
+   harness and measured both a BF16 baseline and a community W4A8 checkpoint, so
+   our own quantization drops into an existing comparison rather than starting one.
+
+**Then, as the week allows — the cheap serving experiments**
+
+2. **Measure the graph lever on reasoning traffic, and both levers together** —
    settles the 1.9×-vs-1.13× question and whether the two add up, which nobody has
    tested and production would need. Half a day on one 8-GPU node.
-2. **Try the free scheduler setting** that lets the server process prompts without
+3. **Try the free scheduler setting** that lets the server process prompts without
    fully stopping users mid-answer. ~3 hours; it may overlap with the graph lever
    rather than add to it, and the same run shows which.
-3. **The one-line kernel tuning change** aimed at the small loss at moderate load.
+4. **The one-line kernel tuning change** aimed at the small loss at moderate load.
    ~1 hour, one GPU.
 
-**Week 2 (1–5 Sep) — quality gate, adoption recommendation, quant-pipeline
-readiness**
+⚠️ **GLM-5.2 is the only item here with a clock I do not control**, so it takes
+priority: if the week is tight, items 2–4 slip to week 2 rather than the
+quantization run.
 
-4. **Quality evaluation on both levers**, the gate on shipping either. This depends
-   on the evaluation pipeline rather than anything of mine, so I will fit it to
-   Kyle's and Zhou Yu's work rather than build a parallel one.
-5. **Write the adoption recommendation**, with the traffic-mix answer and the
-   dependency decision folded in.
-6. **Run GLM-5.2 through our own quantization pipeline.** We have evaluated *other
-   people's* GLM-5.2 quantizations but never produced one ourselves. A full
-   end-to-end run does two things: it confirms the pipeline works on a model family
-   that is not MiniMax-M3 — our pre-quantization and serving gates are still
-   M3-specific — and it gets us ready for **day-0 support of GLM-5.3**. If no W4A8
-   release exists at launch we would have to produce one ourselves, and launch day
-   is the wrong moment to discover a pipeline problem. This is the one item here
-   that is not serving work, and it is the one with an external clock on it.
+**Week 2 (1–5 Sep) — serving quality gate and an adoption recommendation**
+
+5. **Quality evaluation on both serving levers**, the gate on shipping either.
+   This depends on the evaluation pipeline rather than anything of mine, so I will
+   fit it to Kyle's and Zhou Yu's work rather than build a parallel one.
+6. **Write the adoption recommendation** for the two serving levers, with the
+   traffic-mix answer and the dependency decision folded in.
+7. Anything that slipped from week 1, plus the GLM-5.2 write-up.
 
 **Also:** if the dependency decision lands, prepare the upstream report that
 SGLang's pinned kernel version costs up to 20.8% of output speed on this model. It

@@ -11,21 +11,18 @@ existing performance work for it still applies and the whole picture had to be
 re-measured on the new engine.
 
 - **Profiled the new engine** at the level of individual GPU operations. Our
-  earlier profiling was all on vLLM, which shares almost none of its serving
-  machinery.
+  earlier profiling was all on vLLM, which shares almost none of this machinery.
 - **Measured prefill GPU graphs**, which SGLang switches off for this model family.
-  Five runs, including a variant that would have made the trade free — it lost on
-  measurement and is rejected.
+  Five runs, including one variant that lost on measurement and is rejected.
 - **Measured the mixture-of-experts kernel**: `marlin` (today's default) against
-  `humming` at two library versions, five concurrency levels each. Every run
-  measures the current configuration, then the change, then the current
-  configuration again in one session, so machine drift is measured rather than
-  assumed.
+  `humming` at two library versions, five concurrency levels each. Each run brackets
+  the change with the current configuration, so machine drift is measured rather
+  than assumed.
 - **Diagnosed why our first attempt was wrong.** The first kernel comparison
   produced two findings and both had the wrong sign, despite passing their own
-  checks. This was the most useful thing I did.
-- **Wrote the study up in three documents** — the previous handoff of this
-  workstream was under-documented and it cost us time.
+  checks. The most useful thing I did this week.
+- **Wrote the study up in three documents** — the last handoff of this workstream
+  was under-documented and it cost us time.
 
 ### Key results/outcomes
 
@@ -40,14 +37,15 @@ re-measured on the new engine.
   **2.1–4.0×** better, output speed **1.9×** better at 64 users.
 - **Cost of the graphs: 12.3% of the conversation-history cache** — invisible below
   ~89,000 tokens of context, real above it.
-- **Caveat:** the 1.9× was measured on the traffic shape that flatters it most. On
-  long-reasoning traffic I expect ~1.13×, which is next week's first measurement.
-  The time-to-first-token gains do not depend on that question, so the lever is a
-  clear win either way.
+- **Caveat:** the 1.9× was measured on the shape that flatters it most; on
+  long-reasoning traffic I expect ~1.13×, and that is next week's first
+  measurement. The time-to-first-token gains do not depend on it, so the lever
+  wins either way.
 - **The first kernel measurement was wrong because the metric was not measuring
   what its name says.** Under load on short-answer traffic, **80% of what we were
   calling inter-token latency was other requests' prompt processing** — when the
-  server handles someone else's prompt, every user mid-answer stops.
+  server handles someone else's prompt, every user mid-answer stops. The rebuilt
+  version resolves every point at 20–139× its own error bar.
 - **That is a known and named phenomenon** — a *generation stall*
   ([Sarathi-Serve](https://www.usenix.org/system/files/osdi24-agrawal.pdf),
   [DistServe](https://www.usenix.org/system/files/osdi24-zhong-yinmin.pdf), both
@@ -55,14 +53,10 @@ re-measured on the new engine.
   [vLLM ships the mitigation on by default](https://docs.vllm.ai/en/stable/configuration/optimization/),
   [SGLang leaves it opt-in](https://github.com/sgl-project/sglang/discussions/1163)
   and we have it off.
-- **The rebuilt measurement is solid:** every point resolves at 20–139× its own
-  error bar, and a whole comparison re-run three hours later on a fresh boot
-  reproduced to 0.33%.
 - **Nothing is adopted, and neither lever has a quality check** — that is the gate
   on shipping either one.
-- **Decisions I need:** (1) the traffic mix to optimise for, since the graph lever
-  is worth 1.9× on short prompts against ~1.13× on reasoning traffic and its memory
-  cost only bites above ~89,000 tokens of context; (2) carry a non-standard kernel
+- **Decisions I need:** (1) the traffic mix to optimise for — it sets both the
+  right configuration and the expected gain; (2) carry a non-standard kernel
   version, or push an upstream bump — there is no third option that keeps the win.
 - **Speculative decoding** is probably the largest remaining lever here, and Alex
   is already building DSpark training for this model, so I have deliberately left
@@ -76,20 +70,19 @@ re-measured on the new engine.
   — quantization run, paired quality evaluation against BF16, then a performance
   benchmark.
   - We have evaluated *other people's* GLM-5.2 quantizations but never produced
-    one. This is the first end-to-end pass on a family that is not M3, where our
-    gates are still M3-specific.
-  - It also prepares **day-0 support for GLM-5.3**, which may need W4A8 produced
-    in-house if no release exists at launch.
+    one, so this is the first end-to-end pass on a family that is not M3 — where
+    our gates are still M3-specific. It also prepares **day-0 support for
+    GLM-5.3**, which may need W4A8 produced in-house if no release exists.
   - The earlier GLM-5.2 evaluation already built the harness and both comparators,
-    so our own quantization drops into an existing comparison.
+    so our quantization drops into an existing comparison.
 
 **Then, as the week allows — the cheap serving experiments**
 
 - **The graph lever on reasoning traffic, and both levers together** — settles the
   1.9×-vs-1.13× question and whether the two add up.
-- **A larger prompt-chunk size.** Ours is an out-of-memory workaround rather than a
-  tuning choice, and it makes a 32,000-token prompt take 17 passes instead of about
-  5. On paper that alone captures ~80% of the graph lever's benefit, though the two
+- **A larger prompt-chunk size.** Ours is an out-of-memory workaround, not a tuning
+  choice, and it makes a 32,000-token prompt take 17 passes instead of about 5. On
+  paper that alone captures ~80% of the graph lever's benefit, though the two
   compete for the same memory at long context.
 - **The free scheduler setting** that processes prompts without fully stopping
   users mid-answer.

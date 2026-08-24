@@ -4,8 +4,12 @@
 
 ### What I worked on
 
-The goal was improving **output speed** for DeepSeek-V4-Flash on SGLang — how fast
-text streams out for one user, which we rank first; time-to-first-token second.
+The goal was improving **serving speed** for DeepSeek-V4-Flash on SGLang — both
+how fast text streams out for one user (output speed) and how long they wait for
+the first word (time-to-first-token). I weight the two roughly equally; most of
+the measurement effort went into output speed because it is the harder of the two
+to move.
+
 Production moved this model from vLLM to SGLang on 17 Aug, so none of our existing
 performance work for it still applies and the whole picture had to be measured
 again on the new engine.
@@ -50,7 +54,8 @@ tokens of context (our 64-user limit binds first) and real above it.
 
 ⚠️ **That 1.9× was measured on the traffic shape that flatters it most.** On
 long-reasoning traffic I predict closer to **1.13×** — still real, not 90%. Not yet
-measured; first thing next week.
+measured; first thing next week. The time-to-first-token gains do not hinge on
+that question, so this lever is a clear win either way.
 
 **The first kernel measurement was wrong, and I can now say why.** Under load on
 short-answer traffic, **80% of what we were calling "inter-token latency" was

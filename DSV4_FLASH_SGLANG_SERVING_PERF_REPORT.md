@@ -18,7 +18,7 @@ No `PROJECT_GOALS.md` sub-task is claimed by this document; whether this track
 becomes a numbered goal is a program decision, not a reporting one.
 
 **Contents:** [Headline](#headline) · [1 Design](#1-design) ·
-[2 Serving results](#2-serving-results-the-primary-objective) ·
+[2 Serving results](#2-serving-results-output-speed) ·
 [3 Profiling results](#3-profiling-results-nsys-operator-level) ·
 [4 What the numbers say](#4-what-the-numbers-say) ·
 [5 Limitations](#5-limitations--read-before-quoting-any-number) ·
@@ -28,11 +28,16 @@ becomes a numbered goal is a program decision, not a reporting one.
 [9 Candidate next steps](#9-candidate-next-steps) ·
 [Artifacts](#artifacts-and-provenance)
 
-**Objective ranking, fixed for the whole campaign:** per-user decode speed
-(`1 / ITL`) is **primary**; TTFT is explicitly **subordinate** — a TTFT win that
-costs output speed is not a win. Both levers below are scored against that
-ranking, and one of them (§7) turns out to have been documented around the
-subordinate half of its own effect.
+**Objective, revised 2026-08-24:** per-user decode speed (`1 / ITL`) and TTFT
+are weighted **roughly equally**. Earlier documents in this campaign — including
+the prefill-graph pre-registration quoted verbatim in §7.2 — were written under a
+strict ranking in which decode speed was primary and TTFT explicitly subordinate.
+That ranking is withdrawn as a decision rule. **No measured conclusion changes**
+(the pre-committed ITL veto passed anyway, and neither lever trades one metric for
+the other), but the *emphasis* does: §7's TTFT half is a first-class result rather
+than the consolation half, which strengthens that lever's case — see §7.2 and
+§8.1. Most of the measurement effort here still went into decode speed, because it
+is the harder of the two to move.
 
 ---
 
@@ -133,7 +138,7 @@ as `docs/m3-two-axis-perf.md`, so the M3 and DSV4 tracks are on one vocabulary.
 | reported as | aiperf field | definition |
 |---|---|---|
 | **ITL** (ms) | `inter_token_latency` | `(t_last_chunk − t_first_chunk) / tokens_after_first` off the SSE stream. **Decode-only by construction** — prefill lands in TTFT and can never contaminate a *measured* ITL |
-| **per-user output speed** (tok/s) | `output_token_throughput_per_user` | `1 / ITL` — one user's decode rate. The primary objective |
+| **per-user output speed** (tok/s) | `output_token_throughput_per_user` | `1 / ITL` — one user's decode rate |
 | TTFT (ms) | `time_to_first_token` | first streamed token |
 | **effect** | derived | `abs(1 − B / mean(A1, A2))` — humming against the time-centred marlin mean |
 | **drift** | derived | `abs(A1 − A2)` relative to the smaller, i.e. the conservative direction |
@@ -141,7 +146,7 @@ as `docs/m3-two-axis-perf.md`, so the M3 and DSV4 tracks are on one vocabulary.
 
 ---
 
-## 2. Serving results (the primary objective)
+## 2. Serving results (output speed)
 
 Reasoning shape **ISL 1000 / OSL 4000**, thinking ON, temp 0.6, `ignore_eos` +
 `min_new_tokens`, concurrency 1 / 8 / 16 / 32 / 64. 10 measured waves + 1 warmup
@@ -163,8 +168,8 @@ independently from the per-request records and reproduce the in-pod comparator
 to four decimal places.
 
 **The curve is a U, not a monotone loss:** humming wins at both ends of the
-ladder and loses only in the middle. Per-user output speed, the primary
-objective, on the shape production actually serves:
+ladder and loses only in the middle. Per-user output speed on the shape
+production actually serves:
 
 | conc | marlin tok/s | humming 0.1.13 tok/s | Δ |
 |--:|--:|--:|--:|
@@ -517,7 +522,9 @@ the two models.
   one layer thinner. The probe should run after the first request, not right
   after boot.
 * **TTFT at conc 64 is 3.36 s avg / 6.29 s p95 on this shape for *both*
-  backends.** The ranked objective subordinates it; a deployment cannot.
+  backends.** Under the revised equal weighting this is a co-equal problem rather
+  than a subordinated one — and note §7's lever attacks it directly (2.45× at
+  BS 64), which the old ranking under-credited.
 * **Nothing about DSpark speculative decoding**, which on the M3 evidence
   (1.21–2.53× per-user, goal 2h) remains a substantially larger lever for output
   speed than either lever in this report.
@@ -690,8 +697,10 @@ objective 2 and production sets `--max-running-requests=64`, **the more valuable
 half of this lever at production's operating point is the half the original
 write-up was not organised around.**
 
-Objective 1 was also pre-committed as a veto: an ITL regression at any BS would
-have been disqualifying regardless of the TTFT win. The A/B showed arm C at
+An ITL regression at any BS was pre-committed as a veto, disqualifying
+regardless of the TTFT win. ⚠️ **That veto was written under the old strict
+ranking** (see the preamble); it is preserved as written because it is a
+pre-registration, and it passed, so nothing downstream of it moves. The A/B showed arm C at
 0.92× at one cell; a dedicated n=20 re-measurement of every BS-1 cell put the
 widest spread across all six arm × ISL cells at **0.002 ms**. The 0.92× was n=1
 noise. **Rule 1 passes.**
@@ -823,11 +832,19 @@ traffic, and the campaign has already been burned once by not saying which.
 **Pre-registered prediction, to be committed before the run:** on the reasoning
 shape (ISL 1000 / OSL 4000 — 1 prefill token per 4 decode tokens instead of 16
 per 1), BCG's ITL gain at conc 64 **shrinks from 1.92× to under 1.20×**, and
-plausibly to ~1.00×. If it holds, BCG is a **TTFT lever with an output-speed
-bonus that only appears on prefill-heavy traffic** — which changes how it is
-sold and where it is enabled, without changing that it works. If it does *not*
-hold, BCG is a large output-speed lever on every shape and immediately outranks
-the MoE-kernel work (1.92× dwarfs 4.7%).
+plausibly to ~1.00×. If it holds, BCG is **mostly a TTFT lever, with an
+output-speed bonus that appears only on prefill-heavy traffic** — which changes
+where it is enabled, not whether it works. If it does *not* hold, BCG is a large
+output-speed lever on every shape and dwarfs the MoE-kernel work (1.92× against
+4.7%).
+
+⚠️ **Under the revised equal weighting, the first branch is no longer a
+demotion.** The TTFT half is **2.1–4.0× across every cell measured** (§7.2) — it
+decays along both ISL and BS but is never small — so the lever's case does not
+rest on this prediction at all. What the prediction decides is how much *extra*
+credit the output-speed half earns, and therefore how BCG ranks against the
+MoE-kernel work rather than whether it is worth adopting. That is a weaker claim
+than the one this section originally made, and the correct one.
 
 Either outcome is decision-relevant, which is the test for whether an experiment
 is worth running.
@@ -941,7 +958,7 @@ Spend without a question attached:
 
 ## 9. Candidate next steps
 
-Ranked by expected value on the primary objective, none of them started:
+Ranked by expected value on serving speed, none of them started:
 
 1. **DSpark speculative decoding.** Untouched on DSV4-Flash — but note it is the
    one lever whose tuning inputs **carry** across the engine move: acceptance is a

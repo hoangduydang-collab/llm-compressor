@@ -8,7 +8,7 @@ detail in
 **Status as of 2026-08-24:** two levers measured, neither adopted. No quality
 evaluation has been run on either. Nothing here is a production recommendation.
 
-**Contents:** [1 The objective](#1-the-objective-and-why-it-is-ranked) ·
+**Contents:** [1 The objective](#1-the-objective-and-how-the-two-metrics-are-weighted) ·
 [2 Why we re-measured everything](#2-why-we-had-to-re-measure-everything-from-scratch) ·
 [3 Where the time goes](#3-axis-1--where-the-time-actually-goes) ·
 [4 The fix: prefill CUDA graphs](#4-the-fix-we-measured-prefill-cuda-graphs) ·
@@ -28,18 +28,24 @@ evaluation has been run on either. Nothing here is a production recommendation.
 
 ---
 
-## 1. The objective, and why it is ranked
+## 1. The objective, and how the two metrics are weighted
 
-Two metrics, and the ranking between them is fixed and deliberate:
+Two metrics, weighted **roughly equally**:
 
 | metric | what it means | rank |
 |---|---|---|
-| **Output speed** — per-user decode rate, `1 / ITL` | ITL (inter-token latency) is the gap between streamed tokens for **one** request. `1/ITL` is how fast text appears to a single user | 🥇 **primary** |
-| **TTFT** — time to first token | how long a user waits before anything appears | 🥈 subordinate |
+| **Output speed** — per-user decode rate, `1 / ITL` | ITL (inter-token latency) is the gap between streamed tokens for **one** request. `1/ITL` is how fast text appears to a single user | co-equal |
+| **TTFT** — time to first token | how long a user waits before anything appears | co-equal |
 
-**Subordinate means subordinate:** a change that improves TTFT at the cost of
-output speed is not an improvement for us. Several levers below trade one for the
-other, and the ranking is what decides them.
+⚠️ **Revised 2026-08-24.** Earlier documents in this campaign — including the
+prefill-graph pre-registration preserved verbatim in §7.2 — ranked output speed
+**primary** and TTFT explicitly **subordinate**. That strict ranking is
+withdrawn. **No measured conclusion moves:** the pre-committed ITL veto passed
+anyway, and as it turns out *neither* measured lever trades one metric for the
+other — §6's kernel improves output speed with TTFT a wash, and §7's graphs
+improve both. What changes is the emphasis: §7's TTFT half is a first-class
+result, not the consolation half. Most measurement effort still went into output
+speed, because it is the harder of the two to move.
 
 **Target deployment:** DeepSeek-V4-Flash-0731 (MXFP4-quantized experts) on
 SGLang v0.5.17, one node of 8×H100, tensor-parallel 8, `max-running-requests 64`,
@@ -219,11 +225,12 @@ shape × batch combinations, all passing an internal consistency gate:
 
 | | batch 1 | batch 64 |
 |---|--:|--:|
-| **TTFT improvement** (subordinate objective) | **3.97×** | 2.45× — *shrinking* |
-| **ITL improvement** (primary objective) | **1.00×** | **1.92×** — *growing* |
+| **TTFT improvement** | **3.97×** | 2.45× — *shrinking* |
+| **ITL improvement** | **1.00×** | **1.92×** — *growing* |
 
-The two objectives move in **opposite directions** along batch size, and the
-half that grows is the one we rank first. Per-user output speed at batch 64:
+The two objectives move in **opposite directions** along batch size. Under equal
+weighting that is a feature, not a trade: the lever pays in TTFT where
+concurrency is low and in output speed where it is high, so it is never idle. Per-user output speed at batch 64:
 **15.9 → 30.5 tokens/s.**
 
 Batch 1 reading exactly 1.00× is not a disappointment — it is the control that

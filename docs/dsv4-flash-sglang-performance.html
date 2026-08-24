@@ -117,18 +117,18 @@
       <section id="objective">
         <h2><span class="number">01 / Objective</span>What we are optimising</h2>
         <p class="lead dropcap">This is a <strong>serving-speed</strong> study on a model we did not quantize ourselves, running on the SGLang inference server across 8 H100 GPUs. It is separate from the in-house quantization programme; nothing here changes a model file. Every gain comes from how the model is <em>served</em>.</p>
-        <p>Two user-visible metrics, and the priority between them is fixed:</p>
+        <p>Two user-visible metrics, weighted roughly equally:</p>
         <div class="table-scroll">
           <table>
             <caption>The ranked objective</caption>
-            <thead><tr><th>Metric</th><th>What a user experiences</th><th>Priority</th></tr></thead>
+            <thead><tr><th>Metric</th><th>What a user experiences</th><th>Weight</th></tr></thead>
             <tbody>
-              <tr><td>Output speed</td><td>how fast text streams out once it starts, per user</td><td><strong>First</strong></td></tr>
-              <tr><td>Time to first token</td><td>how long the user stares at nothing before text appears</td><td>Second</td></tr>
+              <tr><td>Output speed</td><td>how fast text streams out once it starts, per user</td><td><strong>Equal</strong></td></tr>
+              <tr><td>Time to first token</td><td>how long the user stares at nothing before text appears</td><td><strong>Equal</strong></td></tr>
             </tbody>
           </table>
         </div>
-        <p><strong>“Second” is meant literally:</strong> we do not accept a change that makes text appear sooner but then stream more slowly.</p>
+        <p><strong>Both matter, roughly equally</strong> — neither is a tie-breaker for the other. As it turns out neither lever below forces a choice: the kernel change improves output speed and leaves time-to-first-token alone, and the graph change improves both.</p>
         <p><strong>Nothing here had been measured on SGLang before.</strong> Our earlier DeepSeek-V4-Flash performance work was done on a different inference server (vLLM), which production moved off in August 2026. Those experiments differ in enough respects that their conclusions were not carried forward — and one of them pointed the <em>opposite</em> way from what we measured here. Every figure below is a fresh measurement on the engine actually serving traffic.</p>
       </section>
 
@@ -191,10 +191,11 @@
             </tbody>
           </table>
         </div>
-        <p>The output-speed gain here is a side effect worth understanding, because it is the larger half at production load: when the server processes someone else’s prompt, <strong>every user currently mid-answer is briefly stopped.</strong> Making prompt processing faster shortens those interruptions.</p>
+        <p>The output-speed gain here is worth understanding, because it arrives by a different mechanism from the rest: when the server processes someone else’s prompt, <strong>every user currently mid-answer is briefly stopped.</strong> Making prompt processing faster shortens those interruptions.</p>
         <div class="callout note">
           <h3>The 1.9× figure depends on the traffic mix</h3>
           <p>It was measured on short-prompt / short-answer traffic, where interruptions are most frequent. On long-reasoning traffic our model predicts closer to <strong>1.13×</strong> — still a real gain, but not 90%. <strong>That prediction is not yet measured</strong>, and measuring it is the first thing on our list.</p>
+          <p>The time-to-first-token gains above do <strong>not</strong> hinge on that question — they are 2.1–4.0× across every case we measured. So this lever is a clear win either way; what is open is how large its output-speed half is.</p>
         </div>
       </section>
 

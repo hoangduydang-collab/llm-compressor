@@ -23,15 +23,16 @@ This is a **serving-speed** study on a model we did not quantize ourselves
 separate from the in-house quantization programme; nothing here changes a model
 file. Every gain comes from how the model is *served*.
 
-Two user-visible metrics, and the priority between them is fixed:
+Two user-visible metrics, weighted roughly equally:
 
-| metric | what a user experiences | priority |
+| metric | what a user experiences | weight |
 |---|---|---|
-| **Output speed** | how fast text streams out once it starts, per user | 🥇 **first** |
-| **Time to first token** | how long the user stares at nothing before text appears | 🥈 second |
+| **Output speed** | how fast text streams out once it starts, per user | equal |
+| **Time to first token** | how long the user stares at nothing before text appears | equal |
 
-**"Second" is meant literally:** we do not accept a change that makes text appear
-sooner but then stream more slowly.
+**Both matter, roughly equally** — neither is a tie-breaker for the other. As it
+turns out neither lever below forces a choice: the kernel change improves output
+speed and leaves time-to-first-token alone, and the graph change improves both.
 
 **Nothing here had been measured on SGLang before.** Our earlier
 DeepSeek-V4-Flash performance work was done on a different inference server
@@ -93,8 +94,8 @@ leaves a large fixed overhead on every prompt-processing pass. Removing it:
 | **Output speed** at 64 concurrent users, short-answer traffic | 15.9 tok/s | **30.5 tok/s (1.9×)** |
 | Full 1-million-token context | works | **works** — per-pass 424 → 285 ms |
 
-The output-speed gain here is a side effect worth understanding, because it is
-the larger half at production load: when the server processes someone else's
+The output-speed gain here is worth understanding, because it arrives by a
+different mechanism from the rest: when the server processes someone else's
 prompt, **every user currently mid-answer is briefly stopped.** Making prompt
 processing faster shortens those interruptions.
 
@@ -103,6 +104,10 @@ short-prompt/short-answer traffic, where interruptions are most frequent. On
 long-reasoning traffic our model predicts closer to **1.13×** — still a real gain,
 but not 90%. **That prediction is not yet measured**, and measuring it is the
 first thing on our list.
+
+The time-to-first-token gains above do **not** hinge on that question — they are
+2.1–4.0× across every case we measured. So this lever is a clear win either way;
+what is open is how large its output-speed half is.
 
 ---
 

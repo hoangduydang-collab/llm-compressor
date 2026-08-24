@@ -110,6 +110,13 @@ there.
 2. **Measure the graph lever on reasoning traffic, and both levers together** —
    settles the 1.9×-vs-1.13× question and whether the two add up, which nobody has
    tested and production would need. Half a day on one 8-GPU node.
+   **Adding to this run: raise the prompt-chunk size.** Ours is set to a value
+   that is an out-of-memory workaround rather than a tuning choice, and it makes a
+   32,000-token prompt take 17 passes instead of ~5 — each paying the fixed
+   overhead the graph lever removes. On paper that alone captures ~80% of the
+   graph lever's benefit, and the two together beat graphs alone. The catch is
+   that they compete for the same memory at very long context, so I expect the
+   answer to depend on context length.
 3. **Try the free scheduler setting** that lets the server process prompts without
    fully stopping users mid-answer. ~3 hours; it may overlap with the graph lever
    rather than add to it, and the same run shows which.

@@ -985,20 +985,59 @@ Ranked by expected value on serving speed, none of them started:
    perfectly additive — work conservation says scheduling alone cannot reduce a
    mean) and ~the same gain BCG delivers. The tail effect is near-certain. See
    the substitution caveat in §8.6.
-3. **The combined BCG + humming arm** (§8.5–§8.6), with the shape pair.
-4. **The gate/up tuning-config ablation** — keep 0.1.13's down-proj config,
+3. 🆕 **Raise `chunked-prefill-size` from 2048 — and stop calling it
+   unnecessary.** Production is pinned at 2048 as an **indexer OOM workaround**
+   (the dsv4 indexer lacks the `_should_chunk_mqa_logits` budget check its DSA
+   sibling has), not as a tuning choice. That makes a 32 k prompt **17 forward
+   passes**, each paying the ~121 ms launch tax — which is why TTFT at 32 k reads
+   3355 ms eager against MiniMax-M3's ~1700 ms interpolated to the same context.
+
+   Modelling `TTFT ≈ Compute(P) + n_forwards × T` (T = 121 ms eager / 14.5 ms
+   graphed; Compute solved independently from both measured 32 k points as 1298
+   and 1336 ms, agreeing to 3%):
+
+   | config at 32 k | forwards | TTFT |
+   |---|--:|--:|
+   | chunk 2048, eager — today | 17 | **3355 ms** (measured) |
+   | chunk 2048, BCG on | 17 | **1583 ms** (measured) |
+   | chunk 8192, eager | 5 | ~1925 ms (modelled) |
+   | chunk 8192, BCG on | 5 | **~1393 ms** (modelled) |
+
+   So the chunk raise alone captures ~80% of what BCG captures, and the two
+   together take a further **12%** off BCG alone. 🔴 **An earlier note in this
+   campaign called raising the chunk "largely unnecessary" once BCG is on. That
+   was wrong** — it assumed BCG's launch-tax removal made `n_forwards`
+   irrelevant, when BCG only shrinks T rather than removing it.
+
+   And the modelled figures are a **lower bound**, because holding `Compute(P)`
+   constant across chunk sizes is conservative on two counts: chunked prefill
+   re-reads earlier chunks' KV per later chunk (fewer chunks, less re-reading),
+   and a 2048-token chunk gives the prefill MoE GEMMs `2048×6/256` = **48 tokens
+   per expert** against 8192's **192** — the same starvation dimension as §3.3.
+
+   ⚠️ **The catch is memory, and it is quantified.** The indexer's non-paged
+   scratch is ≈ `chunked_prefill_size × seq_len` — 2.0 GiB at chunk 2048 and 1 Mi
+   context. At chunk 8192 that is **8.0 GiB against arm B's 8.27 GiB post-capture
+   headroom**, so **chunk 8192 + BCG does not fit at 1 Mi**: they compete for the
+   same budget. It scales linearly, so chunk 8192 stays inside today's 2.0 GiB
+   envelope up to **~256 k context**. The conclusion is therefore
+   **context-dependent, not a blanket yes or no** — which makes the experiment a
+   chunk sweep at fixed context, with and without BCG, plus the memory ceiling as
+   a function of context.
+4. **The combined BCG + humming arm** (§8.5–§8.6), with the shape pair.
+5. **The gate/up tuning-config ablation** — keep 0.1.13's down-proj config,
    force gate/up back to `(8,128,256)`. One line, 1 GPU, no upgrade.
-5. **Upstream #65** (`a81c45e`, "Fix SM90 indexed A16 **large-M** scheduling",
+6. **Upstream #65** (`a81c45e`, "Fix SM90 indexed A16 **large-M** scheduling",
    unreleased — `main` only). Large-M gate/up is exactly where 0.1.13 still
    loses (§3.3), so this is the cheapest candidate fix for the conc 8–16 deficit.
-6. **A quality run on both levers.** Neither has one. Upstream has one for BCG
+7. **A quality run on both levers.** Neither has one. Upstream has one for BCG
    and we do not.
-7. **Report the pin cost upstream.** SGLang's `humming-kernels==0.1.10` pin
+8. **Report the pin cost upstream.** SGLang's `humming-kernels==0.1.10` pin
    costs up to **20.8% of decode ITL** on this model, worst at production
    concurrency; upstream commits #57/#58/#59 are by a vLLM maintainer, so a pin
    bump is not a fork. 🔴 **Outward-facing — no issue or merge request has been
    opened, and none should be without explicit sign-off.**
-8. **Prefill/decode disaggregation — last, not first.** `disaggregation_mode` is
+9. **Prefill/decode disaggregation — last, not first.** `disaggregation_mode` is
    `'null'` in our build (supported; `transfer_backend='mooncake'`,
    `ib_device` unset). It is the textbook fix for §6.1's interference and it
    removes the whole term from the decode node's ITL — but it buys output speed
@@ -1008,7 +1047,7 @@ Ranked by expected value on serving speed, none of them started:
    ~43 ms of inflation at conc 64 today, ~20 ms after BCG. Price it against
    what's left, not against today's number. It remains the only lever that makes
    ITL a property of the decode engine rather than of the traffic mix.
-9. **Backlog, cheap:** the BS-32 operator re-run at 6 rounds on both arms;
+10. **Backlog, cheap:** the BS-32 operator re-run at 6 rounds on both arms;
    BS 2/4 to locate the crossover; `ncu dram__bytes.sum` for roofline closure;
    the `grouped` gemm-type arm; the four-phase
    `marlin → 0.1.10 → 0.1.13 → marlin` arm to remove the anchor mediation.

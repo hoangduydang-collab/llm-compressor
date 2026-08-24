@@ -112,7 +112,7 @@
   <main>
     <article>
 
-      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 What we optimise</a><a href="#results">02 Results</a><a href="#cost">03 What it costs</a><a href="#risks">04 Risks</a><a href="#why">05 Why re-measure</a><a href="#next">06 What's next</a><a href="#evidence">07 Evidence</a><a href="#appendix">App. Where the time goes</a></nav>
+      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 What we optimise</a><a href="#results">02 Results</a><a href="#cost">03 What it costs</a><a href="#risks">04 Risks</a><a href="#next">05 What's next</a><a href="#evidence">06 Evidence</a><a href="#appendix">App. Where the time goes</a></nav>
 
       <section id="objective">
         <h2><span class="number">01 / Objective</span>What we are optimising</h2>
@@ -129,6 +129,7 @@
           </table>
         </div>
         <p><strong>“Second” is meant literally:</strong> we do not accept a change that makes text appear sooner but then stream more slowly.</p>
+        <p><strong>Nothing here had been measured on SGLang before.</strong> Our earlier DeepSeek-V4-Flash performance work was done on a different inference server (vLLM), which production moved off in August 2026. Those experiments differ in enough respects that their conclusions were not carried forward — and one of them pointed the <em>opposite</em> way from what we measured here. Every figure below is a fresh measurement on the engine actually serving traffic.</p>
       </section>
 
       <section id="results">
@@ -193,7 +194,7 @@
         <p>The output-speed gain here is a side effect worth understanding, because it is the larger half at production load: when the server processes someone else’s prompt, <strong>every user currently mid-answer is briefly stopped.</strong> Making prompt processing faster shortens those interruptions.</p>
         <div class="callout note">
           <h3>The 1.9× figure depends on the traffic mix</h3>
-          <p>It was measured on short-prompt / short-answer traffic, where interruptions are most frequent. On long-reasoning traffic our model predicts closer to <strong>1.13×</strong> — still a real gain, but not 90%. <strong>That prediction is not yet measured</strong>, and measuring it is the top item in §06.</p>
+          <p>It was measured on short-prompt / short-answer traffic, where interruptions are most frequent. On long-reasoning traffic our model predicts closer to <strong>1.13×</strong> — still a real gain, but not 90%. <strong>That prediction is not yet measured</strong>, and measuring it is the top item in §05.</p>
         </div>
       </section>
 
@@ -234,36 +235,8 @@
         </ul>
       </section>
 
-      <section id="why">
-        <h2><span class="number">05 / Context</span>Why this needed measuring from scratch</h2>
-        <p>The predecessor here is <strong>the same model on a different inference server.</strong> Production moved this pool from vLLM to SGLang on <strong>2026-08-17</strong>, so our earlier DeepSeek-V4-Flash measurements now describe an engine serving no traffic. Same checkpoint, same 4-bit expert format, same class of machine — the server changed.</p>
-        <p>That turns out to <strong>reorder</strong> the problem rather than rescale it:</p>
-        <div class="callout warn">
-          <h3>Changing the engine changes which thing is the bottleneck</h3>
-          <p>On this same model, SGLang spends <strong>58.87%</strong> of prompt-processing time inside a single cross-GPU communication step, where vLLM’s equivalent step measured <strong>8.89%</strong>. Same model, same class of machine, a different top bottleneck. So the earlier list of things worth optimising is <em>reordered</em>, not rescaled — which is why it could not simply be re-run.</p>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <caption>What survived the engine change</caption>
-            <thead><tr><th>Survives the engine change</th><th>Does not</th></tr></thead>
-            <tbody>
-              <tr><td>The model’s own shape — 43 layers, 256 experts, 6 consulted per token</td><td>The earlier <strong>“don’t use <code>humming</code>”</strong> verdict — it was arithmetic over vLLM-measured time shares, and the setting itself lives in a different codebase</td></tr>
-              <tr><td>Speculative-decoding acceptance rates — a property of the checkpoint’s own draft layers</td><td>The earlier cross-GPU instability finding — that was a vLLM code path</td></tr>
-              <tr><td>The 4-bit expert / 8-bit dense-and-attention format</td><td>The earlier single-user throughput figure — its own two columns disagreed by <strong>2.4×</strong> and were never reconciled, so it should not be quoted at all</td></tr>
-              <tr><td>Our measurement method — clock locking, validity gates, profiler version</td><td class="dim">—</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="callout warn">
-          <h3>Two predecessors, opposite conclusions, and both wrong here</h3>
-          <p>Our vLLM work on <em>this</em> model concluded <strong>no</strong> to the alternative kernel. Our earlier work on a <em>different</em> model (MiniMax-M3, a different quantization scheme and a different rival kernel) concluded <strong>yes, at every load level</strong>. The measured answer on this engine is neither: yes at single-user and at full load, no in the middle, and only with the newer library version.</p>
-          <p><strong>Carrying the first verdict forward would have left +22.3% single-user speed unclaimed. Carrying the second forward and flipping the flag would have shipped −13.4% at production load.</strong></p>
-        </div>
-        <p>One more gap the earlier campaign could not close: it profiled at a <strong>262,144-token</strong> context where production runs <strong>1,048,576</strong>, so long-context behaviour was under-sampled roughly four-fold — which is why §02 and §03 test the top of the real window. The appendix shows the mechanism behind both levers.</p>
-      </section>
-
       <section id="next">
-        <h2><span class="number">06 / Roadmap</span>What’s next, by cost</h2>
+        <h2><span class="number">05 / Roadmap</span>What’s next, by cost</h2>
         <p>Ordered by what it costs us, not by how attractive it is. Time estimates are scaled from a measured comparison run that took <strong>2.05 hours</strong> on one 8-GPU node.</p>
         <div class="table-scroll">
           <table>
@@ -282,7 +255,7 @@
       </section>
 
       <section id="evidence">
-        <h2><span class="number">07 / Evidence</span>Where the numbers come from</h2>
+        <h2><span class="number">06 / Evidence</span>Where the numbers come from</h2>
         <p>Every figure above traces to one of two engineering documents, which carry the full tables, the statistical confidence for each point, and what is explicitly <em>not</em> established:</p>
         <ul class="subs">
           <li class="done"><a href="../DSV4_FLASH_SGLANG_SERVING_PERF_REPORT.md">Serving performance report</a> — measurements, method, limitations</li>
@@ -350,7 +323,7 @@
           <li><strong>The “down” multiplication improves everywhere, and improves steadily with batch size</strong> — up to <strong>2.55× faster</strong>. This was predicted from reading the library’s source <em>before</em> the run: the old version ran a work-splitting optimisation that had nothing to split, as pure overhead, at 25% GPU occupancy.</li>
           <li><strong>The “gate/up” multiplication is the entire regression.</strong> Its new tile shape is a loss of up to 1.57× through the middle of the range. The reason is concrete: that tuning ladder’s next step up needs a batch of <strong>239</strong>, and our model at 64 concurrent users gives each expert about <strong>1.5 tokens</strong>. It was tuned for a regime we are nowhere near.</li>
         </ul>
-        <p><strong>So the regression is the tunable half.</strong> Keeping 0.1.13’s “down” setting while forcing “gate/up” back to the old tile is a one-line override — which is why item 3 in §06 costs an hour rather than a study. There is also an unreleased upstream fix titled <em>“Fix SM90 indexed A16 large-M scheduling”</em> aimed at exactly this, not yet evaluated.</p>
+        <p><strong>So the regression is the tunable half.</strong> Keeping 0.1.13’s “down” setting while forcing “gate/up” back to the old tile is a one-line override — which is why item 3 in §05 costs an hour rather than a study. There is also an unreleased upstream fix titled <em>“Fix SM90 indexed A16 large-M scheduling”</em> aimed at exactly this, not yet evaluated.</p>
 
         <h4>A.4 · What the profiling can and cannot tell us</h4>
         <p><strong>Can: the direction.</strong> Against the end-to-end serving results, the kernel-level ratio predicted the correct <strong>sign</strong> in 9 of 10 cases across both library versions — including correctly predicting that the two versions differ in <em>direction</em> at batch 64. That makes profiling a cheap screen before spending a node on a benchmark ladder.</p>
@@ -367,7 +340,7 @@
   <footer>
     <strong>DeepSeek-V4-Flash serving speed</strong> · measured, not adopted · updated 2026-08-24<br>
     Serving-stack work on a bought-in model — separate from the in-house quantization programme.
-    Engineering detail in the two documents linked in §07.
+    Engineering detail in the two documents linked in §06.
   </footer>
 </body>
 </html>

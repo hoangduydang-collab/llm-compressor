@@ -11,8 +11,7 @@ Updated 2026-08-24. Engineering detail:
 **Contents:** [01 What we are optimising](#01--what-we-are-optimising) ·
 [02 Results](#02--results) · [03 What it costs](#03--what-it-costs) ·
 [04 Risks](#04--risks) ·
-[05 Why this needed measuring from scratch](#05--why-this-needed-measuring-from-scratch) ·
-[06 What's next, by cost](#06--whats-next-by-cost) · [07 Evidence](#07--evidence) ·
+[05 What's next, by cost](#05--whats-next-by-cost) · [06 Evidence](#06--evidence) ·
 [Appendix — where the time actually goes](#appendix--where-the-time-actually-goes)
 
 ---
@@ -33,6 +32,13 @@ Two user-visible metrics, and the priority between them is fixed:
 
 **"Second" is meant literally:** we do not accept a change that makes text appear
 sooner but then stream more slowly.
+
+**Nothing here had been measured on SGLang before.** Our earlier
+DeepSeek-V4-Flash performance work was done on a different inference server
+(vLLM), which production moved off in August 2026. Those experiments differ in
+enough respects that their conclusions were not carried forward — and one of them
+pointed the *opposite* way from what we measured here. Every figure below is a
+fresh measurement on the engine actually serving traffic.
 
 ---
 
@@ -96,7 +102,7 @@ processing faster shortens those interruptions.
 short-prompt/short-answer traffic, where interruptions are most frequent. On
 long-reasoning traffic our model predicts closer to **1.13×** — still a real gain,
 but not 90%. **That prediction is not yet measured**, and measuring it is the top
-item in §06.
+item in §05.
 
 ---
 
@@ -159,47 +165,7 @@ full 1-million-token context with essentially the same memory headroom as today
 
 ---
 
-## 05 · Why this needed measuring from scratch
-
-The predecessor here is **the same model on a different inference server.**
-Production moved this pool from vLLM to SGLang on **2026-08-17**, so our earlier
-DeepSeek-V4-Flash measurements now describe an engine serving no traffic. Same
-checkpoint, same 4-bit expert format, same class of machine — the server changed.
-
-That turns out to **reorder** the problem rather than rescale it:
-
-> ### Changing the engine changes which thing is the bottleneck
->
-> On this same model, SGLang spends **58.87%** of prompt-processing time inside a
-> single cross-GPU communication step, where vLLM's equivalent step measured
-> **8.89%**. Same model, same class of machine, a different top bottleneck. So
-> the earlier list of things worth optimising is *reordered*, not rescaled —
-> which is why it could not simply be re-run.
-
-| survives the engine change | does not |
-|---|---|
-| The model's own shape — 43 layers, 256 experts, 6 consulted per token | The earlier **"don't use `humming`"** verdict — it was arithmetic over vLLM-measured time shares, and the setting itself lives in a different codebase |
-| Speculative-decoding acceptance rates — a property of the checkpoint's own draft layers | The earlier cross-GPU instability finding — that was a vLLM code path |
-| The 4-bit expert / 8-bit dense-and-attention format | The earlier single-user throughput figure — its own two columns disagreed by **2.4×** and were never reconciled, so it should not be quoted at all |
-| Our measurement method — clock locking, validity gates, profiler version | |
-
-🔴 **Two predecessors, opposite conclusions, and both wrong here.** Our vLLM work
-on *this* model concluded **no** to the alternative kernel. Our earlier work on a
-*different* model (MiniMax-M3, a different quantization scheme and a different
-rival kernel) concluded **yes, at every load level**. The measured answer on this
-engine is neither: yes at single-user and at full load, no in the middle, and
-only with the newer library version. **Carrying the first verdict forward would
-have left +22.3% single-user speed unclaimed. Carrying the second forward and
-flipping the flag would have shipped −13.4% at production load.**
-
-One more gap the earlier campaign could not close: it profiled at a
-**262,144-token** context where production runs **1,048,576**, so long-context
-behaviour was under-sampled roughly four-fold — which is why §02 and §03 test the
-top of the real window. The appendix shows the mechanism behind both levers.
-
----
-
-## 06 · What's next, by cost
+## 05 · What's next, by cost
 
 Ordered by what it costs us, not by how attractive it is. Time estimates are
 scaled from a measured comparison run that took **2.05 hours** on one 8-GPU node.
@@ -215,7 +181,7 @@ scaled from a measured comparison run that took **2.05 hours** on one 8-GPU node
 
 ---
 
-## 07 · Evidence
+## 06 · Evidence
 
 Every figure above traces to one of two engineering documents, which carry the
 full tables, the statistical confidence for each point, and what is explicitly
@@ -319,7 +285,7 @@ shows two opposite stories. Ratios are 0.1.13 against 0.1.10:
 
 **So the regression is the tunable half.** Keeping 0.1.13's "down" setting while
 forcing "gate/up" back to the old tile is a one-line override — which is why
-item 3 in §06 costs an hour rather than a study. There is also an unreleased
+item 3 in §05 costs an hour rather than a study. There is also an unreleased
 upstream fix titled *"Fix SM90 indexed A16 large-M scheduling"* aimed at exactly
 this, not yet evaluated.
 

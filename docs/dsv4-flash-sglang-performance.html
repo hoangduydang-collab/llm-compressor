@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Faster serving for DeepSeek-V4-Flash on SGLang: two measured speed-ups, what they cost, and the decisions needed before either can ship.">
+  <title>DeepSeek-V4-Flash · Serving Speed · Status</title>
+  <style>
+    :root{
+      --paper:#f1ecdf;--paper-light:#faf7ef;--ink:#17201d;--muted:#62665f;--rule:#b9b19f;
+      --oxide:#b3482d;--oxide-dark:#78311f;--verified:#2f6a53;--verified-light:#dce9df;
+      --amber:#d59b35;--amber-light:#f6ecd5;--blueprint:#183a47;
+      --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+      --mono:"Cascadia Mono","IBM Plex Mono",Consolas,monospace;
+      --sans:"Aptos Narrow","Arial Narrow",sans-serif;--reading:800px;
+    }
+    *{box-sizing:border-box;}html{scroll-behavior:smooth;}
+    body{margin:0;overflow-x:hidden;color:var(--ink);
+      background:linear-gradient(90deg,transparent 49.8%,rgba(56,50,39,.025) 50%,transparent 50.2%),
+        repeating-linear-gradient(0deg,rgba(60,54,44,.018) 0,rgba(60,54,44,.018) 1px,transparent 1px,transparent 5px),var(--paper);
+      font-family:var(--serif);font-size:18px;line-height:1.68;text-rendering:optimizeLegibility;}
+    a{color:var(--oxide-dark);text-decoration-thickness:1px;text-underline-offset:.18em;}
+    a:hover{color:var(--oxide);}
+    code{font:.85em/1.3 var(--mono);background:rgba(23,32,29,.07);padding:.08em .3em;border-radius:2px;overflow-wrap:anywhere;}
+    strong{font-weight:750;}
+    .nav{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;padding:10px clamp(18px,4vw,64px);
+      background:var(--ink);color:var(--paper-light);font:700 11px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;}
+    .nav a{color:#c9d4cf;text-decoration:none;}
+    .nav a:hover{color:#fff;}
+    .nav a.here{color:#99d1b7;}
+    .nav .sep{color:#5a6b64;}
+    header.hero{position:relative;overflow:hidden;padding:clamp(48px,7vw,92px) clamp(22px,7vw,96px) 52px;border-bottom:1px solid var(--ink);}
+    header.hero::after{content:"V4";position:absolute;right:1vw;bottom:-9vw;color:rgba(179,72,45,.08);
+      font:900 clamp(200px,28vw,420px)/.75 var(--sans);letter-spacing:-.06em;pointer-events:none;}
+    .kicker{margin:0 0 22px;color:var(--oxide);font:800 12px/1.2 var(--mono);letter-spacing:.16em;text-transform:uppercase;}
+    h1{max-width:960px;margin:0;font:750 clamp(42px,6.4vw,88px)/.92 var(--serif);letter-spacing:-.045em;}
+    h1 em{color:var(--oxide);font-weight:500;}
+    .deck{position:relative;z-index:1;max-width:720px;margin:32px 0 0;padding-left:22px;border-left:6px solid var(--ink);font-size:clamp(19px,2vw,24px);line-height:1.4;}
+    .hero-meta{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px;margin-top:38px;font:700 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    .stamp{padding:9px 11px;border:1px solid var(--ink);background:rgba(250,247,239,.56);}
+    .status{display:inline-block;white-space:nowrap;padding:6px 9px;font:800 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .status.pending{color:#17201d;background:var(--amber);}
+    main{max-width:1120px;margin:0 auto;padding:64px clamp(20px,4vw,54px) 100px;}
+    section{scroll-margin-top:28px;margin:0 0 76px;}
+    h2{margin:0 0 24px;font:720 clamp(30px,4.2vw,50px)/1.02 var(--serif);letter-spacing:-.03em;}
+    h2 .number{display:block;margin-bottom:11px;color:var(--oxide);font:800 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;}
+    h3{margin:40px 0 13px;font:720 24px/1.15 var(--serif);}
+    p{margin:0 0 1.2em;max-width:var(--reading);}
+    ul,ol{max-width:var(--reading);}
+    li{margin:0 0 .5em;}
+    .lead{font-size:22px;line-height:1.5;}
+    .dropcap::first-letter{float:left;margin:.08em .12em 0 0;color:var(--oxide);font:760 4em/.72 var(--serif);}
+    .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:34px 0;max-width:var(--reading);}
+    .tile{padding:20px 20px 18px;border:1px solid var(--ink);background:rgba(250,247,239,.7);}
+    .tile b{display:block;font:800 30px/1 var(--serif);color:var(--oxide-dark);letter-spacing:-.02em;}
+    .tile span{display:block;margin-top:8px;font:600 12px/1.35 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+    .table-scroll{overflow-x:auto;margin:28px 0;border-top:6px solid var(--ink);}
+    table{width:100%;border-collapse:collapse;background:rgba(250,247,239,.56);font-size:14.5px;line-height:1.45;}
+    caption{padding:13px 0;color:var(--muted);font:700 11px/1.3 var(--mono);text-align:left;letter-spacing:.08em;text-transform:uppercase;}
+    th,td{padding:12px 13px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top;}
+    th{color:var(--muted);font:800 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+    td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+    td:first-child{font-weight:700;}
+    .best{background:rgba(47,106,83,.14);font-weight:750;}
+    .worst{background:rgba(179,72,45,.12);color:var(--oxide-dark);font-weight:750;}
+    .callout{margin:32px 0;padding:24px 26px;border:1px solid var(--rule);border-top:7px solid var(--verified);background:var(--verified-light);max-width:var(--reading);}
+    .callout.warn{border-top-color:var(--oxide);background:rgba(179,72,45,.08);}
+    .callout.note{border-top-color:var(--amber);background:var(--amber-light);}
+    .callout h3{margin:0 0 9px;font-size:21px;}
+    .callout p:last-child{margin-bottom:0;}
+    .ledger{columns:2;column-gap:40px;margin:0;padding:0;list-style:none;max-width:none;}
+    .ledger li{break-inside:avoid;margin:0 0 11px;padding:0 0 11px;border-bottom:1px solid var(--rule);font:600 13px/1.45 var(--mono);}
+    .ledger .t{display:block;margin-bottom:4px;color:var(--muted);font-size:9px;letter-spacing:.1em;text-transform:uppercase;}
+    .subs{margin:26px 0 0;padding:0;list-style:none;max-width:var(--reading);}
+    .subs li{position:relative;margin:0 0 12px;padding-left:26px;font-size:16px;line-height:1.5;}
+    .subs li::before{content:"○";position:absolute;left:0;top:0;color:var(--muted);font:800 15px/1.5 var(--mono);}
+    .subs li.done::before{content:"✓";color:var(--verified);}
+    .toc{margin:0 0 64px;padding:16px 22px;border:1px solid var(--rule);background:rgba(250,247,239,.6);max-width:var(--reading);font:700 12px/2.1 var(--mono);text-transform:uppercase;letter-spacing:.05em;}
+    .toc a{margin-right:16px;white-space:nowrap;text-decoration:none;}
+    .toc a:hover{text-decoration:underline;}
+    .toc .lbl{margin-right:14px;color:var(--muted);}
+    footer{padding:36px clamp(20px,6vw,90px);border-top:1px solid var(--ink);background:var(--ink);color:#b8c4bf;font:12px/1.5 var(--mono);}
+    footer strong{color:#fff;}
+    @media (max-width:620px){
+      body{font-size:16px;}h1{font-size:38px;}.deck{margin-left:0;}
+      .ledger{columns:1;}
+      header.hero{padding:40px 22px 36px;}
+    }
+    @media print{body{background:#fff;}.nav{display:none;}.callout,.tile{box-shadow:none;}a{color:#111;}}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a href="automatic-quantization-pipeline-progress.html">← Program overview</a>
+    <span class="sep">|</span>
+    <a class="here">DeepSeek-V4-Flash · Serving speed</a>
+  </nav>
+
+  <header class="hero">
+    <p class="kicker">Serving-speed status · <span class="status pending">Measured · decisions pending</span></p>
+    <h1>Faster serving for <em>DeepSeek-V4-Flash</em></h1>
+    <p class="deck">Two independent speed-ups measured on production hardware. Neither is switched on — both wait on one quality check, and one needs a dependency decision.</p>
+    <div class="hero-meta">
+      <span class="stamp">8 × H100 · one node</span>
+      <span class="stamp">SGLang inference server</span>
+      <span class="stamp">Updated 2026-08-24</span>
+    </div>
+  </header>
+
+  <main>
+    <article>
+
+      <nav class="toc"><span class="lbl">Contents</span><a href="#objective">01 What we optimise</a><a href="#results">02 Results</a><a href="#cost">03 What it costs</a><a href="#decisions">04 Decisions</a><a href="#risks">05 Risks</a><a href="#why">06 Why re-measure</a><a href="#next">07 What's next</a><a href="#evidence">08 Evidence</a></nav>
+
+      <section id="objective">
+        <h2><span class="number">01 / Objective</span>What we are optimising</h2>
+        <p class="lead dropcap">This is a <strong>serving-speed</strong> project on a model we did not quantize ourselves, running on the SGLang inference server across 8 H100 GPUs. It is separate from the in-house quantization programme; nothing here changes a model file. Every gain comes from how the model is <em>served</em>.</p>
+        <p>Two user-visible metrics, and the priority between them is fixed:</p>
+        <div class="table-scroll">
+          <table>
+            <caption>The ranked objective</caption>
+            <thead><tr><th>Metric</th><th>What a user experiences</th><th>Priority</th></tr></thead>
+            <tbody>
+              <tr><td>Output speed</td><td>how fast text streams out once it starts, per user</td><td><strong>First</strong></td></tr>
+              <tr><td>Time to first token</td><td>how long the user stares at nothing before text appears</td><td>Second</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>“Second” is meant literally:</strong> we do not accept a change that makes text appear sooner but then stream more slowly.</p>
+      </section>
+
+      <section id="results">
+        <h2><span class="number">02 / Results</span>Two levers, both measured</h2>
+        <p>Both measured on the production configuration in production’s own operating conditions — no profiler attached, GPU clocks left alone.</p>
+
+        <h3>Lever 1 — a faster expert-computation kernel</h3>
+        <div class="tiles">
+          <div class="tile"><b>+22.3%</b><span>output speed, single user</span></div>
+          <div class="tile"><b>11 s</b><span>faster on a long answer</span></div>
+          <div class="tile"><b>+4.7%</b><span>output speed at full load</span></div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <caption>Lever 1 · measured effect</caption>
+            <thead><tr><th>Measure</th><th class="num">Result</th></tr></thead>
+            <tbody>
+              <tr><td>Output speed, single user</td><td class="num best">+22.3% — 131.7 → 161.1 tokens/s</td></tr>
+              <tr><td>A long reasoning answer (8,000 tokens)</td><td class="num best">11 seconds faster — 61.1 s → 50.0 s</td></tr>
+              <tr><td>Output speed at full load (64 concurrent users)</td><td class="num best">+4.7% — 69.7 → 73.0 tokens/s</td></tr>
+              <tr><td>Time to first token</td><td class="num">unchanged</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <h3>The obvious cheap version of this is a regression, not a win</h3>
+          <p>The kernel library has two relevant versions, and the one the inference server ships by default is <strong>slower than what we run today</strong> at every load above a single user.</p>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <caption>64 concurrent users · output speed per user</caption>
+            <thead><tr><th>Configuration</th><th class="num">Output speed</th><th class="num">vs today</th></tr></thead>
+            <tbody>
+              <tr><td>Today’s default kernel</td><td class="num">69.7 tokens/s</td><td class="num">—</td></tr>
+              <tr><td>Faster kernel, <strong>version the server ships</strong></td><td class="num worst">60.4</td><td class="num worst">−13.4%</td></tr>
+              <tr><td>Faster kernel, <strong>newer version</strong></td><td class="num best">73.0</td><td class="num best">+4.7%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The win is real but it lives entirely in the newer version, and the gap between the two versions is <strong>up to 20.8%</strong> of output speed — worst precisely at the load production runs at. Turning the feature on without also upgrading the library would make the product measurably worse. That is decision 2 below.</p>
+
+        <h3>Lever 2 — enabling prefill GPU graphs</h3>
+        <p>The server currently disables a GPU optimisation for this model family, which leaves a large fixed overhead on every prompt-processing pass. Removing it:</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Lever 2 · measured effect</caption>
+            <thead><tr><th>Measure</th><th class="num">Today</th><th class="num">With graphs on</th></tr></thead>
+            <tbody>
+              <tr><td>Prompt-processing time per pass</td><td class="num">196.6 ms</td><td class="num best">89.8 ms — 2.2× faster</td></tr>
+              <tr><td>Time to first token · 2,000-token prompt, 1 user</td><td class="num">408 ms</td><td class="num best">103 ms — 4.0× faster</td></tr>
+              <tr><td>Time to first token · 32,000-token prompt, 1 user</td><td class="num">3,355 ms</td><td class="num best">1,583 ms — 2.1× faster</td></tr>
+              <tr><td>Output speed · 64 users, short-answer traffic</td><td class="num">15.9 tok/s</td><td class="num best">30.5 tok/s — 1.9×</td></tr>
+              <tr><td>Full 1-million-token context</td><td class="num">works</td><td class="num best">works — per-pass 424 → 285 ms</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The output-speed gain here is a side effect worth understanding, because it is the larger half at production load: when the server processes someone else’s prompt, <strong>every user currently mid-answer is briefly stopped.</strong> Making prompt processing faster shortens those interruptions.</p>
+        <div class="callout note">
+          <h3>The 1.9× figure depends on the traffic mix</h3>
+          <p>It was measured on short-prompt / short-answer traffic, where interruptions are most frequent. On long-reasoning traffic our model predicts closer to <strong>1.13×</strong> — still a real gain, but not 90%. <strong>That prediction is not yet measured</strong>, and measuring it is the top item in §07. Which figure applies to us depends on decision 4.</p>
+        </div>
+      </section>
+
+      <section id="cost">
+        <h2><span class="number">03 / Cost</span>What it costs</h2>
+        <p>Lever 1 costs a <strong>dependency</strong>, not performance: the newer kernel library is not what the inference server pins, so adopting it means either carrying our own copy or getting the upstream project to move its version.</p>
+        <p>Lever 2 costs <strong>memory that would otherwise hold conversation history</strong>, and that converts directly into a capacity limit:</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Lever 2 · capacity cost</caption>
+            <thead><tr><th>Measure</th><th class="num">Today</th><th class="num">With graphs on</th></tr></thead>
+            <tbody>
+              <tr><td>Conversation-history capacity</td><td class="num">6.47 M tokens</td><td class="num worst">5.68 M — −12.3%</td></tr>
+              <tr><td>Max simultaneous users at 1 M-token context</td><td class="num">6</td><td class="num worst">5</td></tr>
+              <tr><td>Above ~89,000 tokens of context</td><td class="num">capacity limited by user cap</td><td class="num worst">limited by memory instead</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Below ~89,000 tokens of context this costs nothing observable, because the server’s 64-user limit binds first. Above it, the cost is real. <strong>We attempted a version of this lever with no memory cost and it failed on measurement</strong> — it degrades badly on the short prompts typical of chat traffic, so it is rejected.</p>
+        <p>We also verified the safety side: with graphs on, the server still survives a full 1-million-token context with essentially the same memory headroom as today (8.27 GB vs 8.52 GB).</p>
+      </section>
+
+      <section id="decisions">
+        <h2><span class="number">04 / Decisions</span>What we need from you</h2>
+        <div class="table-scroll">
+          <table>
+            <caption>Open decisions</caption>
+            <thead><tr><th>#</th><th>Decision</th><th>Why it is yours</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><strong>Fund a quality evaluation</strong> for both levers</td><td>Neither has one. This is the single gate on shipping either. The upstream project ran one for its own graphs-on configuration and results held steady — we have run nothing. It is cheap relative to the performance work already done</td></tr>
+              <tr><td>2</td><td><strong>Accept carrying a non-standard kernel version</strong>, or push for an upstream version bump</td><td>Mandatory for lever 1’s win. A carried dependency is ongoing maintenance; an upstream bump is slower but cleaner. The relevant upstream changes were authored by a maintainer of another major inference engine, so a bump is not a fork</td></tr>
+              <tr><td>3</td><td><strong>Report the finding upstream?</strong></td><td>We can show that the inference server’s pinned kernel version costs up to 20.8% of output speed on this model. Reporting it is outward-facing and likely welcome, but it is a public statement about a third-party project and we have not made it</td></tr>
+              <tr><td>4</td><td><strong>Tell us the traffic mix to optimise for</strong></td><td>A genuine input we are missing. Lever 2 is worth 1.9× on short-prompt traffic and an estimated 1.13× on long-reasoning traffic, and its memory cost only bites above ~89,000 tokens of context. Both the configuration and the expected gain change with the answer</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="risks">
+        <h2><span class="number">05 / Risks</span>What could go wrong</h2>
+        <ul>
+          <li><strong>No quality data on either lever.</strong> Both change how numbers are computed on the GPU; neither has been checked for output quality. We would not recommend shipping either without decision 1.</li>
+          <li><strong>Silent degradation on lever 1.</strong> If the newer kernel library is ever missing at start-up, the server does <strong>not</strong> fail — it quietly falls back to the slower version and runs 20.8% slower. Any deployment must assert the loaded version at start-up. We have that check built and used it in every experiment.</li>
+          <li><strong>Capacity reduction at long context</strong> from lever 2 (§03). Acceptable or not depending on decision 4.</li>
+          <li><strong>One quoted figure is a prediction, not a measurement</strong> — lever 2’s gain on long-reasoning traffic (§02). Named as such wherever it appears.</li>
+          <li><strong>A small measured loss inside lever 1.</strong> At moderate load (8–16 concurrent users) the new kernel is 2.4–3.6% <em>slower</em>. Real, small, and it should be quoted alongside the wins rather than dropped.</li>
+        </ul>
+      </section>
+
+      <section id="why">
+        <h2><span class="number">06 / Context</span>Why this needed measuring from scratch</h2>
+        <p>We already had a large body of serving-performance work — but on a <strong>different inference server</strong> and a <strong>different model</strong>. It does not transfer, and this is not a technicality:</p>
+        <div class="callout warn">
+          <h3>The previous result reverses here</h3>
+          <p>On the previous model, the faster kernel won at every load level. On this one it loses in the middle of the range, and the version the server ships loses almost everywhere. Had we assumed the earlier result carried over and flipped the switch, we would have shipped a <strong>13% slowdown at production load</strong>.</p>
+        </div>
+        <p>Four things differ simultaneously — the inference server, the model’s numeric format, the kernel we are competing against, and how work is distributed across the model’s experts. Each one is enough on its own to change the answer. That is where the measurement time went, and it is why the results above are stated for <em>this</em> configuration only.</p>
+      </section>
+
+      <section id="next">
+        <h2><span class="number">07 / Roadmap</span>What’s next, by cost</h2>
+        <p>Ordered by what it costs us, not by how attractive it is. Time estimates are scaled from a measured comparison run that took <strong>2.05 hours</strong> on one 8-GPU node.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>Next steps, cheapest first</caption>
+            <thead><tr><th>#</th><th>Next step</th><th>Cost</th><th>What it would settle</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><strong>Measure lever 2 on long-reasoning traffic</strong>, and both levers together</td><td>~half a day, one 8-GPU node</td><td>Replaces §02’s predicted 1.13× with a measurement, and tells us whether the two levers add up — nobody has run them together, and production would use both</td></tr>
+              <tr><td>2</td><td><strong>Try one more free server setting</strong> that lets the server process prompts <em>without</em> fully stopping users mid-answer</td><td>~3 hours, one node</td><td>The standard fix for the interruption problem — a competing inference server enables it by default and ours does not. One setting, no new hardware. It may overlap with lever 2 rather than add to it</td></tr>
+              <tr><td>3</td><td><strong>A one-line kernel tuning change</strong> targeting the 8–16-user loss in §05</td><td>~1 hour, 1 GPU</td><td>Could remove lever 1’s only regression</td></tr>
+              <tr><td>4</td><td><strong>Quality evaluation</strong> (decision 1)</td><td>scoped separately, needs the evaluation pipeline</td><td>Unblocks shipping either lever</td></tr>
+              <tr><td>5</td><td><strong>Speculative decoding</strong></td><td>a project, not an experiment</td><td><strong>Probably the largest prize on the table and completely untouched here.</strong> On the previous model it measured <strong>1.2–2.5× faster output</strong> with no quality cost by design — an order of magnitude more than either lever above. Its tuning will not transfer automatically, for the reasons in §06</td></tr>
+              <tr><td>6</td><td><strong>Splitting prompt-processing and text-generation onto separate GPU pools</strong></td><td>multiple nodes + network configuration; changes the deployment shape</td><td>The textbook fix for the interruption problem, and it works — but it buys speed with <strong>hardware</strong>, and its value <em>shrinks</em> once items 1–2 land. Price it against what is left, not against today</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="evidence">
+        <h2><span class="number">08 / Evidence</span>Where the numbers come from</h2>
+        <p>Every figure above traces to one of two engineering documents, which carry the full tables, the statistical confidence for each point, and what is explicitly <em>not</em> established:</p>
+        <ul class="subs">
+          <li class="done"><a href="../DSV4_FLASH_SGLANG_SERVING_PERF_REPORT.md">Serving performance report</a> — measurements, method, limitations</li>
+          <li class="done"><a href="../DSV4_FLASH_SGLANG_COLLABORATOR_BRIEF.md">Collaborator brief</a> — the narrative version for engineers picking the work up</li>
+        </ul>
+        <div class="callout">
+          <h3>Confidence, in plain terms</h3>
+          <p>Each comparison ran the current configuration <strong>twice</strong>, before and after the change, in a single session — so drift in machine conditions is <em>measured</em> rather than assumed. It came out at <strong>under 0.5%</strong>, against effects of 2–22%. Repeating an entire run three hours later on a fresh boot reproduced it to within <strong>0.33%</strong>. Every run also proves, from the server’s own logs, that the intended code path actually executed on all 8 GPUs — because the server does not error on a mistyped setting, it silently runs the old path.</p>
+        </div>
+        <p><strong>No performance figure here has had a pass/fail threshold applied to it.</strong> Measuring and deciding are deliberately kept separate; §04 is the deciding half, and it has not happened.</p>
+      </section>
+
+    </article>
+  </main>
+
+  <footer>
+    <strong>DeepSeek-V4-Flash serving speed</strong> · measured, decisions pending · updated 2026-08-24<br>
+    Serving-stack work on a bought-in model — separate from the in-house quantization programme.
+    Engineering detail in the two documents linked in §08.
+  </footer>
+</body>
+</html>

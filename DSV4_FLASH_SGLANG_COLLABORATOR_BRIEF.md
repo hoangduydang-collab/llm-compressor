@@ -49,23 +49,37 @@ SGLang v0.5.17, one node of 8×H100, tensor-parallel 8, `max-running-requests 64
 
 ## 2. Why we had to re-measure everything from scratch
 
-We already had a large body of serving-performance work — on **vLLM**, with
-**MiniMax-M3**. The honest answer on how much of it transfers is: **almost
-none.** Four things differ at once, and each one is load-bearing:
+**The immediate predecessor is this same model on vLLM**, not the MiniMax-M3
+work. CA production cut this pool from vLLM `0.26.1rc1.dev77` to SGLang v0.5.17
+on **2026-08-17**, so `opprof`'s `ds-v4-flash/` tree is now historical — it
+describes an engine serving no traffic. Both of its baselines already disown this
+engine in their own words (*"Nothing here transfers from or to SGLang"*;
+*"7 of 12 configuration dimensions differ"*). This is a **new campaign, not a
+refresh**, and the trees are kept apart so no table ever mixes two engines'
+shares.
 
-| | prior work | here |
-|---|---|---|
-| engine | vLLM | **SGLang** — different scheduler, different CUDA-graph machinery |
-| model | MiniMax-M3, GPTQ 4-bit weights + FP8 activations | **DeepSeek-V4-Flash**, MXFP4 experts, 16-bit activations |
-| the kernel we compare against | CUTLASS | **marlin** — a stronger baseline at these shapes |
-| routing regime | 128 experts, top-4 → ~2.0 tokens per expert at batch 64 | 256 experts, top-6 → **~1.5 tokens per expert** |
+**The engine swap reorders the problem rather than rescaling it.** On this same
+architecture, prior SGLang data put **58.87%** of prefill on
+`ncclDevKernel_AllReduce_Sum_bf16_RING_LL` where vLLM's own
+`multimem_all_reduce_kernel` measured **8.89%**. Same model, same node class, a
+different bottleneck ranking. Expect the target list **reordered, not rescaled**.
 
-This is not a formality. **The prior verdict reverses here.** On M3 the Humming
-MoE kernel beat CUTLASS at every concurrency we tested. On DSV4-Flash it *loses*
-in the middle of the range — and with the library version SGLang actually ships,
-it loses almost everywhere (§6). Had we assumed the M3 result transferred and
-flipped the flag, we would have shipped a **13% output-speed regression** at
-production concurrency.
+| carries from the vLLM campaign | does not carry |
+|---|---|
+| Model shape — 43 layers, 256 experts, `num_experts_per_tok` 6, `index_topk`/`index_n_heads` 512/64 | The **`humming` NO verdict** — it was arithmetic over vLLM-measured shares, and `moe_backend` lives in vLLM's `KernelConfig`; SGLang's `--moe-runner-backend` is a different flag in a different tree |
+| DSpark per-position acceptance (81.1 / 67.1 / 59.8 / 59.1 / 56.9%, then 14.1 / 8.2) and `dspark_block_size` 5 — a property of the checkpoint's draft layers 40–42 | The comm-instability finding (BS 1 rounds up to 9131 ms on `vllm::cross_device_reduce_1stage`) — that is a vLLM kernel |
+| Experts MXFP4, dense + attention FP8 | The BS 1 → 265.0 tok/s / ITL 9.2 ms figure — **should not be quoted at all**; its two columns disagree by ~2.4× and were never reconciled |
+| Method — clock-locking prerequisite, steady-state gates, nsys 2026.4.1 pin | The profiled context window — the vLLM campaign pinned 262 144 against production's **1 048 576**, so long context was under-sampled ~4× |
+
+🔴 **Two predecessors, opposite conclusions, and both wrong here.** The vLLM
+campaign on *this* model concluded **NO** on `humming`. The MiniMax-M3 campaign —
+a different model, a different quant scheme (GPTQ W4A8, so humming's **A8**
+path), a different opponent (CUTLASS) and a different routing regime (128 experts
+top-4 → 2.0 tokens/expert vs our 256 top-6 → **1.5**) — concluded **yes at every
+concurrency**. The measured answer here is neither: a **U**, and only on the
+newer library version (§6). Carrying the vLLM verdict forward would have left
+**+22.3% at conc 1** unclaimed; carrying M3's forward and flipping the flag on
+the shipped version would have shipped **−13.4% per-user at conc 64**.
 
 So both axes below were measured on the real engine, the real model and the real
 production argument list, with no profiler attached and GPU clocks left alone —
@@ -443,7 +457,7 @@ Deliberately ordered by cost, not by attractiveness. **Every item is untested.**
 | 4 | **humming 0.1.13** (§6) | faster MoE kernel | a carried dependency + version assertion | +4.7% at concurrency 64, +22.3% at 1 |
 | 5 | **Upstream large-M scheduling fix** | same target as #3, upstream | version bump, unreleased | unquantified |
 | 6 | **Prefill/decode disaggregation** | moves prefill onto *other* GPUs entirely | **separate GPU pools + network fabric**; changes the topology | removes whatever remains after #1/#2 |
-| 7 | **Speculative decoding (DSpark)** | a different axis entirely — fewer decode steps | drafter + per-traffic-class tuning | **1.21–2.53× on M3** — the largest known prize |
+| 7 | **Speculative decoding (DSpark)** | a different axis entirely — fewer decode steps | a study, not an arm; per-traffic-class tuning | Largest known prize. Acceptance rates **carry** from the vLLM campaign (checkpoint property); the **1.21–2.53×** figure is M3's and is indicative only |
 
 **Two notes on the ordering, because it is the substance of the recommendation.**
 
@@ -455,12 +469,20 @@ would invalidate both of our measurement baselines. It remains the only thing
 that makes ITL a property of the decode engine rather than of the traffic mix —
 which is a real architectural argument, just not a first move.
 
-**Why speculative decoding is listed last but is probably worth the most.** On
-MiniMax-M3 it measured **1.21–2.53× per-user decode speed with no quality cost by
-construction**, an order of magnitude more than either lever in this document.
-It is untouched here. ⚠️ Those numbers were measured on vLLM, and by §2's own
-argument **none of that tuning transfers mechanically** — draft depth was the
-dominant lever there and would have to be re-derived.
+**Why speculative decoding is listed last but is probably worth the most.** It is
+untouched here, and it is the one lever whose *tuning inputs actually carry*
+across the engine move — DSpark acceptance is a property of this checkpoint's own
+draft layers 40–42, so the vLLM campaign's per-position rates (81.1 / 67.1 / 59.8
+/ 59.1 / 56.9%, then a cliff to 14.1 / 8.2) and its `dspark_block_size` of **5**
+transfer, and SGLang v0.5.17 exposes `spec_accept_length`, `spec_accept_rate`,
+`spec_num_draft_tokens` and `spec_num_steps` in `/metrics` so acceptance is
+directly observable. ⚠️ Note the vLLM pool ran **k=7** where the acceptance cliff
+says **5**.
+
+⚠️ **What does not carry is the size of the end-to-end win.** The only figure we
+have is **1.21–2.53× per-user decode** on MiniMax-M3 (vLLM, goal 2h) — indicative
+of the order of magnitude, and nothing more: draft depth per traffic class was the
+dominant lever there and would have to be re-derived here.
 
 ---
 

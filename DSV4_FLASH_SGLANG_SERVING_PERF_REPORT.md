@@ -451,6 +451,14 @@ decode step, and the two instruments run under different clock regimes.
 
 ### 4.5 Why M3 and DSV4-Flash disagree about humming
 
+⚠️ **M3 is not this campaign's predecessor** — the immediate predecessor is
+DSV4-Flash on **vLLM** (`opprof`'s `ds-v4-flash/` tree, historical since CA
+production cut this pool to SGLang on 2026-08-17), and **that** campaign's verdict
+on humming was **NO**. So the two prior data points disagree with each other as
+well as with this one, which is the reason neither was carried forward. This
+section is about the M3 divergence specifically, because M3 is where the adoption
+enthusiasm came from.
+
 Goal 7 adopted humming on M3 because it beat CUTLASS by ~34% at concurrency 1
 and stayed ahead at every concurrency up to 64. Here humming loses at conc 8–16
 and wins only 4.7% at 64. The two are not in conflict; they are different
@@ -935,7 +943,13 @@ Spend without a question attached:
 
 Ranked by expected value on the primary objective, none of them started:
 
-1. **DSpark speculative decoding.** Untouched on DSV4-Flash, and the M3 study
+1. **DSpark speculative decoding.** Untouched on DSV4-Flash — but note it is the
+   one lever whose tuning inputs **carry** across the engine move: acceptance is a
+   property of this checkpoint's draft layers 40–42, so the vLLM campaign's
+   per-position rates (81.1 / 67.1 / 59.8 / 59.1 / 56.9%, then 14.1 / 8.2) and
+   `dspark_block_size` 5 transfer, and v0.5.17 exposes `spec_accept_length`,
+   `spec_accept_rate`, `spec_num_draft_tokens`, `spec_num_steps` in `/metrics`.
+   ⚠️ The vLLM pool ran **k=7** where the acceptance cliff says **5**. The M3 study
    (goal 2h) measured **1.21–2.53×** per-user decode with zero quality cost by
    construction, with draft depth per traffic class as the dominant lever. That
    is an order of magnitude more output speed than either lever in this report.

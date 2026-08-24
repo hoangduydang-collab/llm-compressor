@@ -116,7 +116,7 @@
 
       <section id="objective">
         <h2><span class="number">01 / Objective</span>What we are optimising</h2>
-        <p class="lead dropcap">This is a <strong>serving-speed</strong> project on a model we did not quantize ourselves, running on the SGLang inference server across 8 H100 GPUs. It is separate from the in-house quantization programme; nothing here changes a model file. Every gain comes from how the model is <em>served</em>.</p>
+        <p class="lead dropcap">This is a <strong>serving-speed</strong> study on a model we did not quantize ourselves, running on the SGLang inference server across 8 H100 GPUs. It is separate from the in-house quantization programme; nothing here changes a model file. Every gain comes from how the model is <em>served</em>.</p>
         <p>Two user-visible metrics, and the priority between them is fixed:</p>
         <div class="table-scroll">
           <table>
@@ -236,12 +236,30 @@
 
       <section id="why">
         <h2><span class="number">05 / Context</span>Why this needed measuring from scratch</h2>
-        <p>We already had a large body of serving-performance work — but on a <strong>different inference server</strong> (vLLM) and a <strong>different model</strong> (MiniMax-M3). It does not transfer, and this is not a technicality:</p>
+        <p>The predecessor here is <strong>the same model on a different inference server.</strong> Production moved this pool from vLLM to SGLang on <strong>2026-08-17</strong>, so our earlier DeepSeek-V4-Flash measurements now describe an engine serving no traffic. Same checkpoint, same 4-bit expert format, same class of machine — the server changed.</p>
+        <p>That turns out to <strong>reorder</strong> the problem rather than rescale it:</p>
         <div class="callout warn">
-          <h3>The previous result reverses here</h3>
-          <p>On MiniMax-M3, <code>humming</code> beat its rival kernel at every load level. On DeepSeek-V4-Flash it loses in the middle of the range, and the version SGLang ships loses almost everywhere. Had we assumed the earlier result carried over and flipped the switch, we would have shipped a <strong>13% slowdown at production load</strong>.</p>
+          <h3>Changing the engine changes which thing is the bottleneck</h3>
+          <p>On this same model, SGLang spends <strong>58.87%</strong> of prompt-processing time inside a single cross-GPU communication step, where vLLM’s equivalent step measured <strong>8.89%</strong>. Same model, same class of machine, a different top bottleneck. So the earlier list of things worth optimising is <em>reordered</em>, not rescaled — which is why it could not simply be re-run.</p>
         </div>
-        <p>Four things differ simultaneously — the inference server, the model’s numeric format, the kernel we are competing against, and how work is spread across the model’s experts. Each one is enough on its own to change the answer. That is where the measurement time went, and it is why the results above are stated for <em>this</em> configuration only. The appendix shows the mechanism.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>What survived the engine change</caption>
+            <thead><tr><th>Survives the engine change</th><th>Does not</th></tr></thead>
+            <tbody>
+              <tr><td>The model’s own shape — 43 layers, 256 experts, 6 consulted per token</td><td>The earlier <strong>“don’t use <code>humming</code>”</strong> verdict — it was arithmetic over vLLM-measured time shares, and the setting itself lives in a different codebase</td></tr>
+              <tr><td>Speculative-decoding acceptance rates — a property of the checkpoint’s own draft layers</td><td>The earlier cross-GPU instability finding — that was a vLLM code path</td></tr>
+              <tr><td>The 4-bit expert / 8-bit dense-and-attention format</td><td>The earlier single-user throughput figure — its own two columns disagreed by <strong>2.4×</strong> and were never reconciled, so it should not be quoted at all</td></tr>
+              <tr><td>Our measurement method — clock locking, validity gates, profiler version</td><td class="dim">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <h3>Two predecessors, opposite conclusions, and both wrong here</h3>
+          <p>Our vLLM work on <em>this</em> model concluded <strong>no</strong> to the alternative kernel. Our earlier work on a <em>different</em> model (MiniMax-M3, a different quantization scheme and a different rival kernel) concluded <strong>yes, at every load level</strong>. The measured answer on this engine is neither: yes at single-user and at full load, no in the middle, and only with the newer library version.</p>
+          <p><strong>Carrying the first verdict forward would have left +22.3% single-user speed unclaimed. Carrying the second forward and flipping the flag would have shipped −13.4% at production load.</strong></p>
+        </div>
+        <p>One more gap the earlier campaign could not close: it profiled at a <strong>262,144-token</strong> context where production runs <strong>1,048,576</strong>, so long-context behaviour was under-sampled roughly four-fold — which is why §02 and §03 test the top of the real window. The appendix shows the mechanism behind both levers.</p>
       </section>
 
       <section id="next">
@@ -256,7 +274,7 @@
               <tr><td>2</td><td><strong>Try one more free server setting</strong> (<code>--enable-mixed-chunk</code>) that lets the server process prompts <em>without</em> fully stopping users mid-answer</td><td>~3 hours, one node</td><td>The standard fix for the interruption problem — vLLM enables it by default and SGLang does not. One setting, no new hardware. It may overlap with lever 2 rather than add to it</td></tr>
               <tr><td>3</td><td><strong>A one-line kernel tuning change</strong> targeting the 8–16-user loss in §04</td><td>~1 hour, 1 GPU</td><td>Could remove lever 1’s only regression — see the appendix for why one line is plausibly enough</td></tr>
               <tr><td>4</td><td><strong>Quality evaluation</strong></td><td>scoped separately, needs the evaluation pipeline</td><td>Unblocks shipping either lever</td></tr>
-              <tr><td>5</td><td><strong>Speculative decoding</strong></td><td>a project, not an experiment</td><td><strong>Probably the largest prize on the table and completely untouched here.</strong> On MiniMax-M3 it measured <strong>1.2–2.5× faster output</strong> with no quality cost by design — an order of magnitude more than either lever above. Its tuning will not transfer automatically, for the reasons in §05</td></tr>
+              <tr><td>5</td><td><strong>Speculative decoding</strong></td><td>a study, not an experiment</td><td><strong>Probably the largest prize on the table and completely untouched here.</strong> Unusually, its acceptance rates <strong>do</strong> carry from the vLLM work, because they are a property of this checkpoint’s own draft layers — 81% of first guesses accepted, decaying with depth, best at <strong>5</strong> tokens ahead where vLLM production ran 7. SGLang already exposes every metric needed to tune it. For the <em>size</em> of the end-to-end gain we only have a different model to go on, where it measured 1.2–2.5× faster output at no quality cost by design — indicative, not transferable</td></tr>
               <tr><td>6</td><td><strong>Splitting prompt-processing and text-generation onto separate GPU pools</strong></td><td>multiple nodes + network configuration; changes the deployment shape</td><td>The textbook fix for the interruption problem, and it works — but it buys speed with <strong>hardware</strong>, and its value <em>shrinks</em> once items 1–2 land. Price it against what is left, not against today</td></tr>
             </tbody>
           </table>
@@ -332,7 +350,7 @@
           <li><strong>The “down” multiplication improves everywhere, and improves steadily with batch size</strong> — up to <strong>2.55× faster</strong>. This was predicted from reading the library’s source <em>before</em> the run: the old version ran a work-splitting optimisation that had nothing to split, as pure overhead, at 25% GPU occupancy.</li>
           <li><strong>The “gate/up” multiplication is the entire regression.</strong> Its new tile shape is a loss of up to 1.57× through the middle of the range. The reason is concrete: that tuning ladder’s next step up needs a batch of <strong>239</strong>, and our model at 64 concurrent users gives each expert about <strong>1.5 tokens</strong>. It was tuned for a regime we are nowhere near.</li>
         </ul>
-        <p><strong>So the regression is the tunable half.</strong> Keeping 0.1.13’s “down” setting while forcing “gate/up” back to the old tile is a one-line override — which is why item 3 in §06 costs an hour rather than a project. There is also an unreleased upstream fix titled <em>“Fix SM90 indexed A16 large-M scheduling”</em> aimed at exactly this, not yet evaluated.</p>
+        <p><strong>So the regression is the tunable half.</strong> Keeping 0.1.13’s “down” setting while forcing “gate/up” back to the old tile is a one-line override — which is why item 3 in §06 costs an hour rather than a study. There is also an unreleased upstream fix titled <em>“Fix SM90 indexed A16 large-M scheduling”</em> aimed at exactly this, not yet evaluated.</p>
 
         <h4>A.4 · What the profiling can and cannot tell us</h4>
         <p><strong>Can: the direction.</strong> Against the end-to-end serving results, the kernel-level ratio predicted the correct <strong>sign</strong> in 9 of 10 cases across both library versions — including correctly predicting that the two versions differ in <em>direction</em> at batch 64. That makes profiling a cheap screen before spending a node on a benchmark ladder.</p>

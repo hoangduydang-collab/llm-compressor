@@ -898,6 +898,13 @@ and the drift-aware comparator all in place. Adding a *server-flag* dimension to
 the phase table is a generator change, not a new instrument. Reusing it also
 keeps every gate that caught the defects in §6.
 
+⚠️ **If `--enable-mixed-chunk` ever enters this design, do not treat it as
+additive with BCG.** Both attack the same term — the ~121 ms per-forward launch
+tax — by different routes: BCG graphs it away, fusion avoids launching a second
+forward at all and lets prefill tokens ride the decode step's weight loads. Both
+bottom out at the prefill compute floor (~75–90 ms), so their gains **overlap**.
+A phase table that includes both must measure the combination, not sum the arms.
+
 **And add the quality gate.** Upstream ran GSM8K for their BCG config and got
 0.953 stable; we have run nothing on either lever. The benchmarks repo *is* the
 eval pipeline, so this is close to free, it is the only correctness check on a
@@ -934,20 +941,43 @@ Ranked by expected value on the primary objective, none of them started:
    is an order of magnitude more output speed than either lever in this report.
    ⚠️ M3's numbers were measured on vLLM; none of that tuning transfers
    mechanically to SGLang.
-2. **The combined BCG + humming arm** (§8.5–§8.6), with the shape pair.
-3. **Upstream #65** (`a81c45e`, "Fix SM90 indexed A16 **large-M** scheduling",
-   unreleased — `main` only). Large-M gate/up is exactly where 0.1.13 still
-   loses (§3.3), so this is the cheapest candidate fix for the conc 8–16 deficit.
+2. 🆕 **`--enable-mixed-chunk` — one flag, currently `False`.** SGLang does not
+   fuse prefill and decode by default, so every prefill forward is a full
+   generation stall for the whole decode batch; the maintainers describe this
+   flag as reducing inter-token latency "for some workloads"
+   ([discussion #1163](https://github.com/sgl-project/sglang/discussions/1163)),
+   and it is the same mitigation vLLM applies by default (decode-priority
+   scheduling). Our decode is the most favourable possible case for it —
+   0.66–1.5 tokens per expert means the MoE GEMMs are near-pure weight
+   streaming, so fused prefill tokens ride weight loads already being paid for.
+   **Falsifiable:** the mean effect is bounded between zero (if the fused step is
+   perfectly additive — work conservation says scheduling alone cannot reduce a
+   mean) and ~the same gain BCG delivers. The tail effect is near-certain. See
+   the substitution caveat in §8.6.
+3. **The combined BCG + humming arm** (§8.5–§8.6), with the shape pair.
 4. **The gate/up tuning-config ablation** — keep 0.1.13's down-proj config,
    force gate/up back to `(8,128,256)`. One line, 1 GPU, no upgrade.
-5. **Report the pin cost upstream.** SGLang's `humming-kernels==0.1.10` pin
+5. **Upstream #65** (`a81c45e`, "Fix SM90 indexed A16 **large-M** scheduling",
+   unreleased — `main` only). Large-M gate/up is exactly where 0.1.13 still
+   loses (§3.3), so this is the cheapest candidate fix for the conc 8–16 deficit.
+6. **A quality run on both levers.** Neither has one. Upstream has one for BCG
+   and we do not.
+7. **Report the pin cost upstream.** SGLang's `humming-kernels==0.1.10` pin
    costs up to **20.8% of decode ITL** on this model, worst at production
    concurrency; upstream commits #57/#58/#59 are by a vLLM maintainer, so a pin
    bump is not a fork. 🔴 **Outward-facing — no issue or merge request has been
    opened, and none should be without explicit sign-off.**
-6. **A quality run on both levers.** Neither has one. Upstream has one for BCG
-   and we do not.
-7. **Backlog, cheap:** the BS-32 operator re-run at 6 rounds on both arms;
+8. **Prefill/decode disaggregation — last, not first.** `disaggregation_mode` is
+   `'null'` in our build (supported; `transfer_backend='mooncake'`,
+   `ib_device` unset). It is the textbook fix for §6.1's interference and it
+   removes the whole term from the decode node's ITL — but it buys output speed
+   with **hardware**, needs fabric configuration, and changes the topology, which
+   invalidates both regime baselines (the same objection already recorded against
+   `--enable-dp-attention`). Its prize also **shrinks as the cheap items land**:
+   ~43 ms of inflation at conc 64 today, ~20 ms after BCG. Price it against
+   what's left, not against today's number. It remains the only lever that makes
+   ITL a property of the decode engine rather than of the traffic mix.
+9. **Backlog, cheap:** the BS-32 operator re-run at 6 rounds on both arms;
    BS 2/4 to locate the crossover; `ncu dram__bytes.sum` for roofline closure;
    the `grouped` gemm-type arm; the four-phase
    `marlin → 0.1.10 → 0.1.13 → marlin` arm to remove the anchor mediation.

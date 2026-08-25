@@ -28,7 +28,7 @@ Two user-visible metrics, weighted roughly equally:
 | metric | what a user experiences | weight |
 |---|---|---|
 | **Output speed** | how fast text streams out once it starts, per user | equal |
-| **Time to first token** | how long the user stares at nothing before text appears | equal |
+| **Time to first token** | how long the user stares at nothing before text appears — including time spent queued behind other requests, not just processing | equal |
 
 **Both matter, roughly equally** — neither is a tie-breaker for the other. As it
 turns out neither lever below forces a choice: the kernel change improves output

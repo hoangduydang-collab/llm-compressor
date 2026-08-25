@@ -139,7 +139,7 @@ as `docs/m3-two-axis-perf.md`, so the M3 and DSV4 tracks are on one vocabulary.
 |---|---|---|
 | **ITL** (ms) | `inter_token_latency` | `(t_last_chunk − t_first_chunk) / tokens_after_first` off the SSE stream. **Decode-only by construction** — prefill lands in TTFT and can never contaminate a *measured* ITL |
 | **per-user output speed** (tok/s) | `output_token_throughput_per_user` | `1 / ITL` — one user's decode rate |
-| TTFT (ms) | `time_to_first_token` | first streamed token |
+| TTFT (ms) | `time_to_first_token` | first streamed token, timed **client-side from request send** — so it includes **queue wait + prefill + the first decode step**, which is the standard convention (vLLM likewise starts its clock at frontend receipt, and the scheduling literature's decomposition is `TTFT = queue delay + prefill time`). Verified in our own records: `ttft_ms == (t_first − t_send)` on 705/705 probe requests. ⚠️ Not interchangeable with an engine-side TTFT histogram, which may start its clock later; no figure here comes from one
 | **effect** | derived | `abs(1 − B / mean(A1, A2))` — humming against the time-centred marlin mean |
 | **drift** | derived | `abs(A1 − A2)` relative to the smaller, i.e. the conservative direction |
 | expert-GEMM ms/rank-step | nsys | total `gpu_ms` of the decode-step instantiation set ÷ rank-steps. **An operator quantity; never combined arithmetically with ITL** (§3.5) |
@@ -525,6 +525,15 @@ the two models.
   backends.** Under the revised equal weighting this is a co-equal problem rather
   than a subordinated one — and note §7's lever attacks it directly (2.45× at
   BS 64), which the old ranking under-credited.
+  🔴 **Read it as an admission/capacity number, not a prefill-speed number.**
+  TTFT is queue-inclusive (§1.4), and at high batch the queue *is* the number: in
+  the BS-64 burst grid, per-request TTFT ramps 447 → 13 457 ms across 64 identical
+  requests at a slope of 206.5 ms — matching the measured per-forward cost — so of
+  the 6 984 ms mean, roughly **6 780 ms is waiting and ~200 ms is prefill (~97%
+  queue)**. That is also why §7's lever helps TTFT most at high batch: shortening
+  each queued prefill drains the queue faster. A prefill-speed fix and an
+  admission fix are different things, and this figure is mostly asking for the
+  second.
 * **Nothing about DSpark speculative decoding**, which on the M3 evidence
   (1.21–2.53× per-user, goal 2h) remains a substantially larger lever for output
   speed than either lever in this report.

@@ -1,0 +1,144 @@
+# GLM-5.2 W4AFP8: distributed GPTQ int4-g128 on routed experts + FP8_DYNAMIC
+# (W8A8) on MLA attention / shared experts / the three dense layers, quantized
+# from source BF16.
+#
+# Structurally this is minimax_m3_distributed_r8_full.yaml — same two-modifier
+# design, same disjoint-set discipline (GPTQ ignores what the FP8 modifier owns
+# by explicit target), same data-free FP8_DYNAMIC so there is no second
+# calibration pass and no r5-class fold risk. Every *pattern* differs, because
+# GLM-5.2 is a different architecture; see "Why M3's patterns cannot be reused".
+#
+# Motivation, re-derived for this model (do not carry M3's numbers over).
+# Per-token activated weight bytes in one MoE layer at BF16 — H=6144, I=2048,
+# 8 of 256 experts, MLA q_lora 2048 / kv_lora 512 / 64 heads:
+#
+#   routed experts (8 active)   576.0 MiB   58.7%
+#   MLA attention               314.8 MiB   32.1%
+#   shared expert                72.0 MiB    7.3%
+#   indexer (stays BF16)         17.9 MiB    1.8%
+#   TOTAL                       980.6 MiB
+#
+# The indexer row applies only to the 21 "full" layers (0, 1, then every 4th
+# from 5 to 77) — `indexer_types` gives the other 57 layers no indexer
+# projections at all, so the whole-model indexer share is nearer 0.5% than 1.8%.
+#
+#   BF16 everywhere               980.6 MiB   1.00x
+#   + int4-g128 routed experts    550.9 MiB   1.78x
+#   + FP8 attention & shared      357.5 MiB   2.74x   (marginal 1.54x)
+#
+# Note the shares are NOT M3's: attention+shared is 39.4% of BF16 activated
+# bytes here against M3's 74%. The FP8 leg is still worth taking for the same
+# reason it was there, but the reason has to be stated the other way round —
+# once the routed experts are int4, attention+shared is 70.2% of what remains,
+# so halving it yields 1.54x, near-identical to M3's quoted 1.55x. Whole model:
+# ~74.7 GiB BF16 -> ~27.2 GiB.
+#
+# Why M3's patterns cannot be reused (audited against the real module tree,
+# not assumed — all three of M3's fp8_dynamic_targets match ZERO modules here):
+#   1. No `language_model.` prefix. M3 is a VL model (AutoModelForImageTextToText)
+#      and nests the decoder; GLM-5.2 is text-only, so it is `model.layers.N`.
+#   2. GLM-5.2 uses MLA, not dense QKV. There is no `(q|k|v|o)_proj` set — it is
+#      q_a_proj / q_b_proj / kv_a_proj_with_mqa / kv_b_proj / o_proj. M3's
+#      pattern would have matched o_proj alone had the prefix been right.
+#   3. GLM's shared experts and dense MLPs are UNFUSED (gate_proj + up_proj +
+#      down_proj), where M3 fuses them into gate_up_proj.
+# Reusing M3's file would not crash. It would silently quantize nothing to FP8
+# and hand back a checkpoint 1.54x heavier in weight traffic than intended,
+# while passing every gate that only checks the int4 side.
+#
+# Comparability with the community checkpoint we already evaluated (goal 2d):
+# PhalaCloud/GLM-5.2-W4AFP8 is routed-expert int4 group-128 with scales chosen
+# by AWQ, FP8 attention/shared, static-scale FP8 activations. This recipe
+# deliberately matches its *placement* (which modules are int4 vs FP8 vs BF16)
+# so the paired eval isolates one variable, but differs in two ways that must
+# be stated in any comparison:
+#   - method: GPTQ here, AWQ there (goal 2d found Phala's AWQ leg clean; the M3
+#     AWQ pathology of goal 3b did not replicate on this family)
+#   - activations: FP8_DYNAMIC per-token here, static-scale there
+# Phala's config.json declares only {"quant_method": "w4afp8"} — the
+# SGLang-native format, not compressed-tensors. Ours will be compressed-tensors
+# W4AFP8, so do NOT copy the `quantization: w4afp8` sglang kwarg from
+# eval_glm52_w4afp8_sglang.yaml for our arm without re-checking the loader.
+#
+# KNOWN GAP — the MTP layer. GLM-5.2 ships num_nextn_predict_layers: 1, and
+# transformers 5.12.1 does not model it: zero references to nextn/mtp/eh_proj/
+# enorm/hnorm in modeling_glm_moe_dsa.py, and num_nextn_predict_layers is not a
+# recognised config field. So a transformers load builds layers 0-77 only and
+# the MTP weights are dropped on save. Phala's checkpoint retains the field.
+# Consequence: our checkpoint cannot serve MTP speculative decoding even though
+# the release supports it. Quality evaluation will NOT catch this — quality is
+# unchanged, only decode speed. Confirm against production before adoption; the
+# ignore entry below is defensive, so a future transformers that does build the
+# layer will not silently GPTQ it.
+#
+# RED LINE: index_topk_freq / index_topk are not to be touched by this or any
+# downstream config. The indexer stays BF16 by design (tiny — 1.8% of activated
+# bytes — and token-selection quality risk).
+#
+# Gate order: run glm52_distributed_w4afp8_smoke.yaml first. This is the first
+# GPTQ run on a family that is not M3, and our pre-quantization static gates
+# are still M3-specific (goal 5).
+name: glm52_distributed_w4afp8_full
+
+model:
+  id: zai-org/GLM-5.2
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  # Same small-cpu-budget rationale as the M3 distributed configs (shm VMA
+  # exhaustion; bulk weights go to DistributedDiskCache).
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/nfs/hoangduy/offload/glm52-w4afp8-full
+
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  # GPTQ owns the routed experts only. Everything listed here is either owned by
+  # the FP8 modifier via fp8_dynamic_targets (disjoint sets) or stays BF16.
+  ignore:
+    - "lm_head"
+    # GlmMoeDsaTopkRouter holds `gate.weight` as a bare Parameter rather than an
+    # nn.Linear, so it is not a quantization target today. Kept explicit so it
+    # stays out of scope if that ever changes.
+    - "re:.*mlp[.]gate$"
+    # Owned by the FP8 modifier below.
+    - "re:.*mlp[.]shared_experts[.].*"
+    # Covers both the MLA projections (FP8, below) and the DSA indexer (BF16).
+    - "re:.*self_attn[.].*"
+    # first_k_dense_replace = 3 -> layers 0,1,2 are dense GlmMoeDsaMLP.
+    - "re:.*layers[.][0-2][.].*"
+    # Defensive: the MTP layer would be index 78 (num_hidden_layers = 78).
+    - "re:.*layers[.]78[.].*"
+  fp8_dynamic_targets:
+    # MLA projections, enumerated — this also excludes self_attn.indexer.*
+    # (wq_b / wk / weights_proj), which must remain BF16.
+    - "re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    # Shared experts are unfused on this architecture.
+    - "re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    # The three dense layers, likewise unfused.
+    - "re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$"
+  gptq_dampening_frac: 0.01
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 512
+  max_seq_length: 2048
+  seed: 42
+  # 256 experts at top-8 means a 512-sample set touches any given expert rarely;
+  # calibrating all experts is not optional here the way it might be at M3's
+  # 128/top-4.
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/nfs/hoangduy/results/glm52-w4afp8-full

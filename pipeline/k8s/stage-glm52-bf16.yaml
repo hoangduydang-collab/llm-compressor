@@ -28,10 +28,11 @@
 #     that fills a volume other people depend on.
 #   * Refuses to redownload if the snapshot is already complete, so re-applying
 #     is cheap rather than another 1.35 TiB of traffic.
-#   * `--max-workers 8`, half the reference's 16. The reference is a prod
-#     prestage on a quiet node; this cluster is shared and colleagues load
-#     weights from this same cephfs, so download parallelism is halved to keep
-#     read latency for them reasonable. It costs wall-clock, not correctness.
+#   * Parallelism is 6 processes x `--max-workers 4`. See REVISION below: the
+#     original halved-workers single stream was measured at 140 MiB/s because
+#     files were fetched one at a time, so halving had cost 2.6 h of wall-clock
+#     while buying nobody any relief. The revised setting trades a short window
+#     of higher cephfs write load for finishing sooner.
 #   * Scoped `du` only. Never `du -sh` the whole cache — that is a metadata storm
 #     on cephfs for every other reader.
 #   * Bounded and self-cleaning: activeDeadlineSeconds, backoffLimit,
@@ -40,6 +41,73 @@
 # `priorityClassName` is deliberately unset: our token cannot list
 # priorityclasses, so naming one would be a guess. Default priority is safe here
 # because a zero-GPU pod cannot evict GPU workloads.
+#
+# ---------------------------------------------------------------------------
+# REVISION 2026-08-26: bucketed parallel download.
+#
+# The first revision ran a single `huggingface-cli download --max-workers 8`.
+# Six consecutive samples of the blobs dir found exactly ONE `.incomplete` file,
+# its size resetting each time: files were being fetched strictly one at a time,
+# so `--max-workers 8` bought nothing — the file-level ThreadPoolExecutor is
+# effectively serial once hf_transfer is doing the per-file chunking. Local
+# resources all had headroom too: NIC 10 Gbps at 12%, node CPU 1% of 192 cores,
+# cgroup throttling 0.85%.
+#
+# That serialization was real, but it was NOT the constraint — see OUTCOME below
+# before assuming this revision made anything faster.
+#
+# Fix: replace the one process with SIX CONCURRENT PROCESSES over disjoint file
+# sets. Separate processes cannot be serialized by a shared thread pool or GIL
+# the way threads inside one process were. The repo has 282 shards named
+# `model-000NN-of-00282.safetensors` and the digit before `-of-` distributes
+# 28-29 shards per value, so bucketing on that digit needs no shard list and
+# stays balanced: five buckets of ~56 shards, plus one small process for the 13
+# non-shard files.
+#
+# The 4-core cap is lifted to 8 requested / 24 limit for the six processes.
+# That is 12% of this node's 192 cores, and `kubectl top` showed the node at 1%.
+#
+# Restarting costs at most one in-flight shard (~5 GiB). Every completed blob is
+# reused — the HF cache is keyed by content hash, so the ~168 GiB already staged
+# was NOT redownloaded.
+#
+# ---------------------------------------------------------------------------
+# OUTCOME 2026-08-26: bucketing did NOT speed anything up. Read this before
+# reaching for more parallelism here.
+#
+# Measured from NIC rx_bytes (see the MEASUREMENT WARNING below on why not du):
+#     1 process,  1 concurrent file   ->  94 MiB/s
+#     6 processes, 5 concurrent files ->  98 MiB/s    (+4% for 5x concurrency)
+#
+# The ceiling is the ca-van3 egress path to huggingface.co, not our client.
+# Two independent probes confirmed it, each pulling byte ranges to /dev/null
+# from a CA node other than the job's, while the job ran:
+#     probe on ca-gpu03, 16 conns  ->   3 MiB/s   (job held 93 MiB/s)
+#     probe on ca-gpu04, 16 conns  ->  12 MiB/s   (job held 93 MiB/s)
+# A second consumer gets scraps, so the region is saturated at ~100 MiB/s
+# aggregate. More pods, processes, or connections cannot beat that. 1404 GiB
+# therefore takes ~4.2 h wall-clock and no download tuning changes that.
+#
+# Alternate sources, measured from ca-gpu04, are all WORSE from this region:
+#     huggingface.co  12.3 MiB/s   |   hf-mirror.com   1.6 MiB/s
+#     modelscope.cn    4.5 MiB/s
+# Worth recording anyway: GLM-5.2 exists on ModelScope as `ZhipuAI/GLM-5.2`
+# (NOT `zai-org/GLM-5.2`, which 404s there). That is a fallback for when HF is
+# unreachable, not a way to go faster.
+#
+# The bucketing is KEPT despite flat throughput, for two reasons that are not
+# speed: a stalled bucket no longer stalls the whole transfer, and restarting
+# again to revert would re-cost the in-flight shards for no gain. It is NOT a
+# throughput lever — do not scale the bucket count up expecting one.
+#
+# MEASUREMENT WARNING. hf_transfer preallocates each ~5 GiB shard, so `du` on
+# the blobs dir jumps by 5 GiB when a file STARTS and then sits flat while it
+# fills. Sampling du over 30-120 s yields anywhere from 28 to 140 MiB/s
+# depending on whether the window happened to catch a file start; an earlier
+# "140 MiB/s" reading was exactly that artifact, and it is what made the serial
+# download look faster than it was. Always measure with
+# /sys/class/net/eth0/statistics/rx_bytes over a >=60 s window.
+# ---------------------------------------------------------------------------
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -71,10 +139,16 @@ spec:
           env:
             - {name: MODEL_ID, value: "zai-org/GLM-5.2"}
             - {name: HF_HUB_CACHE, value: "/models/.hf-cache"}
-            # 1.35 TiB plus headroom, in GiB. The job aborts rather than
-            # starting a download it cannot finish on shared storage.
-            - {name: REQUIRED_FREE_GIB, value: "1700"}
-            - {name: MAX_WORKERS, value: "8"}
+            # Measured from the repo listing, not guessed: 282 shards,
+            # 1403.2 GiB total. The free-space guard needs what REMAINS, since
+            # part of the snapshot is usually already staged.
+            - {name: TOTAL_GIB, value: "1404"}
+            - {name: EXPECTED_SHARDS, value: "282"}
+            - {name: HEADROOM_GIB, value: "60"}
+            # Per-process worker count. Parallelism comes from BUCKETS (separate
+            # processes); this is only the in-process pool, kept small so total
+            # connection count stays bounded.
+            - {name: MAX_WORKERS, value: "4"}
           command: ["sh", "-c"]
           args:
             - |
@@ -84,10 +158,17 @@ spec:
               echo "==> target: $REPO_DIR"
 
               # --- guard 1: free space, fail closed -------------------------
+              # Require only what is still MISSING plus headroom. Demanding the
+              # full 1404 GiB would spuriously abort a resume that is already
+              # most of the way done.
+              DONE_GIB=$(du -sm "$REPO_DIR/blobs" 2>/dev/null | cut -f1 || echo 0)
+              DONE_GIB=$(( ${DONE_GIB:-0} / 1024 ))
+              NEED_GIB=$(( TOTAL_GIB - DONE_GIB + HEADROOM_GIB ))
               AVAIL_GIB=$(df -B1G --output=avail "$HF_HUB_CACHE" 2>/dev/null \
                           | tail -1 | tr -d ' ')
-              echo "==> free on cache volume: ${AVAIL_GIB} GiB (need ${REQUIRED_FREE_GIB})"
-              if [ "$AVAIL_GIB" -lt "$REQUIRED_FREE_GIB" ]; then
+              echo "==> already staged: ${DONE_GIB} GiB of ${TOTAL_GIB} GiB"
+              echo "==> free on cache volume: ${AVAIL_GIB} GiB (need ${NEED_GIB})"
+              if [ "$AVAIL_GIB" -lt "$NEED_GIB" ]; then
                 echo "ABORT: insufficient free space; refusing to fill shared storage" >&2
                 exit 1
               fi
@@ -115,8 +196,67 @@ spec:
               export HF_HUB_ENABLE_HF_TRANSFER=1
               export HF_HUB_DISABLE_XET=1
 
-              echo "==> downloading $MODEL_ID into $HF_HUB_CACHE (workers=$MAX_WORKERS)"
+              # --- aggregate progress, one line per interval ----------------
+              # Scoped to our own blobs dir. Never du the whole cache: that is a
+              # metadata storm on cephfs for every other reader.
+              ( while true; do
+                  sleep 120
+                  NOW=$(du -sm "$REPO_DIR/blobs" 2>/dev/null | cut -f1 || echo 0)
+                  echo "[progress] $(( ${NOW:-0} / 1024 )) / ${TOTAL_GIB} GiB"
+                done ) &
+              LOGGER=$!
+              # Kill the logger on any exit path, so it cannot outlive the run.
+              trap 'kill "$LOGGER" 2>/dev/null || true' EXIT INT TERM
+
+              # --- bucketed parallel download -------------------------------
+              # Shards are model-000NN-of-00282.safetensors; the digit before
+              # `-of-` is evenly distributed (28-29 shards per value), so these
+              # five globs partition the 282 shards into ~56 each with no shard
+              # list and no overlap. fnmatch expands [01] as a character set,
+              # and the glob anchors that digit immediately before `-of-`, so a
+              # shard can match exactly one bucket.
+              PIDS=""
+              N=0
+              for PAT in '[01]' '[23]' '[45]' '[67]' '[89]'; do
+                N=$(( N + 1 ))
+                huggingface-cli download "$MODEL_ID" \
+                  --include "model-*${PAT}-of-*.safetensors" \
+                  --max-workers "$MAX_WORKERS" \
+                  > "/tmp/bucket-${N}.log" 2>&1 &
+                PIDS="$PIDS $!"
+                echo "==> bucket $N  model-*${PAT}-of-*.safetensors  pid $!"
+              done
+
+              # Config, tokenizer, and the weight index: small, and the index is
+              # what the completeness check below reads.
+              huggingface-cli download "$MODEL_ID" \
+                --exclude "model-*-of-*.safetensors" --max-workers 2 \
+                > /tmp/bucket-meta.log 2>&1 &
+              PIDS="$PIDS $!"
+              echo "==> bucket meta (non-shard files) pid $!"
+
+              RC=0
+              for P in $PIDS; do
+                wait "$P" || { RC=1; echo "==> pid $P FAILED" >&2; }
+              done
+              if [ "$RC" -ne 0 ]; then
+                echo "ABORT: a bucket failed; tails follow" >&2
+                tail -n 25 /tmp/bucket-*.log >&2
+                exit 1
+              fi
+
+              # --- sweep + completeness gate, fail closed -------------------
+              # One serial pass fills anything a bucket glob could have missed
+              # and materializes the snapshot dir. Cheap when nothing is absent.
+              echo "==> sweep pass"
               huggingface-cli download "$MODEL_ID" --max-workers "$MAX_WORKERS"
+
+              HAVE=$(find "$REPO_DIR/snapshots" -name '*.safetensors' | wc -l)
+              echo "==> shards resolved: $HAVE / $EXPECTED_SHARDS"
+              if [ "$HAVE" -lt "$EXPECTED_SHARDS" ]; then
+                echo "ABORT: incomplete snapshot; not marking this staged" >&2
+                exit 1
+              fi
 
               # Scoped only — never du the whole cache.
               du -sh "$REPO_DIR" 2>/dev/null || true
@@ -128,12 +268,14 @@ spec:
             - secretRef: {name: hf-token, optional: true}
           resources:
             requests:
-              cpu: "2"
-              memory: "4Gi"
+              cpu: "8"
+              memory: "8Gi"
               ephemeral-storage: "2Gi"
             limits:
-              cpu: "4"
-              memory: "8Gi"
+              # Six hf_transfer processes. 24 cores is 12% of this node's 192,
+              # and `kubectl top node` measured the node at 1% CPU / 0% memory.
+              cpu: "24"
+              memory: "24Gi"
               # Downloads land on the PVC, not node disk; this only has to cover
               # pip and hf_transfer scratch. Capped so a runaway local write
               # cannot fill the node's disk under other pods.

@@ -11,7 +11,6 @@ from transformers.core_model_loading import (
     WeightTransform,
 )
 from transformers.models.deepseek_v4.modeling_deepseek_v4 import DeepseekV4Experts
-from transformers.models.glm_moe_dsa.modeling_glm_moe_dsa import GlmMoeDsaNaiveMoe
 from transformers.models.minimax_m3_vl.modeling_minimax_m3_vl import (
     MiniMaxM3VLExperts,
 )
@@ -24,6 +23,41 @@ __all__ = [
     "set_save_conversion_mapping",
 ]
 
+
+def _first_class(module_path: str, *candidates: str) -> type | None:
+    """
+    Resolve the first of `candidates` that exists in `module_path`, or None.
+
+    transformers renames experts classes between minor versions — GLM's became
+    `GlmMoeDsaExperts` in 5.14 having been `GlmMoeDsaNaiveMoe` in 5.12 — and this
+    module is imported on every quantization run. A hard `from ... import` of the
+    wrong spelling is therefore not a missing-GLM-support problem, it is an
+    ImportError that takes the whole MoE linearize path down, MiniMax-M3
+    included. Resolve leniently and let the registry simply omit the entry if no
+    spelling matches; `has_linearize_load_mappings` then routes that
+    architecture to the post-load fallback, which is the correct degradation.
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError:  # architecture absent from this transformers
+        return None
+    for name in candidates:
+        cls = getattr(module, name, None)
+        if cls is not None:
+            return cls
+    return None
+
+
+# GLM-5.x DSA. `GlmMoeDsaNaiveMoe` on transformers 5.12, `GlmMoeDsaExperts` from
+# 5.14 (which is what the quant venv pins) — accept either spelling.
+_GlmMoeDsaExperts = _first_class(
+    "transformers.models.glm_moe_dsa.modeling_glm_moe_dsa",
+    "GlmMoeDsaExperts",
+    "GlmMoeDsaNaiveMoe",
+)
+
 # Keyed by the model's own `config.model_type`, *not* by conversion pattern —
 # unlike `ARCH_TO_2D_MAPPINGS` below, which is keyed by conversion pattern. Keep
 # `has_linearize_load_mappings` in agreement with both or the fast path is entered
@@ -31,18 +65,22 @@ __all__ = [
 # TODO: in the future, we can potentially grep the source code for this
 ARCH_TO_EXPERTS_MODULE_CLS = {
     "deepseek_v4": DeepseekV4Experts,
-    # GLM-5.x DSA (`GlmMoeDsaForCausalLM`). Its expert module presents exactly the
-    # same contract as MiniMax-M3's — same `@use_experts_implementation` arguments
-    # (is_concatenated/has_gate True, is_transposed/has_bias False) and the same
-    # `gate_up_proj[E, 2I, H]` / `down_proj[E, H, I]` layout — so it linearizes
-    # through the identical path. The 2D mappings are inherited from `qwen2_moe`
-    # via `_MODEL_TO_CONVERSION_PATTERN`, which matches the per-expert
-    # `gate_proj`/`up_proj`/`down_proj` layout GLM ships in its checkpoints.
-    "glm_moe_dsa": GlmMoeDsaNaiveMoe,
     "minimax_m3_vl": MiniMaxM3VLExperts,
     "qwen2_moe": Qwen2MoeExperts,
     "qwen3_moe": Qwen3MoeExperts,
 }
+
+# GLM-5.x DSA (`GlmMoeDsaForCausalLM`). Its expert module presents exactly the
+# same contract as MiniMax-M3's — same `@use_experts_implementation` arguments
+# (is_concatenated/has_gate True, is_transposed/has_bias False) and the same
+# `gate_up_proj[E, 2I, H]` / `down_proj[E, H, I]` layout — so it linearizes
+# through the identical path. The 2D mappings are inherited from `qwen2_moe` via
+# `_MODEL_TO_CONVERSION_PATTERN`, which matches the per-expert
+# `gate_proj`/`up_proj`/`down_proj` layout GLM ships in its checkpoints.
+# Registered conditionally so an unknown future spelling degrades to the
+# post-load fallback rather than breaking module import.
+if _GlmMoeDsaExperts is not None:
+    ARCH_TO_EXPERTS_MODULE_CLS["glm_moe_dsa"] = _GlmMoeDsaExperts
 
 ARCH_TO_2D_MAPPINGS = {
     "deepseek_v4": (

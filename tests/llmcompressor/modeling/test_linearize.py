@@ -168,7 +168,9 @@ def test_glm_moe_dsa_load_mapping_keeps_experts_two_dimensional():
         "glm_moe_dsa"
     )
 
-    assert experts_cls.__name__ == "GlmMoeDsaNaiveMoe"
+    # Renamed GlmMoeDsaNaiveMoe -> GlmMoeDsaExperts in transformers 5.14; the
+    # quant venv pins 5.14.1, local dev may still be on 5.12.
+    assert experts_cls.__name__ in {"GlmMoeDsaExperts", "GlmMoeDsaNaiveMoe"}
     for mappings in (load_mappings, save_mappings):
         assert not any(
             isinstance(mapping, WeightConverter)
@@ -194,6 +196,24 @@ def test_glm_moe_dsa_load_mapping_keeps_experts_two_dimensional():
     assert expected_targets <= {
         target for mapping in expert_renames for target in mapping.target_patterns
     }
+
+
+def test_conversion_mappings_imports_on_any_supported_transformers():
+    """
+    Every experts class in the registry must be a real class on the installed
+    transformers. A hard top-level import of a renamed class here is not a
+    missing-support bug, it is an ImportError that takes the whole MoE linearize
+    path down — MiniMax-M3 included — on any version that spells it differently.
+    The quant venv pins transformers 5.14.1 while local dev may sit on 5.12, and
+    GLM's experts class is spelled differently across that boundary.
+    """
+    import importlib
+
+    importlib.reload(
+        importlib.import_module("llmcompressor.modeling.moe.conversion_mappings")
+    )
+    for model_type, cls in ARCH_TO_EXPERTS_MODULE_CLS.items():
+        assert isinstance(cls, type), f"{model_type} maps to {cls!r}, not a class"
 
 
 @pytest.mark.skipif(

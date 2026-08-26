@@ -1,0 +1,146 @@
+---
+# One-shot Job: stage zai-org/GLM-5.2 (BF16, ~1.35 TiB) into the cephfs HF cache
+# on the infermesh-test cluster, so the quantization run has a BF16 source.
+#
+#   kubectl apply -f pipeline/k8s/stage-glm52-bf16.yaml
+#   kubectl logs -n evaluation -f job/stage-glm52-bf16
+#   kubectl delete -f pipeline/k8s/stage-glm52-bf16.yaml    # ttl also cleans up
+#
+# Modelled on infermesh's _prestage/prepull-glm-5-2-w4afp8-ca.yaml, which is the
+# convention for the CA region: all 6 CA prestage Jobs use
+# `HF_HUB_CACHE=<mount>/.hf-cache` against `claimName: model-cache-shared`, so
+# the model lands at `.hf-cache/models--zai-org--GLM-5.2`. Two deliberate
+# departures from that file: namespace `evaluation` (this is infermesh-test, not
+# prod), and NO nodeSelector — its pin to a named prod node does not exist here,
+# and letting the scheduler place us avoids contending for one specific node.
+#
+# BLAST RADIUS. The intended effect is exactly one thing: a new model directory
+# appears on the shared PVC. Everything else is constrained to that.
+#   * Requests NO GPU. The resources block omits nvidia.com/gpu entirely, so it
+#     reserves none and cannot preempt anyone's training or serving pod. It does
+#     tolerate the nvidia.com/gpu taint, which is unavoidable: the
+#     model-cache-shared PV is region-pinned to ca-van3 and every ca-van3 node is
+#     a tainted GPU node, so there is no CPU-only node that can mount the cache.
+#   * Writes ONLY inside its own repo directory. huggingface-cli keys the cache
+#     by repo id, so it creates `models--zai-org--GLM-5.2` and its `.locks`
+#     entry, and touches no other model. Nothing here deletes or rewrites.
+#   * Fails closed on free space BEFORE downloading, so it cannot be the thing
+#     that fills a volume other people depend on.
+#   * Refuses to redownload if the snapshot is already complete, so re-applying
+#     is cheap rather than another 1.35 TiB of traffic.
+#   * `--max-workers 8`, half the reference's 16. The reference is a prod
+#     prestage on a quiet node; this cluster is shared and colleagues load
+#     weights from this same cephfs, so download parallelism is halved to keep
+#     read latency for them reasonable. It costs wall-clock, not correctness.
+#   * Scoped `du` only. Never `du -sh` the whole cache — that is a metadata storm
+#     on cephfs for every other reader.
+#   * Bounded and self-cleaning: activeDeadlineSeconds, backoffLimit,
+#     ttlSecondsAfterFinished, so it cannot linger holding a node slot.
+#
+# `priorityClassName` is deliberately unset: our token cannot list
+# priorityclasses, so naming one would be a guess. Default priority is safe here
+# because a zero-GPU pod cannot evict GPU workloads.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: stage-glm52-bf16
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: model-prestage
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  # 1.35 TiB. Generous but bounded — a stalled job must not hold a slot forever.
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        owner: hoangduy.dang
+        purpose: model-prestage
+    spec:
+      # OnFailure restarts in place; the HF cache resumes from partial blobs
+      # rather than starting the 1.35 TiB over.
+      restartPolicy: OnFailure
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: download
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: MODEL_ID, value: "zai-org/GLM-5.2"}
+            - {name: HF_HUB_CACHE, value: "/models/.hf-cache"}
+            # 1.35 TiB plus headroom, in GiB. The job aborts rather than
+            # starting a download it cannot finish on shared storage.
+            - {name: REQUIRED_FREE_GIB, value: "1700"}
+            - {name: MAX_WORKERS, value: "8"}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              REPO_DIR="$HF_HUB_CACHE/models--$(echo "$MODEL_ID" | sed 's#/#--#g')"
+
+              echo "==> target: $REPO_DIR"
+
+              # --- guard 1: free space, fail closed -------------------------
+              AVAIL_GIB=$(df -B1G --output=avail "$HF_HUB_CACHE" 2>/dev/null \
+                          | tail -1 | tr -d ' ')
+              echo "==> free on cache volume: ${AVAIL_GIB} GiB (need ${REQUIRED_FREE_GIB})"
+              if [ "$AVAIL_GIB" -lt "$REQUIRED_FREE_GIB" ]; then
+                echo "ABORT: insufficient free space; refusing to fill shared storage" >&2
+                exit 1
+              fi
+
+              # --- guard 2: already staged? ---------------------------------
+              # A complete snapshot has the index plus every shard it names.
+              IDX=$(find "$REPO_DIR/snapshots" -name model.safetensors.index.json \
+                    2>/dev/null | head -1 || true)
+              if [ -n "$IDX" ]; then
+                SNAP=$(dirname "$IDX")
+                WANT=$(grep -o '"model-[0-9]*-of-[0-9]*\.safetensors"' "$IDX" \
+                       | sort -u | wc -l)
+                HAVE=$(find "$SNAP" -name '*.safetensors' | wc -l)
+                echo "==> existing snapshot: $HAVE/$WANT shards resolved"
+                if [ "$WANT" -gt 0 ] && [ "$HAVE" -ge "$WANT" ]; then
+                  echo "==> already complete; nothing to download"
+                  du -sh "$REPO_DIR" 2>/dev/null || true
+                  echo DONE
+                  exit 0
+                fi
+                echo "==> incomplete, resuming"
+              fi
+
+              pip install --quiet --no-cache-dir 'huggingface_hub==0.27.1' hf_transfer
+              export HF_HUB_ENABLE_HF_TRANSFER=1
+              export HF_HUB_DISABLE_XET=1
+
+              echo "==> downloading $MODEL_ID into $HF_HUB_CACHE (workers=$MAX_WORKERS)"
+              huggingface-cli download "$MODEL_ID" --max-workers "$MAX_WORKERS"
+
+              # Scoped only — never du the whole cache.
+              du -sh "$REPO_DIR" 2>/dev/null || true
+              echo DONE
+          envFrom:
+            # Not present in this namespace today; GLM-5.2 is public and
+            # ungated, so anonymous download works. Optional so the Job still
+            # runs, and picks a token up automatically if one is ever added.
+            - secretRef: {name: hf-token, optional: true}
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+              ephemeral-storage: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              # Downloads land on the PVC, not node disk; this only has to cover
+              # pip and hf_transfer scratch. Capped so a runaway local write
+              # cannot fill the node's disk under other pods.
+              ephemeral-storage: "4Gi"
+          volumeMounts:
+            - {name: model-cache, mountPath: /models}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-shared

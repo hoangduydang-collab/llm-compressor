@@ -8,7 +8,7 @@
 # below. The target/ignore patterns themselves are verified and can stand.
 # ############################################################################
 #
-# BLOCKER 1 — the MTP head, and it is not hypothetical.
+# BLOCKER 1 — the MTP head. Needs a post-processing step, NOT a version bump.
 #   * Production runs speculative decoding for GLM-5.2 today:
 #     glm-5-2-jp-1m uses --speculative-algorithm=EAGLE --speculative-num-steps=5
 #     --speculative-num-draft-tokens=6 ("native MTP head"), and glm-5-2-ca-pd
@@ -17,15 +17,36 @@
 #     weight index has 2337 tensors under model.layers.78, including eh_proj,
 #     enorm, hnorm and a full 256-expert MoE, all quantized. zai-org/GLM-5.2-FP8
 #     likewise lists layers.78.{eh_proj,enorm,hnorm,shared_head.norm}.
-#   * transformers 5.12.1 does not model it: zero references to
-#     nextn/mtp/eh_proj/enorm/hnorm in modeling_glm_moe_dsa.py, and
-#     num_nextn_predict_layers is not a recognised config field. It also does not
-#     model `self_attn.indexers_proj` or `shared_head`, both of which appear in
-#     the official checkpoint.
-#   So a transformers load builds layers 0-77 and this recipe would emit a
-#   checkpoint missing the entire MTP head — unservable in production's
-#   configuration. Quality evaluation CANNOT catch this; only decode speed
-#   changes. Resolve before spending GPU time, not after.
+#   * transformers does not model MTP for ANY architecture, and this is a
+#     deliberate boundary rather than a gap in glm_moe_dsa. Checked, not assumed:
+#     `eh_proj` and `shared_head` appear in ZERO files across the whole
+#     transformers package; `num_nextn_predict_layers` appears in exactly two,
+#     `configuration_deepseek_v4.py` and `configuration_nemotron_h.py`, both
+#     config-only. Upstream `main` is the same, and decisively
+#     `deepseek_v3/modeling_deepseek_v3.py` — the canonical MTP model, shipped
+#     for over a year — has no MTP either and builds exactly
+#     `config.num_hidden_layers` layers. HF implements the base LM; MTP/EAGLE
+#     draft heads are serving-time features that vLLM and SGLang implement, and
+#     the released checkpoints' MTP tensors are loaded-and-ignored as unexpected
+#     keys. transformers also does not model `self_attn.indexers_proj` or
+#     `shared_head`, which the official checkpoint has.
+#     => Upgrading transformers will NOT unlock this. (Worth upgrading anyway for
+#     the 5.14 offloaded-save fixes noted in setup.py, just not for MTP.)
+#   So a load builds layers 0-77 and save_pretrained drops the head. Quality
+#   evaluation CANNOT catch that; only decode speed changes.
+#
+#   THE PATH: quantize 0-77 here, then graft the MTP head from the source
+#   release and patch the weight index — safetensors-level surgery for which this
+#   repo already has precedent (reexport_minimax_m3_vllm.py,
+#   prepare_int4_drafter.py, m3_shared_expert_repair.py, verify_quant_checkpoint.py).
+#   The head need not even be W4AFP8: EAGLE verifies drafts against the target,
+#   so draft-head precision costs acceptance rate, not output quality, and
+#   leaving one layer of 79 at source precision is cheap. Phala did quantize
+#   theirs, so it is a tunable, not a requirement.
+#
+#   Note this is genuinely new for us: M3's speculative decoding (goal 2h) used
+#   an EXTERNAL EAGLE3 drafter checkpoint, so no in-checkpoint draft layer ever
+#   had to survive quantization. There is no precedent in the pipeline.
 #
 # BLOCKER 2 — no BF16 source is staged, and the old cluster is gone.
 #   The only GLM-5.2 weights on the Rancher shared cache (`model-cache-shared`,
@@ -33,11 +54,36 @@
 #     .hf-cache/models--zai-org--GLM-5.2-FP8        (model_type glm_moe_dsa,
 #        quant_method fp8, weight_block_size [128,128], activation dynamic)
 #     .hf-cache/models--PhalaCloud--GLM-5.2-W4AFP8  (the comparator)
-#   `zai-org/GLM-5.2` BF16 is NOT staged and is roughly 1.5 TB to fetch. So the
-#   choice is: stage the BF16 release, or quantize from the FP8 release (which
-#   means dequantising a 128x128 block-scaled FP8 checkpoint as the GPTQ source
-#   — plausible, probably what Phala did, but it is a different experiment and
+#   `zai-org/GLM-5.2` BF16 is NOT staged. Sizes, computed from the config and
+#   cross-checked against a measured figure rather than taken from a web page:
+#     743.3 B params  ->  BF16 1487 GB (1.35 TiB) | FP8 743 GB | W4A8 ~372 GiB
+#   The W4A8 line is confirmed by the prepull manifest's measured ~368 GiB for
+#   Phala's checkpoint, i.e. 4.25 bits/param — int4 g128 plus block scales.
+#   (Note: HF's repo page reports "753" for this model; that is the parameter
+#   count in billions, not gigabytes. Do not size storage from it.)
+#   So the choice is: stage the 1.35 TiB BF16 release, or quantize from the FP8
+#   release (dequantising a 128x128 block-scaled FP8 checkpoint as the GPTQ
+#   source — plausible, probably what Phala did, but a different experiment that
 #   must be labelled as one). `dtype: bfloat16` below assumes the former.
+#
+# STORAGE — where these paths actually live.
+#   All of it is the `model-cache-shared` PVC (ceph, `sc-file-ceph-ca`,
+#   region-pinned ca-van3; 72 T total, ~70 T free at 2026-08-26). The repo
+#   runbook mounts it at /mnt/cephfs; the production prepull Jobs mount the same
+#   claim at /models. Same volume, different mountPath.
+#
+#   Source weights go in the HF cache, following the production prepull
+#   convention exactly (HF_HUB_CACHE=<mount>/.hf-cache), which lands them at
+#   `.hf-cache/models--zai-org--GLM-5.2`. That is additive — the cache is keyed
+#   by repo id, so it cannot disturb the colleagues' models already there — and
+#   it dedupes, since the serving workers run HF_HUB_OFFLINE against this cache.
+#
+#   Our OUTPUT and offload scratch deliberately do NOT go in `.hf-cache`: that
+#   is a tool-managed cache and hand-made directories inside it risk confusing
+#   cache resolution. They go under an owned top-level directory instead
+#   (precedent: `spec-dev/` on the same volume). A dedicated PVC is possible
+#   here — `sc-file-ceph-ca` has a live CSI provisioner — but it would draw from
+#   the same ceph pool, so it would buy naming hygiene rather than isolation.
 #
 # Structurally this is minimax_m3_distributed_r8_full.yaml — same two-modifier
 # design, same disjoint-set discipline (GPTQ ignores what the FP8 modifier owns
@@ -73,8 +119,9 @@
 # bytes here against M3's 74%. The FP8 leg is still worth taking for the same
 # reason it was there, but the reason has to be stated the other way round —
 # once the routed experts are int4, attention+shared is 70.2% of what remains,
-# so halving it yields 1.54x, near-identical to M3's quoted 1.55x. Whole model:
-# ~74.7 GiB BF16 -> ~27.2 GiB.
+# so halving it yields 1.54x, near-identical to M3's quoted 1.55x. Summed over
+# 78 layers that is ~74.7 GiB -> ~27.2 GiB of per-token weight TRAFFIC — these
+# are bandwidth figures, not checkpoint sizes; for on-disk sizes see BLOCKER 2.
 #
 # Why M3's patterns cannot be reused (audited against the real module tree,
 # not assumed — all three of M3's fp8_dynamic_targets match ZERO modules here):
@@ -127,8 +174,11 @@
 name: glm52_distributed_w4afp8_full
 
 model:
-  # BLOCKED: not staged. See BLOCKER 2. The FP8 release IS staged at
-  # /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2-FP8 if we choose that source.
+  # BLOCKED: not staged. Stage with HF_HUB_CACHE=/mnt/cephfs/.hf-cache so it
+  # lands at .hf-cache/models--zai-org--GLM-5.2, matching the production prepull
+  # convention; then this id resolves offline. 1.35 TiB. The FP8 release is
+  # already staged at .hf-cache/models--zai-org--GLM-5.2-FP8 if we pick that
+  # source instead (see BLOCKER 2).
   id: zai-org/GLM-5.2
   trust_remote_code: true
   auto_class: AutoModelForCausalLM
@@ -138,8 +188,9 @@ model:
   # exhaustion; bulk weights go to DistributedDiskCache).
   max_memory:
     cpu: 32000000000
-  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. model-cache-shared
-  # is the sole CA-region RWX storage (see the region note below).
+  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. /mnt/cephfs is the
+  # model-cache-shared PVC, the sole CA-region RWX storage. Scratch and output
+  # sit under an owned top-level dir, NOT inside the tool-managed .hf-cache.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-full
 
 quantization:

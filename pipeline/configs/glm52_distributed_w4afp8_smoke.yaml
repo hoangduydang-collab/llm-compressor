@@ -52,8 +52,11 @@
 name: glm52_distributed_w4afp8_smoke
 
 model:
-  # BLOCKED: not staged. See BLOCKER 2. The FP8 release IS staged at
-  # /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2-FP8 if we choose that source.
+  # BLOCKED: not staged. Stage with HF_HUB_CACHE=/mnt/cephfs/.hf-cache so it
+  # lands at .hf-cache/models--zai-org--GLM-5.2, matching the production prepull
+  # convention; then this id resolves offline. 1.35 TiB. The FP8 release is
+  # already staged at .hf-cache/models--zai-org--GLM-5.2-FP8 if we pick that
+  # source instead (see BLOCKER 2).
   id: zai-org/GLM-5.2
   trust_remote_code: true
   auto_class: AutoModelForCausalLM
@@ -61,8 +64,9 @@ model:
   device_map: auto_offload
   max_memory:
     cpu: 32000000000
-  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. model-cache-shared
-  # is the sole CA-region RWX storage (see the region note below).
+  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. /mnt/cephfs is the
+  # model-cache-shared PVC, the sole CA-region RWX storage. Scratch and output
+  # sit under an owned top-level dir, NOT inside the tool-managed .hf-cache.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-smoke
 
 quantization:

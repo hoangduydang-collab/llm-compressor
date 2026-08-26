@@ -2,6 +2,43 @@
 # (W8A8) on MLA attention / shared experts / the three dense layers, quantized
 # from source BF16.
 #
+# ############################################################################
+# STATUS 2026-08-26: DO NOT LAUNCH. Two blockers, both established on-cluster,
+# both needing a decision rather than more investigation. See "BLOCKER 1/2"
+# below. The target/ignore patterns themselves are verified and can stand.
+# ############################################################################
+#
+# BLOCKER 1 — the MTP head, and it is not hypothetical.
+#   * Production runs speculative decoding for GLM-5.2 today:
+#     glm-5-2-jp-1m uses --speculative-algorithm=EAGLE --speculative-num-steps=5
+#     --speculative-num-draft-tokens=6 ("native MTP head"), and glm-5-2-ca-pd
+#     uses steps=2 / draft-tokens=3.
+#   * Both reference checkpoints carry the head. PhalaCloud/GLM-5.2-W4AFP8's
+#     weight index has 2337 tensors under model.layers.78, including eh_proj,
+#     enorm, hnorm and a full 256-expert MoE, all quantized. zai-org/GLM-5.2-FP8
+#     likewise lists layers.78.{eh_proj,enorm,hnorm,shared_head.norm}.
+#   * transformers 5.12.1 does not model it: zero references to
+#     nextn/mtp/eh_proj/enorm/hnorm in modeling_glm_moe_dsa.py, and
+#     num_nextn_predict_layers is not a recognised config field. It also does not
+#     model `self_attn.indexers_proj` or `shared_head`, both of which appear in
+#     the official checkpoint.
+#   So a transformers load builds layers 0-77 and this recipe would emit a
+#   checkpoint missing the entire MTP head — unservable in production's
+#   configuration. Quality evaluation CANNOT catch this; only decode speed
+#   changes. Resolve before spending GPU time, not after.
+#
+# BLOCKER 2 — no BF16 source is staged, and the old cluster is gone.
+#   The only GLM-5.2 weights on the Rancher shared cache (`model-cache-shared`,
+#   mounted /mnt/cephfs, 70T free) are:
+#     .hf-cache/models--zai-org--GLM-5.2-FP8        (model_type glm_moe_dsa,
+#        quant_method fp8, weight_block_size [128,128], activation dynamic)
+#     .hf-cache/models--PhalaCloud--GLM-5.2-W4AFP8  (the comparator)
+#   `zai-org/GLM-5.2` BF16 is NOT staged and is roughly 1.5 TB to fetch. So the
+#   choice is: stage the BF16 release, or quantize from the FP8 release (which
+#   means dequantising a 128x128 block-scaled FP8 checkpoint as the GPTQ source
+#   — plausible, probably what Phala did, but it is a different experiment and
+#   must be labelled as one). `dtype: bfloat16` below assumes the former.
+#
 # Structurally this is minimax_m3_distributed_r8_full.yaml — same two-modifier
 # design, same disjoint-set discipline (GPTQ ignores what the FP8 modifier owns
 # by explicit target), same data-free FP8_DYNAMIC so there is no second
@@ -18,9 +55,15 @@
 #   indexer (stays BF16)         17.9 MiB    1.8%
 #   TOTAL                       980.6 MiB
 #
-# The indexer row applies only to the 21 "full" layers (0, 1, then every 4th
-# from 5 to 77) — `indexer_types` gives the other 57 layers no indexer
-# projections at all, so the whole-model indexer share is nearer 0.5% than 1.8%.
+# The indexer row applies only to the 21 "full" layers — read from the released
+# config's explicit `indexer_types` list: 0, 1, 2, then every 4th from 6 to 74.
+# The other 57 layers carry no indexer projections at all, so the whole-model
+# indexer share is nearer 0.5% than 1.8%.
+#
+# Do NOT derive that pattern from `index_topk_freq`. When `indexer_types` is
+# absent, transformers synthesises a *different* default (0, 1, then every 4th
+# from 5 to 77), which is what an earlier revision of this file recorded. Any
+# preflight must be pointed at the real config.json.
 #
 #   BF16 everywhere               980.6 MiB   1.00x
 #   + int4-g128 routed experts    550.9 MiB   1.78x
@@ -46,30 +89,33 @@
 # and hand back a checkpoint 1.54x heavier in weight traffic than intended,
 # while passing every gate that only checks the int4 side.
 #
-# Comparability with the community checkpoint we already evaluated (goal 2d):
-# PhalaCloud/GLM-5.2-W4AFP8 is routed-expert int4 group-128 with scales chosen
-# by AWQ, FP8 attention/shared, static-scale FP8 activations. This recipe
-# deliberately matches its *placement* (which modules are int4 vs FP8 vs BF16)
-# so the paired eval isolates one variable, but differs in two ways that must
-# be stated in any comparison:
+# Comparability with the community checkpoint we already evaluated (goal 2d).
+# Read from PhalaCloud/GLM-5.2-W4AFP8's own weight index on /mnt/cephfs, not
+# inferred: per MoE layer it carries `weight` + `weight_scale_inv` +
+# `input_scale` on all 3x256 routed-expert projections (int4 weights, block
+# scales, and a STATIC activation scale), `weight_scale_inv` on all five MLA
+# projections, on all three shared-expert projections, and on the dense MLPs.
+#
+# Differences from this recipe, all of which must be named in any comparison:
 #   - method: GPTQ here, AWQ there (goal 2d found Phala's AWQ leg clean; the M3
 #     AWQ pathology of goal 3b did not replicate on this family)
-#   - activations: FP8_DYNAMIC per-token here, static-scale there
-# Phala's config.json declares only {"quant_method": "w4afp8"} — the
-# SGLang-native format, not compressed-tensors. Ours will be compressed-tensors
-# W4AFP8, so do NOT copy the `quantization: w4afp8` sglang kwarg from
-# eval_glm52_w4afp8_sglang.yaml for our arm without re-checking the loader.
-#
-# KNOWN GAP — the MTP layer. GLM-5.2 ships num_nextn_predict_layers: 1, and
-# transformers 5.12.1 does not model it: zero references to nextn/mtp/eh_proj/
-# enorm/hnorm in modeling_glm_moe_dsa.py, and num_nextn_predict_layers is not a
-# recognised config field. So a transformers load builds layers 0-77 only and
-# the MTP weights are dropped on save. Phala's checkpoint retains the field.
-# Consequence: our checkpoint cannot serve MTP speculative decoding even though
-# the release supports it. Quality evaluation will NOT catch this — quality is
-# unchanged, only decode speed. Confirm against production before adoption; the
-# ignore entry below is defensive, so a future transformers that does build the
-# layer will not silently GPTQ it.
+#   - activations: FP8_DYNAMIC per-token here, static `input_scale` there
+#   - THE INDEXER IS NOT PLACEMENT-IDENTICAL. Phala quantizes
+#     `self_attn.indexer.wq_b` and `self_attn.indexer.wk` to FP8, leaving only
+#     `weights_proj` and `k_norm` alone. This recipe keeps the whole indexer
+#     BF16, following the M3 precedent and our own recorded long-context
+#     retrieval failure from touching indexer precision. That is a deliberate
+#     divergence, not an oversight — but it does mean the paired eval is not a
+#     single-variable comparison, and if the two checkpoints differ on
+#     long-context retrieval this is the first thing to suspect.
+#   - format: Phala declares only {"quant_method": "w4afp8"} — SGLang-native,
+#     not compressed-tensors — AND re-types the model as
+#     `model_type: deepseek_v3` while keeping
+#     `architectures: [GlmMoeDsaForCausalLM]`, routing it through SGLang's
+#     DeepSeek-V3 path. Ours will be compressed-tensors W4AFP8 with
+#     model_type glm_moe_dsa, so do NOT copy the `quantization: w4afp8` sglang
+#     kwarg from eval_glm52_w4afp8_sglang.yaml for our arm without re-checking
+#     the loader.
 #
 # RED LINE: index_topk_freq / index_topk are not to be touched by this or any
 # downstream config. The indexer stays BF16 by design (tiny — 1.8% of activated
@@ -81,6 +127,8 @@
 name: glm52_distributed_w4afp8_full
 
 model:
+  # BLOCKED: not staged. See BLOCKER 2. The FP8 release IS staged at
+  # /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2-FP8 if we choose that source.
   id: zai-org/GLM-5.2
   trust_remote_code: true
   auto_class: AutoModelForCausalLM
@@ -90,7 +138,9 @@ model:
   # exhaustion; bulk weights go to DistributedDiskCache).
   max_memory:
     cpu: 32000000000
-  offload_folder: /mnt/nfs/hoangduy/offload/glm52-w4afp8-full
+  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. model-cache-shared
+  # is the sole CA-region RWX storage (see the region note below).
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-full
 
 quantization:
   method: gptq
@@ -141,4 +191,4 @@ serve:
 eval:
   enabled: false
 
-output_dir: /mnt/nfs/hoangduy/results/glm52-w4afp8-full
+output_dir: /mnt/cephfs/hoangduy/results/glm52-w4afp8-full

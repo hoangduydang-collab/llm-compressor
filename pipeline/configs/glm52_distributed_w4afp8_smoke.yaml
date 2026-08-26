@@ -2,22 +2,26 @@
 # is not MiniMax-M3, and the first exercise of the glm_moe_dsa linearize path
 # added in 052cbec9. Layer-scoped so the run is self-documenting and cheap:
 #
-#   - GPTQ W4AFP8 routed experts : layers 3, 8, 40, 77
-#   - FP8 MLA attention          : layers 0, 3, 8   (NOT the indexer)
-#   - FP8 shared experts         : layers 3, 8
+#   - GPTQ W4AFP8 routed experts : layers 3, 6, 42, 77
+#   - FP8 MLA attention          : layers 0, 3, 6   (NOT the indexer)
+#   - FP8 shared experts         : layers 3, 6
 #   - FP8 dense MLP              : layer 0
 #
 # Layer choice is deliberate, not arbitrary:
 #   - 3 is the first MoE layer (first_k_dense_replace = 3), 77 is the last, so
 #     the eligibility gate is proven at both ends of the stack.
-#   - `indexer_types` makes only 21 of the 78 layers "full" — layers 0, 1, then
-#     every 4th from 5 to 77 — and only those carry indexer projections at all
-#     (63 Linears, not 234). Of the layers sampled here, 77 is full while
-#     3, 8 and 40 are shared, and on the FP8 side layer 0 is full while 3 and 8
-#     are shared. So the indexer-exclusion invariant is proven on both kinds, on
-#     both the GPTQ and the FP8 leg. Verified with pipeline.quant_target_preflight
-#     against the real config, not assumed from the freq value.
+#   - Only 21 of the 78 layers are "full" and carry indexer projections at all;
+#     from the released config's explicit `indexer_types`, those are 0, 1, 2,
+#     then every 4th from 6 to 74. So 6 and 42 are full while 3 and 77 are
+#     shared, and the indexer-exclusion invariant is proven on both kinds and on
+#     both legs (layer 0 is full on the FP8 side, 3 and 6 cover both there).
+#     Note 77 is NOT full — 74 is the last full layer.
 #   - Layer 0 covers the dense GlmMoeDsaMLP path.
+#
+# An earlier revision used layers 3, 8, 40, 77 on the belief that 8 and 40 were
+# full. They are not: all four were shared, so the GPTQ leg proved nothing about
+# a full layer. The pattern must be read from `indexer_types` in the real
+# config.json — deriving it from `index_topk_freq` yields a different list.
 #
 # Note where this DIVERGES from minimax_m3_distributed_r8_smoke.yaml's
 # rationale: M3 included layer 0 to prove the save-side conversion of an
@@ -38,14 +42,18 @@
 #      GLM's released checkpoint layout — but it means the save path is a no-op
 #      rather than a tested transformation, unlike M3 (19 save mappings) or
 #      DeepSeek-V4 (40). Verify the written keys, do not assume them.
-#   5. The MTP layer is absent (see the full config's KNOWN GAP note). Record
-#      whether layer 78 keys exist in the output; they should not.
+#   5. The MTP layer is absent. Record whether layer 78 keys exist in the
+#      output; they will not, and per BLOCKER 1 in the full config that is a
+#      release blocker rather than a curiosity — Phala ships 2337 quantized
+#      tensors there and production serves EAGLE off that head.
 #
 # Launch: the same distributed-quant launcher as the M3 smoke, METHODS=gptq
 # EVIDENCE_ONLY=0.
 name: glm52_distributed_w4afp8_smoke
 
 model:
+  # BLOCKED: not staged. See BLOCKER 2. The FP8 release IS staged at
+  # /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2-FP8 if we choose that source.
   id: zai-org/GLM-5.2
   trust_remote_code: true
   auto_class: AutoModelForCausalLM
@@ -53,7 +61,9 @@ model:
   device_map: auto_offload
   max_memory:
     cpu: 32000000000
-  offload_folder: /mnt/nfs/hoangduy/offload/glm52-w4afp8-smoke
+  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. model-cache-shared
+  # is the sole CA-region RWX storage (see the region note below).
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-smoke
 
 quantization:
   method: gptq
@@ -66,10 +76,10 @@ quantization:
     - "re:.*layers[.][0-2][.].*"
     - "re:.*layers[.]78[.].*"
     # Restrict GPTQ to the four sampled MoE layers.
-    - "re:.*model[.]layers[.](?!(?:3|8|40|77)(?:[.]|$))[0-9]+(?:[.]|$).*"
+    - "re:.*model[.]layers[.](?!(?:3|6|42|77)(?:[.]|$))[0-9]+(?:[.]|$).*"
   fp8_dynamic_targets:
-    - "re:.*model[.]layers[.](0|3|8)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
-    - "re:.*model[.]layers[.](3|8)[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.](0|3|6)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.](3|6)[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
   gptq_dampening_frac: 0.01
   sample_generation: false
@@ -90,4 +100,4 @@ serve:
 eval:
   enabled: false
 
-output_dir: /mnt/nfs/hoangduy/results/glm52-w4afp8-smoke
+output_dir: /mnt/cephfs/hoangduy/results/glm52-w4afp8-smoke

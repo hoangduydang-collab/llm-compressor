@@ -79,7 +79,10 @@ from llmcompressor.modeling.moe.context import (
     moe_calibration_context,
 )
 from llmcompressor.modeling.moe.conversion_mappings import (
+    ARCH_TO_2D_MAPPINGS,
+    ARCH_TO_EXPERTS_MODULE_CLS,
     get_linearize_load_mappings,
+    has_linearize_load_mappings,
 )
 from llmcompressor.modeling.moe.helpers import (
     FusedExpertsProtocol,
@@ -123,6 +126,99 @@ def test_minimax_m3_load_mapping_keeps_experts_two_dimensional():
     }
     assert expected_targets <= {
         target for mapping in expert_renames for target in mapping.target_patterns
+    }
+
+
+@pytest.mark.parametrize(
+    "model_type",
+    sorted(
+        set(ARCH_TO_EXPERTS_MODULE_CLS)
+        | set(ARCH_TO_2D_MAPPINGS)
+        # architectures that reach a registered 2D mapping only by alias — these
+        # are the ones the guard used to wave through into a KeyError
+        | {"glm_moe_dsa", "glm4_moe", "glm4_moe_lite", "glm4v_moe", "qwen3_moe"}
+    ),
+)
+def test_linearize_guard_never_promises_what_the_getter_cannot_deliver(model_type):
+    """
+    `has_linearize_load_mappings` gates the fast path in `load_quantizable_moe`.
+    If it returns True, `get_linearize_load_mappings` must succeed — otherwise the
+    post-load fallback is skipped and `from_pretrained` raises `KeyError` before
+    any calibration work. `ARCH_TO_EXPERTS_MODULE_CLS` is keyed by raw model_type
+    and `ARCH_TO_2D_MAPPINGS` by conversion pattern, so checking only one of them
+    breaks every architecture that reaches a mapping by alias.
+    """
+    if not has_linearize_load_mappings(model_type):
+        pytest.skip(f"{model_type} correctly routes to the post-load fallback")
+
+    experts_cls, load_mappings, save_mappings = get_linearize_load_mappings(model_type)
+    assert experts_cls is not None
+    assert isinstance(load_mappings, list)
+    assert isinstance(save_mappings, list)
+
+
+def test_glm_moe_dsa_load_mapping_keeps_experts_two_dimensional():
+    """
+    GLM-5.x DSA presents the same expert contract as MiniMax-M3, so it must
+    linearize through the same fast path. Its 2D mappings are inherited from
+    `qwen2_moe` by alias, which is why the guard has to agree with the getter.
+    """
+    assert has_linearize_load_mappings("glm_moe_dsa")
+    experts_cls, load_mappings, save_mappings = get_linearize_load_mappings(
+        "glm_moe_dsa"
+    )
+
+    assert experts_cls.__name__ == "GlmMoeDsaNaiveMoe"
+    for mappings in (load_mappings, save_mappings):
+        assert not any(
+            isinstance(mapping, WeightConverter)
+            and any(
+                target in {"mlp.experts.gate_up_proj", "mlp.experts.down_proj"}
+                for target in mapping.target_patterns
+            )
+            for mapping in mappings
+        )
+
+    expert_renames = [
+        mapping
+        for mapping in load_mappings
+        if isinstance(mapping, WeightRenaming)
+        and any("mlp.experts" in target for target in mapping.target_patterns)
+    ]
+    # qwen2_moe's patterns capture both the layer index and the expert index
+    expected_targets = {
+        r"layers.\1.mlp.experts.\2.gate_proj.",
+        r"layers.\1.mlp.experts.\2.down_proj.",
+        r"layers.\1.mlp.experts.\2.up_proj.",
+    }
+    assert expected_targets <= {
+        target for mapping in expert_renames for target in mapping.target_patterns
+    }
+
+
+@pytest.mark.skipif(
+    GlmMoeDsaNaiveMoe is None, reason="GlmMoeDsaNaiveMoe not in this transformers"
+)
+def test_glm_moe_dsa_matches_minimax_m3_expert_contract():
+    """
+    The registration above is only valid because GLM's expert module is
+    contract-identical to M3's. If transformers ever changes either, this fails
+    here rather than in a quantization run.
+    """
+    from llmcompressor.modeling.moe.helpers import (
+        get_use_experts_implementation_args,
+    )
+
+    glm_args = get_use_experts_implementation_args(GlmMoeDsaNaiveMoe)
+    m3_args = get_use_experts_implementation_args(
+        ARCH_TO_EXPERTS_MODULE_CLS["minimax_m3_vl"]
+    )
+    assert glm_args == m3_args, f"GLM {glm_args} != M3 {m3_args}"
+    assert glm_args == {
+        "is_concatenated": True,
+        "is_transposed": False,
+        "has_bias": False,
+        "has_gate": True,
     }
 
 

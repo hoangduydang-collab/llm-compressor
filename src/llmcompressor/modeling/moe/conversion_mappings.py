@@ -11,6 +11,7 @@ from transformers.core_model_loading import (
     WeightTransform,
 )
 from transformers.models.deepseek_v4.modeling_deepseek_v4 import DeepseekV4Experts
+from transformers.models.glm_moe_dsa.modeling_glm_moe_dsa import GlmMoeDsaNaiveMoe
 from transformers.models.minimax_m3_vl.modeling_minimax_m3_vl import (
     MiniMaxM3VLExperts,
 )
@@ -23,9 +24,21 @@ __all__ = [
     "set_save_conversion_mapping",
 ]
 
+# Keyed by the model's own `config.model_type`, *not* by conversion pattern —
+# unlike `ARCH_TO_2D_MAPPINGS` below, which is keyed by conversion pattern. Keep
+# `has_linearize_load_mappings` in agreement with both or the fast path is entered
+# for architectures it cannot serve (see the note on that function).
 # TODO: in the future, we can potentially grep the source code for this
 ARCH_TO_EXPERTS_MODULE_CLS = {
     "deepseek_v4": DeepseekV4Experts,
+    # GLM-5.x DSA (`GlmMoeDsaForCausalLM`). Its expert module presents exactly the
+    # same contract as MiniMax-M3's — same `@use_experts_implementation` arguments
+    # (is_concatenated/has_gate True, is_transposed/has_bias False) and the same
+    # `gate_up_proj[E, 2I, H]` / `down_proj[E, H, I]` layout — so it linearizes
+    # through the identical path. The 2D mappings are inherited from `qwen2_moe`
+    # via `_MODEL_TO_CONVERSION_PATTERN`, which matches the per-expert
+    # `gate_proj`/`up_proj`/`down_proj` layout GLM ships in its checkpoints.
+    "glm_moe_dsa": GlmMoeDsaNaiveMoe,
     "minimax_m3_vl": MiniMaxM3VLExperts,
     "qwen2_moe": Qwen2MoeExperts,
     "qwen3_moe": Qwen3MoeExperts,
@@ -87,8 +100,27 @@ ARCH_TO_2D_MAPPINGS = {
 
 
 def has_linearize_load_mappings(model_type: str) -> bool:
-    model_type = _MODEL_TO_CONVERSION_PATTERN.get(model_type, model_type)
-    return model_type in ARCH_TO_2D_MAPPINGS
+    """
+    Whether `get_linearize_load_mappings` can serve this model type, i.e. whether
+    the direct 2D-load fast path is available.
+
+    Both lookups that `get_linearize_load_mappings` performs must be checked, and
+    they are keyed differently: `ARCH_TO_EXPERTS_MODULE_CLS` by the raw
+    `model_type`, `ARCH_TO_2D_MAPPINGS` by its conversion pattern. Testing only
+    the latter reports True for any architecture that reaches a registered
+    pattern by alias while having no experts class of its own — every GLM MoE
+    variant aliases to `qwen2_moe` this way. `load_quantizable_moe` would then
+    skip its post-load fallback and raise `KeyError` from inside
+    `from_pretrained`, before any calibration work.
+
+    :param model_type: the model's `config.model_type`
+    :return: True if the fast path is fully registered for this model type
+    """
+    if model_type not in ARCH_TO_EXPERTS_MODULE_CLS:
+        return False
+    return _MODEL_TO_CONVERSION_PATTERN.get(model_type, model_type) in (
+        ARCH_TO_2D_MAPPINGS
+    )
 
 
 def get_linearize_load_mappings(

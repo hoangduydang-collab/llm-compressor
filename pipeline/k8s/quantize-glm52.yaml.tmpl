@@ -1,0 +1,167 @@
+---
+# GLM-5.2 distributed PTQ on the Rancher infermesh-test cluster.
+#
+# TEMPLATE — do not `kubectl apply` this directly. Render and launch with:
+#     pipeline/k8s/launch-quant-glm52.sh --method gptq --gpus 4
+# The launcher fills in the placeholders, gates on real free GPU capacity, pins
+# the code to a pushed commit, and refuses to launch if any placeholder is left
+# unsubstituted.
+#
+# WORLD SIZE IS A PARAMETER, deliberately. The retired srun launcher
+# (pipeline/slurm/run_m3_distributed_quant_smoke_srun.sh) hardcoded
+# --nproc_per_node=8, and pipeline/tests/test_m3_distributed_quant_smoke.py
+# asserts that literal string. That cluster is gone, and on Rancher we cannot get
+# 8 GPUs on one node today (measured: largest free node = 6). Any evidence gate
+# copied from the M3 handoffs that asserts `world_sizes == {8}` must be
+# parameterized before reuse or it will fail-closed on a legitimate 4-GPU run.
+#
+# Why 4 GPUs costs speed but not correctness: docs/guides/big_models_and_
+# distributed/distributed_oneshot.md — each rank takes a disjoint N/R partition
+# and "modifiers then synchronize statistics across ranks so all ranks produce
+# identical quantization parameters". partition_bounds (pipeline/calibration.py:34)
+# uses floor division, so N need not divide R; the only requirement is N >= R so
+# no rank starves.
+#
+# Peak Hessian memory does NOT scale down with rank count. Every rank accumulates
+# Hessians for ALL targeted modules in the current layer (gptq/base.py:277); only
+# at compression time does _reduce_hessian_to_target_rank (:337) reduce to the
+# owner and free non-owners (:360). For GLM-5.2 (hidden 6144, moe_intermediate
+# 2048, 256 routed experts) that is ~76 GiB of fp32 Hessian per rank for one MoE
+# layer, plus ~18 GiB of layer weights. If it OOMs, the lever is
+# offload_hessians=True (modifiers/gptq/base.py:126) — NOT more GPUs.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: quant-glm52-@@METHOD@@-@@RUN_TAG@@
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: distributed-ptq
+    model: glm-5-2
+    method: "@@METHOD@@"
+spec:
+  backoffLimit: 0            # never silently retry a multi-hour GPU run
+  activeDeadlineSeconds: 172800
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        owner: hoangduy.dang
+        purpose: distributed-ptq
+        method: "@@METHOD@@"
+    spec:
+      restartPolicy: Never
+      # GPU nodes are tainted nvidia.com/gpu=present:NoSchedule. No nodeSelector:
+      # let the scheduler place us, since it is the only authority that sees true
+      # cluster-wide allocation (our token cannot list pods at cluster scope).
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: quantize
+          image: lmsysorg/sglang:v0.5.17   # already pulled on these nodes
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: METHOD, value: "@@METHOD@@"}
+            - {name: CONFIG, value: "@@CONFIG@@"}
+            - {name: GPUS, value: "@@GPUS@@"}
+            - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
+            - {name: REPO_REF, value: "@@REPO_REF@@"}
+            # Point every HF cache at the CA-region PVC: the BF16 snapshot is
+            # already there, and the calibration dataset is then downloaded once
+            # and shared by both arms instead of twice over a congested link.
+            - {name: HF_HOME, value: "/mnt/cephfs/.hf-cache"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/.hf-cache"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/.hf-cache/datasets"}
+            - {name: TOKENIZERS_PARALLELISM, value: "false"}
+            # Surface real tracebacks instead of a bare C++ abort (M3 lesson:
+            # FlashInfer JIT failures printed no Python stack without this).
+            - {name: PYTHONFAULTHANDLER, value: "1"}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              echo "==> GLM-5.2 $METHOD  world_size=$GPUS  ref=$REPO_REF"
+              nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
+
+              test "$(nvidia-smi -L | wc -l)" -eq "$GPUS" \
+                || { echo "ABORT: pod sees $(nvidia-smi -L | wc -l) GPUs, expected $GPUS" >&2; exit 1; }
+
+              # --- code: pinned clone into node-local scratch --------------
+              # Not onto the shared PVC: two arms run concurrently and would race
+              # on the same tree, and quantization code has no business being
+              # written to a volume other people read models from.
+              git clone --quiet --filter=blob:none "$REPO_URL" /work/repo
+              cd /work/repo
+              git checkout --quiet "$REPO_REF"
+              echo "==> code at $(git rev-parse --short HEAD)"
+              pip install --quiet -e . 2>&1 | tail -2 || true
+              python -c "import llmcompressor,transformers,torch; print('llmcompressor',llmcompressor.__version__,'transformers',transformers.__version__,'torch',torch.__version__)"
+
+              # --- GATE 1: pre-quantization compatibility, CPU-only ---------
+              # Enforced here rather than trusted to the operator, because this is
+              # the gate the M3 record says must precede every long calibration
+              # run. It builds a meta model, mirrors MoE linearization, and runs
+              # the real target matching + AWQ mapping resolver. No GPU, no
+              # weights, no calibration data. Exit 2 = incompatible.
+              mkdir -p /mnt/cephfs/hoangduy/preflight
+              REPORT="/mnt/cephfs/hoangduy/preflight/glm52-${METHOD}-@@RUN_TAG@@.json"
+              echo "==> gate 1: prequant_compatibility"
+              python -m pipeline.prequant_compatibility \
+                --config "$CONFIG" --output "$REPORT" \
+                || { echo "ABORT: pre-quantization gate FAILED; report at $REPORT" >&2
+                     python -c "import json;r=json.load(open('$REPORT'));print(json.dumps(r.get('failures',r),indent=2)[:4000])" 2>/dev/null || true
+                     exit 1; }
+              echo "==> gate 1 PASSED"
+
+              # --- distributed quantization --------------------------------
+              # One process per GPU, single node. Not an Indexed Job: this is
+              # data-parallel calibration within one node, so it needs no
+              # rendezvous service.
+              echo "==> launching torchrun --nproc_per_node=$GPUS"
+              torchrun --nproc_per_node="$GPUS" -m pipeline.run \
+                --config "$CONFIG" --stage quantize \
+                --set "quantization.method=$METHOD"
+
+              echo DONE
+          resources:
+            requests:
+              nvidia.com/gpu: @@GPUS@@
+              cpu: "16"
+              # M3 measured 600-850 GiB RSS with correct bf16 dtype; GLM-5.2 is
+              # larger. Nodes have 2015 GiB, so this leaves room for co-tenants.
+              memory: "400Gi"
+              ephemeral-storage: "80Gi"
+            limits:
+              nvidia.com/gpu: @@GPUS@@
+              cpu: "48"
+              memory: "1200Gi"
+              ephemeral-storage: "150Gi"
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]     # pinned host memory for NCCL
+          volumeMounts:
+            - {name: model-cache, mountPath: /mnt/cephfs}
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: work, mountPath: /work}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-shared
+        # benchmark-datasets is DELIBERATELY not mounted: it is
+        # sc-file-nfs-vast-my (my-region), and the nfs.csi.k8s.io driver is not
+        # registered on the CA nodes — mounting it fails with
+        # "driver name nfs.csi.k8s.io not found". Calibration data comes from the
+        # HF cache on cephfs instead. k8s/gpu-devbox.yaml still mounts it and
+        # will not schedule on a CA GPU node for this reason.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi        # the 64Mi default breaks NCCL and dataloaders
+        - name: work
+          emptyDir:
+            sizeLimit: 100Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 50Gi

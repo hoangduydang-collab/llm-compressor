@@ -45,8 +45,11 @@ import torch
 from torch import distributed as dist
 
 __all__ = [
+    "Collectives",
+    "DistCollectives",
     "ExpertParallelContext",
     "expert_parallel_context",
+    "expert_parallel_forward",
     "get_expert_parallel_context",
     "is_expert_parallel_enabled",
     "shard_experts",
@@ -236,3 +239,150 @@ def routed_dispatch(
         local_expert=local_expert,
         weight=top_k_weights.reshape(-1),
     )
+
+
+class Collectives:
+    """The two collectives the sharded forward needs.
+
+    Injectable so the equivalence tests can simulate a whole world inside one
+    CPU process. That is not a convenience: the property under test is that
+    every expert's Hessian covers ALL ranks' data, and checking it requires
+    holding every rank's state at once and comparing against a single-rank
+    reference. A real multi-process gloo test cannot make that comparison
+    without shipping Hessians between processes, which is the very thing this
+    design removes.
+    """
+
+    def all_gather(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Concatenate ``tensor`` from every rank along dim 0, in rank order."""
+        raise NotImplementedError
+
+    def all_reduce_sum(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Sum ``tensor`` across ranks; every rank receives the total."""
+        raise NotImplementedError
+
+
+class DistCollectives(Collectives):
+    """``torch.distributed`` implementation."""
+
+    def __init__(self, group=None):
+        self.group = group
+
+    def all_gather(self, tensor: torch.Tensor) -> torch.Tensor:
+        world_size = dist.get_world_size(self.group)
+        # all_gather requires equally-shaped buffers. Calibration shards are
+        # produced by partition_bounds' floor division, so the last rank can
+        # hold fewer samples; pad to the max and trim after concatenating.
+        local = torch.tensor([tensor.shape[0]], device=tensor.device)
+        sizes = [torch.zeros_like(local) for _ in range(world_size)]
+        dist.all_gather(sizes, local, group=self.group)
+        counts = [int(s.item()) for s in sizes]
+        largest = max(counts)
+
+        padded = tensor
+        if tensor.shape[0] < largest:
+            pad = torch.zeros(
+                (largest - tensor.shape[0], *tensor.shape[1:]),
+                dtype=tensor.dtype,
+                device=tensor.device,
+            )
+            padded = torch.cat([tensor, pad], dim=0)
+
+        buffers = [torch.empty_like(padded) for _ in range(world_size)]
+        dist.all_gather(buffers, padded, group=self.group)
+        return torch.cat([b[:n] for b, n in zip(buffers, counts)], dim=0)
+
+    def all_reduce_sum(self, tensor: torch.Tensor) -> torch.Tensor:
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=self.group)
+        return tensor
+
+
+def expert_parallel_forward(
+    experts,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    context: ExpertParallelContext,
+    collectives: Collectives,
+    calibrate_all_experts: bool,
+) -> torch.Tensor:
+    """``LinearExperts2D.forward``, with the expert loop sharded across ranks.
+
+    Mirrors the unsharded forward's arithmetic exactly -- one-hot mask,
+    ``torch.where`` token selection, router weighting, ``index_add_``
+    accumulation -- so the only difference is WHICH experts this rank evaluates
+    and over WHOSE tokens.
+
+    Order of operations, and why:
+
+    1. All-gather activations and routing, so this rank sees every rank's
+       tokens. Without this step rank r would accumulate expert j's Hessian
+       over its own data shard only. Nothing would raise -- a Hessian over
+       1/W of the data is a well-formed matrix -- and the resulting checkpoint
+       would load and serve. This is the failure mode the design exists to
+       prevent, so the gather is not an optimization detail.
+    2. Evaluate ONLY this rank's experts. Non-owned experts are never called,
+       so GPTQ never allocates their Hessians: that is where the memory is won.
+    3. All-reduce the accumulator. Each rank has only its own experts'
+       contributions; the true layer output is the sum.
+    4. Return this rank's slice, so everything downstream sees the same
+       data-parallel semantics as before.
+
+    The gather is correct for BOTH calibration modes -- routed selection just
+    happens over the gathered token set. ``routed_dispatch`` exists to cut
+    communication when only routed tokens are needed, not to fix a correctness
+    gap here.
+
+    :param experts: the ``LinearExperts2D`` (indexable, ``num_experts``).
+    :param hidden_states: ``[T, H]`` this rank's tokens.
+    :param top_k_index: ``[T, top_k]`` selected experts.
+    :param top_k_weights: ``[T, top_k]`` router weights.
+    :param context: expert ownership for this rank.
+    :param collectives: transport.
+    :param calibrate_all_experts: route every token through every expert.
+    :return: ``[T, H]`` this rank's slice of the layer output.
+    """
+    local_rows = hidden_states.shape[0]
+
+    gathered_states = collectives.all_gather(hidden_states)
+    gathered_index = collectives.all_gather(top_k_index)
+    gathered_weights = collectives.all_gather(top_k_weights)
+
+    # Where this rank's rows sit inside the gathered tensor. Recovered from the
+    # gathered size rather than assumed to be rank * local_rows, because uneven
+    # shards make that product wrong for every rank after the short one.
+    offsets = collectives.all_gather(
+        torch.tensor([local_rows], device=hidden_states.device)
+    )
+    start = int(offsets[: context.rank].sum())
+
+    final_hidden_states = torch.zeros_like(gathered_states)
+
+    with torch.no_grad():
+        expert_mask = torch.nn.functional.one_hot(
+            gathered_index, experts.num_experts
+        )
+        expert_mask = expert_mask.permute(2, 1, 0)
+
+    for expert_index in shard_experts(
+        experts.num_experts, context.rank, context.world_size
+    ):
+        top_k_pos, token_indices = torch.where(expert_mask[expert_index])
+
+        expert = experts[expert_index]
+        if calibrate_all_experts:
+            expert_output = expert(gathered_states)[token_indices]
+        else:
+            expert_output = expert(gathered_states[token_indices])
+
+        expert_weights = gathered_weights[token_indices, top_k_pos, None]
+        weighted_output = expert_output * expert_weights
+
+        final_hidden_states.index_add_(
+            0, token_indices, weighted_output.to(final_hidden_states.dtype)
+        )
+
+    # Sum the per-rank partial accumulators into the true layer output.
+    collectives.all_reduce_sum(final_hidden_states)
+
+    return final_hidden_states[start : start + local_rows]

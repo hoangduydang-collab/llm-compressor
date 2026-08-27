@@ -170,13 +170,32 @@ _deepseek_mappings = [
     AWQMapping("re:.*up_proj$", ["re:.*down_proj$"]),
 ]
 
-# GLM-4.7-Flash (Glm4MoeLiteForCausalLM) uses MLA attention (same as DeepSeek)
-# but has a mixed dense/MoE architecture: layer 0 is dense (first_k_dense_replace=1)
-# and layers 1+ are MoE. The dense layer 0 has no mlp.gate router, so we cannot
-# include mlp.gate in the balance layers (it would break per-layer grouping in
-# match_modules_set). The gate_proj$/up_proj$ patterns still match both
-# dense (mlp.gate_proj / mlp.up_proj) and MoE (mlp.experts.*.gate_proj / up_proj).
-_glm4_moe_lite_mappings = [
+# Mappings for MLA-attention models with a MIXED dense/MoE stack — the first
+# `first_k_dense_replace` layers are dense and the rest are MoE. Used by
+# GLM-4.7-Flash (Glm4MoeLiteForCausalLM, first_k_dense_replace=1) and GLM-5.2
+# (GlmMoeDsaForCausalLM, first_k_dense_replace=3).
+#
+# The dense layers have no mlp.gate router, so mlp.gate must NOT appear in the
+# balance layers: match_modules_set groups a mapping per layer only when every
+# balance pattern matches inside that layer, so a pattern that is absent from the
+# dense layers prevents the set from ever closing. The resolver then accumulates
+# smooth layers across layers and dies with
+#     ValueError: AWQ needs to match a single smoothlayer for each mapping
+#         but got ['model.layers.0.post_attention_layernorm', ...]
+# GLM-5.2 was originally pointed at _deepseek_mappings (which does include
+# mlp.gate) and failed exactly that way in the pre-quantization gate, with zero
+# mappings resolved. Dropping mlp.gate costs nothing: the router is never
+# quantized (it is in every recipe's ignore list), so it was never a legitimate
+# balance layer to begin with.
+#
+# NOTE: DeepseekV3ForCausalLM also has first_k_dense_replace=3 and is still
+# pointed at _deepseek_mappings, so it is likely to hit this same failure. Left
+# unchanged deliberately — we have no DeepSeek-V3 AWQ evidence, and changing a
+# mapping we cannot test would be a guess.
+#
+# The gate_proj$/up_proj$ patterns still match both dense (mlp.gate_proj /
+# mlp.up_proj) and MoE (mlp.experts.*.gate_proj / up_proj).
+_mla_mixed_dense_moe_mappings = [
     AWQMapping(
         "re:.*input_layernorm$",
         ["re:.*(q|q_a)_proj$", "re:.*kv_a_proj_with_mqa$"],
@@ -271,8 +290,8 @@ AWQ_MAPPING_REGISTRY: dict[str, list[AWQMapping]] = {
     "Gemma3ForCausalLM": _gemma_mappings,
     "Gemma3ForConditionalGeneration": _gemma_mappings,
     "Glm4MoeForCausalLM": _moe_default_mappings,
-    "Glm4MoeLiteForCausalLM": _glm4_moe_lite_mappings,
-    "GlmMoeDsaForCausalLM": _deepseek_mappings,
+    "Glm4MoeLiteForCausalLM": _mla_mixed_dense_moe_mappings,
+    "GlmMoeDsaForCausalLM": _mla_mixed_dense_moe_mappings,
     "LlamaForCausalLM": default_mappings,
     "Llama4ForConditionalGeneration": _llama4_default_mappings,
     "Mistral3ForConditionalGeneration": default_mappings,

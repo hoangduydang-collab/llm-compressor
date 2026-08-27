@@ -86,6 +86,12 @@ spec:
               print("glm expert class:", [n for n in dir(G) if "Experts" in n or "NaiveMoe" in n])
               PY
 
+              echo "==> AWQ mapping regression tests"
+              pip install --quiet pytest
+              python -m pytest -q \
+                tests/llmcompressor/modifiers/awq/test_mixed_dense_moe_mappings.py \
+                2>&1 | tail -12
+
               mkdir -p /work/reports
               RC=0
               for ARM in gptq awq; do

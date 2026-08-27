@@ -149,6 +149,15 @@ spec:
             # processes); this is only the in-process pool, kept small so total
             # connection count stays bounded.
             - {name: MAX_WORKERS, value: "4"}
+            # Stall watchdog. A wedged hf_transfer socket shows up as zero
+            # growth in the blobs dir; two consecutive quiet samples (8 min)
+            # means kill the workers so their retry loops relaunch them.
+            # Sized well above a slow-but-live shard: at even 5 MiB/s a 4 min
+            # window still grows by ~1.2 GiB, so this cannot misfire on
+            # progress that is merely slow.
+            - {name: SAMPLE_SECS, value: "240"}
+            - {name: STALL_STRIKES, value: "2"}
+            - {name: MAX_ATTEMPTS, value: "20"}
           command: ["sh", "-c"]
           args:
             - |
@@ -195,43 +204,104 @@ spec:
               pip install --quiet --no-cache-dir 'huggingface_hub==0.27.1' hf_transfer
               export HF_HUB_ENABLE_HF_TRANSFER=1
               export HF_HUB_DISABLE_XET=1
+              export HF_HUB_ETAG_TIMEOUT=30
 
-              # --- aggregate progress, one line per interval ----------------
+              blobs_mib() { du -sm "$REPO_DIR/blobs" 2>/dev/null | cut -f1 \
+                            || echo 0; }
+
+              # Kill wedged download workers. hf_transfer offers no stall
+              # timeout, so a socket that goes quiet hangs its process forever.
+              #
+              # Matched on /proc/<pid>/comm FIRST, deliberately: the parent shell
+              # runs this whole script as its argv, so ITS cmdline also contains
+              # the string "huggingface-cli download" and a naive cmdline match
+              # would kill the job itself. comm is the exec'd binary, so the
+              # parent (comm=sh) and this watchdog can never be candidates.
+              # pkill is not an option — python:3.11-slim ships no procps, which
+              # is how an earlier attempt at this failed silently with rc=127.
+              kill_workers() {
+                for d in /proc/[0-9]*; do
+                  pid=${d#/proc/}
+                  [ "$pid" = "1" ] && continue
+                  case "$(cat "$d/comm" 2>/dev/null)" in
+                    python*|huggingface*) ;;
+                    *) continue ;;
+                  esac
+                  case "$(tr '\0' ' ' < "$d/cmdline" 2>/dev/null)" in
+                    *huggingface-cli*download*)
+                      kill -9 "$pid" 2>/dev/null \
+                        && echo "[watchdog] killed wedged pid $pid" ;;
+                  esac
+                done
+                return 0
+              }
+
+              # --- progress + stall watchdog --------------------------------
               # Scoped to our own blobs dir. Never du the whole cache: that is a
               # metadata storm on cephfs for every other reader.
-              ( while true; do
-                  sleep 120
-                  NOW=$(du -sm "$REPO_DIR/blobs" 2>/dev/null | cut -f1 || echo 0)
+              ( LAST=-1; STRIKES=0
+                while true; do
+                  sleep "$SAMPLE_SECS"
+                  NOW=$(blobs_mib)
                   echo "[progress] $(( ${NOW:-0} / 1024 )) / ${TOTAL_GIB} GiB"
+                  if [ "${NOW:-0}" -le "$LAST" ]; then
+                    STRIKES=$(( STRIKES + 1 ))
+                    echo "[watchdog] no progress in ${SAMPLE_SECS}s" \
+                         "(strike ${STRIKES}/${STALL_STRIKES})"
+                    if [ "$STRIKES" -ge "$STALL_STRIKES" ]; then
+                      kill_workers
+                      STRIKES=0
+                    fi
+                  else
+                    STRIKES=0
+                  fi
+                  LAST=${NOW:-0}
                 done ) &
-              LOGGER=$!
-              # Kill the logger on any exit path, so it cannot outlive the run.
-              trap 'kill "$LOGGER" 2>/dev/null || true' EXIT INT TERM
+              WATCHDOG=$!
+              trap 'kill "$WATCHDOG" 2>/dev/null || true' EXIT INT TERM
 
-              # --- bucketed parallel download -------------------------------
+              # --- bucketed parallel download, each with its own retries -----
               # Shards are model-000NN-of-00282.safetensors; the digit before
               # `-of-` is evenly distributed (28-29 shards per value), so these
               # five globs partition the 282 shards into ~56 each with no shard
               # list and no overlap. fnmatch expands [01] as a character set,
               # and the glob anchors that digit immediately before `-of-`, so a
               # shard can match exactly one bucket.
+              #
+              # The retry loop is the other half of the watchdog: the watchdog
+              # kills a wedged attempt, and this relaunches it. Restarts are
+              # cheap because the HF cache is content-keyed, so only the shard
+              # that was in flight is refetched.
+              run_bucket() {
+                bn=$1; log="/tmp/bucket-${bn}.log"; shift
+                a=0
+                while [ "$a" -lt "$MAX_ATTEMPTS" ]; do
+                  a=$(( a + 1 ))
+                  echo "--- attempt $a at $(date -u +%H:%M:%S) ---" >> "$log"
+                  if huggingface-cli download "$MODEL_ID" "$@" \
+                       --max-workers "$MAX_WORKERS" >> "$log" 2>&1; then
+                    echo "[bucket $bn] complete after $a attempt(s)"
+                    return 0
+                  fi
+                  echo "[bucket $bn] attempt $a died; retrying in 10s"
+                  sleep 10
+                done
+                echo "[bucket $bn] EXHAUSTED $MAX_ATTEMPTS attempts" >&2
+                return 1
+              }
+
               PIDS=""
               N=0
               for PAT in '[01]' '[23]' '[45]' '[67]' '[89]'; do
                 N=$(( N + 1 ))
-                huggingface-cli download "$MODEL_ID" \
-                  --include "model-*${PAT}-of-*.safetensors" \
-                  --max-workers "$MAX_WORKERS" \
-                  > "/tmp/bucket-${N}.log" 2>&1 &
+                run_bucket "$N" --include "model-*${PAT}-of-*.safetensors" &
                 PIDS="$PIDS $!"
                 echo "==> bucket $N  model-*${PAT}-of-*.safetensors  pid $!"
               done
 
               # Config, tokenizer, and the weight index: small, and the index is
               # what the completeness check below reads.
-              huggingface-cli download "$MODEL_ID" \
-                --exclude "model-*-of-*.safetensors" --max-workers 2 \
-                > /tmp/bucket-meta.log 2>&1 &
+              run_bucket meta --exclude "model-*-of-*.safetensors" &
               PIDS="$PIDS $!"
               echo "==> bucket meta (non-shard files) pid $!"
 
@@ -240,7 +310,7 @@ spec:
                 wait "$P" || { RC=1; echo "==> pid $P FAILED" >&2; }
               done
               if [ "$RC" -ne 0 ]; then
-                echo "ABORT: a bucket failed; tails follow" >&2
+                echo "ABORT: a bucket exhausted its retries; tails follow" >&2
                 tail -n 25 /tmp/bucket-*.log >&2
                 exit 1
               fi

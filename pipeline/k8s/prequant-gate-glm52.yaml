@@ -56,12 +56,13 @@ spec:
           env:
             - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
             - {name: REPO_REF, value: "duy-branch"}
-            # Pinned to the quantization venv's version, recovered from the old
-            # cluster's venvs/freeze-manifests/quant.txt. The glm_moe_dsa expert
-            # class was renamed between 5.12 (GlmMoeDsaNaiveMoe) and 5.14
-            # (GlmMoeDsaExperts); conversion_mappings.py resolves either, but the
-            # gate must run against the version the real run will use.
-            - {name: TRANSFORMERS_VERSION, value: "5.14.1"}
+            # Versions are NOT set here any more -- they come from
+            # envs/m3-quant-freeze.txt, the verbatim freeze of the M3
+            # quantization venv, so the gate and the real run cannot drift apart.
+            # Relevant to this model: the glm_moe_dsa expert class was renamed
+            # between transformers 5.12 (GlmMoeDsaNaiveMoe) and 5.14
+            # (GlmMoeDsaExperts). conversion_mappings.py resolves either, but the
+            # gate must exercise the version the real run uses.
             - {name: PYTHONUNBUFFERED, value: "1"}
             - {name: HF_HOME, value: "/work/.hf"}
           command: ["bash", "-lc"]
@@ -74,9 +75,27 @@ spec:
               cd repo && git checkout --quiet "$REPO_REF"
               echo "==> code at $(git rev-parse --short HEAD) ($REPO_REF)"
 
-              echo "==> installing CPU torch + pinned transformers"
+              # Same stack as the M3 quantization venv (envs/m3-quant-freeze.txt,
+              # Python 3.12.13, frozen 2026-07-31) so the gate validates against
+              # what the real run uses. torch comes from the CPU index because
+              # this pod has no GPU; every semantic pin comes from the manifest.
+              echo "==> installing CPU torch + the M3 manifest pins"
               pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
-              pip install --quiet "transformers==$TRANSFORMERS_VERSION"
+              python - envs/m3-quant-freeze.txt > /tmp/pins.txt <<'PINS'
+              import re, sys
+              KEEP = re.compile(
+                  r"^(transformers|compressed-tensors|accelerate|tokenizers|"
+                  r"safetensors|datasets|huggingface_hub|numpy|pydantic|"
+                  r"loguru|pyyaml|tqdm|regex|sentencepiece)==",
+                  re.IGNORECASE,
+              )
+              for line in open(sys.argv[1], encoding="utf-8"):
+                  s = line.strip()
+                  if s and not s.startswith("#") and KEEP.match(s):
+                      print(s)
+              PINS
+              sed 's/^/      /' /tmp/pins.txt
+              pip install --quiet -r /tmp/pins.txt
               pip install --quiet -e . 2>&1 | tail -3
               python - <<'PY'
               import torch, transformers, llmcompressor

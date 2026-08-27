@@ -95,8 +95,56 @@ spec:
               cd /work/repo
               git checkout --quiet "$REPO_REF"
               echo "==> code at $(git rev-parse --short HEAD)"
+
+              # --- pin the stack to the M3 quantization environment ---------
+              # The image ships transformers 5.12.1; MiniMax-M3 was quantized and
+              # validated on 5.14.1 (envs/m3-quant-freeze.txt, frozen 2026-07-31,
+              # Python 3.12.13). Quantizing GLM-5.2 on a different stack would
+              # confound the GLM-vs-M3 comparison on exactly the axis the M3
+              # record has a "Transformers 5.14.1 upgrade assessment" section
+              # about, so the manifest's semantic pins are installed over the
+              # image.
+              #
+              # torch / triton / nvidia-* / flashinfer are DELIBERATELY left as
+              # the image provides them: the image already carries torch 2.11.0,
+              # which is the manifest's pin, but as a working CUDA build. Pulling
+              # the PyPI wheel over it risks swapping in a different CUDA variant
+              # for no semantic gain. Everything that affects quantization
+              # numerics is pinned below.
+              echo "==> pinning stack to the M3 manifest"
+              python - envs/m3-quant-freeze.txt <<'PINS' > /tmp/pins.txt
+              import sys, re
+              KEEP = re.compile(
+                  r"^(transformers|compressed-tensors|accelerate|tokenizers|"
+                  r"safetensors|datasets|huggingface_hub|numpy|pydantic|"
+                  r"loguru|pyyaml|tqdm|regex|sentencepiece)==",
+                  re.IGNORECASE,
+              )
+              for line in open(sys.argv[1], encoding="utf-8"):
+                  s = line.strip()
+                  if s and not s.startswith("#") and KEEP.match(s):
+                      print(s)
+              PINS
+              echo "    pinning:"; sed 's/^/      /' /tmp/pins.txt
+              pip install --quiet -r /tmp/pins.txt 2>&1 | tail -5
+
               pip install --quiet -e . 2>&1 | tail -2 || true
-              python -c "import llmcompressor,transformers,torch; print('llmcompressor',llmcompressor.__version__,'transformers',transformers.__version__,'torch',torch.__version__)"
+              python - <<'VER'
+              import torch, transformers, llmcompressor
+              import importlib.metadata as md
+              print(f"==> llmcompressor {llmcompressor.__version__}")
+              print(f"==> transformers  {transformers.__version__} (M3: 5.14.1)")
+              print(f"==> torch         {torch.__version__} (M3 manifest: 2.11.0)")
+              for p in ("compressed-tensors", "accelerate", "huggingface_hub"):
+                  try:
+                      print(f"==> {p:18s} {md.version(p)}")
+                  except md.PackageNotFoundError:
+                      print(f"==> {p:18s} MISSING")
+              assert transformers.__version__.startswith("5.14"), (
+                  f"stack pinning failed: transformers is {transformers.__version__}, "
+                  "expected 5.14.x to match the M3 environment"
+              )
+              VER
 
               # --- GATE 1: pre-quantization compatibility, CPU-only ---------
               # Enforced here rather than trusted to the operator, because this is

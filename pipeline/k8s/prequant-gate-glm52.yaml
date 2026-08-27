@@ -1,0 +1,146 @@
+---
+# GATE 1 for GLM-5.2: pre-quantization compatibility, both arms, CPU-only.
+#
+#   kubectl apply -f pipeline/k8s/prequant-gate-glm52.yaml
+#   kubectl logs -n evaluation -f job/prequant-gate-glm52
+#
+# Runs `python -m pipeline.prequant_compatibility` for the GPTQ and AWQ smoke
+# configs. It builds a disposable meta model, mirrors MoE linearization,
+# constructs the real recipe, and invokes llm-compressor's actual quantization
+# initialization, target matching, group-divisibility checks and AWQ mapping
+# resolver. It never loads checkpoint tensors or calibration data, installs
+# hooks, runs a forward, or touches a GPU. Exit 0 = structurally compatible,
+# exit 2 = persisted incompatibility report.
+#
+# The question this run exists to answer (BLOCKER A in the AWQ config):
+# GlmMoeDsaForCausalLM resolves to _deepseek_mappings, which lists
+# "re:.*mlp.gate$" among the balance layers, but GLM-5.2's first_k_dense_replace=3
+# means layers 0-2 are dense with no router. The sibling _glm4_moe_lite_mappings
+# drops mlp.gate for exactly that reason. This gate runs the real resolver and
+# settles it for free.
+#
+# PLACEMENT: pinned to the `my` region (CPU workers), NOT the CA GPU nodes.
+# Three reasons, all deliberate:
+#   * It needs no GPU, so it must not occupy a tainted GPU node.
+#   * It needs no cephfs. Only config.json is fetched (a few KB from the Hub),
+#     so it does not touch the model-cache PVC at all.
+#   * ca-van3 egress is saturated by the BF16 staging job. Running here uses the
+#     my-region uplink instead, so it cannot slow that download or anyone else's
+#     CA-region transfers.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: prequant-gate-glm52
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: prequant-gate
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 3600
+  ttlSecondsAfterFinished: 7200
+  template:
+    metadata:
+      labels:
+        owner: hoangduy.dang
+        purpose: prequant-gate
+    spec:
+      restartPolicy: Never
+      # CPU workers carry no GPU taint, so no toleration is needed or wanted.
+      nodeSelector:
+        topology.kubernetes.io/region: my
+      containers:
+        - name: gate
+          image: python:3.12-slim
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
+            - {name: REPO_REF, value: "duy-branch"}
+            # Pinned to the quantization venv's version, recovered from the old
+            # cluster's venvs/freeze-manifests/quant.txt. The glm_moe_dsa expert
+            # class was renamed between 5.12 (GlmMoeDsaNaiveMoe) and 5.14
+            # (GlmMoeDsaExperts); conversion_mappings.py resolves either, but the
+            # gate must run against the version the real run will use.
+            - {name: TRANSFORMERS_VERSION, value: "5.14.1"}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: HF_HOME, value: "/work/.hf"}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              apt-get -qq update && apt-get -qq install -y git >/dev/null
+              cd /work
+              git clone --quiet --filter=blob:none "$REPO_URL" repo
+              cd repo && git checkout --quiet "$REPO_REF"
+              echo "==> code at $(git rev-parse --short HEAD) ($REPO_REF)"
+
+              echo "==> installing CPU torch + pinned transformers"
+              pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+              pip install --quiet "transformers==$TRANSFORMERS_VERSION"
+              pip install --quiet -e . 2>&1 | tail -3
+              python - <<'PY'
+              import torch, transformers, llmcompressor
+              print("torch", torch.__version__, "| transformers", transformers.__version__,
+                    "| llmcompressor", llmcompressor.__version__)
+              from transformers.models.glm_moe_dsa import modeling_glm_moe_dsa as G
+              print("glm expert class:", [n for n in dir(G) if "Experts" in n or "NaiveMoe" in n])
+              PY
+
+              mkdir -p /work/reports
+              RC=0
+              for ARM in gptq awq; do
+                case "$ARM" in
+                  gptq) CFG=pipeline/configs/glm52_distributed_w4afp8_smoke.yaml ;;
+                  awq)  CFG=pipeline/configs/glm52_distributed_w4afp8_awq_smoke.yaml ;;
+                esac
+                echo
+                echo "================= GATE 1: $ARM ================="
+                echo "config: $CFG"
+                if python -m pipeline.prequant_compatibility \
+                     --config "$CFG" --output "/work/reports/glm52-$ARM.json"; then
+                  echo "RESULT $ARM: PASS"
+                else
+                  echo "RESULT $ARM: FAIL (exit $?)"
+                  RC=1
+                fi
+                # Print the report either way: a pass with warnings is still
+                # information, and on failure this is the whole point of the run.
+                python - "$ARM" <<'PY'
+              import json, sys
+              arm = sys.argv[1]
+              try:
+                  r = json.load(open(f"/work/reports/glm52-{arm}.json"))
+              except Exception as e:
+                  print(f"  (no report: {e})"); raise SystemExit(0)
+              def show(key, limit=40):
+                  v = r.get(key)
+                  if not v: return
+                  print(f"  {key} ({len(v)}):")
+                  for item in (v[:limit] if isinstance(v, list) else [v]):
+                      print(f"    - {json.dumps(item)[:300]}")
+              print(f"  compatible = {r.get('compatible')}")
+              for k in ("failures", "warnings", "unverified_properties"):
+                  show(k)
+              # AWQ mapping resolution is the reason this run exists.
+              for k in ("awq_mappings", "resolved_awq_mappings", "smooth_mappings"):
+                  show(k, limit=12)
+              qm = r.get("quantized_modules") or r.get("resolved_targets")
+              if qm:
+                  print(f"  quantized/targeted modules: {len(qm)}")
+                  for m in qm[:8]: print(f"    - {m}")
+              PY
+              done
+              echo
+              echo "===== GATE 1 SUMMARY: $([ "$RC" -eq 0 ] && echo ALL PASS || echo FAILURES PRESENT) ====="
+              exit "$RC"
+          resources:
+            requests: {cpu: "4", memory: "16Gi", ephemeral-storage: "20Gi"}
+            limits:  {cpu: "8", memory: "32Gi", ephemeral-storage: "40Gi"}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+      volumes:
+        # No PVC at all: nothing here needs shared storage, and staying off the
+        # cephfs claim means this cannot interact with the staging job.
+        - name: work
+          emptyDir:
+            sizeLimit: 40Gi

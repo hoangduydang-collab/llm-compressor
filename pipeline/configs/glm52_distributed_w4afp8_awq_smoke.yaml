@@ -1,0 +1,98 @@
+# GLM-5.2 W4AFP8 AWQ smoke — the AWQ sibling of
+# glm52_distributed_w4afp8_smoke.yaml (GPTQ). Identical model, scheme, layer
+# selection, ignore rules and calibration contract, so the two arms are a paired
+# method comparison and nothing else varies.
+#
+# Differences from the GPTQ config, and why each one exists:
+#   1. quantization.method: awq
+#   2. `gptq_dampening_frac` dropped — GPTQ-only knob.
+#   3. output_dir and offload_folder are DISTINCT from the GPTQ arm's.
+#
+# On (3): MiniMax-M3's two smoke configs
+# (minimax_m3_distributed_r8_smoke.yaml and ..._r8a_awq_smoke.yaml) share ONE
+# output_dir. That was safe there because M3 ran "one exclusive 8xH100 node at a
+# time" — the arms never overlapped. Our plan is different: no node has 8 free
+# GPUs, so the two GLM-5.2 arms run CONCURRENTLY on 4 GPUs each (gpu03/gpu04)
+# against the same RWX cephfs PVC. Sharing an output_dir or offload_folder would
+# have the two runs interleaving safetensors shards and offload blobs into the
+# same paths. Do not "simplify" these back to matching paths.
+#
+# What this smoke must prove that the GPTQ smoke does not:
+#   a. AWQ smooth-layer mappings RESOLVE for GlmMoeDsaForCausalLM. Unlike M3
+#      (which needed hand-authored get_minimax_m3_awq_mappings), GLM is
+#      registered upstream -> _deepseek_mappings. See BLOCKER A below.
+#   b. The up->down expert fold is function-preserving here. It was not on M3 and
+#      cost 24 pts GPQA via reasoning non-termination; GLM's plain SwiGLU
+#      (act_fn(gate) * up, no clamp, no +1 offset) makes the identical fold legal.
+#      Rationale and evidence: GLM52_FROM_M3_CARRYOVER.md.
+#   c. AWQ's grid search is NOT hijacked by the FP8-schemed balance layers. Our
+#      fp8_dynamic_targets cover self_attn.* and shared_experts.*, which are
+#      exactly the modules _deepseek_mappings reaches as balance layers. M3 hit
+#      this (r8a smoke); the guard is _is_grid_search_targeted in
+#      src/llmcompressor/modifiers/transform/awq/base.py:132.
+#   d. Smoothing scales survive disk offload. offload_folder is set, and three
+#      separate M3 full runs (r2, r3, r7) lost folds or qparams exactly this way.
+#
+# BLOCKER A (unresolved, pre-check before launch):
+#   GlmMoeDsaForCausalLM maps to _deepseek_mappings, whose MoE-input mapping is
+#     AWQMapping("re:.*post_attention_layernorm$",
+#                ["re:.*mlp.gate$", "re:.*gate_proj$", "re:.*up_proj$"])
+#   GLM-5.2 has first_k_dense_replace=3, so layers 0,1,2 are dense and have NO
+#   mlp.gate router. The adjacent _glm4_moe_lite_mappings in the same file exists
+#   precisely to drop mlp.gate for that reason, commenting that including it
+#   "would break per-layer grouping in match_modules_set".
+#   Counter-evidence: DeepseekV3ForCausalLM uses the same mapping and also has
+#   first_k_dense_replace=3, so either match_modules_set tolerates the absent
+#   gate or this is simply unexercised. RESOLVE WITH GATE 1, do not guess:
+#     python -m pipeline.prequant_compatibility --config <this file> --output ...
+#   If resolution breaks, add a GLM-5.2 entry mirroring _glm4_moe_lite_mappings.
+name: glm52_distributed_w4afp8_awq_smoke
+
+model:
+  id: zai-org/GLM-5.2
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  # Distinct from the GPTQ arm — see (3) above.
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+    # Restrict to the same four sampled MoE layers as the GPTQ arm.
+    - "re:.*model[.]layers[.](?!(?:3|6|42|77)(?:[.]|$))[0-9]+(?:[.]|$).*"
+  fp8_dynamic_targets:
+    - "re:.*model[.]layers[.](0|3|6)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.](3|6)[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
+  # Offloaded generation on a 743B model gates the save for many minutes and
+  # streams every expert off disk for 64 tokens (M3 incident, 2026-07-07).
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 8
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm52-w4afp8-awq-smoke

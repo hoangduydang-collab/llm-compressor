@@ -97,7 +97,43 @@ exact combination that produced M3's r7/r8 series of bugs.
 
 ---
 
-## [C] NEW GLM-5.2 risk, found writing this
+## [C] NEW GLM-5.2 risk — found writing this, CONFIRMED and FIXED
+
+> **Status 2026-08-27: resolved.** Predicted below, then confirmed by gate 1 and
+> fixed in `7d08e0fa`. Gate 1 now reports **ALL PASS** for both arms with zero
+> failures and zero warnings. Kept in full because the prediction-then-test
+> sequence is the point: this cost one CPU pod instead of a multi-hour GPU run
+> that would have silently produced an unsmoothed AWQ checkpoint.
+>
+> Gate 1 output before the fix:
+> ```
+> awq_mapping_resolution_failed: ValueError: AWQ needs to match a single
+>   smoothlayer for each mapping but got ['model.layers.0.post_attention_
+>   layernorm', 'model.layers.1.post_attention_layernorm', ...]
+> no_awq_mappings: AWQ resolved no compatible, quantized smooth/balance mappings
+> [prequant] FAIL: quantized_modules=3096 awq_mappings=0 failures=2
+> ```
+> After pointing both GLM entries at `_mla_mixed_dense_moe_mappings`:
+> ```
+> [prequant] PASS: quantized_modules=3096 awq_mappings=1028 failures=0 warnings=0
+> ```
+> 1028 = 1024 per-expert up→down folds (4 sampled layers × 256 experts) + 4
+> MoE-input mappings. Guarded by
+> `tests/llmcompressor/modifiers/awq/test_mixed_dense_moe_mappings.py` (10 tests).
+>
+> **A second finding came out of the same run.** `GlmMoeDsaRMSNorm` was reported
+> `unclassified_norm_semantics`. It is genuinely plain
+> (`self.weight * hidden_states`), but the classifier had no way to say so — its
+> only buckets were "registered offset adapter", "known offset class, adapter
+> missing" (a hard failure), and "ordinary_or_unclassified". A norm someone had
+> read looked identical to one nobody had. That is precisely the gap the M3
+> offset-norm incident fell through, so `KNOWN_ORDINARY_NORM_CLASSES` and an
+> `ordinary_verified` status now record the check as an assertion (`056404b8`).
+>
+> Gate 1 also confirmed, from the real pinned venv (transformers 5.14.1): the
+> expert class is `GlmMoeDsaExperts`, and target matching resolves **3096**
+> modules = 3072 int4 expert modules (4 × 256 × 3) + 24 FP8 targets — exactly
+> what the configs intend, on both arms.
 
 **AWQ mapping includes `mlp.gate` but GLM-5.2 has three routerless dense layers.**
 

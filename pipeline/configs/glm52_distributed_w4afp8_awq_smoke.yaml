@@ -33,19 +33,27 @@
 #   d. Smoothing scales survive disk offload. offload_folder is set, and three
 #      separate M3 full runs (r2, r3, r7) lost folds or qparams exactly this way.
 #
-# BLOCKER A (unresolved, pre-check before launch):
-#   GlmMoeDsaForCausalLM maps to _deepseek_mappings, whose MoE-input mapping is
-#     AWQMapping("re:.*post_attention_layernorm$",
-#                ["re:.*mlp.gate$", "re:.*gate_proj$", "re:.*up_proj$"])
-#   GLM-5.2 has first_k_dense_replace=3, so layers 0,1,2 are dense and have NO
-#   mlp.gate router. The adjacent _glm4_moe_lite_mappings in the same file exists
-#   precisely to drop mlp.gate for that reason, commenting that including it
-#   "would break per-layer grouping in match_modules_set".
-#   Counter-evidence: DeepseekV3ForCausalLM uses the same mapping and also has
-#   first_k_dense_replace=3, so either match_modules_set tolerates the absent
-#   gate or this is simply unexercised. RESOLVE WITH GATE 1, do not guess:
-#     python -m pipeline.prequant_compatibility --config <this file> --output ...
-#   If resolution breaks, add a GLM-5.2 entry mirroring _glm4_moe_lite_mappings.
+# BLOCKER A — RESOLVED 2026-08-27 by gate 1, fixed in 7d08e0fa.
+#   GlmMoeDsaForCausalLM mapped to _deepseek_mappings, whose MoE-input mapping
+#   listed "re:.*mlp.gate$" as a balance layer. GLM-5.2 has
+#   first_k_dense_replace=3, so layers 0-2 are dense with no router, and
+#   match_modules_set could never close a per-layer set. Gate 1 failed with
+#     awq_mapping_resolution_failed: ValueError: AWQ needs to match a single
+#     smoothlayer for each mapping but got ['model.layers.0.post_attention_
+#     layernorm', 'model.layers.1...', ...]      -> awq_mappings = 0
+#   i.e. AWQ would have run with NO smoothing at all. Fixed by pointing both GLM
+#   entries at _mla_mixed_dense_moe_mappings (the renamed
+#   _glm4_moe_lite_mappings, which omits mlp.gate). Gate 1 now resolves 1028
+#   mappings = 1024 per-expert up->down folds (4 layers x 256) + 4 MoE-input
+#   mappings, with zero failures and zero warnings. Guarded by
+#   tests/llmcompressor/modifiers/awq/test_mixed_dense_moe_mappings.py.
+#
+#   Also resolved on the same run: GlmMoeDsaRMSNorm was reported as
+#   `unclassified_norm_semantics`. Its forward is `self.weight * hidden_states`
+#   (plain, not `1 + weight`), so it is now asserted in
+#   KNOWN_ORDINARY_NORM_CLASSES rather than left indistinguishable from a norm
+#   nobody had inspected — the distinction that the M3 offset-norm incident
+#   turned on.
 name: glm52_distributed_w4afp8_awq_smoke
 
 model:

@@ -86,6 +86,24 @@ quantization:
     - "re:.*model[.]layers[.](3|6)[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
   gptq_dampening_frac: 0.01
+  # REQUIRED on GLM-5.2. Run 20260827t105117z OOMed all four ranks here:
+  #   CUDA out of memory. Tried to allocate 144.00 MiB. GPU 0 has a total
+  #   capacity of 79.18 GiB ... 76.94 GiB is allocated by PyTorch
+  #   at gptq/base.py:277 in calibrate_module
+  # 76.94 GiB matches the predicted Hessian residency for ONE MoE layer:
+  #   256 experts * [2*(6144^2) + 2048^2] * 4B = 76.0 GiB
+  # and the failing 144 MiB request is exactly one gate/up_proj Hessian
+  # (6144^2 * 4B). The figure was IDENTICAL on all four ranks, confirming that
+  # peak Hessian residency does not scale down with world size: every rank
+  # accumulates every targeted module's Hessian before
+  # _reduce_hessian_to_target_rank frees non-owners. More GPUs will not fix it.
+  #
+  # This is a SMOKE-ONLY setting. offload_hessians round-trips the Hessian over
+  # PCIe once per module per sample (the context manager wraps the accumulation
+  # hook, not compression), which is ~3.6 TiB/layer at 8 samples but ~233
+  # TiB/layer at the full run's 512. See gptq_offload_hessians in
+  # pipeline/config.py. The full arm needs a different answer.
+  gptq_offload_hessians: true
   sample_generation: false
 
 calibration:

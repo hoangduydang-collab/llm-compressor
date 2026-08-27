@@ -47,6 +47,8 @@ def build_recipe(quant: QuantizationConfig) -> list:
         kwargs: dict = {"targets": "Linear", "scheme": scheme, "ignore": ignore}
         if quant.gptq_dampening_frac is not None:
             kwargs["dampening_frac"] = quant.gptq_dampening_frac
+        if quant.gptq_offload_hessians:
+            kwargs["offload_hessians"] = True
         return GPTQModifier(**kwargs)
 
     def awq_then_quant() -> list:
@@ -100,5 +102,6 @@ def describe_recipe(quant: QuantizationConfig) -> dict:
         "smoothquant_strength": quant.smoothquant_strength,
         "awq_duo_scaling": quant.awq_duo_scaling,
         "gptq_dampening_frac": quant.gptq_dampening_frac,
+        "gptq_offload_hessians": quant.gptq_offload_hessians,
         "fp8_dynamic_targets": list(quant.fp8_dynamic_targets),
     }

@@ -54,6 +54,26 @@ class QuantizationConfig:
     smoothquant_strength: float = 0.8
     awq_duo_scaling: bool = True
     gptq_dampening_frac: float | None = None
+    # Keep GPTQ Hessians in CPU memory instead of on the GPU.
+    #
+    # Every rank accumulates a Hessian for EVERY targeted module in the current
+    # sequential target before `_reduce_hessian_to_target_rank` frees non-owners,
+    # so peak Hessian residency is a property of the layer, NOT of world size --
+    # adding GPUs does not help. For a GLM-5.2 MoE layer (hidden 6144,
+    # moe_intermediate 2048, 256 routed experts) it is
+    #   256 * [2*(6144^2) + 2048^2] * 4B = 76.0 GiB
+    # which OOMed all four ranks of the first smoke at 76.94 GiB allocated on
+    # 79.18 GiB cards, failing on a 144 MiB request (exactly one gate/up_proj
+    # Hessian).
+    #
+    # COST, because it is easy to underestimate: _maybe_onload_hessian wraps the
+    # ACCUMULATION HOOK (gptq/base.py:276), not the compression step, so each
+    # hook call round-trips the Hessian over PCIe. Traffic is
+    #   n_modules * n_samples * 2 * sizeof(H)
+    # ~3.6 TiB per layer at 8 samples (fine, ~2.5 min) but ~233 TiB per layer at
+    # 512 samples (~2.6 h/layer, i.e. not viable for a full run). Treat this as a
+    # smoke/debug escape hatch, not the answer for production calibration.
+    gptq_offload_hessians: bool = False
     # r8: additional module-name regexes quantized to FP8_DYNAMIC (W8A8, data-
     # free RTN weights + per-token dynamic activations) on top of the main
     # method/scheme. Must be DISJOINT from the main modifier's targets — list

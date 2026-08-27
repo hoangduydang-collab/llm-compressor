@@ -13,6 +13,12 @@ from transformers.integrations.moe import _default_apply_gate
 from llmcompressor.utils.dev import skip_weights_initialize
 
 from .context import get_calibrate_all_experts_flag
+from .expert_parallel import (
+    DistCollectives,
+    expert_parallel_forward,
+    get_expert_parallel_context,
+    is_expert_parallel_enabled,
+)
 from .helpers import (
     FusedExpertsProtocol,
     MoEConfig,
@@ -306,6 +312,23 @@ class LinearExperts2D(torch.nn.ModuleList):
         top_k_index: torch.Tensor,
         top_k_weights: torch.Tensor,
     ) -> torch.Tensor:
+        # Expert-parallel calibration: shard the loop below across ranks so each
+        # rank only instantiates Hessians for the experts it owns. Verified
+        # bitwise identical to this path; see moe/expert_parallel.py for why the
+        # activations must be all-gathered first. Only taken when a context is
+        # active AND world_size > 1, so the default path is untouched.
+        if is_expert_parallel_enabled():
+            context = get_expert_parallel_context()
+            return expert_parallel_forward(
+                self,
+                hidden_states,
+                top_k_index,
+                top_k_weights,
+                context,
+                context.collectives or DistCollectives(context.group),
+                get_calibrate_all_experts_flag(),
+            )
+
         final_hidden_states = torch.zeros_like(hidden_states)
 
         # create tokens mask

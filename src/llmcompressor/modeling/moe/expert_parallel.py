@@ -39,6 +39,7 @@ all-to-all; ``routed_dispatch`` below covers that case.
 """
 
 import contextlib
+import threading
 from dataclasses import dataclass
 
 import torch
@@ -70,6 +71,10 @@ class ExpertParallelContext:
     rank: int
     world_size: int
     group: object = None
+    # Transport override. Production leaves this None and gets DistCollectives;
+    # carrying it here rather than patching a module global is what lets several
+    # simulated ranks coexist in one process, each with its own transport.
+    collectives: "Collectives | None" = None
 
     def __post_init__(self):
         if self.world_size < 1:
@@ -80,11 +85,15 @@ class ExpertParallelContext:
             )
 
 
-_CONTEXT: ExpertParallelContext | None = None
+# Thread-local, not a plain global. A production run is one process per rank, so
+# this costs nothing there -- but it means several ranks can be simulated as
+# threads without their contexts clobbering each other, and it prevents an
+# unrelated worker thread from inheriting a calibration context it never entered.
+_STATE = threading.local()
 
 
 def get_expert_parallel_context() -> ExpertParallelContext | None:
-    return _CONTEXT
+    return getattr(_STATE, "context", None)
 
 
 def is_expert_parallel_enabled() -> bool:
@@ -94,7 +103,8 @@ def is_expert_parallel_enabled() -> bool:
     would be a no-op wrapped in collectives, and the unsharded path is the one
     with validation history behind it.
     """
-    return _CONTEXT is not None and _CONTEXT.world_size > 1
+    context = get_expert_parallel_context()
+    return context is not None and context.world_size > 1
 
 
 @contextlib.contextmanager
@@ -102,6 +112,7 @@ def expert_parallel_context(
     rank: int | None = None,
     world_size: int | None = None,
     group=None,
+    collectives: "Collectives | None" = None,
 ):
     """Enable expert-parallel calibration for the duration of the block.
 
@@ -113,9 +124,8 @@ def expert_parallel_context(
     :param rank: this process's rank; inferred from ``dist`` when omitted.
     :param world_size: total ranks; inferred from ``dist`` when omitted.
     :param group: process group for collectives.
+    :param collectives: transport override; ``None`` uses ``DistCollectives``.
     """
-    global _CONTEXT
-
     if rank is None or world_size is None:
         if not (dist.is_available() and dist.is_initialized()):
             raise RuntimeError(
@@ -125,12 +135,14 @@ def expert_parallel_context(
         rank = dist.get_rank(group) if rank is None else rank
         world_size = dist.get_world_size(group) if world_size is None else world_size
 
-    previous = _CONTEXT
-    _CONTEXT = ExpertParallelContext(rank=rank, world_size=world_size, group=group)
+    previous = get_expert_parallel_context()
+    _STATE.context = ExpertParallelContext(
+        rank=rank, world_size=world_size, group=group, collectives=collectives
+    )
     try:
-        yield _CONTEXT
+        yield _STATE.context
     finally:
-        _CONTEXT = previous
+        _STATE.context = previous
 
 
 def shard_experts(num_experts: int, rank: int, world_size: int) -> list[int]:

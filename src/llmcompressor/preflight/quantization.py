@@ -39,6 +39,26 @@ KNOWN_OFFSET_NORM_CLASSES = frozenset(
     }
 )
 
+# Norm classes whose forward has been READ and confirmed to be ordinary
+# (``output * weight``, no ``1 +`` offset). Without this list the only possible
+# verdict for a plain norm is "unclassified", which is indistinguishable from
+# "nobody has looked" — and "nobody has looked" is exactly how the MiniMax-M3
+# offset-norm incident happened: AWQ smoothed a zero-centred parameter as if it
+# were an ordinary scale, and the first catastrophic value appeared at layer 8
+# (MoE input norm ~176,845 vs reference ~177).
+#
+# Only add a class here after reading its `forward`. An entry is an assertion
+# that someone did, so a wrong entry silently reintroduces that whole failure.
+#
+#   GlmMoeDsaRMSNorm (GLM-5.2, transformers v5.14.1) —
+#       return self.weight * hidden_states.to(input_dtype)
+#       Verified 2026-08-27 in modeling_glm_moe_dsa.py: plain, not (1 + weight).
+KNOWN_ORDINARY_NORM_CLASSES = frozenset(
+    {
+        "GlmMoeDsaRMSNorm",
+    }
+)
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -255,6 +275,12 @@ def analyze_quantization_compatibility(
                         "registered",
                     )
                 )
+            elif class_name in KNOWN_ORDINARY_NORM_CLASSES:
+                # Read and confirmed to be `output * weight`. Distinguished from
+                # the branch below so a checked norm does not look the same as an
+                # unexamined one.
+                status = "ordinary_verified"
+                adapter_name = None
             else:
                 status = "ordinary_or_unclassified"
                 adapter_name = None
@@ -265,7 +291,12 @@ def analyze_quantization_compatibility(
                         Finding(
                             "unclassified_norm_semantics",
                             f"AWQ smooth layer {mapping.smooth_name!r} uses "
-                            f"unclassified norm class {class_name}",
+                            f"unclassified norm class {class_name}. Read its "
+                            "forward: if it is `output * weight`, add it to "
+                            "KNOWN_ORDINARY_NORM_CLASSES; if it is "
+                            "`output * (1 + weight)`, add it to "
+                            "KNOWN_OFFSET_NORM_CLASSES and register a "
+                            "NormCalibrationModule adapter.",
                         )
                     )
             norm_reports.append(

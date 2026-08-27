@@ -2179,11 +2179,51 @@ more. Candidate real fixes, in order of preference:
 1. `sequential_targets_per_subgraph` (`args/dataset_arguments.py:252`) with
    expert-level `sequential_targets` — an **existing upstream mechanism** whose
    own help text is "Higher values use more VRAM but are faster to calibrate".
-   Targeting experts at ~32/subgraph bounds Hessians at ~10 GiB. Unverified
-   risk: making experts the targets forces fx to trace *into* the MoE block
-   instead of autowrapping it, and the router may not survive tracing.
-2. Expert-parallel calibration (shard experts, exchange tokens). ~19 GiB/rank at
-   EP=4, but bespoke distributed code — a last resort under the prime directive.
+   Targeting experts at ~32/subgraph bounds Hessians at ~10 GiB.
+
+   **Investigated 2026-08-27. Mechanically viable, NOT numerically equivalent.**
+   The blocker was not the MoE at all: `GlmMoeDsaMoE.forward` wraps the experts
+   call inside an untraceable starred `.view(*orig_shape)`, so the AST
+   autowrapper swallows `self.experts(...)` into an opaque `torch.fx.wrap` and
+   the experts get **zero** graph nodes regardless of `sequential_targets`.
+   Splitting that one statement exposes all experts (1 subgraph -> 17; 16 expert
+   nodes) and is **provably neutral** — 0.000e+00 across all 104 Linears with
+   targets held fixed.
+
+   But partitioning at expert granularity changes GPTQ's output, because the
+   greedy topological partitioner **interleaves layers**: measured, 12 layer-3
+   modules were compressed *after* layer 4 had already been calibrated (0 in the
+   decoder-layer baseline), because `shared_experts(residuals)` depends only on
+   the layer input and can be scheduled early. Layer 4 is then fitted against a
+   partly-full-precision upstream. Layer 3's own weights are bit-identical; only
+   downstream moves. Held-out quality is close (mse/rel/KL within 0.4-0.8%,
+   top-1 agreement -0.59pp) but consistently worse. Not inherent — constraining
+   the partition so no layer *k+1* module precedes layer *k*'s completion should
+   restore exactness — but that is an upstream partitioner change.
+   Also note the `"Expected N subgraphs, but only traced M"` warning ignores
+   `targets_per_subgraph`, so a correct run using this knob looks broken.
+2. Expert-parallel calibration (shard experts, all-gather activations).
+   ~19 GiB/rank at EP=4, and **preserves the decoder-layer partition**, so the
+   compression schedule — and therefore the result — is identical by
+   construction. Chosen over option 1 for that reason. Core landed 2026-08-27
+   (`modeling/moe/expert_parallel.py`, bitwise identical to the unsharded
+   forward at world sizes 2/4/8); config plumbing and GPU memory verification
+   still outstanding.
+
+**AWQ does NOT share this blocker — do not port the EP work to it.** AWQ
+accumulates no Hessian. Its cross-rank statistic is a *vector*: `x_sum`
+`[in_features]` fp32 plus a scalar count, accumulated **on CPU**
+(`modifiers/transform/awq/base.py:604`, `.float().sum(dim=0).cpu()`). That is
+~24 KiB per smooth point against GPTQ's 144 MiB per module, and on the host
+rather than the accelerator — so there is nothing to shard. Distributed
+aggregation is already implemented and complete: `_allreduce_data_sum([x_sum,
+count])` for the smoothing scale, and the same for the grid-search `loss` /
+`num_elements`. `offload_device` auto-defaults to CPU when a MoE model is
+detected, keeping the per-parent activation caches off the card. Validated at
+full scale on MiniMax-M3 across r2/r5/r6/r7 (8-rank torchrun; r2 alone ~6.8 h
+calibration, 21,888 quantized Linears). AWQ's scaling risks are a different
+class entirely — VMA/shm exhaustion, and silent smoothing-fold loss under disk
+offload — not GPU memory.
 
 **Lesson.** An async collective is a reference holder. Any memory-management
 code that drops a reference to free memory must first prove nothing else owns

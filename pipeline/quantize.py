@@ -740,6 +740,45 @@ def assert_quant_checkpoint_verified(ckpt: Path, base: Path | None = None) -> No
     print("[pipeline] quant-verify gate OK: structure + sampled tensors healthy")
 
 
+def _resolve_weight_index(model_id: str) -> Path | None:
+    """Locate a local ``model.safetensors.index.json`` for ``model_id``.
+
+    ``model.id`` is usually a HUB REPO ID (``zai-org/GLM-5.2``), not a directory.
+    Treating it as a path makes ``Path(model_id)/"model.safetensors.index.json"``
+    a relative path that never exists, so any check built on it silently skips
+    for every cache-resolved model — which is exactly how the VMA gate went inert
+    on the first GLM-5.2 run, printing "no local safetensors index at
+    zai-org/GLM-5.2/model.safetensors.index.json".
+
+    Order: an explicit local directory first (so a path-style ``model.id`` still
+    wins), then the HF cache. Never downloads: a gate must not depend on network.
+    Returns ``None`` when nothing local is found.
+    """
+    filename = "model.safetensors.index.json"
+
+    direct = Path(model_id) / filename
+    if direct.is_file():
+        return direct
+
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return None
+
+    try:
+        cached = try_to_load_from_cache(repo_id=model_id, filename=filename)
+    except Exception:
+        # A malformed repo id, or a cache layout we do not understand, must not
+        # crash the run before quantization has even started.
+        return None
+
+    # try_to_load_from_cache returns a str on hit, or the _CACHED_NO_EXIST
+    # sentinel object when the file is known to be absent upstream.
+    if isinstance(cached, str) and Path(cached).is_file():
+        return Path(cached)
+    return None
+
+
 def assert_vma_budget_for_shared_offload(
     cfg: PipelineConfig,
     dist_ctx: DistributedContext,
@@ -765,11 +804,13 @@ def assert_vma_budget_for_shared_offload(
     # getattr: contract tests drive run_quantize with minimal cfg stand-ins
     if getattr(cfg.model, "device_map", None) != "auto_offload":
         return
-    index_json = Path(cfg.model.id) / "model.safetensors.index.json"
-    if not index_json.is_file():
+    index_json = _resolve_weight_index(cfg.model.id)
+    if index_json is None:
         print(
-            "[pipeline] VMA gate: no local safetensors index at "
-            f"{index_json}; cannot estimate segment count, skipping"
+            "[pipeline] VMA gate: could not resolve a local "
+            "model.safetensors.index.json for "
+            f"{cfg.model.id!r} (tried the path directly and the HF cache); "
+            "cannot estimate segment count, skipping"
         )
         return
 

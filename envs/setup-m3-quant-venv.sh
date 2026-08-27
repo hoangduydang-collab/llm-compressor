@@ -92,6 +92,15 @@ if ! "$VPY" -m pip install -r "$REQ"; then
   echo "==> core installed; FULL PIN SET NOT REPRODUCED -- treat this venv as approximate"
 fi
 
+# The M3 venv's repair to transformers' sharded offloaded save_pretrained was
+# an in-place source edit, which `pip freeze` cannot record -- so installing
+# the manifest reproduces the version and drops the patch. Re-apply it here or
+# every rebuilt venv silently reintroduces the bug.
+echo
+echo "==> re-applying the transformers sharded-save hotfix"
+"$VPY" "$HERE/hotfix-transformers-sharded-save.py" \
+  || die "transformers sharded-save hotfix failed; see the marker note above"
+
 echo
 echo "==> installed versions vs the M3 manifest"
 "$VPY" -m pip install --quiet -e "$HERE/.." 2>&1 | tail -2 || true

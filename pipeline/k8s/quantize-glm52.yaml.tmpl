@@ -128,6 +128,17 @@ spec:
               echo "    pinning:"; sed 's/^/      /' /tmp/pins.txt
               pip install --quiet -r /tmp/pins.txt 2>&1 | tail -5
 
+              # The M3 venv carried an in-place repair to transformers'
+              # sharded offloaded save_pretrained that no pip freeze can
+              # record, so pinning the version silently dropped it and the
+              # offloaded-save gate failed this job 3 minutes in. Re-apply it
+              # from source control instead of by hand. Fail-closed: a
+              # non-zero exit here aborts the run under `set -e`, which is
+              # correct -- an unpatched save dies at the end of shard 1 after
+              # the whole calibration has been paid for.
+              echo "==> hotfix: transformers sharded offloaded save"
+              python envs/hotfix-transformers-sharded-save.py --no-backup
+
               pip install --quiet -e . 2>&1 | tail -2 || true
               python - <<'VER'
               import torch, transformers, llmcompressor

@@ -42,6 +42,41 @@ __all__ = ["GPTQModifier"]
 
 _GPTQ_Q_PARAMS = ["weight", "weight_scale", "weight_zero_point", "weight_g_idx"]
 
+# Ceiling on Hessian bytes resident on the accelerator at once during the
+# distributed reduce, and only when ``offload_hessians`` is set. Not a tuning
+# knob so much as the difference between the flag working and not working; see
+# ``_reduce_hessian_to_target_rank``. 4 GiB keeps ~28 GLM-5.2 gate_proj
+# Hessians (144 MiB each) in flight, which is ample overlap, while leaving the
+# layer's own weights room to sit alongside it.
+_HESSIAN_REDUCE_ONLOAD_BYTES = 4 * 1024**3
+
+
+def _chunk_by_bytes(module_list, hessians, max_bytes):
+    """Split modules into consecutive groups whose Hessians fit in ``max_bytes``.
+
+    Deterministic in ``module_list`` and the Hessian shapes. Both are identical
+    across ranks, so every rank derives the same boundaries and therefore issues
+    its collectives in the same order -- a requirement, not a nicety: a rank that
+    chunked differently would deadlock against its peers.
+
+    :param module_list: modules to group, in the order their collectives run.
+    :param hessians: mapping from module to its Hessian tensor.
+    :param max_bytes: soft ceiling on the summed Hessian bytes of one group.
+    """
+    chunk, total = [], 0
+    for module in module_list:
+        hessian = hessians[module]
+        size = hessian.numel() * hessian.element_size()
+        if chunk and total + size > max_bytes:
+            yield chunk
+            chunk, total = [], 0
+        # A single Hessian exceeding the budget is still emitted, alone, rather
+        # than dropped: the budget yields to correctness.
+        chunk.append(module)
+        total += size
+    if chunk:
+        yield chunk
+
 
 class GPTQModifier(Modifier, QuantizationMixin):
     """
@@ -336,30 +371,72 @@ class GPTQModifier(Modifier, QuantizationMixin):
 
     def _reduce_hessian_to_target_rank(self, module_list, module_to_rank):
         rank = dist.get_rank()
+
+        if not self.offload_hessians:
+            # Hessians already sit on the accelerator, so reducing the whole
+            # layer as one batch costs no extra memory and maximizes overlap.
+            self._reduce_hessian_chunk(module_list, module_to_rank, rank)
+            return
+
+        # With offloading, an onloaded Hessian stays resident until its async
+        # reduce is waited on: NCCL holds a reference that neither popping the
+        # dict entry nor moving the entry back to CPU can release. Reducing the
+        # whole layer as one batch therefore re-materializes the ENTIRE Hessian
+        # set on the accelerator, defeating offload_hessians at precisely the
+        # point it is needed. Measured on GLM-5.2 (256 routed experts, hidden
+        # 6144, 4x H100): 77.36 GiB resident, then OOM onloading a 144 MiB
+        # Hessian with 4.12 MiB free -- i.e. the full unoffloaded footprint.
+        # Chunking bounds the peak; the reduce itself is unchanged.
+        for chunk in _chunk_by_bytes(
+            module_list, self._hessians, _HESSIAN_REDUCE_ONLOAD_BYTES
+        ):
+            self._reduce_hessian_chunk(chunk, module_to_rank, rank)
+
+    def _reduce_hessian_chunk(self, chunk, module_to_rank, rank):
+        """Reduce one group of Hessians to their owner ranks and release them.
+
+        :param chunk: modules whose Hessians are reduced together.
+        :param module_to_rank: mapping from module to the rank that owns it.
+        :param rank: this process's rank.
+        """
         pending_comms = []
-        for module in module_list:
+        onloaded = []
+        for module in chunk:
             target_rank = module_to_rank[module]
-            with self._maybe_onload_hessian(module):
-                pending_comms.append(
-                    dist.reduce(
-                        self._hessians[module],
-                        op=dist.ReduceOp.SUM,
-                        dst=target_rank,
-                        async_op=True,
-                    )
+            if self.offload_hessians:
+                self._hessians[module] = self._hessians[module].to(
+                    device=get_execution_device(module)
                 )
-                pending_comms.append(
-                    dist.reduce(
-                        self._num_samples[module],
-                        op=dist.ReduceOp.SUM,
-                        dst=target_rank,
-                        async_op=True,
-                    )
+                onloaded.append(module)
+            pending_comms.append(
+                dist.reduce(
+                    self._hessians[module],
+                    op=dist.ReduceOp.SUM,
+                    dst=target_rank,
+                    async_op=True,
                 )
-                if rank != target_rank:
-                    self._hessians.pop(module, None)
-                    self._num_samples.pop(module, None)
+            )
+            pending_comms.append(
+                dist.reduce(
+                    self._num_samples[module],
+                    op=dist.ReduceOp.SUM,
+                    dst=target_rank,
+                    async_op=True,
+                )
+            )
+
+        # Both loops below MUST come after the wait. Releasing a tensor whose
+        # reduce is still in flight reclaims nothing (NCCL keeps it alive) and
+        # would be a use-after-free if it did.
         wait_for_comms(pending_comms)
+
+        for module in chunk:
+            if rank != module_to_rank[module]:
+                self._hessians.pop(module, None)
+                self._num_samples.pop(module, None)
+        for module in onloaded:
+            if module in self._hessians:  # popped just above if not owned here
+                self._hessians[module] = self._hessians[module].to(device="cpu")
 
     def _broadcast_quantized_params(self, module_list, module_to_rank):
         rank = dist.get_rank()

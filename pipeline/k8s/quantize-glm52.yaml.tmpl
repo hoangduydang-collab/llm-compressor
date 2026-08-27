@@ -217,7 +217,24 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: 64Gi        # the 64Mi default breaks NCCL and dataloaders
+            # The 64Mi default breaks NCCL and dataloaders. Beyond that, this is
+            # the REAL ceiling on distributed CPU offload: compressed-tensors
+            # puts one shm segment per offloaded tensor in /dev/shm, so
+            # model.max_memory.cpu cannot exceed this no matter what the config
+            # says. At 64Gi, GLM-5.2 kept ~1133 GB of its 1485 GB on cephfs --
+            # measured at 31 MB/s single-stream, which dominated wall clock
+            # (86 min just to propagate layers 7-41, vs ~4 min to compress one).
+            #
+            # tmpfs is charged to the container's memory limit as it fills, so
+            # this does NOT reserve anything up front and adds no node pressure
+            # beyond the existing limit below. Sized to leave room for four
+            # ranks' working set (M3 measured 600-850 GiB RSS).
+            #
+            # vm.max_map_count is NOT the binding constraint for GLM-5.2:
+            # even full CPU residency projects ~200k segments against the
+            # 262144 limit. The VMA gate in pipeline/quantize.py verifies this
+            # per run -- do not raise this without letting that gate pass.
+            sizeLimit: 600Gi
         - name: work
           emptyDir:
             sizeLimit: 100Gi

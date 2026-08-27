@@ -63,7 +63,22 @@ model:
   dtype: bfloat16
   device_map: auto_offload
   max_memory:
-    cpu: 32000000000
+    # 550 GB, up from the 32e9 inherited from M3. That cap existed to stay under
+    # vm.max_map_count, but for GLM-5.2 the VMA arithmetic is not the binding
+    # constraint: 550 GB projects ~65k shm segments (+24k slack) against a
+    # 262144 limit, and even FULL CPU residency projects only ~200k. The real
+    # ceiling was the dshm emptyDir sizeLimit, raised to 600Gi alongside this.
+    #
+    # Why it matters: at 32e9, ~1133 GB of the 1485 GB model lived on cephfs,
+    # measured at 31 MB/s single-stream. That put storage on the critical path
+    # of every propagation step -- 86 min to walk layers 7-41 (which are not
+    # even quantized) against ~4 min to compress a targeted layer. 550 GB cuts
+    # cephfs residency to ~615 GB.
+    #
+    # Not higher on this first run: tmpfs is charged to the pod's 1200Gi memory
+    # limit as it fills, and four ranks need working set on top (M3 measured
+    # 600-850 GiB RSS). 550 GB leaves a real margin; 1000 GB would not.
+    cpu: 550000000000
   # Distinct from the GPTQ arm — see (3) above.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke
 

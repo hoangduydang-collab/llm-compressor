@@ -65,16 +65,23 @@ def test_returns_none_when_nothing_is_cached(tmp_path, monkeypatch):
 
 
 def test_cached_no_exist_sentinel_is_not_mistaken_for_a_path(tmp_path, monkeypatch):
-    """try_to_load_from_cache returns a sentinel OBJECT when upstream lacks the
-    file. Truth-testing it would make a single-shard model look like a hit."""
+    """try_to_load_from_cache returns a sentinel OBJECT when upstream is known not
+    to have the file. Truth-testing the return value would make a single-shard
+    model look like a cache hit.
+
+    Deliberately stands in a plain object rather than importing
+    huggingface_hub's private _CACHED_NO_EXIST: the contract under test is "only
+    a str is a path", which holds for any non-str sentinel and does not break
+    when the library moves or renames that symbol.
+    """
     monkeypatch.chdir(tmp_path)
     import huggingface_hub
-    from huggingface_hub.constants import _CACHED_NO_EXIST
 
+    sentinel = object()
     monkeypatch.setattr(
         huggingface_hub,
         "try_to_load_from_cache",
-        lambda repo_id, filename: _CACHED_NO_EXIST,
+        lambda repo_id, filename: sentinel,
     )
     assert _resolve_weight_index("zai-org/GLM-5.2") is None
 
@@ -106,6 +113,7 @@ def test_cache_lookup_errors_do_not_propagate(tmp_path, monkeypatch):
 
 
 def test_local_directory_wins_over_cache(tmp_path, monkeypatch):
+    """A relative model_id yields a relative path, so compare resolved paths."""
     monkeypatch.chdir(tmp_path)
     local = _write_index(tmp_path / "local" / "glm52")
     other = _write_index(tmp_path / "cache" / "glm52")
@@ -114,7 +122,10 @@ def test_local_directory_wins_over_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(
         huggingface_hub, "try_to_load_from_cache", lambda repo_id, filename: str(other)
     )
-    assert _resolve_weight_index("local/glm52") == local
+    got = _resolve_weight_index("local/glm52")
+    assert got is not None
+    assert got.resolve() == local.resolve()
+    assert got.resolve() != other.resolve()
 
 
 @pytest.mark.parametrize("model_id", ["", "   "])

@@ -2121,3 +2121,116 @@ load-bearing precisely because `cudaFree`'s implicit sync usually hides its
 absence. And when a fix works for reasons you can't state (expSegOff), keep
 digging: the mechanism (`cudaFree` vs `cuMemUnmap`) pointed straight at the
 one-line root cause.
+
+## GLM-5.2 distributed GPTQ: `offload_hessians` defeated by the reduce (fixed, 2026-08-27)
+
+First GLM-5.2 incident, and an **upstream bug** — present verbatim in
+`vllm-project/llm-compressor` main when found, with no matching issue.
+
+**Symptom.** 4×H100, world_size 4, GPTQ smoke with `gptq_offload_hessians: true`.
+Calibration of the first MoE layer (subgraph 5/79) completed with Hessians on
+CPU — 3:46 for 8 samples, the expected PCIe cost — then:
+
+```
+gptq/base.py:414 in _maybe_onload_hessian
+    self._hessians[module] = self._hessians[module].to(device=device)
+torch.OutOfMemoryError: Tried to allocate 144.00 MiB. GPU 3 has a total
+capacity of 79.18 GiB of which 4.12 MiB is free. ... 77.36 GiB is allocated
+by PyTorch
+```
+
+77.36 GiB is the **full unoffloaded Hessian footprint**: 256 routed experts ×
+(gate 144 + up 144 + down 16 MiB) = 76.0 GiB, plus attention and shared expert.
+The offloading had been undone.
+
+**Root cause.** `_reduce_hessian_to_target_rank` issued one *async*
+`dist.reduce` per module and called `wait_for_comms` only after the loop. An
+onloaded Hessian stays resident until its reduce is waited on: NCCL holds an
+internal reference, so neither `self._hessians.pop(module)` nor
+`_maybe_onload_hessian`'s move-back to CPU can release it. Both operations
+rebind or drop a *Python* reference to a tensor the collective still owns. So
+the loop re-materialized every Hessian in the layer on the accelerator, and
+`offload_hessians` bought nothing in the one mode that needs it.
+
+Note that the flag is *not* broken in the non-distributed path, and not broken
+during calibration — only where the async reduce pins what the flag just
+offloaded. That is why it presented as "offloading works, then OOMs anyway".
+
+**Fix.** Chunk the reduce (`_HESSIAN_REDUCE_ONLOAD_BYTES`, 4 GiB) and release
+the accelerator copies only *after* `wait_for_comms`. Chunk boundaries derive
+from `module_list` and the Hessian shapes, both identical across ranks, so every
+rank issues its collectives in the same order — a rank that chunked differently
+would deadlock against its peers. The non-offloaded path keeps the original
+single-batch behaviour exactly: its Hessians are already resident, so batching
+costs no memory and preserves maximum comm overlap. That is the path MiniMax-M3
+was validated on, and it is unchanged.
+
+**Verification** (`tests/.../gptq/test_hessian_reduce_offload.py`, 12 tests, no
+GPU): peak resident **108 GiB → 3.94 GiB** across 28 windows on GLM-5.2's 768
+expert Linears. The harness was run against the original implementation to
+confirm it fails there — a memory test that passes both ways proves nothing.
+Tests also pin the ordering invariant, the after-wait release, and that the
+non-offloaded path still uses one window.
+
+**Still open: `offload_hessians` is not the answer for the full run.** Layer 5
+calibration took 3:46 at 8 samples; that is linear in samples, so ~4 h per MoE
+layer at 512 samples, across 75 MoE layers. It unblocks a smoke and nothing
+more. Candidate real fixes, in order of preference:
+1. `sequential_targets_per_subgraph` (`args/dataset_arguments.py:252`) with
+   expert-level `sequential_targets` — an **existing upstream mechanism** whose
+   own help text is "Higher values use more VRAM but are faster to calibrate".
+   Targeting experts at ~32/subgraph bounds Hessians at ~10 GiB. Unverified
+   risk: making experts the targets forces fx to trace *into* the MoE block
+   instead of autowrapping it, and the router may not survive tracing.
+2. Expert-parallel calibration (shard experts, exchange tokens). ~19 GiB/rank at
+   EP=4, but bespoke distributed code — a last resort under the prime directive.
+
+**Lesson.** An async collective is a reference holder. Any memory-management
+code that drops a reference to free memory must first prove nothing else owns
+the tensor — and "I popped it from the dict" is not that proof.
+
+## Environment reproducibility: `pip freeze` does not record source patches (2026-08-27)
+
+Immediate recurrence of the 5.14.1 `weight_map` bug above, from a new direction,
+and the more transferable of the two lessons.
+
+GLM-5.2 was being quantized on the sglang image's transformers 5.12.1 while
+MiniMax-M3 was validated on 5.14.1. Pinning the stack to
+`envs/m3-quant-freeze.txt` (the verbatim freeze of the M3 quant venv) fixed the
+version skew — and *introduced* the save bug, because the M3 venv carried the
+one-line repair as an **in-place edit to the installed `modeling_utils.py`**.
+A `pip freeze` records versions, not edits. The manifest faithfully reproduced
+`transformers==5.14.1` and silently dropped the patch. Worse, the image's older
+5.12.1 had been *safe* — our save shims cover that path — so pinning "closer to
+M3" moved the environment backwards on this axis.
+
+`assert_transformers_offloaded_save_healthy()` caught it 3 minutes into a 4-GPU
+job, before any calibration spend. The gate did exactly the job it was written
+for; the note above ("catches a venv rebuild that silently drops the hotfix")
+predicted this precisely.
+
+The repair script named in the 2026-07-18 entry, `upgrade_quant_venv_tf5141.sh`,
+**was never committed** — it existed only on the retired cluster and went away
+with it. So the fix had to be re-derived from the gate's error message and the
+notes here.
+
+**Resolution.** `envs/hotfix-transformers-sharded-save.py`: idempotent, verifies
+by re-reading the file from disk rather than trusting the write, and fail-closed
+— if the marker is absent or appears more than once it writes nothing and exits
+non-zero rather than pattern-matching a changed upstream line. Wired into both
+`pipeline/k8s/quantize-glm52.yaml.tmpl` and `envs/setup-m3-quant-venv.sh`, so
+neither a fresh pod nor a rebuilt venv can lose it. Covered by
+`pipeline/tests/test_sharded_save_hotfix.py` (15 tests with the existing gate
+tests), which also pins the two copies of the `shimmed`/`healthy`/`broken`
+classifier against drift — the classifier is duplicated because the hotfix must
+run before the repo is installed and cannot import `pipeline.quantize`.
+
+**Lessons.**
+- A freeze manifest is not an environment. Any repair applied *inside*
+  site-packages must live in version control and be re-applied by a script, or
+  it is lost at the next rebuild — silently, because the manifest still matches.
+- A repair script kept only on the cluster it was used on is a repair that will
+  be re-derived from scratch. Environment fixes belong in the repo, not the box.
+- "Pin to the validated environment" is not automatically safer than the status
+  quo. Here it removed a shim that was protecting us, so the pin needed its own
+  gate — which, fortunately, already existed.

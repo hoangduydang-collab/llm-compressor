@@ -171,6 +171,43 @@ mismatch), even though the specific mapping and cause differ.
 
 ---
 
+## [D] What actually fired on cluster — GPTQ smoke, 2026-08-27
+
+Two failures, neither in the [B] HIGH table, both fixed. Recorded here because
+the gap between what this document predicted and what happened is the useful
+part. Full write-ups in `BUGS_AND_FIXES.md`.
+
+| # | Failure | Predicted? | Fix |
+|---|---|---|---|
+| 1 | Hessian OOM at 76 GiB during calibration | **Yes**, quantitatively — `quantize-glm52.yaml.tmpl` header predicted "~76 GiB of fp32 Hessian per rank"; measured 76.94 GiB | `gptq_offload_hessians: true` (smoke only) |
+| 2 | `offload_hessians` silently defeated by the distributed reduce → OOM at 77.36 GiB | **No.** Upstream bug, no issue filed anywhere | `8356acc8` — chunked reduce, release after wait |
+| 3 | Sharded offloaded `save_pretrained` broken by pinning transformers to the M3 manifest | **Partly** — the *class* is [B] HIGH row 4 and the MEDIUM "offloaded-save" rows; the *trigger* (a freeze manifest cannot carry an in-place source patch) was not anticipated | `b8888fba` — `envs/hotfix-transformers-sharded-save.py`, wired into the Job and the venv setup |
+
+**What this document got right.** The Hessian arithmetic was right to within 1%
+before any GPU ran, and the lever it named (`offload_hessians`, "NOT more GPUs")
+was the correct lever. Gate 1 caught the AWQ mapping bug for the price of one CPU
+pod. The `assert_transformers_offloaded_save_healthy` gate — flagged here as a
+present HIGH fix — aborted failure 3 in three minutes rather than at the end of
+shard 1.
+
+**What it missed, and why.** Both misses share a shape: the document verified
+that *fixes were present* and that *known incidents transfer*, but had no way to
+predict a bug in code neither model had exercised. M3 never used
+`offload_hessians` (its 40.5 GiB fit), so the distributed reduce's interaction
+with it had never run — a path that is new *because* GLM-5.2 is bigger, not
+because GLM-5.2 is different. Any carry-over analysis is blind to exactly that
+category, and scaling up is the most likely way to enter it.
+
+**Consequence for the full run.** `offload_hessians` unblocks a smoke and nothing
+more: layer 5 calibration took 3:46 at 8 samples, which is linear in samples —
+~4 h per MoE layer at 512, across 75 MoE layers. A bounded-memory calibration
+path is now the blocker for the full GPTQ arm. Preferred candidate is the
+existing `sequential_targets_per_subgraph` mechanism, not bespoke
+expert-parallel code; see `BUGS_AND_FIXES.md` for the tradeoff and the
+unverified tracing risk.
+
+---
+
 ## Pre-launch checklist
 
 ```bash

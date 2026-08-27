@@ -844,3 +844,6 @@ artifacts/aiperf-datasets/
 *.kubeconfig.yaml
 infermesh-*.yaml
 kubeconfig*
+
+# rendered k8s manifests from pipeline/k8s/launch-*.sh
+.k8s-rendered/

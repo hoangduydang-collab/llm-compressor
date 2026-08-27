@@ -95,7 +95,14 @@ else
 fi
 
 # --- render -----------------------------------------------------------------
-RENDERED="$(mktemp -t "${JOB}.XXXXXX.yaml")"
+# Rendered into the repo and handed to kubectl as a RELATIVE path, deliberately.
+# mktemp gives a POSIX path (/tmp/...) that a Windows kubectl.exe cannot resolve
+# ("the path ... does not exist"), and absolute Git-Bash paths (/c/Users/...) are
+# no better. A relative path sidesteps path translation on every platform.
+RENDER_DIR=".k8s-rendered"
+cd "$REPO_ROOT"
+mkdir -p "$RENDER_DIR"
+RENDERED="$RENDER_DIR/${JOB}.yaml"
 sed -e "s|@@METHOD@@|${METHOD}|g" \
     -e "s|@@GPUS@@|${GPUS}|g" \
     -e "s|@@CONFIG@@|${CONFIG}|g" \

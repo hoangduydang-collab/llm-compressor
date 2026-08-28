@@ -1,0 +1,186 @@
+# GLM-5.2 AWQ calibration-cost probe, run against a DEPTH-TRUNCATED subset on
+# node-local NVMe. Launch with:
+#
+#   pipeline/k8s/launch-quant-glm52.sh --method awq --gpus 6 #       --config pipeline/configs/glm52_awq_nvme_probe.yaml #       --evidence-only --subset-layers 4
+#
+# QUESTION. Is AWQ calibration cost linear in calibration tokens? Every full-run
+# projection we have (128x512 ~ 28 h, 96x512 ~ 21 h) multiplies out an assumed
+# linearity that has never been measured. If the cost is sublinear -- the
+# hypothesis being that the walk is storage-bound with GPUs ~90% idle, so more
+# tokens per layer partly ride along for free -- then the canonical AWQ recipe
+# already fits inside a day on one node and no multi-node work is needed.
+#
+# DESIGN. 256 samples x 2048 tokens = 524,288 calibration tokens against ONE
+# targeted layer (3, the first MoE layer; first_k_dense_replace = 3). That is 32x
+# the 32x512 = 16,384 tokens of the AWQ smoke, whose layer-3 AWQ compute measured
+# 7.4 min (smoothing 4:22). Linear predicts ~3.9 h for the targeted layer.
+#
+# WHY A SUBSET, AND WHY IT IS FAITHFUL. The full model costs ~63 min of setup per
+# run (53 min reading all 59,585 tensors off cephfs, ~99% of which transformers
+# then discards, plus ~10 min dispatch). Layers 0..3 are 24.2 GiB and fit on the
+# node-local NVMe measured at 1.7 GB/s vs cephfs's 135-260 MB/s, cutting setup to
+# under a minute. The measurement is unaffected: the sequential pipeline
+# calibrates one layer at a time and layer 3's inputs are produced by layers 0-2,
+# which the subset carries verbatim. What it drops -- layers 4..77 -- a
+# stop_after_last_target run never calibrates anyway.
+#
+# It also removes the confound that killed the previous attempt. Run 121642z died
+# on a broken template (a literal backslash-n; see BUGS_AND_FIXES.md) and its
+# relaunch 122858z was starved by cephfs contention with the smoke's 1457 GB save
+# -- a calibration timing measured against a contended filesystem answers no
+# question. Reading from local NVMe isolates this run from that entirely.
+#
+# moe_calibrate_all_experts stays TRUE. It routes every token through all 256
+# experts (~256x a normal forward) and is the single largest compute multiplier in
+# the pipeline, so turning it off would measure a different pipeline. Its cost is
+# a separate question, and a quality question before a speed one.
+#
+# NOT A CHECKPOINT SOURCE. --evidence-only is mandatory with --subset-layers (the
+# template aborts otherwise): a 4-layer model is a timing instrument, and saving
+# one would produce a corrupt artifact that looks like a real quantization.
+
+model:
+  id: zai-org/GLM-5.2
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    # 32e9 -- MiniMax-M3's value, restored after measuring what raising it cost.
+    #
+    # THE MEASUREMENT (run 20260828t052128z, 8xH100 on gpu03, at cpu=900e9):
+    #     weight load                                          66 min
+    #     "Dispatching model", 78460 tensors at 8-9.5 it/s      ETA 2h34m
+    #     => ~3.7 h of setup before calibration even begins.
+    # M3 ran a comparable job END TO END, including the save, in 71 min at 32e9.
+    #
+    # WHY THIS KNOB CONTROLS THAT. Everything inside the budget is memcpy'd into
+    # /dev/shm by DistributedCPUCache.offload (share_memory_() + broadcast +
+    # barrier, per tensor); everything beyond it becomes a near-free symlink to
+    # the original HF blob. 900e9 copies ~838 GiB, 32e9 copies ~30 GiB. The
+    # dispatch is copy-bound, not per-tensor-bound: 6197 tensors dispatched
+    # corresponded to 100 GiB of shm (~16.5 MB/tensor against a 19 MB average
+    # tensor). A purely per-tensor cost at 8.15 it/s would have made M3's ~40k
+    # tensors take 82 min by themselves, which its 71 min total rules out.
+    #
+    # WHY THE COPY BUYS ALMOST NOTHING. DiskCache.onload reads straight from the
+    # symlinked original, through the page cache:
+    #     with safe_open(weight_info["safetensors_file"], ...) as file:
+    #         onloaded = file.get_tensor(weight_info["weight_name"])
+    # A disk-placed unmodified weight served from cache is about as fast as an
+    # shm copy; the copy buys GUARANTEED residency rather than BEST-EFFORT. And
+    # page cache is charged to the pod's memory cgroup, so the POD MEMORY LIMIT
+    # (1700Gi), not this value, is what bounds total residency -- shm and page
+    # cache are substitutes, not additions.
+    #
+    # DO NOT OVERSELL THE REVERT. A small budget SHIFTS cost from dispatch to the
+    # sequential walk rather than removing it. The walk is storage-bound and
+    # sample-independent: 86 min for 35 untargeted layers is 2.5 min/layer, i.e.
+    # 19 GB/layer at ~127 MB/s, which is simply cephfs speed. Projected totals
+    # after load:
+    #     32e9  -> dispatch   ~5 min + walk ~190 min = ~195 min
+    #     900e9 -> dispatch ~155 min + walk  ~82 min = ~237 min
+    # Worth ~45 min, not hours.
+    #
+    # THE ACTUAL REGRESSION IS STORAGE, and no value here fixes it. cephfs
+    # measures 31 MB/s single-stream with a 28 ms TCP RTT to the monitor, roughly
+    # 4x worse than the old cluster's /mnt/nfs -- which is why M3 finished in
+    # 71 min and this does not. The lever is staging the snapshot onto flash (the
+    # cluster has an all-flash sc-file-nfs-vast-my class; region unverified, and
+    # it needs a ~1.6 Ti PVC, so it is a decision rather than a tweak).
+    #
+    # TWO TRAPS, both paid for already:
+    #  - `auto_offload` is NOT `auto`. compressed_tensors/offload/load.py
+    #    intercepts it as "same as auto, but only cpu/disk are visible", so the
+    #    device map never places a weight on an accelerator and GPUs contribute
+    #    ZERO residency. Measured: 1509 MiB per GPU (bare CUDA context) for the
+    #    whole load. Never add VRAM to this budget.
+    #  - The offload_folder is NOT a copy of the model. 36838 of its entries are
+    #    symlinks to the original blobs; only genuinely modified tensors become
+    #    real files. Do not size this budget to "avoid a spill" -- there is none.
+    #
+    # The algorithm needs no residency at all: the sequential pipeline onloads
+    # one decoder layer (~19 GB) at a time, with calibrate/compress/propagate all
+    # inside a single `disable_offloading()` block, and IntermediatesCache
+    # carrying activations forward so earlier layers are never re-run. This value
+    # is a cache, not a requirement.
+    #
+    # Superseded commits, kept findable: 3f918cd0 (the VRAM correction, still
+    # valid), 9efb919b (raised AWQ to 1350e9 against a "585 GB spill" that does
+    # not exist; its GPTQ Hessian ceiling reasoning IS still valid), 702d14d0
+    # (reverted that to 900e9, for a reason that was right by accident).
+    cpu: 32000000000
+  # On local NVMe with the subset: offload here is 1.7 GB/s, not 31 MB/s.
+  offload_folder: /scratch/offload/glm52-awq-routerfix
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+    # Keep ONLY layer 3. The regex below excludes every other layer index;
+    # with --subset-layers 4 there are no others anyway, but the config must
+    # stand alone if run against the full model.
+    - "re:.*model[.]layers[.](?!3(?:[.]|$))[0-9]+(?:[.]|$).*"
+  fp8_dynamic_targets:
+    - "re:.*model[.]layers[.](0|3)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]3[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
+  # Offloaded generation on a 743B model gates the save for many minutes and
+  # streams every expert off disk for 64 tokens (M3 incident, 2026-07-07).
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  # 32, up from 8, and it is affordable for a reason opposite to the one first
+  # written here. That text said 32 "became affordable once the model went fully
+  # RAM-resident (max_memory.cpu 900e9)"; the budget is back at 32e9 and 32
+  # samples is still fine, because the sequential WALK is storage-bound and
+  # therefore sample-independent. Measured: 86 min for 35 untargeted layers is
+  # 2.5 min/layer = 19 GB/layer at ~127 MB/s, i.e. cephfs read speed. The walk
+  # pays per BYTE OF WEIGHTS, not per sample, so 8 -> 32 barely moves it.
+  #
+  # What samples DO scale is the work on targeted layers only, which is 2 of 78
+  # here. Keep an eye on that for the GPTQ arm specifically, where
+  # offload_hessians round-trips each Hessian over PCIe once per module per
+  # sample (~3.6 TiB/layer at 8 samples, ~14.4 TiB at 32).
+  #
+  # 32 rather than the production 512 because the per-targeted-layer cost at 32
+  # is still unmeasured -- no run has yet reached calibration on this model.
+  # Measure a targeted layer's compression time before raising it further.
+  num_samples: 32
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+
+  # SMOKE ONLY (stop_after_last_target). This config quantizes 2 of 78 layers,
+  # but the sequential pipeline still propagates activations through all 78 --
+  # trailing layers exist only to feed layers after them, and nothing after 42 is
+  # targeted. Measured cost of that tail: ~2.5 min/layer on GLM-5.2 (19 GB of
+  # weights at ~127 MB/s network storage), so layers 43-77 are ~87 min of pure
+  # waste. The pipeline refuses to skip unless it can attribute EVERY targeted
+  # module to a subgraph at or before the cut, so this cannot silently leave a
+  # targeted layer in BF16 (guarded by
+  # tests/llmcompressor/pipelines/test_stop_after_last_target.py, including the
+  # GLM case where autowrapped experts have no graph node of their own).
+  # MUST be removed for the production run: the skipped layers ARE quantized
+  # there, and a modifier needing whole-model statistics would see a truncated
+  # model.
+  stop_after_last_target: true
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+# Unused under --evidence-only, but kept distinct so it can never collide
+# with a real run's output.
+output_dir: /mnt/cephfs/hoangduy/results/glm52-awq-routerfix

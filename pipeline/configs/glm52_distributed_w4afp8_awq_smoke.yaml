@@ -44,9 +44,10 @@
 #     layernorm', 'model.layers.1...', ...]      -> awq_mappings = 0
 #   i.e. AWQ would have run with NO smoothing at all. Fixed by pointing both GLM
 #   entries at _mla_mixed_dense_moe_mappings (the renamed
-#   _glm4_moe_lite_mappings, which omits mlp.gate). Gate 1 now resolves 1028
-#   mappings = 1024 per-expert up->down folds (4 layers x 256) + 4 MoE-input
-#   mappings, with zero failures and zero warnings. Guarded by
+#   _glm4_moe_lite_mappings, which omits mlp.gate). Gate 1 resolved 1028
+#   mappings when this config targeted four layers (1024 per-expert up->down
+#   folds = 4 x 256, plus 4 MoE-input mappings), with zero failures and zero
+#   warnings. At the current two layers expect 514. Guarded by
 #   tests/llmcompressor/modifiers/awq/test_mixed_dense_moe_mappings.py.
 #
 #   Also resolved on the same run: GlmMoeDsaRMSNorm was reported as
@@ -94,11 +95,13 @@ quantization:
     - "re:.*self_attn[.].*"
     - "re:.*layers[.][0-2][.].*"
     - "re:.*layers[.]78[.].*"
-    # Restrict to the same four sampled MoE layers as the GPTQ arm.
-    - "re:.*model[.]layers[.](?!(?:3|6|42|77)(?:[.]|$))[0-9]+(?:[.]|$).*"
+    # Restrict to the same two sampled MoE layers as the GPTQ arm: 3 (the
+    # first MoE layer, so the dense->MoE boundary is exercised) and 42 (a
+    # mid-model 'full' layer carrying indexer projections).
+    - "re:.*model[.]layers[.](?!(?:3|42)(?:[.]|$))[0-9]+(?:[.]|$).*"
   fp8_dynamic_targets:
-    - "re:.*model[.]layers[.](0|3|6)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
-    - "re:.*model[.]layers[.](3|6)[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.](0|3)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]3[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
   # Offloaded generation on a 743B model gates the save for many minutes and
   # streams every expert off disk for 64 tokens (M3 incident, 2026-07-07).
@@ -107,7 +110,17 @@ quantization:
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
   dataset_split: train_sft
-  num_samples: 8
+  # 32, up from 8. Raising samples is the main lever on runtime, because the
+  # sequential pipeline propagates every sample through ALL 78 layers whether or
+  # not they are quantized -- restricting the target layers does not reduce that.
+  # It became affordable once the model went fully RAM-resident (max_memory.cpu
+  # 900e9): at 32e9 the propagation read from a 31 MB/s PVC and 35 untargeted
+  # layers cost 86 min at only 8 samples.
+  #
+  # 32 rather than the production 512 because the RAM-resident propagation rate
+  # is not yet measured. Watch the first inter-layer gap and extrapolate before
+  # raising it further.
+  num_samples: 32
   max_seq_length: 512
   seed: 42
   moe_calibrate_all_experts: true

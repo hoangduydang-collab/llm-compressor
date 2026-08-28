@@ -96,11 +96,13 @@ quantization:
     - "re:.*self_attn[.].*"
     - "re:.*layers[.][0-2][.].*"
     - "re:.*layers[.]78[.].*"
-    # Restrict GPTQ to the four sampled MoE layers.
-    - "re:.*model[.]layers[.](?!(?:3|6|42|77)(?:[.]|$))[0-9]+(?:[.]|$).*"
+    # Restrict GPTQ to two sampled MoE layers: 3 (the first MoE layer, so the
+    # dense->MoE boundary is exercised) and 42 (a mid-model 'full' layer
+    # carrying indexer projections).
+    - "re:.*model[.]layers[.](?!(?:3|42)(?:[.]|$))[0-9]+(?:[.]|$).*"
   fp8_dynamic_targets:
-    - "re:.*model[.]layers[.](0|3|6)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
-    - "re:.*model[.]layers[.](3|6)[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.](0|3)[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]3[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
   gptq_dampening_frac: 0.01
   # REQUIRED on GLM-5.2. Run 20260827t105117z OOMed all four ranks here:
@@ -126,7 +128,17 @@ quantization:
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
   dataset_split: train_sft
-  num_samples: 8
+  # 32, up from 8. Raising samples is the main lever on runtime, because the
+  # sequential pipeline propagates every sample through ALL 78 layers whether or
+  # not they are quantized -- restricting the target layers does not reduce that.
+  # It became affordable once the model went fully RAM-resident (max_memory.cpu
+  # 900e9): at 32e9 the propagation read from a 31 MB/s PVC and 35 untargeted
+  # layers cost 86 min at only 8 samples.
+  #
+  # 32 rather than the production 512 because the RAM-resident propagation rate
+  # is not yet measured. Watch the first inter-layer gap and extrapolate before
+  # raising it further.
+  num_samples: 32
   max_seq_length: 512
   seed: 42
   moe_calibrate_all_experts: true

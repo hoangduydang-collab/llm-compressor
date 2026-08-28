@@ -380,3 +380,68 @@ def test_gate_reports_attention_coverage_counts(capsys, tmp_path: Path):
         ))
     _gate(plain, plain_base)
     assert "checked=3, absent=3" in capsys.readouterr().out
+
+
+# --- the silent skip ---------------------------------------------------------
+#
+# Found 2026-08-28 while trying to run this very audit on the GLM-5.2 router-fix
+# checkpoint. `_index` required model.safetensors.index.json and raised
+# FileNotFoundError without it -- and assert_smooth_fold_consistency CATCHES
+# FileNotFoundError and prints "smooth-fold gate skipped (names not resolvable)".
+# save_pretrained writes a single unindexed model.safetensors for any checkpoint
+# small enough, which is exactly every subset probe and small smoke we use for
+# fast validation. So the fold gate silently no-opped on all of them, which is why
+# the run launched specifically to audit the router fix never produced a number.
+
+
+def _write_single_shard(path: Path, tensors: dict[str, torch.Tensor]) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    save_file(tensors, path / "model.safetensors")  # deliberately no index
+
+
+def test_single_shard_checkpoint_is_auditable(tmp_path: Path):
+    base = tmp_path / "base"
+    cand = tmp_path / "cand"
+    _write_single_shard(base, _tensors(
+        input_scale=torch.ones(HIDDEN), qa_scale=torch.ones(QLORA),
+        compensate=ALL_CONSUMERS,
+    ))
+    _write_single_shard(cand, _tensors(
+        input_scale=torch.tensor([0.25, 4.0, 1.0, 2.0]),
+        qa_scale=torch.tensor([0.5, 2.0]),
+        compensate=tuple(c for c in ALL_CONSUMERS if c != "indexer_wk"),
+    ))
+    report = _audit(base, cand)
+    assert report["attn_input_norm"]["consumers"]["indexer_wk"][
+        "relative_l2_error"
+    ] > 0.1
+
+
+def test_gate_fails_on_a_single_shard_checkpoint_rather_than_skipping(tmp_path: Path):
+    """The regression that matters: the gate must FAIL a bad single-shard
+    checkpoint, not print 'skipped' and return."""
+    base = tmp_path / "base"
+    cand = tmp_path / "cand"
+    _write_single_shard(base, _tensors(
+        input_scale=torch.ones(HIDDEN), qa_scale=torch.ones(QLORA),
+        compensate=ALL_CONSUMERS,
+    ))
+    _write_single_shard(cand, _tensors(
+        input_scale=torch.tensor([0.25, 4.0, 1.0, 2.0]),
+        # must be non-unit: omitting a multiply by 1.0 is a no-op, so a unit
+        # scale here would make the test pass for the wrong reason
+        qa_scale=torch.tensor([0.5, 2.0]),
+        compensate=tuple(c for c in ALL_CONSUMERS if c != "indexer_wq_b"),
+    ))
+    with pytest.raises(RuntimeError, match="smooth-fold consistency gate FAILED"):
+        _gate(cand, base)
+
+
+def test_checkpoint_with_neither_index_nor_shard_raises(tmp_path: Path):
+    """Absence of tensors must not read as 'nothing wrong'."""
+    from pipeline.m3_checkpoint_scale_audit import _index
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(FileNotFoundError):
+        _index(empty)

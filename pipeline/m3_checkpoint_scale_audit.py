@@ -14,9 +14,32 @@ from safetensors import safe_open
 
 @lru_cache(maxsize=None)
 def _index(checkpoint: Path) -> dict[str, str]:
+    """Map tensor name -> shard file, for sharded AND single-shard checkpoints.
+
+    THE SINGLE-SHARD FALLBACK IS NOT A CONVENIENCE. Without it this function
+    raised FileNotFoundError on any checkpoint small enough for save_pretrained
+    to write one ``model.safetensors`` with no index -- and
+    ``assert_smooth_fold_consistency`` catches FileNotFoundError and prints
+    "smooth-fold gate skipped (names not resolvable)". So the fold gate silently
+    NO-OPPED on exactly the checkpoints we use for fast validation: every subset
+    probe and every small smoke.
+
+    That is why the GLM-5.2 router-fix validation run (routerfix,
+    20260828-150142) never produced a router_compensation number to compare
+    against the pre-fix 1.08e-1 to 2.42e-1. The run was launched to audit a
+    numerics fix, and the audit was skipped without failing.
+    """
     path = checkpoint / "model.safetensors.index.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return dict(data["weight_map"])
+    if path.exists():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return dict(data["weight_map"])
+    single = checkpoint / "model.safetensors"
+    if single.exists():
+        with safe_open(single, framework="pt") as handle:
+            return {name: single.name for name in handle.keys()}
+    raise FileNotFoundError(
+        f"no model.safetensors.index.json and no model.safetensors under {checkpoint}"
+    )
 
 
 def resolve_suffix(

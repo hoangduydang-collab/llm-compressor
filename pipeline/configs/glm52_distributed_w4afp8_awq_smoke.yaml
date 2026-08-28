@@ -78,7 +78,12 @@ model:
     # Not higher on this first run: tmpfs is charged to the pod's 1200Gi memory
     # limit as it fills, and four ranks need working set on top (M3 measured
     # 600-850 GiB RSS). 550 GB leaves a real margin; 1000 GB would not.
-    cpu: 550000000000
+    # 900 GB. At 8 GPUs: 640 GB VRAM + 900 GB CPU = 1540 GB against the
+    # model's 1485 GB, so nothing spills to the cephfs PVC during calibration
+    # (measured 31 MB/s single-stream, and the dominant cost at 32e9).
+    # Requires dshm sizeLimit >= this in the Job template (900Gi): the tmpfs is
+    # the real ceiling, so raising this alone would change nothing.
+    cpu: 900000000000
   # Distinct from the GPTQ arm — see (3) above.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke
 

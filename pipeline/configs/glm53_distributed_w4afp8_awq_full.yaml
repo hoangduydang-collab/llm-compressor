@@ -1,0 +1,87 @@
+# GLM-5.3 W4AFP8, AWQ arm, FULL scope. Identical quantization scope to
+# glm52_distributed_w4afp8_awq_full.yaml, because the architecture is identical:
+# zai-org/GLM-5.3's config.json is BYTE-IDENTICAL to zai-org/GLM-5.2-FP8's apart
+# from `transformers_version` (5.15.0 vs 5.12.0) -- same GlmMoeDsaForCausalLM,
+# 78 layers, hidden 6144, 256 routed experts at top-8, first_k_dense_replace 3,
+# one MTP layer, the same 78-entry indexer_types list, and the same 541-entry
+# modules_to_not_convert. So every pattern below is the GLM-5.2 pattern
+# unchanged, and the scope gate reports the same result against either release's
+# weight index.
+#
+# THE SOURCE MUST BE THE BF16 RELEASE, and this is not a preference.
+#   zai-org/GLM-5.3      756 GB, 141 shards, quantization_config
+#                        {quant_method: fp8, fmt: e4m3, weight_block_size:
+#                        [128,128], activation_scheme: dynamic}
+#   zai-org/GLM-5.3-BF16 1.51 TB, 282 shards, no quantization_config   <-- this one
+# AWQ needs BF16 weights to compute smoothing scales and to pack int4, so a
+# block-scaled FP8 checkpoint would have to be dequantized first, and
+# llm-compressor has no FineGrainedFP8 / weight_scale_inv read path anywhere in
+# src/. That would be new numerics code in exactly the area every defect of the
+# past week came from.
+#
+# ONE CAVEAT TO CARRY INTO THE EVAL, not into the recipe: the BF16 release is an
+# upcast of natively-FP8 weights, not a higher-fidelity original -- Z.ai present
+# the FP8 release as the reference. GLM-5.3's effective weight precision is
+# therefore already ~FP8 before we start, so W4A8 is a smaller additional step
+# than GLM-5.2's true-BF16 -> W4A8 was, and the headroom AWQ has to work with is
+# also smaller. Do NOT assume the GLM-5.2 quality result transfers in either
+# direction; measure it.
+#
+# STAGING. The download job (hd-download-glm53-bf16) runs with
+# HF_HUB_CACHE=/mnt/cephfs/.hf-cache, so `zai-org/GLM-5.3-BF16` resolves offline
+# from .hf-cache/models--zai-org--GLM-5.3-BF16 with the same env set. Measured
+# throughput 136.4 MB/s once warm; an early 11.8 MB/s reading was a cold-start
+# artifact (16 shards in flight, none complete) and is not the rate.
+#
+# Everything else -- why the router is in `ignore` but must still be an AWQ
+# balance layer, why the whole DSA indexer stays BF16, why layer 78 is defensive,
+# why max_memory.cpu is 32e9, why 256 samples, why prefetch's DONTNEED half is
+# mandatory -- is documented in glm52_distributed_w4afp8_awq_full.yaml and
+# applies unchanged.
+name: glm53_distributed_w4afp8_awq_full
+
+model:
+  id: zai-org/GLM-5.3-BF16
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm53-w4afp8-awq-full
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+  fp8_dynamic_targets:
+    - "re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 256
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+  sequential_weight_prefetch: true
+  sequential_weight_prefetch_depth: 1
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm53-w4afp8-awq-full

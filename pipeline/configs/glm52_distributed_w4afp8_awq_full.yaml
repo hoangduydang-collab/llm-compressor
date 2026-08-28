@@ -1,0 +1,118 @@
+# GLM-5.2 W4AFP8, AWQ arm, FULL scope: int4-g128 on every routed expert of every
+# MoE layer + FP8_DYNAMIC on MLA attention / shared experts / the three dense
+# layers, quantized from source BF16.
+#
+# This file exists because it did not. Every AWQ config on this model so far
+# (glm52_distributed_w4afp8_awq_smoke, glm52_awq_nvme_probe,
+# glm52_awq_calib_scaling_probe, glm52_awq_routerfix_validate) carries a
+# negative-lookahead pattern restricting the run to one or two sampled layers, so
+# there was nothing whose production scope could be checked. The GPTQ arm had a
+# full config; the arm we actually intend to publish did not.
+#
+# SCOPE IS VERIFIED, NOT ASSERTED. The ignore / fp8_dynamic_targets patterns below
+# are byte-identical to glm52_distributed_w4afp8_full.yaml's, and both are checked
+# against the vendor's own released weight index by
+#
+#   python pipeline/compare_upstream_quant_scope.py \
+#       --recipe pipeline/configs/glm52_distributed_w4afp8_awq_full.yaml \
+#       --upstream-index <GLM-5.2-FP8 or GLM-5.3>/model.safetensors.index.json \
+#       --upstream-config <same>/config.json
+#
+# which reports, component by component, where we agree with zai-org's FP8
+# release, where we differ on purpose, and where we differ by accident. As of
+# 2026-08-28 the body result is: every MLA projection, every shared expert and
+# all three dense MLPs FP8 exactly as upstream; all 57,600 routed-expert
+# projections int4 where upstream is FP8 (the intended difference); router,
+# lm_head, embed_tokens, model.norm and all 333 norms at source precision exactly
+# as upstream; and two named divergences (indexer.wq_b / indexer.wk, which
+# upstream quantizes and our RED LINE keeps BF16). Nothing unexplained.
+#
+# CARRIED OVER FROM THE SMOKE, deliberately:
+#   - `re:.*mlp[.]gate$` in ignore. The router must NOT be quantized. It must
+#     still be an AWQ BALANCE layer, which is a different list built in
+#     dynamic_mappings.py -- conflating the two is the defect commit 7d08e0fa
+#     shipped and 5cc823b5 fixed. Do not "simplify" by removing this line.
+#   - The whole DSA indexer BF16 via `re:.*self_attn[.].*`. See the RED LINE note
+#     in glm52_distributed_w4afp8_full.yaml. Worth knowing when weighing it:
+#     upstream's contrary choice is not a quality judgement -- it quantizes
+#     wq_b [4096,2048] and wk [128,6144] because a [128,128] block grid tiles
+#     them, and skips weights_proj [32,6144] because it does not.
+#   - `re:.*layers[.]78[.].*`. transformers builds num_hidden_layers=78 layers
+#     (0-77) and models MTP for no architecture, so layer 78 never exists in our
+#     process; the pattern is defensive. Upstream ships a fully quantized MTP
+#     head and we will not, which is BLOCKER 1 in the GPTQ full config -- a
+#     safetensors graft, not a recipe change.
+name: glm52_distributed_w4afp8_awq_full
+
+model:
+  id: zai-org/GLM-5.2
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    # 32e9. The full derivation is in glm52_distributed_w4afp8_awq_smoke.yaml;
+    # the short version is that everything inside this budget is memcpy'd into
+    # /dev/shm per tensor while everything beyond it is a near-free symlink, and
+    # the copy buys guaranteed rather than best-effort residency. Raising it to
+    # 900e9 cost 3.7 h of setup and saved ~73 min of walk.
+    cpu: 32000000000
+  # cephfs, NOT the node-local /scratch emptyDir the probes use. The probes ran
+  # 1-2 layers; this runs 78, and while most offload entries are symlinks to the
+  # original blobs, every tensor the pipeline actually modifies becomes a real
+  # file. 80 GiB of emptyDir is not a bound worth discovering at hour six.
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-full
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+  fp8_dynamic_targets:
+    - "re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$"
+  # Offloaded generation on a 743B model gates the save for many minutes and
+  # streams every expert off disk for 64 tokens (M3 incident, 2026-07-07).
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  # 256, and the reason is affordability rather than sufficiency. Measured on
+  # this model with a 4-layer NVMe subset, both logs captured from process start:
+  # 256 -> 512 samples took grid search 220 s -> 407 s (1.85x) and calibration
+  # 36 s -> 66 s (1.83x), i.e. cost is ~LINEAR in tokens (exponent ~0.89). An
+  # earlier "decisively sublinear" reading came from a ROTATED log and was
+  # retracted (91b01d3b). Projected: 256 -> ~10.0 h end to end, 512 -> ~14.8 h.
+  num_samples: 256
+  max_seq_length: 2048
+  seed: 42
+  # 256 experts at top-8 means a 256-sample set touches any given expert rarely.
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+  # posix_fadvise(WILLNEED) on the next subgraph's weight files while the current
+  # one computes, and DONTNEED after offload. The DONTNEED half is not optional:
+  # the pod's page cache sat 27 MB under a 1700 GiB memory.max with 1654 GiB of
+  # `file`, and 100% of reclaim was DIRECT (pgsteal_kswapd unchanged,
+  # pgsteal_direct +836k pages/30 s), i.e. synchronous in the saving thread.
+  # PSI full avg10 hit 23.45. Measured headroom: ~350 s compute vs ~120 s read
+  # per layer.
+  sequential_weight_prefetch: true
+  sequential_weight_prefetch_depth: 1
+  # NO stop_after_last_target here. Every layer is targeted, and a modifier
+  # needing whole-model statistics would see a truncated model.
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm52-w4afp8-awq-full

@@ -2938,3 +2938,82 @@ of forbidding an unscoped router pattern.
    patterns, keeping its real protection;
 3. add the M3-style positive assertion ("router must be balanced") for GLM, which
    is the test whose absence let this ship.
+
+---
+
+## 2026-08-28 — no gate compared our quantization SCOPE to the vendor's; the AWQ arm had no full-scope config at all
+
+**Symptom (latent, found by asking rather than by failing).** A W4A8 checkpoint is
+supposed to differ from the vendor's FP8 release in exactly one way: routed-expert
+weights carry 4 bits instead of 8. Nothing in the pipeline checked that. The
+recipe's `ignore` list and `fp8_dynamic_targets` are hand-written regexes over a
+59,487-module tree, and the failure mode is silent in every existing gate — an
+over-broad `ignore` leaves a whole component in BF16 while the int4 side is
+untouched, the fold audit only inspects what was folded, and a quality eval absorbs
+a few percent without naming a cause. That is the r8 class of failure, and the
+router defect of the previous day was the same shape: a scope list nobody diffed.
+
+Worse, the arm we intend to publish had nothing to check. Every AWQ config on
+GLM-5.2 (`..._awq_smoke`, `glm52_awq_nvme_probe`, `glm52_awq_calib_scaling_probe`,
+`glm52_awq_routerfix_validate`) carries a negative-lookahead pattern restricting the
+run to one or two sampled layers. The GPTQ arm had a full config; the AWQ arm did
+not, so "are we quantizing the right components" had no answer to give.
+
+**Fix.** `pipeline/compare_upstream_quant_scope.py`, plus
+`pipeline/configs/glm52_distributed_w4afp8_awq_full.yaml` and
+`glm53_distributed_w4afp8_awq_full.yaml` (scope-identical to the GPTQ full config,
+pinned by a test).
+
+Four decisions in the gate worth keeping:
+
+1. **Upstream ground truth is the released weight index, not `config.json`.** A
+   module carrying `.weight_scale_inv` was block-FP8 quantized; one carrying only
+   `.weight` was not. `modules_to_not_convert` is a statement of intent that can
+   disagree with the artifact — GLM-5.3 does not list
+   `self_attn.indexer.weights_proj` yet ships it in BF16, because its shape is
+   `[32, 6144]` and a `[128,128]` block grid does not tile 32. Reading the index
+   avoids modelling the vendor quantizer's skip rules at all.
+2. **The matcher is `re.match`, copied from `compressed_tensors.utils.match`**, not
+   `re.fullmatch`. A gate that judged the recipe by different rules than the
+   pipeline applies would be worse than no gate.
+3. **`fp8_dynamic_targets` outranks `ignore`**, because `pipeline/recipe.py` builds
+   `QuantizationModifier(targets=fp8_dynamic_targets)` with no ignore list. Applying
+   `ignore` first would report the shared experts as BF16 — they are in both lists
+   by design.
+4. **Partial recipes are reported, not failed.** A recipe targeting 2 of 78 layers
+   makes no scope claim to check; `partial` is derived from layer coverage rather
+   than a flag, because a flag is exactly what goes stale when a smoke config is
+   copied into a production one.
+
+**A defect in the gate itself, caught before it shipped.** The first revision
+treated `fp8 -> int4` as the intended difference for *any* component. But dropping
+the MLA entry from `fp8_dynamic_targets` does not send those projections to BF16 —
+`ignore` is what keeps them out of the int4 modifier, so they fall *through* to
+int4, and the gate would have called that intended. Narrowed to
+`INTENDED_INT4_COMPONENTS` (the three routed-expert projections only) and pinned by
+`test_int4_outside_the_routed_experts_fails`. This is the second time this week that
+a check written to catch a scope error had a scope error of its own.
+
+**Result on the production recipes** (against `zai-org/GLM-5.3`, whose `config.json`
+is byte-identical to `zai-org/GLM-5.2-FP8`'s apart from `transformers_version`, so
+one comparison serves both): all 78 MLA projection sets, all 75 shared-expert
+triples and all three dense MLPs FP8 exactly as upstream; all 57,600 routed-expert
+projections int4 where upstream is FP8; router, `lm_head`, `embed_tokens`,
+`model.norm` and all 333 norms at source precision exactly as upstream. Two declared
+divergences (`indexer.wq_b`, `indexer.wk`) and the MTP head, which transformers does
+not build.
+
+**The router answer, stated plainly since it was the previous day's defect.**
+Upstream lists `mlp.gate` and `mlp.gate.e_score_correction_bias` in
+`modules_to_not_convert` and ships them unscaled; we keep them at source precision
+too. We agree, for two different reasons — `GlmMoeDsaTopkRouter` holds `gate.weight`
+as a bare Parameter so `targets="Linear"` never reaches it, and the `ignore` entry
+is belt-and-braces. Not quantizing the router is a different thing from not
+*compensating* it; the router must still be an AWQ balance layer.
+
+**On the indexer divergence, one thing worth knowing.** Our RED LINE (whole DSA
+indexer BF16) is a quality decision backed by a recorded long-context retrieval
+regression. Upstream's contrary choice is not a quality decision at all: it
+quantizes `wq_b [4096,2048]` and `wk [128,6144]` because the block grid tiles them
+and skips `weights_proj [32,6144]` because it does not. So this is our judgement
+against a tiling constraint, not against theirs.

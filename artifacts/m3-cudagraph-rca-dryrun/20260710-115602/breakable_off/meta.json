@@ -1,0 +1,12 @@
+{
+  "case_name": "breakable_off",
+  "graphs_on": true,
+  "debug_cudagraph": false,
+  "enforce_eager": "0",
+  "debug_cudagraph_env": "0",
+  "vllm_use_breakable_cudagraph": "0",
+  "coredump": false,
+  "core_dump_path": null,
+  "port": 8105,
+  "log": "/c/Users/hoangduy.dang/AI lab/llm-compressor/artifacts/m3-cudagraph-rca-dryrun/20260710-115602/breakable_off/serve.log"
+}

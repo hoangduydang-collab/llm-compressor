@@ -1,0 +1,8 @@
+{
+  "verdict": "inconclusive",
+  "case_name": "breakable_off",
+  "notes": ["DRY_RUN — no GPU launch"],
+  "dry_run": true,
+  "port": 8105,
+  "log": "/c/Users/hoangduy.dang/AI lab/llm-compressor/artifacts/m3-cudagraph-rca-dryrun/20260710-115602/breakable_off/serve.log"
+}

@@ -1,0 +1,42 @@
+[http-smoke] WARNING: /mnt/nfs/hoangduy/env.sh missing (PRINT_EFFECTIVE_CONFIG dry-run)
+[http-smoke] WARNING: quant venv missing (PRINT_EFFECTIVE_CONFIG dry-run)
+[http-smoke] DEBUG_CUDAGRAPH=1 — CUDA_LAUNCH_BLOCKING=1 TORCH_USE_CUDA_DSA=1
+             (tactical: masks HTTP async cudagraph race; not the long-term fix)
+WARNING: missing config.json at /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4 (ignored for PRINT_EFFECTIVE_CONFIG)
+host=hoangduydang starting HTTP vLLM smoke serve
+  checkpoint:          /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+  served-name:         cyankiwi/MiniMax-M3-AWQ-INT4
+  port:                8104
+  max-model-len:       8192
+  gpu-util:            0.9
+  max-num-seqs:        <vllm default>
+  max-num-batched-tok: <vllm default>
+  language-model-only: 1
+  enforce_eager:       0
+  debug_cudagraph:     1
+  log:                 /c/Users/hoangduy.dang/AI lab/llm-compressor/artifacts/m3-cudagraph-rca-dryrun/20260710-115602/blocking_mask/serve.log
+[http-smoke] PRINT_EFFECTIVE_CONFIG=1 — effective configuration (no launch)
+EFFECTIVE_ENV:
+  CKPT=/mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4
+  SERVED_NAME=cyankiwi/MiniMax-M3-AWQ-INT4
+  HOST=0.0.0.0
+  PORT=8104
+  TP=8
+  MAX_MODEL_LEN=8192
+  GPU_UTIL=0.9
+  KV_CACHE_DTYPE=fp8
+  BLOCK_SIZE=128
+  ENABLE_EP=1
+  DISABLE_CUSTOM_AR=1
+  LANGUAGE_MODEL_ONLY=1
+  ENFORCE_EAGER=0
+  DEBUG_CUDAGRAPH=1
+  CUDA_LAUNCH_BLOCKING=1
+  TORCH_USE_CUDA_DSA=1
+  VLLM_USE_BREAKABLE_CUDAGRAPH=<unset>
+  APPLY_M3_PATCHES=0
+  PATCH_CKPT_CONFIG=0
+  LOG=/c/Users/hoangduy.dang/AI lab/llm-compressor/artifacts/m3-cudagraph-rca-dryrun/20260710-115602/blocking_mask/serve.log
+  PID_FILE=/c/Users/hoangduy.dang/AI lab/llm-compressor/artifacts/m3-cudagraph-rca-dryrun/20260710-115602/blocking_mask/serve.pid
+  EXTRA_VLLM_ARGS=
+EFFECTIVE_ARGV: vllm serve /mnt/nfs/hoangduy/hf_assets/cyankiwi/MiniMax-M3-AWQ-INT4 --served-model-name cyankiwi/MiniMax-M3-AWQ-INT4 --host 0.0.0.0 --port 8104 --trust-remote-code --tensor-parallel-size 8 --kv-cache-dtype fp8 --max-model-len 8192 --gpu-memory-utilization 0.9 --block-size 128 --tool-call-parser minimax_m3 --reasoning-parser minimax_m3 --enable-auto-tool-choice --enable-expert-parallel --disable-custom-all-reduce --language-model-only

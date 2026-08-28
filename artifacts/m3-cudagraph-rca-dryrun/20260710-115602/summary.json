@@ -1,0 +1,75 @@
+{
+  "run_dir": "C:\\Users\\hoangduy.dang\\AI lab\\llm-compressor\\artifacts\\m3-cudagraph-rca-dryrun\\20260710-115602",
+  "trials": [
+    {
+      "case": "async_baseline_1",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    },
+    {
+      "case": "async_baseline_2",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    },
+    {
+      "case": "async_baseline_3",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    },
+    {
+      "case": "async_coredump",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    },
+    {
+      "case": "blocking_mask",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    },
+    {
+      "case": "breakable_off",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    },
+    {
+      "case": "graphs_off",
+      "verdict": "inconclusive",
+      "server_ready": null,
+      "chat_ok": null,
+      "ima": null,
+      "notes": [
+        "DRY_RUN \u2014 no GPU launch"
+      ]
+    }
+  ]
+}

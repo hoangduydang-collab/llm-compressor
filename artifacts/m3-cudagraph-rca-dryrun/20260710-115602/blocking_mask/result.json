@@ -1,0 +1,8 @@
+{
+  "verdict": "inconclusive",
+  "case_name": "blocking_mask",
+  "notes": ["DRY_RUN — no GPU launch"],
+  "dry_run": true,
+  "port": 8104,
+  "log": "/c/Users/hoangduy.dang/AI lab/llm-compressor/artifacts/m3-cudagraph-rca-dryrun/20260710-115602/blocking_mask/serve.log"
+}

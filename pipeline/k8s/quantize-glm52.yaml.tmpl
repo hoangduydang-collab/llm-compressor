@@ -202,7 +202,8 @@ spec:
               echo "==> launching torchrun --nproc_per_node=$GPUS"
               torchrun --nproc_per_node="$GPUS" -m pipeline.run \
                 --config "$CONFIG" --stage quantize \
-                --set "quantization.method=$METHOD" \n                $EVIDENCE_FLAG
+                --set "quantization.method=$METHOD" \
+                $EVIDENCE_FLAG
 
               echo DONE
           resources:

@@ -221,7 +221,148 @@ def build_step3p5_mappings(model: Module) -> list[AWQMapping] | None:
     return mappings
 
 
+# Relative module path of a decoder-layer member, e.g.
+# "model.layers.3.mlp.experts.0.gate_proj" -> idx 3, rel "mlp.experts.0.gate_proj".
+_LAYER_MEMBER_PATTERN = re.compile(r"(?:^|\.)layers\.(?P<idx>\d+)\.(?P<rel>.+)$")
+
+# Candidate balance layers for the MoE-block input of an MLA mixed dense/MoE
+# stack, as (AWQ pattern, matcher against the layer-relative module path).
+# Ordered most-specific-first for readability only; inclusion is decided by
+# presence, not order.
+_MLA_MOE_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
+    # THE ROUTER. It consumes post_attention_layernorm exactly like the experts
+    # do, so when AWQ divides that norm by s the router must be multiplied by s
+    # or its logits shift and top-k expert selection changes. Being exempt from
+    # QUANTIZATION (it is in every recipe's ignore list) does not exempt it from
+    # this: see BUGS_AND_FIXES.md, "GLM-5.2 AWQ leaves the MoE router
+    # uncompensated". MiniMax-M3 has always balanced it
+    # (pipeline/minimax_m3_config.py) and asserts so in a test.
+    ("re:.*mlp[.]gate$", re.compile(r"^mlp\.gate$")),
+    ("re:.*mlp[.]shared_experts[.]gate_up_proj$",
+     re.compile(r"^mlp\.shared_experts\.gate_up_proj$")),
+    ("re:.*mlp[.]shared_experts[.]gate_proj$",
+     re.compile(r"^mlp\.shared_experts\.gate_proj$")),
+    ("re:.*mlp[.]shared_experts[.]up_proj$",
+     re.compile(r"^mlp\.shared_experts\.up_proj$")),
+    ("re:.*mlp[.]experts[.][0-9]+[.]gate_proj$",
+     re.compile(r"^mlp\.experts\.\d+\.gate_proj$")),
+    ("re:.*mlp[.]experts[.][0-9]+[.]up_proj$",
+     re.compile(r"^mlp\.experts\.\d+\.up_proj$")),
+]
+
+
+def _layer_members(model: Module) -> dict[int, set[str]]:
+    """Layer index -> set of module paths relative to that decoder layer."""
+    members: dict[int, set[str]] = {}
+    for name, _ in model.named_modules():
+        match = _LAYER_MEMBER_PATTERN.search(name)
+        if match is not None:
+            members.setdefault(int(match.group("idx")), set()).add(match.group("rel"))
+    return members
+
+
+def _detect_mla_dense_moe_layers(
+    members: dict[int, set[str]],
+) -> tuple[list[int], list[int]]:
+    """Split decoder layers into dense-MLP and MoE.
+
+    Detected from the modules that actually exist rather than read from
+    ``first_k_dense_replace``, because what matters is what
+    ``match_modules_set`` will find -- and the module tree can differ from the
+    config after ``linearize_moe`` fuses/unfuses experts.
+    """
+    dense, moe = [], []
+    for index, rel in members.items():
+        if any(_MLA_MOE_BALANCE_CANDIDATES[0][1].match(r) for r in rel):
+            moe.append(index)
+        elif "mlp.gate_proj" in rel or "mlp.gate_up_proj" in rel:
+            dense.append(index)
+    return sorted(dense), sorted(moe)
+
+
+def build_mla_mixed_dense_moe_mappings(model: Module) -> list[AWQMapping] | None:
+    """AWQ mappings for an MLA model with a mixed dense/MoE stack (GLM-5.2).
+
+    Replaces the static ``_mla_mixed_dense_moe_mappings``, which had to drop the
+    router from the MoE-input balance set: its patterns were unscoped, so a
+    router pattern -- absent from the dense prefix layers -- stopped
+    ``match_modules_set`` from ever closing a per-layer set and AWQ resolved zero
+    mappings. Dropping it silenced that error but broke function preservation for
+    routing.
+
+    Scoping the smooth-layer pattern to the MoE layer indices removes the
+    conflict, so the router can be balanced where it exists and is simply absent
+    from the dense mapping. This is exactly what
+    ``pipeline/minimax_m3_config.py`` does for MiniMax-M3 via
+    ``_M3_SPARSE_LAYER``.
+
+    Every balance pattern is emitted only if it matches a module in EVERY MoE
+    layer. That is the same rule ``match_modules_set`` applies, so a
+    shared-expert form that some architecture spells differently (or does not
+    have) cannot reintroduce the zero-mappings failure.
+
+    Returns None when no MoE layers are detected, so a dense model falls through
+    to the static registry unchanged.
+    """
+    members = _layer_members(model)
+    if not members:
+        return None
+    dense_indices, moe_indices = _detect_mla_dense_moe_layers(members)
+    if not moe_indices:
+        return None
+
+    mappings = [
+        AWQMapping(
+            "re:.*input_layernorm$",
+            ["re:.*(q|q_a)_proj$", "re:.*kv_a_proj_with_mqa$"],
+        ),
+        AWQMapping("re:.*q_a_layernorm$", ["re:.*q_b_proj$"]),
+        AWQMapping("re:.*kv_a_layernorm$", ["re:.*kv_b_proj$"]),
+    ]
+
+    if dense_indices:
+        dense_re = "|".join(str(i) for i in dense_indices)
+        mappings.append(
+            AWQMapping(
+                f"re:.*layers[.]({dense_re})[.]post_attention_layernorm$",
+                ["re:.*mlp[.]gate_proj$", "re:.*mlp[.]up_proj$"],
+            )
+        )
+
+    balance = [
+        pattern
+        for pattern, matcher in _MLA_MOE_BALANCE_CANDIDATES
+        if all(
+            any(matcher.match(rel) for rel in members[index]) for index in moe_indices
+        )
+    ]
+    if not any(pattern.endswith("mlp[.]gate$") for pattern in balance):
+        # The router is the whole point of this builder. If it is not uniformly
+        # present, fall back rather than emit a mapping that silently omits it.
+        logger.warning(
+            "MLA mixed dense/MoE mappings: router (mlp.gate) not present in every "
+            f"MoE layer {moe_indices[:5]}...; falling back to static mappings"
+        )
+        return None
+    mappings.append(
+        AWQMapping(
+            f"re:.*layers[.]({'|'.join(str(i) for i in moe_indices)})"
+            "[.]post_attention_layernorm$",
+            balance,
+        )
+    )
+    mappings.append(AWQMapping("re:.*up_proj$", ["re:.*down_proj$"]))
+
+    logger.info(
+        f"Built MLA mixed dense/MoE AWQ mappings: {len(dense_indices)} dense + "
+        f"{len(moe_indices)} MoE layers; MoE-input balance set: {balance}"
+    )
+    return mappings
+
+
 AWQ_DYNAMIC_MAPPING_REGISTRY: dict[str, Callable[[Module], list[AWQMapping] | None]] = {
+    "Glm4MoeLiteForCausalLM": build_mla_mixed_dense_moe_mappings,
+    "GlmMoeDsaForCausalLM": build_mla_mixed_dense_moe_mappings,
     "Qwen3NextForCausalLM": build_hybrid_attention_mappings,
     "Qwen3_5ForCausalLM": build_hybrid_attention_mappings,
     "Qwen3_5ForConditionalGeneration": build_hybrid_attention_mappings,

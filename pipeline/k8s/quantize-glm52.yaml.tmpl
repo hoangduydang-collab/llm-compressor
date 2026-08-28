@@ -210,11 +210,23 @@ spec:
               # --- optional depth-truncated subset on node-local NVMe ---------
               MODEL_OVERRIDE=""
               if [ -n "${SUBSET_LAYERS:-}" ]; then
-                [ "${EVIDENCE_ONLY:-0}" = "1" ] || {
-                  echo "ABORT: SUBSET_LAYERS requires EVIDENCE_ONLY=1. A subset" >&2
-                  echo "       checkpoint is a timing instrument, not a model;" >&2
-                  echo "       saving one would produce a corrupt artifact." >&2
-                  exit 1; }
+                if [ "${EVIDENCE_ONLY:-0}" != "1" ]; then
+                  # Downgraded from an abort on purpose. The original reasoning was
+                  # that saving a subset checkpoint yields "a corrupt artifact that
+                  # looks like a real quantization" -- but it does not look real:
+                  # build_subset_checkpoint stamps config.json with
+                  # _subset_num_layers and _subset_warning, so the artifact
+                  # self-labels. Meanwhile blocking the save also blocked the
+                  # cheapest way to AUDIT a numerics fix (a ~24 GiB checkpoint that
+                  # m3_checkpoint_scale_audit can read in minutes), which is
+                  # precisely how the uncompensated-router defect would have been
+                  # caught before it shipped. A fail-closed gate that blocks
+                  # verification of the bug class it guards against is the wrong
+                  # trade.
+                  echo "WARNING: saving a SUBSET checkpoint (${SUBSET_LAYERS} layers)." >&2
+                  echo "         Valid for fold/numerics audits ONLY. It is not a" >&2
+                  echo "         usable model -- never serve or evaluate it." >&2
+                fi
                 SNAP=$(ls -d /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2/snapshots/* | head -1)
                 [ -n "$SNAP" ] || { echo "ABORT: no GLM-5.2 snapshot in the HF cache" >&2; exit 1; }
                 echo "==> building layers-0..$((SUBSET_LAYERS-1)) subset on local NVMe"

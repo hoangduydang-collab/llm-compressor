@@ -32,11 +32,16 @@
 #     still be an AWQ BALANCE layer, which is a different list built in
 #     dynamic_mappings.py -- conflating the two is the defect commit 7d08e0fa
 #     shipped and 5cc823b5 fixed. Do not "simplify" by removing this line.
-#   - The whole DSA indexer BF16 via `re:.*self_attn[.].*`. See the RED LINE note
-#     in glm52_distributed_w4afp8_full.yaml. Worth knowing when weighing it:
-#     upstream's contrary choice is not a quality judgement -- it quantizes
-#     wq_b [4096,2048] and wk [128,6144] because a [128,128] block grid tiles
-#     them, and skips weights_proj [32,6144] because it does not.
+#   - The whole DSA indexer BF16 via `re:.*self_attn[.].*`. See the corrected
+#     provenance note in glm52_distributed_w4afp8_full.yaml: this is cheap
+#     insurance (0.048% of checkpoint size, 0.69% of per-token weight traffic) on
+#     a risk we have never measured, NOT a validated result. Two things to weigh
+#     against it. First, zai-org quantize wq_b and wk themselves, and they wrote
+#     the DSA design. Second, our FP8 leg is per-output-CHANNEL
+#     (QuantizationStrategy.CHANNEL in the FP8_DYNAMIC preset), not [128,128]
+#     block, so matching them would give wq_b 4096 scales against their 512 and
+#     wk 128 against their 48 -- more scales, though localized along a different
+#     axis, so "at least as accurate" is a reasonable prior and not a proof.
 #   - `re:.*layers[.]78[.].*`. transformers builds num_hidden_layers=78 layers
 #     (0-77) and models MTP for no architecture, so layer 78 never exists in our
 #     process; the pattern is defensive. Upstream ships a fully quantized MTP

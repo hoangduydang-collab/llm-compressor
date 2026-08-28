@@ -3011,9 +3011,30 @@ as a bare Parameter so `targets="Linear"` never reaches it, and the `ignore` ent
 is belt-and-braces. Not quantizing the router is a different thing from not
 *compensating* it; the router must still be an AWQ balance layer.
 
-**On the indexer divergence, one thing worth knowing.** Our RED LINE (whole DSA
-indexer BF16) is a quality decision backed by a recorded long-context retrieval
-regression. Upstream's contrary choice is not a quality decision at all: it
-quantizes `wq_b [4096,2048]` and `wk [128,6144]` because the block grid tiles them
-and skips `weights_proj [32,6144]` because it does not. So this is our judgement
-against a tiling constraint, not against theirs.
+**On the indexer divergence — two corrections to what I first wrote here.**
+
+*First*, I explained upstream's skip of `weights_proj [32,6144]` as a `[128,128]`
+block grid failing to tile 32 rows, and concluded their indexer decision carried no
+quality judgement. **That is wrong.** `kv_a_proj_with_mqa` is `[576, 6144]` and
+ships a `[5, 48]` scale — `ceil(576/128)` — so partial blocks are supported. The
+skip needs another explanation (a size threshold, or a deliberate choice) and the
+artifact does not say which. Read as evidence, the corrected picture points the
+other way from my original claim: zai-org quantized `wq_b` and `wk` deliberately,
+and they designed DSA.
+
+*Second*, the recipe justified our BF16 indexer by "our own recorded long-context
+retrieval failure from touching indexer precision." **No such measurement exists in
+this repo.** What exists is a mechanism argument (wq_b/wk feed the index scores, so
+error changes WHICH tokens attend — a discrete selection effect like the router),
+generic literature not about indexers, and M3's paired arms `r8-fp8rest` vs
+`r8-uniformqkv` — one quant run, two exports, plus a paired GPQA config — whose
+quality eval was never run (`docs/m3-benchmark-arms.md`: "Perf-only. No quality eval
+of either export exists").
+
+The decision stands on cost asymmetry rather than evidence: the divergence is
+21 layers x (wq_b + wk) = 192.7 M params = **0.048% of a ~399 GB W4A8 checkpoint and
+0.69% of the 26.1 GiB per-token activated weight bytes**, while the failure it
+guards against is one our eval suite could not currently detect (RULER is listed as
+"later" in `QUANT_REGRESSION_METRICS_SURVEY.md` and has never been run). Keeping it
+is right; calling it validated was not. Provenance corrected in all three configs
+and in the gate.

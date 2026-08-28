@@ -19,10 +19,15 @@ Method
 Upstream ground truth is the RELEASED WEIGHT INDEX, not `config.json`. A module
 carrying `<name>.weight_scale_inv` was block-FP8 quantized; one carrying only
 `<name>.weight` was left at source precision. `modules_to_not_convert` is a
-statement of intent that can disagree with the artifact -- e.g. GLM-5.3 does not
-list `self_attn.indexer.weights_proj` yet ships it in BF16, because its output
-dim is 32 and a [128,128] block grid does not tile it. Reading the index avoids
-having to model the vendor quantizer's skip rules at all.
+statement of intent that can disagree with the artifact -- GLM-5.3 does not list
+`self_attn.indexer.weights_proj` anywhere in it, yet ships it in BF16. Reading the
+index is what avoids having to model the vendor quantizer's skip rules, and that
+matters precisely because those rules are not inferable: `weights_proj` is
+[32, 6144] and it would be tempting to explain the skip as a [128,128] block grid
+failing to tile 32 rows -- but `kv_a_proj_with_mqa` is [576, 6144] and ships a
+[5, 48] scale, i.e. ceil(576/128), so partial blocks ARE supported and that
+explanation is wrong. A size threshold and a deliberate choice both remain
+possible; the artifact does not say which, so the gate does not guess.
 
 Our ground truth is `re.match` for `re:`-prefixed targets and exact string
 equality otherwise, which is precisely
@@ -60,14 +65,15 @@ from pathlib import Path
 # not in here is a finding, not a policy.
 #
 # The indexer entry is the recipe's stated RED LINE: GLM's DSA indexer selects
-# which tokens attend, and our own long-context retrieval regression from
-# touching indexer precision is why the whole indexer stays BF16. Worth knowing
-# when weighing it: upstream's choice here is not a quality judgement at all --
-# it quantizes wq_b [4096,2048] and wk [128,6144] because the block grid tiles
-# them, and skips weights_proj [32,6144] because it does not.
+# which tokens attend, so error in wq_b / wk changes WHICH tokens are attended --
+# a discrete selection effect like the router, not a smooth numerical one. It is
+# cheap insurance (0.048% of checkpoint size, 0.69% of per-token weight traffic)
+# on an UNMEASURED risk: see the provenance note in
+# configs/glm52_distributed_w4afp8_full.yaml, which retracts the claim that we had
+# measured it. Do not upgrade "accepted" to "validated" without a RULER-class run.
 ACCEPTED_DIVERGENCES: dict[tuple[str, str, str], str] = {
-    ("indexer.wq_b", "fp8", "src"): "RED LINE: DSA indexer stays BF16 (token-selection quality)",
-    ("indexer.wk", "fp8", "src"): "RED LINE: DSA indexer stays BF16 (token-selection quality)",
+    ("indexer.wq_b", "fp8", "src"): "declared: DSA indexer stays BF16 (token-selection risk)",
+    ("indexer.wk", "fp8", "src"): "declared: DSA indexer stays BF16 (token-selection risk)",
 }
 
 # The ONE difference a W4A8 checkpoint is meant to have from the vendor's FP8

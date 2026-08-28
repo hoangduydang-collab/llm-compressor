@@ -149,12 +149,35 @@
 #   - activations: FP8_DYNAMIC per-token here, static `input_scale` there
 #   - THE INDEXER IS NOT PLACEMENT-IDENTICAL. Phala quantizes
 #     `self_attn.indexer.wq_b` and `self_attn.indexer.wk` to FP8, leaving only
-#     `weights_proj` and `k_norm` alone. This recipe keeps the whole indexer
-#     BF16, following the M3 precedent and our own recorded long-context
-#     retrieval failure from touching indexer precision. That is a deliberate
-#     divergence, not an oversight — but it does mean the paired eval is not a
-#     single-variable comparison, and if the two checkpoints differ on
-#     long-context retrieval this is the first thing to suspect.
+#     `weights_proj` and `k_norm` alone. zai-org's own FP8 release does the same
+#     (verified from its weight index, not its config). This recipe keeps the
+#     whole indexer BF16.
+#
+#     THE PROVENANCE OF THAT CHOICE, CORRECTED 2026-08-28. An earlier revision of
+#     this line justified it by "our own recorded long-context retrieval failure
+#     from touching indexer precision." NO SUCH MEASUREMENT EXISTS IN THIS REPO.
+#     What exists is: (a) a mechanism argument — wq_b and wk feed the DSA index
+#     scores, so error there changes WHICH tokens are attended, a discrete
+#     selection effect like the router rather than a smooth numerical one;
+#     (b) generic literature on 4-bit long-context degradation and 2-bit KV
+#     retrieval loss, neither of which is about an indexer; and (c) M3's paired
+#     arms `r8-fp8rest` (BF16 indexer) vs `r8-uniformqkv` (fully FP8 qkv+indexer)
+#     — ONE quant run, two exports, plus minimax_m3_paired_r8_gpqa.yaml — whose
+#     quality eval was never run. docs/m3-benchmark-arms.md says so explicitly:
+#     "Perf-only. No quality eval of either export exists."
+#
+#     So this is cheap insurance on an unmeasured risk, which the cost supports:
+#     the whole divergence is 21 layers x (wq_b [4096,2048] + wk [128,6144]) =
+#     192.7 M params, i.e. 0.048% of a ~399 GB W4A8 checkpoint and 0.69% of the
+#     26.1 GiB of per-token activated weight bytes. Keep it BF16 — but call it
+#     what it is, and note that our eval suite could not currently detect the
+#     failure it guards against (RULER is listed as "later" in
+#     QUANT_REGRESSION_METRICS_SURVEY.md and has never been run here).
+#
+#     It does mean the paired eval is not a single-variable comparison, and if
+#     the two checkpoints differ on long-context retrieval this is the first
+#     thing to suspect. The experiment is cheap when we want it: the toggle is an
+#     EXPORT-time choice, so it yields two checkpoints from one quantization run.
 #   - format: Phala declares only {"quant_method": "w4afp8"} — SGLang-native,
 #     not compressed-tensors — AND re-types the model as
 #     `model_type: deepseek_v3` while keeping

@@ -1,0 +1,86 @@
+# glm52_awq_1layer_indexer_fp8.yaml at PRODUCTION calibration size.
+#
+# Identical in every respect except num_samples 32 -> 256 and max_seq_length
+# 512 -> 2048, i.e. the exact calibration the full run uses (128x the tokens:
+# 32x512 = 16,384 -> 256x2048 = 524,288). Same one targeted layer, same 4-layer
+# subset, same FP8 targets including the layer-0 DSA indexer.
+#
+# WHY. The dequant residual on layer 3's expert up_proj measured 0.194 (separable
+# fit) against gate_proj 0.089 and down_proj 0.064 at 32x512. BUGS_AND_FIXES.md has
+# asked since the r5-era entry to "re-check on a higher-sample run before treating
+# it as a defect", and this is that run.
+#
+# WHAT IT CAN AND CANNOT SETTLE, kept apart because conflating them is how the
+# earlier read went wrong:
+#   * The ABSOLUTE level is open, and this run settles it. If up_proj drops toward
+#     the 0.09-0.12 healthy band, noisy scales fitted from 16,384 tokens were
+#     inflating it and there is nothing further to explain.
+#   * The ASYMMETRY is already disconfirmed as a sample-count effect and this run
+#     cannot revive that explanation: all three projections draw their scales from
+#     the SAME calibration, so noise cannot raise one and not the others. Expect
+#     the ~2x up_proj/gate_proj ratio to survive. It is explained by two effects
+#     that both point the same way -- published layer-sensitivity work puts MLP
+#     up/down projections as the most sensitive and gate as only moderate, and the
+#     canonical up_proj -> down_proj AWQ mapping makes up_proj pay to protect
+#     down_proj.
+#
+# So the informative outcome is the LEVEL, and the ratio is a control: if the ratio
+# also collapses, the two-effect explanation is wrong and worth revisiting.
+#
+# Cost: one targeted layer at 256x2048 measured ~259 s of grid search plus
+# calibration on this model, on a 4-layer NVMe subset. Tens of minutes, not hours.
+#
+# LAUNCH (any node except gpu03 while the full run holds it):
+#   pipeline/k8s/launch-quant-glm52.sh --method awq --gpus 4 --subset-layers 4 \
+#       --config pipeline/configs/glm52_awq_1layer_indexer_fp8_256.yaml
+name: glm52_awq_1layer_indexer_fp8_256
+
+model:
+  id: zai-org/GLM-5.2
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /scratch/offload/glm52-1layer-indexer-fp8-256
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+    - "re:.*model[.]layers[.](?!3(?:[.]|$))[0-9]+(?:[.]|$).*"
+  fp8_dynamic_targets:
+    - "re:.*model[.]layers[.]3[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]3[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.]0[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
+    - "re:.*model[.]layers[.]0[.]self_attn[.]indexer[.](wq_b|wk)$"
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  # The full run's values, verbatim. Changing anything else here would make the
+  # comparison against the 32x512 run multi-variable.
+  num_samples: 256
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+  stop_after_last_target: true
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm52-1layer-indexer-fp8-256

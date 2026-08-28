@@ -256,8 +256,16 @@ spec:
                 while :; do
                   SNAP=$(ls -d "$CACHE"/snapshots/* 2>/dev/null | head -1)
                   if [ -n "$SNAP" ]; then
-                    n=$(ls -1 "$SNAP"/*.safetensors 2>/dev/null | wc -l)
-                    inc=$(ls -1 "$CACHE"/blobs/*.incomplete 2>/dev/null | wc -l)
+                    # `find`, not `ls GLOB | wc -l`. Under this script's
+                    # `set -euo pipefail`, a glob that matches NOTHING makes ls
+                    # exit 2, pipefail propagates it past wc, and set -e kills the
+                    # run. The .incomplete glob goes empty at exactly one moment:
+                    # when the download COMPLETES. So the loop polled correctly for
+                    # 12 minutes and then killed itself on success, exit code 2, no
+                    # error message (run 20260828t185027z). find returns 0 for no
+                    # matches, which is the whole point.
+                    n=$(find "$SNAP" -maxdepth 1 -name '*.safetensors' | wc -l)
+                    inc=$(find "$CACHE/blobs" -maxdepth 1 -name '*.incomplete' | wc -l)
                     if [ "$n" -eq "$WAIT_SHARDS" ] && [ "$inc" -eq 0 ]; then
                       # Fail-closed artifact identity check: a wrong-but-COMPLETE
                       # download must abort, not proceed. A module rather than an

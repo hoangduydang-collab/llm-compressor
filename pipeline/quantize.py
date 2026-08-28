@@ -861,6 +861,8 @@ def assert_smooth_fold_consistency(
         return
 
     failures = []
+    attention_checked = 0
+    attention_absent = 0
     lo, hi = scale_mean_range
     for layer, record in report["layers"].items():
         for component in ("router_compensation", "shared_gate_up_compensation"):
@@ -890,6 +892,49 @@ def assert_smooth_fold_consistency(
                     f"scale mean={scale_mean} outside [{lo}, {hi}] "
                     "(healthy ~0.7-0.9; dead-channel degeneracy ~128)"
                 )
+
+        # The attention-side norms, unchecked by this gate until 2026-08-28.
+        # Auditing them is what makes the DSA indexer's compensation verifiable at
+        # all; with only post_attention_layernorm covered, a lost or partial fold
+        # anywhere in the attention block was invisible.
+        for norm_component, group in (record.get("attention_fold") or {}).items():
+            if group.get("status") != "checked":
+                continue
+            for consumer, entry in group["consumers"].items():
+                status = entry.get("status")
+                if status in ("missing_from_candidate", "missing_from_base"):
+                    failures.append(
+                        f"layer {layer} {norm_component}/{consumer}: {status} "
+                        "(a weight the base has is not in the saved checkpoint, "
+                        "or vice versa)"
+                    )
+                    continue
+                if status != "checked":
+                    attention_absent += 1
+                    continue
+                attention_checked += 1
+                err = entry["relative_l2_error"]
+                comp_threshold = max(threshold, 0.08) if entry.get(
+                    "fp8_dequantized"
+                ) else threshold
+                if not (err <= comp_threshold):
+                    failures.append(
+                        f"layer {layer} {norm_component}/{consumer}: "
+                        f"rel_l2={err:.3e} (threshold {comp_threshold})"
+                    )
+                scale_stats = entry["scale"]
+                if scale_stats["finite_fraction"] < 1.0:
+                    failures.append(
+                        f"layer {layer} {norm_component}/{consumer}: "
+                        "non-finite norm-implied scale"
+                    )
+                elif scale_stats["mean"] is None or not (
+                    lo <= scale_stats["mean"] <= hi
+                ):
+                    failures.append(
+                        f"layer {layer} {norm_component}/{consumer}: degenerate "
+                        f"fold, scale mean={scale_stats['mean']} outside [{lo}, {hi}]"
+                    )
     if failures:
         raise RuntimeError(
             "smooth-fold consistency gate FAILED — balance-layer weights moved "
@@ -902,6 +947,20 @@ def assert_smooth_fold_consistency(
     print(
         "[pipeline] smooth-fold gate OK: norm-implied scale explains balance "
         f"layers on layers {sorted(int(k) for k in report['layers'])}"
+    )
+    # Report the attention-side coverage explicitly. A count of 0 checked is not
+    # a failure -- some architectures expose none of these names -- but it MUST be
+    # visible, because "the gate passed" reading as "the attention block was
+    # audited" is exactly the confusion that let the indexer go unexamined.
+    print(
+        f"[pipeline] smooth-fold gate: attention-side consumers checked="
+        f"{attention_checked}, absent={attention_absent}"
+        + (
+            "  (0 checked -- this architecture exposes none of the audited "
+            "attention names, so the attention block is NOT covered)"
+            if attention_checked == 0
+            else ""
+        )
     )
 
 

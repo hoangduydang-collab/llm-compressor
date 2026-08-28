@@ -3038,3 +3038,75 @@ guards against is one our eval suite could not currently detect (RULER is listed
 "later" in `QUANT_REGRESSION_METRICS_SURVEY.md` and has never been run). Keeping it
 is right; calling it validated was not. Provenance corrected in all three configs
 and in the gate.
+
+
+---
+
+## 2026-08-28 — the fold audit never looked at the attention block
+
+**The gap.** `pipeline/m3_checkpoint_scale_audit.py` audited three things:
+`post_attention_layernorm`, the router, and the shared experts. That is the MoE
+input and its consumers. **The entire attention block's fold was unchecked** — no
+gate had ever read `input_layernorm` or `q_a_layernorm`, so a lost, partial, or
+half-applied fold anywhere in attention was invisible to every post-save check.
+
+This is the gap that would have hidden the DSA indexer trap. GLM's
+`GlmMoeDsaDecoderLayer.forward` computes `hidden_states = input_layernorm(x)` and
+`self_attn` hands that tensor **verbatim** to `self.indexer(...)`, where
+`wk(hidden_states)` and `weights_proj(hidden_states)` consume it; `wq_b` consumes
+`q_resid = q_a_layernorm(q_a_proj(x))`, the same tensor `q_b_proj` gets. None of
+the three was an AWQ balance layer.
+
+**Not a shipped defect, and this was checked rather than assumed.** `awq/base.py`
+`continue`s a mapping when `any_targeted` is False, and `_is_grid_search_targeted`
+excludes float-schemed modules deliberately (the 2026-07-23 r8a fix). Every
+attention-side balance layer on today's GLM recipes is FP8_DYNAMIC, so all three
+attention mappings are **skipped** and those norms are never divided by s. No GLM
+checkpoint we produced has an uncompensated indexer. Contrast the MoE-input
+mapping, whose routed experts *are* int4: that one applies, which is why the router
+defect was real and measured at 1.08e-1 to 2.42e-1.
+
+I nearly reported it as live. Writing it up forced reading the skip logic, which is
+the only reason the claim got corrected before it reached the user.
+
+**What makes it worth closing anyway.** It goes live the moment anything in the
+attention block is int4 — deliberately, or via a typo dropping an entry from
+`fp8_dynamic_targets`, which sends those projections *through* to the int4 modifier
+rather than to BF16 (the failure `test_int4_outside_the_routed_experts_fails` now
+covers on the scope side). At that point `any_targeted` flips to True, the fold
+applies, and the indexer is silently uncompensated with nothing looking.
+
+**Fix.** `audit_attention_fold` walks two groups, read off the modeling code rather
+than guessed:
+
+    input_layernorm -> q_a_proj (or q_proj), kv_a_proj_with_mqa,
+                       indexer.wk, indexer.weights_proj
+    q_a_layernorm   -> q_b_proj, indexer.wq_b
+
+`kv_a_layernorm -> kv_b_proj` is deliberately excluded: it normalizes
+`kv_a_proj`'s *output*, which no indexer module consumes, so it would add a
+component to audit without adding a class of failure to catch.
+
+Three design points:
+
+1. **Absence is recorded, never skipped**, with four distinct statuses. `absent`
+   (neither checkpoint has it) is legitimate and common — only 21 of GLM's 78
+   layers carry an indexer, and M3 has no `q_a_layernorm` at all.
+   `missing_from_candidate` (the base has it, the save does not) is a **dropped
+   tensor** and fails the gate. Collapsing those two into "skip" is how the
+   original gap was shaped.
+2. **The gate prints its attention-side coverage** (`checked=6, absent=0`). "The
+   gate passed" must not be readable as "the attention block was audited"; on an
+   architecture exposing none of these names it says so explicitly.
+3. **It has to pass in today's regime too.** With the mappings skipped the norms
+   are untouched, so the implied scale is exactly 1 and every consumer must audit
+   clean — a gate that only worked once a fold existed would be unusable now.
+
+**`assert_smooth_fold_consistency` had no test of any kind** before today, which is
+the same pattern one level up: the check existed, the check on the check did not.
+It now has six, including that an uncompensated indexer raises, that the message
+**names the guilty consumer** rather than sending the reader back to a
+59,487-module tree, and that a dropped attention tensor fails.
+
+21 new tests. The 25 failures elsewhere in `pipeline/tests` and `tests/pipeline`
+are pre-existing — verified by stashing these changes and re-running, same 25.

@@ -66,6 +66,13 @@ spec:
             - {name: GPUS, value: "@@GPUS@@"}
             # "1" skips the checkpoint save -- see the torchrun line below.
             - {name: EVIDENCE_ONLY, value: "@@EVIDENCE_ONLY@@"}
+            # Empty = off. If set to N, build a depth-truncated copy of the model
+            # (decoder layers [0,N)) on node-local NVMe and quantize THAT instead
+            # of the cephfs snapshot. For calibration-timing probes only: it cuts
+            # ~63 min of setup to under a minute, and it is faithful for per-layer
+            # cost because layer L's calibration inputs come from layers 0..L-1.
+            # Never for a production checkpoint -- the result is not a usable model.
+            - {name: SUBSET_LAYERS, value: "@@SUBSET_LAYERS@@"}
             - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
             - {name: REPO_REF, value: "@@REPO_REF@@"}
             # Point every HF cache at the CA-region PVC: the BF16 snapshot is
@@ -199,10 +206,30 @@ spec:
                 EVIDENCE_FLAG="--evidence-only"
                 echo "==> EVIDENCE_ONLY=1: calibration only, NO checkpoint saved"
               fi
+
+              # --- optional depth-truncated subset on node-local NVMe ---------
+              MODEL_OVERRIDE=""
+              if [ -n "${SUBSET_LAYERS:-}" ]; then
+                [ "${EVIDENCE_ONLY:-0}" = "1" ] || {
+                  echo "ABORT: SUBSET_LAYERS requires EVIDENCE_ONLY=1. A subset" >&2
+                  echo "       checkpoint is a timing instrument, not a model;" >&2
+                  echo "       saving one would produce a corrupt artifact." >&2
+                  exit 1; }
+                SNAP=$(ls -d /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2/snapshots/* | head -1)
+                [ -n "$SNAP" ] || { echo "ABORT: no GLM-5.2 snapshot in the HF cache" >&2; exit 1; }
+                echo "==> building layers-0..$((SUBSET_LAYERS-1)) subset on local NVMe"
+                df -hT /scratch | tail -1
+                time python -m pipeline.build_subset_checkpoint \
+                  --snapshot "$SNAP" --out /scratch/glm52-subset \
+                  --layers "$SUBSET_LAYERS"
+                du -sh /scratch/glm52-subset
+                MODEL_OVERRIDE="--set model.id=/scratch/glm52-subset"
+              fi
               echo "==> launching torchrun --nproc_per_node=$GPUS"
               torchrun --nproc_per_node="$GPUS" -m pipeline.run \
                 --config "$CONFIG" --stage quantize \
                 --set "quantization.method=$METHOD" \
+                $MODEL_OVERRIDE \
                 $EVIDENCE_FLAG
 
               echo DONE
@@ -237,10 +264,27 @@ spec:
             - {name: dshm, mountPath: /dev/shm}
             - {name: work, mountPath: /work}
             - {name: tmp, mountPath: /tmp}
+            - {name: scratch, mountPath: /scratch}
       volumes:
         - name: model-cache
           persistentVolumeClaim:
             claimName: model-cache-shared
+        # Node-local NVMe, for SUBSET_LAYERS runs. Measured on gpu04 (2026-08-28):
+        # /dev/nvme1n1p2, ext4, rotational=0, 642 GB free of 879 GB, and
+        #   read  1632 MB/s @1 reader ... 1723 MB/s @16 readers (flat)
+        #   write 921 MB/s
+        # against cephfs's 31 MB/s single-stream / 135-260 MB/s across 8 readers.
+        # The device saturates at ONE reader, so unlike cephfs there is nothing to
+        # gain from read concurrency here.
+        #
+        # Sized well below the free space on purpose: emptyDir lands on the node's
+        # kubelet filesystem, and filling it triggers node-level DiskPressure
+        # eviction that would hit OTHER tenants' pods, not just this job. 80Gi
+        # holds the 24.2 GiB layers-0..3 subset with room for offload, and the
+        # whole 1403 GiB model does NOT fit here in any case.
+        - name: scratch
+          emptyDir:
+            sizeLimit: 80Gi
         # benchmark-datasets is DELIBERATELY not mounted: it is
         # sc-file-nfs-vast-my (my-region), and the nfs.csi.k8s.io driver is not
         # registered on the CA nodes — mounting it fails with

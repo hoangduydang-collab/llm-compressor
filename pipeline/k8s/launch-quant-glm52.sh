@@ -27,6 +27,7 @@ REPO_REF=""
 RUN_TAG=""
 DRY_RUN=0
 EVIDENCE_ONLY=0
+SUBSET_LAYERS=""
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -39,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --run-tag)  RUN_TAG="${2:-}"; shift 2 ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --evidence-only) EVIDENCE_ONLY=1; shift ;;
+    --subset-layers) SUBSET_LAYERS="${2:-}"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -111,6 +113,7 @@ sed -e "s|@@METHOD@@|${METHOD}|g" \
     -e "s|@@REPO_REF@@|${REPO_REF}|g" \
     -e "s|@@RUN_TAG@@|${RUN_TAG}|g" \
     -e "s|@@EVIDENCE_ONLY@@|${EVIDENCE_ONLY}|g" \
+    -e "s|@@SUBSET_LAYERS@@|${SUBSET_LAYERS}|g" \
     "$TMPL" > "$RENDERED"
 
 grep -q '@@' "$RENDERED" && die "unsubstituted token remains: $(grep -o '@@[A-Z_]*@@' "$RENDERED" | sort -u | tr '\n' ' ')"

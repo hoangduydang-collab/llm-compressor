@@ -188,6 +188,22 @@ _deepseek_mappings = [
 # quantized (it is in every recipe's ignore list), so it was never a legitimate
 # balance layer to begin with.
 #
+# ^^^ THE PRECEDING SENTENCE IS WRONG AND IT SHIPPED A DEFECT (2026-08-27,
+# commit 7d08e0fa). Whether the router must be QUANTIZED (it must not) is a
+# different question from whether it must be COMPENSATED (it must). The router
+# consumes post_attention_layernorm, so dividing that norm by s without
+# multiplying the router by s shifts its logits and changes top-k expert
+# selection. Measured on the GLM-5.2 AWQ smoke: the shared experts folded
+# correctly (residual 2.15e-3) while the router sat at base (1.08e-1..2.42e-1).
+# See BUGS_AND_FIXES.md "GLM-5.2 AWQ leaves the MoE router uncompensated".
+#
+# This static list is now only a FALLBACK. The GLM architectures resolve through
+# dynamic_mappings.py::build_mla_mixed_dense_moe_mappings, which scopes the
+# smooth-layer pattern to the MoE layer indices and can therefore keep the
+# router -- the technique pipeline/minimax_m3_config.py has always used. Keeping
+# mlp.gate out of THIS list is still correct, because these patterns are
+# unscoped.
+#
 # NOTE: DeepseekV3ForCausalLM also has first_k_dense_replace=3 and is still
 # pointed at _deepseek_mappings, so it is likely to hit this same failure. Left
 # unchanged deliberately — we have no DeepSeek-V3 AWQ evidence, and changing a

@@ -927,7 +927,30 @@ def assert_quant_checkpoint_verified(ckpt: Path, base: Path | None = None) -> No
     dequant_base = base if base is not None and Path(base).is_dir() else None
     if base is not None and dequant_base is None:
         print(f"[pipeline] dequant check skipped (base not a local dir): {base}")
-    rc = verify(Path(ckpt), check_tensors=True, dequant_base=dequant_base)
+    # Pick the keep-bf16 expectation set from the model rather than taking the
+    # M3 default: on a GLM checkpoint the M3 preset fails 5x for modules GLM
+    # does not have (vision_tower, multi_modal_projector, patch_merge,
+    # block_sparse_moe, indexer), which is what made the router-fix validation
+    # run exit 1 with an otherwise clean report.
+    from pipeline.verify_quant_checkpoint import _IGNORE_PRESETS
+
+    arch = ""
+    try:
+        import json as _json
+        arch = " ".join(
+            _json.loads((Path(ckpt) / "config.json").read_text(encoding="utf-8"))
+            .get("architectures", []) or []
+        )
+    except Exception:
+        pass
+    preset = "glm52" if "Glm" in arch else "m3"
+    print(f"[pipeline] quant-verify keep-bf16 preset: {preset} (arch={arch!r})")
+    rc = verify(
+        Path(ckpt),
+        check_tensors=True,
+        dequant_base=dequant_base,
+        expect_ignore=_IGNORE_PRESETS[preset],
+    )
     if rc != 0:
         raise RuntimeError(
             "quant checkpoint verification gate FAILED (see [FAIL] lines "
@@ -1273,7 +1296,15 @@ def run_quantize(
                     int(part) for part in gate_layers_env.split(",") if part.strip()
                 ]
             else:
-                gate_layers = list(range(3, 60))
+                # Derived from the model, not M3's sparse range. The old
+                # constant range(3, 60) left GLM-5.2/5.3 layers 60-77 (18 of
+                # 75 MoE layers) unaudited, so a fold lost only in that tail --
+                # the r2/r3/r7 failure mode -- would pass silently.
+                depth = getattr(getattr(model, "config", None), "num_hidden_layers", 60)
+                first_dense = getattr(
+                    getattr(model, "config", None), "first_k_dense_replace", 3
+                )
+                gate_layers = list(range(int(first_dense), int(depth)))
             norm_gain_offset = resolve_norm_gain_offset(model)
             print(
                 "[pipeline] norm gain form: "

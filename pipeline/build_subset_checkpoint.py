@@ -115,11 +115,37 @@ def patch_config(config: dict, num_layers: int) -> dict:
     layer's weights live at index ``num_hidden_layers`` (78) which the subset
     does not carry. Leaving it at 1 makes model construction look for a layer
     that is not there.
+
+    PER-LAYER LISTS MUST BE TRUNCATED TOO. GLM-5.2 carries ``mlp_layer_types``,
+    a 78-element list, and transformers validates its length against
+    ``num_hidden_layers`` (configuration_utils.py::validate_layer_type), so
+    setting depth alone raises::
+
+        ValueError: `num_hidden_layers` (4) must be equal to the number of
+                    `mlp_layer_types` (78)
+
+    Rather than hardcode that one key -- other architectures use ``layer_types``,
+    ``attn_layer_types``, per-layer expert counts and so on -- every list whose
+    length matches the ORIGINAL depth (with or without the MTP layers) is
+    truncated, and the names are returned in ``_subset_truncated_lists`` so the
+    transformation is visible in the artifact rather than implicit.
     """
     patched = dict(config)
+    original_depth = config.get("num_hidden_layers")
+    mtp = config.get("num_nextn_predict_layers") or 0
+    per_layer_lengths = {original_depth, original_depth + mtp} - {None}
+
+    truncated = []
+    for key, value in config.items():
+        if isinstance(value, list) and len(value) in per_layer_lengths:
+            patched[key] = value[:num_layers]
+            truncated.append(key)
+
     patched["num_hidden_layers"] = num_layers
     if patched.get("num_nextn_predict_layers"):
         patched["num_nextn_predict_layers"] = 0
+    if truncated:
+        patched["_subset_truncated_lists"] = sorted(truncated)
     # Record provenance so a stray subset can never be mistaken for the model.
     patched["_subset_of"] = config.get("_name_or_path", "unknown")
     patched["_subset_num_layers"] = num_layers

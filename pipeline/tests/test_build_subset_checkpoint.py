@@ -228,3 +228,61 @@ def test_cli_builds(tmp_path):
     out = tmp_path / "subset"
     assert main(["--snapshot", str(snap), "--out", str(out), "--layers", "4"]) == 0
     assert (out / "model.safetensors.index.json").exists()
+
+
+# --- per-layer list truncation (the 131426z failure) ------------------------
+
+def test_patch_config_truncates_per_layer_lists():
+    """The real failure: GLM-5.2 ships mlp_layer_types with one entry per layer,
+    and transformers validates its length against num_hidden_layers."""
+    patched = patch_config(
+        {
+            "num_hidden_layers": 78,
+            "num_nextn_predict_layers": 1,
+            "mlp_layer_types": ["dense"] * 3 + ["moe"] * 75,
+        },
+        4,
+    )
+    assert len(patched["mlp_layer_types"]) == 4
+    assert patched["mlp_layer_types"] == ["dense", "dense", "dense", "moe"], \
+        "truncation must keep the FIRST n entries so layer 3 stays MoE"
+    assert patched["_subset_truncated_lists"] == ["mlp_layer_types"]
+
+
+def test_patch_config_truncates_lists_sized_with_mtp():
+    """Some per-layer lists count the MTP layer, giving length depth+mtp."""
+    patched = patch_config(
+        {"num_hidden_layers": 78, "num_nextn_predict_layers": 1,
+         "layer_types": ["full"] * 79},
+        4,
+    )
+    assert len(patched["layer_types"]) == 4
+
+
+def test_patch_config_truncates_several_lists():
+    patched = patch_config(
+        {"num_hidden_layers": 8, "mlp_layer_types": ["a"] * 8,
+         "attn_layer_types": ["b"] * 8, "n_experts_per_layer": list(range(8))},
+        3,
+    )
+    assert patched["_subset_truncated_lists"] == [
+        "attn_layer_types", "mlp_layer_types", "n_experts_per_layer"]
+    for key in ("mlp_layer_types", "attn_layer_types", "n_experts_per_layer"):
+        assert len(patched[key]) == 3
+
+
+def test_patch_config_leaves_unrelated_lists_alone():
+    """A list whose length does not match depth is not per-layer data."""
+    patched = patch_config(
+        {"num_hidden_layers": 78, "architectures": ["GlmMoeDsaForCausalLM"],
+         "eos_token_id": [1, 2, 3]},
+        4,
+    )
+    assert patched["architectures"] == ["GlmMoeDsaForCausalLM"]
+    assert patched["eos_token_id"] == [1, 2, 3]
+    assert "_subset_truncated_lists" not in patched
+
+
+def test_patch_config_no_lists_no_marker():
+    patched = patch_config({"num_hidden_layers": 78}, 4)
+    assert "_subset_truncated_lists" not in patched

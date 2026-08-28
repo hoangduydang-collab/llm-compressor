@@ -63,7 +63,17 @@ model:
   dtype: bfloat16
   device_map: auto_offload
   max_memory:
-    cpu: 32000000000
+    # 550 GB, matching the AWQ arm. Raised from the 32e9 inherited from M3 (a
+    # vm.max_map_count workaround that does not bind for GLM-5.2: 550 GB
+    # projects ~65k shm segments against a 262144 limit). The real ceiling was
+    # the dshm emptyDir sizeLimit, raised to 600Gi in the Job template.
+    #
+    # At 32e9 this arm kept ~1133 GB of the 1485 GB model on the cephfs PVC,
+    # measured at 31 MB/s single-stream, and storage dominated: 86 min to
+    # propagate layers 7-41 (not even quantized) vs ~4 min to compress a
+    # targeted layer. This run is the clean A/B against those timings -- same
+    # arm, same config, only the memory budget changed.
+    cpu: 550000000000
   # Rancher only now: the old SSH cluster's /mnt/nfs is gone. /mnt/cephfs is the
   # model-cache-shared PVC, the sole CA-region RWX storage. Scratch and output
   # sit under an owned top-level dir, NOT inside the tool-managed .hf-cache.

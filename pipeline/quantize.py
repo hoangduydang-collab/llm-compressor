@@ -673,6 +673,76 @@ def repair_generation_config(model) -> list[str]:
     return changes
 
 
+def assert_checkpoint_save_preflight(model, run_dir: Path) -> None:
+    """Exercise the real save path before paying for calibration.
+
+    WHY. The checkpoint save is a single all-or-nothing operation at the end of
+    a multi-hour run, and everything inside it -- config serialization,
+    generation-config validation, directory creation, free space -- is only
+    discovered then. GLM-5.2's ``top_p``-without-``do_sample`` cost two 4-GPU
+    runs about 11 GPU-hours between them and produced no artifact, because the
+    validator that rejected it runs at the END of ``save_pretrained``.
+
+    So do the cheap parts of the save for real, now, against the actual output
+    filesystem: serialize both configs and write a probe file. That covers the
+    config classes of failure, plus a read-only mount, a missing parent, or a
+    full volume. It takes milliseconds and turns "6 hours then nothing" into
+    "fails before the GPUs warm up".
+
+    What it deliberately does NOT cover: shard writing throughput, the
+    offloaded weight-format revert, and tied-weight handling. Those need real
+    tensors. ``assert_transformers_offloaded_save_healthy`` gates the known
+    revert bug separately; the rest is genuinely only testable by saving.
+
+    :param model: loaded model whose configs will be serialized.
+    :param run_dir: run directory; the probe is written under it.
+    :raises RuntimeError: if any part of the probe fails.
+    """
+    import shutil
+    import tempfile
+
+    probe_parent = Path(run_dir)
+    try:
+        probe_parent.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        raise RuntimeError(
+            f"save preflight: cannot create run dir {probe_parent}: {exc}"
+        ) from exc
+
+    probe = Path(tempfile.mkdtemp(prefix=".save-preflight-", dir=probe_parent))
+    try:
+        # The exact calls transformers makes inside save_pretrained, in order.
+        for name in ("config", "generation_config"):
+            obj = getattr(model, name, None)
+            if obj is None:
+                continue
+            try:
+                obj.save_pretrained(str(probe))
+            except Exception as exc:
+                raise RuntimeError(
+                    f"save preflight: model.{name}.save_pretrained failed, which "
+                    "would abort the real save AFTER calibration. Fix this "
+                    f"before spending GPU time. Underlying error: {exc}"
+                ) from exc
+
+        # A real write, so a read-only mount or full volume surfaces here.
+        try:
+            (probe / "probe.bin").write_bytes(b"\0" * (1 << 20))
+        except Exception as exc:
+            raise RuntimeError(
+                f"save preflight: cannot write to {probe_parent}: {exc}"
+            ) from exc
+
+        written = sorted(p.name for p in probe.iterdir())
+        print(
+            f"[pipeline] save preflight OK: serialized {written} to "
+            f"{probe_parent}",
+            flush=True,
+        )
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
 def assert_transformers_offloaded_save_healthy() -> None:
     """Fail-closed gate: refuse to start a run whose offloaded save is
     known-broken, instead of crashing hours later at the end of shard 1.
@@ -966,6 +1036,12 @@ def run_quantize(
     # here makes that failure mode cost seconds.
     for change in repair_generation_config(model):
         print(f"[pipeline] generation_config repaired: {change}", flush=True)
+
+    # Then prove the save path actually works, on the real output filesystem,
+    # while failing still costs seconds. Runs on every rank: mkdtemp gives each
+    # a unique probe dir so they cannot race, and each rank's view of the shared
+    # PVC is worth checking independently.
+    assert_checkpoint_save_preflight(model, run_dir)
 
     # Capture load/environment provenance BEFORE calibration: where the loaded
     # modeling code comes from (installed transformers vs trust_remote_code) and

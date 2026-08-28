@@ -107,6 +107,12 @@ class CalibrationConfig:
     # before the cut, so this cannot silently leave a targeted layer unquantized.
     # Leave False for production: a modifier needing whole-model statistics would
     # see a truncated model.
+    # Overlap the next layer's weight read with this layer's compute, and drop
+    # page cache behind the walk. Safe to leave on for a disk-offloaded run;
+    # inert when the model is not disk-offloaded. See
+    # src/llmcompressor/pipelines/sequential/weight_prefetch.py.
+    sequential_weight_prefetch: bool = False
+    sequential_weight_prefetch_depth: int = 1
     stop_after_last_target: bool = False
 
 

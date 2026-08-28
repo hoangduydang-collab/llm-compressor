@@ -15,6 +15,7 @@ from llmcompressor.pipelines.sequential.helpers import (
     handle_sequential_oom,
     trace_subgraphs,
 )
+from llmcompressor.pipelines.sequential.weight_prefetch import WeightPrefetcher
 from llmcompressor.utils.dev import get_main_device
 from llmcompressor.utils.helpers import DisableQuantization, calibration_forward_context
 from llmcompressor.utils.pytorch.module import infer_sequential_targets
@@ -258,10 +259,26 @@ class SequentialPipeline(CalibrationPipeline):
                         "will see a truncated model. Do not use in production."
                     )
 
+            # Overlap the next layer's weight read with this layer's compute, and
+            # drop page cache behind the walk. See weight_prefetch.py for why the
+            # release half is mandatory rather than a bonus: the pod's memory
+            # cgroup sits at its limit and 100% of reclaim is direct reclaim, so a
+            # prefetcher that only adds pages makes the stall worse.
+            prefetcher = WeightPrefetcher(
+                model,
+                subgraphs,
+                enabled=getattr(dataset_args, "sequential_weight_prefetch", False),
+                depth=getattr(dataset_args, "sequential_weight_prefetch_depth", 1),
+            )
+
             for subgraph_index, subgraph in enumerate(subgraphs):
                 # prepare tqdm description texts
                 calib_desc = f"({subgraph_index + 1}/{num_subgraphs}): Calibrating"
                 prop_desc = f"({subgraph_index + 1}/{num_subgraphs}): Propagating"
+
+                # Issued before this subgraph's compute so the kernel reads the
+                # NEXT one while the GPUs work on this one.
+                prefetcher.prefetch(subgraph_index + 1)
 
                 # reduce memory movement by keeping modules onloaded
                 num_batches = len(dataloader)
@@ -310,6 +327,11 @@ class SequentialPipeline(CalibrationPipeline):
                         modules=subgraph_modules,
                         propagated=dataset_args.propagate_error,
                     )
+
+                # After the subgraph is offloaded again: its source pages are no
+                # longer wanted unless a LATER subgraph shares the same shard,
+                # which plan_last_use() accounts for.
+                prefetcher.release_through(subgraph_index)
 
                 # Outside `disable_offloading()` so this subgraph is offloaded
                 # before we leave, exactly as a normal iteration would.

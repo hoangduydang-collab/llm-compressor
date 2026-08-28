@@ -1155,6 +1155,20 @@ def run_quantize(
         oneshot_kwargs["sequential_targets"] = cfg.calibration.sequential_targets
     if cfg.calibration.pipeline:
         oneshot_kwargs["pipeline"] = cfg.calibration.pipeline
+    if getattr(cfg.calibration, "sequential_weight_prefetch", False):
+        depth = int(getattr(cfg.calibration, "sequential_weight_prefetch_depth", 1) or 1)
+        oneshot_kwargs["sequential_weight_prefetch"] = True
+        oneshot_kwargs["sequential_weight_prefetch_depth"] = depth
+        print(
+            "[pipeline] sequential_weight_prefetch=True (depth "
+            f"{depth}): the next layer's weight files are advised WILLNEED while "
+            "the current layer computes, and files no later layer needs are "
+            "advised DONTNEED. Both halves matter -- the release half is what "
+            "keeps page cache from pinning the memory cgroup at its limit, where "
+            "100% of reclaim becomes direct reclaim (measured 23% full stall).",
+            flush=True,
+        )
+
     if getattr(cfg.calibration, "stop_after_last_target", False):
         oneshot_kwargs["stop_after_last_target"] = True
         print(

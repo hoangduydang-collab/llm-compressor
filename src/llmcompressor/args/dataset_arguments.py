@@ -297,6 +297,36 @@ class DatasetArguments(CustomDatasetArguments):
             "for faster calibration when GPU memory allows (two batches on device)."
         },
     )
+    sequential_weight_prefetch: bool = field(
+        default=False,
+        metadata={
+            "help": "When using the sequential pipeline against a DISK-offloaded "
+            "model, ask the kernel to read the next subgraph's weight files while "
+            "the current subgraph computes (POSIX_FADV_WILLNEED), and drop page "
+            "cache for files no later subgraph needs (POSIX_FADV_DONTNEED). "
+            "Advisory only -- no user-space buffering, and a failure is never "
+            "fatal. Worth it when per-layer compute exceeds per-layer read time: "
+            "measured on GLM-5.2 (2026-08-28), compute is ~350 s/layer at 256 "
+            "samples x 2048 tokens against ~120 s of cephfs streaming, so the read "
+            "hides almost entirely (~2.6 h over 78 layers). It is NOT worth it at "
+            "small sample counts, where the GPUs are already idle waiting on I/O "
+            "and there is no compute to hide behind. The DONTNEED half is not "
+            "optional: the pod's memory cgroup sits at its limit with 100% direct "
+            "reclaim and 23% full memory-pressure stall, so adding page cache "
+            "without releasing any makes the walk slower, not faster."
+        },
+    )
+    sequential_weight_prefetch_depth: int = field(
+        default=1,
+        metadata={
+            "help": "How many subgraphs ahead to prefetch when "
+            "sequential_weight_prefetch is enabled. Each extra layer of depth "
+            "holds another layer's weights (~18.4 GiB on GLM-5.2) in page cache, "
+            "which is charged to the pod's memory cgroup -- raising this trades "
+            "overlap for exactly the memory pressure the release half exists to "
+            "avoid. 1 is enough whenever compute >= read time."
+        },
+    )
     stop_after_last_target: bool = field(
         default=False,
         metadata={

@@ -2881,3 +2881,60 @@ two different purposes, and only one of them is right.
 integration does not properly support mixed-precision checkpoints, which is direct
 evidence for the earlier conclusion that vLLM is the only validated path for this
 artifact.
+
+**M3 hit this exact situation and solved it correctly; GLM regressed, and the
+regression is TEST-LOCKED.**
+
+`pipeline/minimax_m3_config.py::get_minimax_m3_awq_mappings` balances the
+post-attention norm against its **complete** consumer set, router included:
+
+```python
+AWQMapping(
+    rf"re:{lm}{s}[.]post_attention_layernorm$",
+    [
+        rf"re:{lm}{s}[.]mlp[.]gate$",                      # <- THE ROUTER
+        rf"re:{lm}{s}[.]mlp[.]shared_experts[.]gate_up_proj$",
+        rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]gate_proj$",
+        rf"re:{lm}{s}[.]mlp[.]experts[.][0-9]+[.]up_proj$",
+    ],
+)
+```
+
+It avoids the dense-layer resolution failure not by dropping the router but by
+**scoping every pattern to the sparse layers**:
+`_M3_SPARSE_LAYER = r"(?:[3-9]|[1-5][0-9])"` (layers 3-59), with
+`_M3_LM = r".*language_model[.]layers[."` additionally excluding the vision tower.
+Dense layers 0-2 never participate, so `match_modules_set` closes cleanly *with*
+the router present.
+
+And it is a deliberate, tested invariant --
+`tests/pipeline/test_minimax_m3_awq_mappings.py::test_moe_input_mapping_present_and_complete`:
+
+```python
+"""... must keep its complete consumer set: router + shared experts + expert gate/up."""
+assert any(_matches(b, EXAMPLE_ROUTER) for b in balances), "router must be balanced"
+```
+
+That is also why `m3_checkpoint_scale_audit.py` has a `router_compensation`
+component at all: on M3 it was a checked invariant that passed. The GLM smoke is
+the first time it fired, and it fired correctly.
+
+**The GLM path asserts the opposite.**
+`tests/llmcompressor/modifiers/awq/test_mixed_dense_moe_mappings.py::test_router_is_never_a_balance_layer`
+requires the router to be absent, repeating the same wrong justification: *"It is
+also never quantized, so it was never a legitimate balance layer."* So the tree
+currently holds **two tests asserting contradictory invariants about the same
+algebra**, both green because they inspect different mapping sets. Only the M3 one
+is right.
+
+The GLM test does guard a real failure -- an UNSCOPED router pattern resolves zero
+mappings -- but the guard is over-broad: it forbids the router everywhere instead
+of forbidding an unscoped router pattern.
+
+**Fix (now a port of a proven in-tree design, not a guess):**
+1. add a MoE-layer-scoped mapping for GLM including `mlp.gate`, built from
+   `first_k_dense_replace` exactly as M3 does with `_M3_SPARSE_LAYER`;
+2. narrow `test_router_is_never_a_balance_layer` to forbid only *unscoped* router
+   patterns, keeping its real protection;
+3. add the M3-style positive assertion ("router must be balanced") for GLM, which
+   is the test whose absence let this ship.

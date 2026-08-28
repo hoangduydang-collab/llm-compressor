@@ -282,3 +282,61 @@ def test_depth_is_at_least_one(tmp_path):
     model = _model_with_offload(tmp_path, {"layers.0.proj": "a.safetensors"})
     p = WeightPrefetcher(model, [FakeSubgraph(["layers.0"])], enabled=True, depth=0)
     assert p.depth == 1
+
+
+# --- startup complexity (the bug that would have hung a 10-hour run) --------
+
+def test_named_modules_walked_once_regardless_of_subgraph_count(tmp_path):
+    """Startup must be O(modules x depth), not O(subgraphs x modules x targets).
+
+    The first implementation scanned every module once PER SUBGRAPH and
+    prefix-matched against that subgraph's targets. On GLM-5.2 (79 subgraphs,
+    ~60,000 modules, ~771 targets in a MoE subgraph) that product is ~3.7e9 string
+    comparisons -- hours of Python before calibration starts, to compute a
+    page-cache hint. This test fails if that shape comes back.
+    """
+    layout = {f"layers.{i}.proj": f"shard-{i}.safetensors" for i in range(12)}
+    model = _model_with_offload(tmp_path, layout)
+    subgraphs = [FakeSubgraph([f"layers.{i}"]) for i in range(12)]
+
+    calls = {"n": 0}
+    real = type(model).named_modules
+
+    def counting_named_modules(self, *a, **kw):
+        calls["n"] += 1
+        return real(self, *a, **kw)
+
+    model.__class__ = type(
+        "Counted", (type(model),), {"named_modules": counting_named_modules}
+    )
+    WeightPrefetcher(model, subgraphs, enabled=True)
+    assert calls["n"] == 1, (
+        f"named_modules() called {calls['n']}x for 12 subgraphs; must be 1"
+    )
+
+
+def test_build_file_index_matches_per_subgraph_results(tmp_path):
+    """The fast one-pass index must agree with the naive per-subgraph answer."""
+    from llmcompressor.pipelines.sequential.weight_prefetch import build_file_index
+
+    layout = {
+        "layers.0.attn.q": "a.safetensors",
+        "layers.0.mlp.up": "b.safetensors",
+        "layers.1.mlp.up": "b.safetensors",   # shard shared across subgraphs
+        "layers.2.proj": "c.safetensors",
+    }
+    model = _model_with_offload(tmp_path, layout)
+    subgraphs = [FakeSubgraph([f"layers.{i}"]) for i in range(3)]
+    index = build_file_index(model, subgraphs)
+    assert index[0] == {str(tmp_path / "a.safetensors"), str(tmp_path / "b.safetensors")}
+    assert index[1] == {str(tmp_path / "b.safetensors")}
+    assert index[2] == {str(tmp_path / "c.safetensors")}
+    # and the shared shard's last use is the later subgraph
+    assert plan_last_use(model, subgraphs)[str(tmp_path / "b.safetensors")] == 1
+
+
+def test_build_file_index_empty_when_no_targets(tmp_path):
+    from llmcompressor.pipelines.sequential.weight_prefetch import build_file_index
+
+    model = _model_with_offload(tmp_path, {"layers.0.proj": "a.safetensors"})
+    assert build_file_index(model, [FakeSubgraph([])]) == {}

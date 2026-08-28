@@ -105,16 +105,56 @@ def _module_offload_files(module: "torch.nn.Module") -> set[str]:
 
 
 def subgraph_source_files(model: "torch.nn.Module", subgraph) -> set[str]:
-    """Every file backing the offloaded weights of the modules in ``subgraph``."""
-    files: set[str] = set()
-    targets = {
-        node.target for node in subgraph.graph.find_nodes(op="call_module")
-    }
+    """Every file backing the offloaded weights of the modules in ``subgraph``.
+
+    Convenience wrapper for a single subgraph. Prefer :func:`build_file_index` when
+    planning a whole walk -- calling this per subgraph is quadratic (see there).
+    """
+    return build_file_index(model, [subgraph]).get(0, set())
+
+
+def build_file_index(
+    model: "torch.nn.Module", subgraphs: list
+) -> dict[int, set[str]]:
+    """subgraph index -> backing files, computed in ONE pass over the modules.
+
+    Complexity is the whole point of this function. The obvious implementation --
+    for each subgraph, scan every module and prefix-match it against that
+    subgraph's targets -- is O(subgraphs x modules x targets). GLM-5.2 has 79
+    subgraphs and ~60,000 modules (78 layers x 256 experts x 3 projections =
+    59,904 leaf Linears alone), and a single MoE subgraph calls ~771 of them, so
+    that product is ~3.7e9 string comparisons: hours of Python before the run
+    starts, for a page-cache hint.
+
+    Inverting it makes the cost O(modules x depth). Targets are collected into a
+    lookup once, then each module name is matched by testing its own name and its
+    ancestor prefixes -- at most ~8 dict lookups per module.
+    """
+    target_owners: dict[str, set[int]] = {}
+    for index, subgraph in enumerate(subgraphs):
+        for node in subgraph.graph.find_nodes(op="call_module"):
+            target_owners.setdefault(node.target, set()).add(index)
+
+    files_by_subgraph: dict[int, set[str]] = {}
+    if not target_owners:
+        return files_by_subgraph
+
     for name, module in model.named_modules():
-        if not any(name == t or name.startswith(f"{t}.") for t in targets):
+        owners: set[int] = set(target_owners.get(name, ()))
+        # A module is also claimed by a target that is one of its ancestors: the
+        # AST autowrapper can leave a called submodule without a node of its own.
+        parts = name.split(".")
+        for depth in range(len(parts) - 1, 0, -1):
+            ancestor = ".".join(parts[:depth])
+            owners |= target_owners.get(ancestor, set())
+        if not owners:
             continue
-        files |= _module_offload_files(module)
-    return files
+        files = _module_offload_files(module)
+        if not files:
+            continue
+        for index in owners:
+            files_by_subgraph.setdefault(index, set()).update(files)
+    return files_by_subgraph
 
 
 def plan_last_use(model: "torch.nn.Module", subgraphs: list) -> dict[str, int]:
@@ -125,9 +165,10 @@ def plan_last_use(model: "torch.nn.Module", subgraphs: list) -> dict[str, int]:
     turn the optimization into extra reads.
     """
     last_use: dict[str, int] = {}
-    for index, subgraph in enumerate(subgraphs):
-        for path in subgraph_source_files(model, subgraph):
-            last_use[path] = index
+    for index, files in build_file_index(model, subgraphs).items():
+        for path in files:
+            if last_use.get(path, -1) < index:
+                last_use[path] = index
     return last_use
 
 
@@ -162,7 +203,13 @@ class WeightPrefetcher:
         if not self.enabled:
             return
 
-        self._last_use = plan_last_use(model, subgraphs)
+        # ONE pass over named_modules for the whole walk. Doing this per subgraph
+        # would be quadratic -- see build_file_index.
+        self._files_by_subgraph = build_file_index(model, subgraphs)
+        for index, files in self._files_by_subgraph.items():
+            for path in files:
+                if self._last_use.get(path, -1) < index:
+                    self._last_use[path] = index
         if not self._last_use:
             # Model is not disk-offloaded (or is offloaded to cpu/gpu), so there
             # are no files to advise about. Stay silent-but-inert rather than
@@ -180,11 +227,9 @@ class WeightPrefetcher:
     def _files(self, index: int) -> set[str]:
         if index < 0 or index >= len(self._subgraphs):
             return set()
-        if index not in self._files_by_subgraph:
-            self._files_by_subgraph[index] = subgraph_source_files(
-                self._model, self._subgraphs[index]
-            )
-        return self._files_by_subgraph[index]
+        # Precomputed in __init__; a subgraph with no offloaded weights of its own
+        # simply has no entry.
+        return self._files_by_subgraph.get(index, set())
 
     @staticmethod
     def _advise(path: str, advice: int) -> bool:

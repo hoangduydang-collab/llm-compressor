@@ -406,7 +406,23 @@ def _persist_ignore_to_config(ckpt: Path, ignore: list[str]) -> None:
     or, worse, mis-load them -> broken routing -> garbage output. We re-add the
     intended ignore patterns so the on-disk config reflects what was actually
     skipped.
+
+    SINCE 2026-08-28 the patterns are RESOLVED AGAINST THE SAVED TENSORS rather
+    than written verbatim, because writing them verbatim was itself an r8-class
+    defect. A recipe pattern says "the int4 modifier must not touch this"; the
+    config's ignore list says "no loader should treat this as quantized". Those
+    are different statements, and ``re:.*self_attn[.].*`` is correct as the first
+    and fatal as the second -- the FP8 modifier owns those same modules by
+    explicit target, and loaders check ignore BEFORE targets.
+
+    Measured on the real GLM-5.2 AWQ checkpoint (routerfix, 20260828-150142)
+    before this fix: 16 of 784 quantized modules were shadowed, and those 16 were
+    the ENTIRE FP8 leg -- all 10 MLA projections, all 3 shared experts, all 3
+    dense MLPs. Not one would have served quantized. Same mechanism that made M3
+    r8 emit garbage at exit code 0 (2026-07-24); see pipeline/serve_ignore.py.
     """
+    from pipeline.serve_ignore import checkpoint_modules, resolve_ignore_patterns
+
     cfg_path = ckpt / "config.json"
     if not cfg_path.exists():
         return
@@ -416,12 +432,49 @@ def _persist_ignore_to_config(ckpt: Path, ignore: list[str]) -> None:
     if not qc:
         return
     saved = list(qc.get("ignore", []))
-    added = [p for p in ignore if p not in saved]
-    if added:
-        qc["ignore"] = saved + added
-        with cfg_path.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-        print(f"[pipeline] persisted ignore patterns to config: {added}")
+    wanted = [p for p in ignore if p not in saved]
+    if not wanted:
+        return
+
+    try:
+        modules, quantized = checkpoint_modules(ckpt)
+    except (FileNotFoundError, KeyError, ValueError) as err:
+        # Fail loud rather than fall back to the verbatim write: the verbatim
+        # write is the bug, and a checkpoint whose ignore list was never checked
+        # against its tensors must not look like one that was.
+        raise RuntimeError(
+            "cannot persist ignore patterns safely: the saved checkpoint's "
+            f"tensor names are not readable ({err}). Writing recipe patterns "
+            "unchecked is what shadowed the entire FP8 leg on M3 r8."
+        ) from err
+
+    added, report = resolve_ignore_patterns(wanted, modules, quantized)
+    qc["ignore"] = saved + [entry for entry in added if entry not in saved]
+    with cfg_path.open("w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+
+    concrete = [entry for entry in added if not entry.startswith("re:")]
+    print(
+        f"[pipeline] persisted ignore to config: {len(added)} entries "
+        f"({len(added) - len(concrete)} patterns, {len(concrete)} concrete)"
+    )
+    for pattern, record in report.items():
+        if record.get("overflow"):
+            print(
+                f"[pipeline] WARNING: ignore pattern {pattern!r} shadows "
+                f"{record['shadowed_count']} quantized modules and expands to "
+                f"{record['replaced_with_count']} concrete entries, over the cap. "
+                "DROPPED. This checkpoint is not serve-ready: the catch-all "
+                "config group will claim modules that carry no quant tensors. "
+                "Expected on partial-scope smokes, which are not served."
+            )
+        else:
+            print(
+                f"[pipeline] ignore pattern {pattern!r} would have shadowed "
+                f"{record['shadowed_count']} QUANTIZED modules "
+                f"(e.g. {record['shadowed'][:3]}); replaced with "
+                f"{record['replaced_with_count']} concrete unquantized entries"
+            )
 
 
 def _sample_generation(model, tokenizer, prompt: str) -> str:
@@ -1380,6 +1433,28 @@ def run_quantize(
                 norm_gain_offset=norm_gain_offset,
             )
             assert_quant_checkpoint_verified(ckpt, Path(cfg.model.id))
+            # Storage-vs-scheme consistency: no ignore entry may hide a module
+            # that IS quantized. Loaders check ignore before targets, so a
+            # shadowed module serves as unquantized -- its quantized bytes cast
+            # into unscaled parameters, garbage output, exit code 0 (M3 r8 ABI
+            # smoke, 2026-07-24). Runs LAST because it reads the final config,
+            # after _persist_ignore_to_config and any serve-config patching.
+            from pipeline.serve_ignore import assert_no_ignore_shadowing
+
+            if cfg.calibration.stop_after_last_target:
+                # A partial-scope smoke legitimately cannot be made serve-safe:
+                # its layer-restriction pattern covers tens of thousands of
+                # unquantized modules. Report, do not fail; it is not served.
+                from pipeline.serve_ignore import audit_checkpoint_ignore
+
+                audit = audit_checkpoint_ignore(ckpt)
+                print(
+                    "[pipeline] serve-ignore audit (partial-scope smoke, not "
+                    f"gated): shadowed={audit['shadowed_module_count']} of "
+                    f"{audit['quantized_modules']} quantized modules"
+                )
+            else:
+                assert_no_ignore_shadowing(ckpt)
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.

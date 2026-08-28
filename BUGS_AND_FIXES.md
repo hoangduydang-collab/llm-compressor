@@ -3110,3 +3110,76 @@ It now has six, including that an uncompensated indexer raises, that the message
 
 21 new tests. The 25 failures elsewhere in `pipeline/tests` and `tests/pipeline`
 are pre-existing — verified by stashing these changes and re-running, same 25.
+
+
+---
+
+## 2026-08-28 — the r8 ignore-shadowing defect, confirmed on GLM and fixed at the source
+
+**Status before today: real, unfixed, and latent only because we had never served
+our own GLM checkpoint.**
+
+**Confirmed against the shipped artifact**, not inferred. Running the new
+`pipeline/serve_ignore.py` audit on
+`results/glm52-awq-routerfix/.../20260828-150142/checkpoint`:
+
+    quantized modules  : 784
+    shadowed modules   : 16
+      re:.*mlp[.]shared_experts[.].*                 -> shadows 3
+      re:.*self_attn[.].*                            -> shadows 10
+      re:.*layers[.][0-2][.].*                       -> shadows 8
+      re:.*model[.]layers[.](?!3(?:[.]|$))[0-9]+...  -> shadows 8
+    RESULT: SHADOWING — WILL SERVE GARBAGE
+
+Those 16 are **exactly the entire FP8 leg**: all 10 MLA projections across layers 0
+and 3, all 3 shared experts of layer 3, all 3 dense MLPs of layer 0. Not one would
+have served quantized. The int4 routed experts are untouched, which is why every
+existing gate passed — they all look at the int4 side.
+
+**Mechanism**, in the words of the M3 incident that first found it
+(`reexport_minimax_m3_vllm.py`, r8 ABI smoke 2026-07-24): *"the serialized
+`quantization_config` still carries [...] the GPTQ recipe's broad quant-layout
+ignore regexes (`re:.*self_attn[.].*`, ...). vLLM checks ignore FIRST, so every FP8
+module served as 'unquantized': raw fp8 bits were cast into bf16 params without
+their scales -> garbage output."* Exit code 0, coherent-looking tokens.
+
+**Root cause, stated precisely.** `_persist_ignore_to_config` wrote the recipe's
+patterns VERBATIM. Its purpose is sound — llm-compressor prunes ignore entries that
+never matched a quantized module, dropping coverage a catch-all
+`targets: ["Linear"]` group still needs — but a recipe pattern says *"the int4
+modifier must not touch this"*, and a config ignore entry says *"no loader should
+treat this as quantized."* Those are different statements.
+`re:.*self_attn[.].*` is correct as the first and fatal as the second, because the
+FP8 modifier owns those same modules by explicit target.
+
+**Fix, and why it is at the source rather than in another reexport tool.** M3's
+remedy was `--fp8-serve-fix`: a per-model tool with serve-layout regexes
+hand-written into it. That is exactly why GLM inherited the defect with no
+equivalent — the fix lived downstream of the cause, so it protected one model and
+no others. `pipeline/serve_ignore.py` instead resolves patterns against the SAVED
+TENSORS: a pattern may be persisted only if it shadows nothing the checkpoint
+quantized, and one that does shadow is replaced by the concrete unquantized modules
+it matches (derivable from the weight index, preserving the catch-all's coverage).
+Model-agnostic, so M3 and every future family get it.
+
+Measured on the same real checkpoint: **16 shadowed -> 0**, ignore going from 33
+entries to 46 (2 patterns + 44 concrete), with only 4 unquantized modules left
+uncovered — `embed_tokens`, `model.norm`, and two layernorms, none of them Linear,
+so the `Linear` catch-all never claims them.
+
+**Also now a fail-closed post-save gate** (`assert_no_ignore_shadowing`), running
+last so it reads the final config after ignore persistence and serve-config
+patching. Partial-scope smokes are audited-but-not-gated: their layer-restriction
+pattern legitimately covers tens of thousands of unquantized modules, cannot be
+made serve-safe by enumeration, and are never served. That exemption is derived
+from `stop_after_last_target`, not from a flag someone has to remember.
+
+**Out of scope, named rather than silently omitted.** The inverse inconsistency —
+a module that is UNQUANTIZED, matched by a config-group target, and not ignored —
+is not checked here, because `targets: ["Linear"]` is a class target that cannot be
+resolved by name matching without module types or tensor shapes. It is also a LOUD
+failure at load rather than silent garbage. The M3 tool checked both; this checks
+the silent one completely.
+
+14 new tests, including `test_reproduces_the_measured_glm_shadowing`, which encodes
+the real 16-module case at the real shape so it stays fixed.

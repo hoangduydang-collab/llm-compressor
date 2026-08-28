@@ -1107,6 +1107,13 @@ def run_quantize(
         oneshot_kwargs["sequential_targets"] = cfg.calibration.sequential_targets
     if cfg.calibration.pipeline:
         oneshot_kwargs["pipeline"] = cfg.calibration.pipeline
+    if getattr(cfg.calibration, "stop_after_last_target", False):
+        oneshot_kwargs["stop_after_last_target"] = True
+        print(
+            "[pipeline] stop_after_last_target=True (SMOKE ONLY): the sequential "
+            "walk will stop after the last subgraph with a compression target",
+            flush=True,
+        )
 
     # Capture llm-compressor's internal METRIC-level logs (GPTQ error/time, etc.)
     # to a per-run JSONL alongside the checkpoint.

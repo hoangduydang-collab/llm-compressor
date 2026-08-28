@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Iterator
 
 import torch
 from compressed_tensors.offload import disable_offloading, set_onload_device
+from loguru import logger
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 
@@ -48,6 +49,68 @@ def _invoke_post_sequential_propagation_callback(
             modules=modules,
             propagated=propagated,
         )
+
+
+def _targeted_module_names(model: torch.nn.Module) -> set[str]:
+    """Names of modules a modifier has scheduled for quantization.
+
+    ``quantization_scheme`` is attached by ``apply_quantization_config`` during
+    modifier initialization, which runs before the pipeline, so this is already
+    populated by the time subgraphs are traced.
+    """
+    return {
+        name
+        for name, module in model.named_modules()
+        if getattr(module, "quantization_scheme", None) is not None
+    }
+
+
+def _subgraph_module_prefixes(subgraph) -> set[str]:
+    """Module paths this subgraph calls directly, as name prefixes.
+
+    Deliberately reads the graph's ``call_module`` targets rather than
+    ``subgraph.submodules()``: on models where an untraceable call is wrapped by
+    the AST autowrapper (e.g. ``self.experts(...).view(*orig_shape)`` -- fx
+    cannot trace ``*args`` unpacking, so the whole expression is wrapped), the
+    wrapped modules have no node of their own. Prefix matching still attributes
+    them to the subgraph via an ancestor node, and the caller verifies coverage
+    rather than trusting this.
+    """
+    return {node.target for node in subgraph.graph.find_nodes(op="call_module")}
+
+
+def last_subgraph_with_targets(model: torch.nn.Module, subgraphs: list) -> int | None:
+    """Index of the last subgraph holding a module scheduled for compression.
+
+    Returns ``None`` when the answer cannot be established safely, in which case
+    the caller must walk every subgraph. That is the fail-closed direction: a
+    false negative here would stop the pipeline before a layer that should have
+    been quantized, silently shipping it unquantized.
+
+    The safety condition is coverage: every targeted module must be attributable
+    to some subgraph at or before the returned index. If even one targeted module
+    cannot be placed, we refuse to skip anything.
+    """
+    targeted = _targeted_module_names(model)
+    if not targeted:
+        return None
+
+    covered: set[str] = set()
+    last: int | None = None
+    for index, subgraph in enumerate(subgraphs):
+        prefixes = _subgraph_module_prefixes(subgraph)
+        hits = {
+            name
+            for name in targeted
+            if any(name == p or name.startswith(f"{p}.") for p in prefixes)
+        }
+        if hits:
+            covered |= hits
+            last = index
+
+    if last is None or covered != targeted:
+        return None
+    return last
 
 
 def _get_batches(
@@ -165,6 +228,36 @@ class SequentialPipeline(CalibrationPipeline):
             sequential_prefetch = getattr(dataset_args, "sequential_prefetch", False)
             session.state.sequential_prefetch = sequential_prefetch
 
+            # SMOKE ONLY. Trailing subgraphs with nothing to compress exist only
+            # to produce inputs for subgraphs after them, so once nothing after
+            # them is targeted, walking them is pure cost -- measured at ~2.5 min
+            # per layer on GLM-5.2, which is 19 GB of weights at network-storage
+            # speed. last_subgraph_with_targets returns None unless it can
+            # account for EVERY targeted module at or before the index, so an
+            # unattributable target walks the whole model rather than risking a
+            # layer being skipped unquantized.
+            stop_at = None
+            if getattr(dataset_args, "stop_after_last_target", False):
+                stop_at = last_subgraph_with_targets(model, subgraphs)
+                if stop_at is None:
+                    logger.warning(
+                        "stop_after_last_target=True but the last targeted "
+                        "subgraph could not be established safely (no module "
+                        "carries a quantization_scheme, or a targeted module "
+                        "could not be attributed to any subgraph). Walking all "
+                        f"{num_subgraphs} subgraphs."
+                    )
+                elif stop_at < num_subgraphs - 1:
+                    logger.warning(
+                        f"stop_after_last_target=True: stopping after subgraph "
+                        f"{stop_at + 1}/{num_subgraphs}, skipping "
+                        f"{num_subgraphs - stop_at - 1} trailing subgraphs with "
+                        "nothing to compress. Those layers remain unquantized, "
+                        "which is what the ignore list already asked for -- but "
+                        "any modifier needing statistics over the whole model "
+                        "will see a truncated model. Do not use in production."
+                    )
+
             for subgraph_index, subgraph in enumerate(subgraphs):
                 # prepare tqdm description texts
                 calib_desc = f"({subgraph_index + 1}/{num_subgraphs}): Calibrating"
@@ -217,6 +310,11 @@ class SequentialPipeline(CalibrationPipeline):
                         modules=subgraph_modules,
                         propagated=dataset_args.propagate_error,
                     )
+
+                # Outside `disable_offloading()` so this subgraph is offloaded
+                # before we leave, exactly as a normal iteration would.
+                if stop_at is not None and subgraph_index >= stop_at:
+                    break
 
             # redundant, finish any remaining compression
             LifecycleCallbacks.calibration_end()

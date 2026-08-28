@@ -179,6 +179,20 @@ calibration:
   sequential_targets: ["GlmMoeDsaDecoderLayer"]
   pipeline: sequential
 
+  # SMOKE ONLY (stop_after_last_target). This config quantizes 2 of 78 layers,
+  # but the sequential pipeline still propagates activations through all 78 --
+  # trailing layers exist only to feed layers after them, and nothing after 42 is
+  # targeted. Measured cost of that tail: ~2.5 min/layer on GLM-5.2 (19 GB of
+  # weights at ~127 MB/s network storage), so layers 43-77 are ~87 min of pure
+  # waste. The pipeline refuses to skip unless it can attribute EVERY targeted
+  # module to a subgraph at or before the cut, so this cannot silently leave a
+  # targeted layer in BF16 (guarded by
+  # tests/llmcompressor/pipelines/test_stop_after_last_target.py, including the
+  # GLM case where autowrapped experts have no graph node of their own).
+  # MUST be removed for the production run: the skipped layers ARE quantized
+  # there, and a modifier needing whole-model statistics would see a truncated
+  # model.
+  stop_after_last_target: true
 serve:
   enabled: false
 

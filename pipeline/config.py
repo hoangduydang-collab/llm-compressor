@@ -98,6 +98,16 @@ class CalibrationConfig:
     # of very large models, e.g. ["Qwen3MoeDecoderLayer"].
     sequential_targets: list[str] | None = None
     pipeline: str | None = None  # let llm-compressor pick by default
+    # SMOKE ONLY. Stop the sequential walk after the last subgraph that actually
+    # has something to compress, instead of propagating through the remaining
+    # layers. Those trailing layers only exist to feed layers after them, so for
+    # a layer-restricted smoke they are pure cost -- ~2.5 min/layer on GLM-5.2,
+    # which is 19 GB of weights at network-storage speed. The pipeline refuses to
+    # skip unless it can attribute EVERY targeted module to a subgraph at or
+    # before the cut, so this cannot silently leave a targeted layer unquantized.
+    # Leave False for production: a modifier needing whole-model statistics would
+    # see a truncated model.
+    stop_after_last_target: bool = False
 
 
 @dataclass

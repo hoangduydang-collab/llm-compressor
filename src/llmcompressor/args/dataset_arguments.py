@@ -297,6 +297,23 @@ class DatasetArguments(CustomDatasetArguments):
             "for faster calibration when GPU memory allows (two batches on device)."
         },
     )
+    stop_after_last_target: bool = field(
+        default=False,
+        metadata={
+            "help": "SMOKE/DIAGNOSTIC ONLY. When using the sequential pipeline, stop "
+            "after the last subgraph that actually has a module to compress, instead "
+            "of propagating activations through the remaining layers. Those trailing "
+            "layers are only walked to produce inputs for layers after them, so when "
+            "nothing after them is targeted the walk is pure cost: on GLM-5.2 it "
+            "measured ~2.5 min per layer (19 GB of weights at ~127 MB/s of network "
+            "storage), so a layer-restricted smoke spends hours propagating through "
+            "layers it will never quantize. Leave False for production runs: the "
+            "resulting checkpoint is byte-identical either way ONLY when the skipped "
+            "layers have no targeted modules, and a modifier that needs statistics "
+            "spanning the whole model would silently see a truncated model. Default "
+            "False."
+        },
+    )
     enable_compile: bool = field(
         default=False,
         metadata={

@@ -65,81 +65,70 @@ model:
   dtype: bfloat16
   device_map: auto_offload
   max_memory:
-    # 900 GB, up from the 32e9 inherited from M3. That cap existed to stay under
-    # vm.max_map_count, but VMA is not the binding constraint for GLM-5.2: even
-    # FULL CPU residency projects only ~200k shm segments against a 262144
-    # limit. The real ceiling was the dshm emptyDir sizeLimit, raised to 900Gi
-    # in the Job template alongside this -- the tmpfs is what actually caps CPU
-    # offload, so raising this value alone would have changed nothing and the
-    # null result would have looked like the storage hypothesis being wrong.
+    # 32e9 -- MiniMax-M3's value, restored after measuring what raising it cost.
     #
-    # Why it matters: at 32e9, ~1133 GB of the 1485 GB model lived on the cephfs
-    # PVC, measured at 30.8 and 32.2 MB/s single-stream on two untouched blobs.
-    # Storage was on the critical path of every propagation step -- 86 min to
-    # walk layers 7-41 (which are not even quantized) against ~4 min to compress
-    # a targeted layer.
+    # THE MEASUREMENT (run 20260828t052128z, 8xH100 on gpu03, at cpu=900e9):
+    #     weight load                                          66 min
+    #     "Dispatching model", 78460 tensors at 8-9.5 it/s      ETA 2h34m
+    #     => ~3.7 h of setup before calibration even begins.
+    # M3 ran a comparable job END TO END, including the save, in 71 min at 32e9.
     #
-    # DO NOT add GPU capacity to this budget. `auto_offload` is NOT `auto`:
-    # compressed_tensors/offload/load.py intercepts it as "same as auto, but
-    # only cpu/disk are visible", so accelerate's device map never places a
-    # weight on an accelerator and the GPUs contribute ZERO residency. Measured
-    # in situ on the 8-GPU run 20260828t052128z: 1509 MiB per GPU (bare CUDA
-    # context) through the whole load. An earlier version of this comment
-    # claimed "640 GB VRAM + 900 GB CPU = 1540 GB vs the model's 1485 GB -> 0
-    # on PVC"; that arithmetic was wrong, and going from 4 to 8 GPUs bought no
-    # residency at all.
+    # WHY THIS KNOB CONTROLS THAT. Everything inside the budget is memcpy'd into
+    # /dev/shm by DistributedCPUCache.offload (share_memory_() + broadcast +
+    # barrier, per tensor); everything beyond it becomes a near-free symlink to
+    # the original HF blob. 900e9 copies ~838 GiB, 32e9 copies ~30 GiB. The
+    # dispatch is copy-bound, not per-tensor-bound: 6197 tensors dispatched
+    # corresponded to 100 GiB of shm (~16.5 MB/tensor against a 19 MB average
+    # tensor). A purely per-tensor cost at 8.15 it/s would have made M3's ~40k
+    # tensors take 82 min by themselves, which its 71 min total rules out.
     #
-    # The budget is instead sized against node RAM (2015 GiB on gpu03), because
-    # the ONLY thing it controls is how much of the model spills to the cephfs
-    # offload_folder -- and the spill is what sits on the critical path.
+    # WHY THE COPY BUYS ALMOST NOTHING. DiskCache.onload reads straight from the
+    # symlinked original, through the page cache:
+    #     with safe_open(weight_info["safetensors_file"], ...) as file:
+    #         onloaded = file.get_tensor(weight_info["weight_name"])
+    # A disk-placed unmodified weight served from cache is about as fast as an
+    # shm copy; the copy buys GUARANTEED residency rather than BEST-EFFORT. And
+    # page cache is charged to the pod's memory cgroup, so the POD MEMORY LIMIT
+    # (1700Gi), not this value, is what bounds total residency -- shm and page
+    # cache are substitutes, not additions.
     #
-    # The algorithm does not need residency at all. The sequential pipeline
-    # onloads exactly one decoder layer (~19 GB) at a time: calibrate, compress
-    # and error-propagate all happen inside a single `disable_offloading()`
-    # block in pipelines/sequential/pipeline.py, and IntermediatesCache carries
-    # activations forward so earlier layers are never re-run. So each layer is
-    # touched about once, and the budget is a CACHE, not a requirement -- the
-    # 32e9 runs walked all 78 layers correctly, just slowly.
+    # DO NOT OVERSELL THE REVERT. A small budget SHIFTS cost from dispatch to the
+    # sequential walk rather than removing it. The walk is storage-bound and
+    # sample-independent: 86 min for 35 untargeted layers is 2.5 min/layer, i.e.
+    # 19 GB/layer at ~127 MB/s, which is simply cephfs speed. Projected totals
+    # after load:
+    #     32e9  -> dispatch   ~5 min + walk ~190 min = ~195 min
+    #     900e9 -> dispatch ~155 min + walk  ~82 min = ~237 min
+    # Worth ~45 min, not hours.
     #
-    # 900e9 is the only value proven in situ (run 20260828t052128z). A 1350e9
-    # variant was committed in 9efb919b on the theory that the budget controls a
-    # 585 GB "spill" of copied weights to the cephfs offload_folder; direct
-    # measurement of that run showed the theory was wrong, so it is reverted
-    # here. What the filesystem actually shows, mid-load at 61%:
+    # THE ACTUAL REGRESSION IS STORAGE, and no value here fixes it. cephfs
+    # measures 31 MB/s single-stream with a 28 ms TCP RTT to the monitor, roughly
+    # 4x worse than the old cluster's /mnt/nfs -- which is why M3 finished in
+    # 71 min and this does not. The lever is staging the snapshot onto flash (the
+    # cluster has an all-flash sc-file-nfs-vast-my class; region unverified, and
+    # it needs a ~1.6 Ti PVC, so it is a decision rather than a tweak).
     #
-    #   offload_folder:  36838 symlinks -> the original HF blobs under
-    #                    /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2/blobs/,
-    #                    8070 real files totalling 39.4 GB, and ALL of them
-    #                    timestamped 2026-08-27 19:21-23:10 -- i.e. residue from
-    #                    the failed earlier runs. This run had written ZERO.
-    #   /dev/shm:        empty (0 files)
-    #   RSS, 8 ranks:    17 GiB combined
-    #   page cache:      696 GB and climbing at the cephfs read rate
+    # TWO TRAPS, both paid for already:
+    #  - `auto_offload` is NOT `auto`. compressed_tensors/offload/load.py
+    #    intercepts it as "same as auto, but only cpu/disk are visible", so the
+    #    device map never places a weight on an accelerator and GPUs contribute
+    #    ZERO residency. Measured: 1509 MiB per GPU (bare CUDA context) for the
+    #    whole load. Never add VRAM to this budget.
+    #  - The offload_folder is NOT a copy of the model. 36838 of its entries are
+    #    symlinks to the original blobs; only genuinely modified tensors become
+    #    real files. Do not size this budget to "avoid a spill" -- there is none.
     #
-    # So "cpu placement" is not a copy into RAM and disk placement is not a copy
-    # onto disk: compressed_tensors' disk cache SYMLINKS unmodified tensors
-    # straight back to the original safetensors blob, and CPU-placed tensors are
-    # mmap views of the same blobs, so their bytes live in reclaimable page
-    # cache rather than anon memory. Only genuinely modified tensors become real
-    # files. The 585 GB of redundant copying this budget was supposed to prevent
-    # does not happen at any value.
+    # The algorithm needs no residency at all: the sequential pipeline onloads
+    # one decoder layer (~19 GB) at a time, with calibrate/compress/propagate all
+    # inside a single `disable_offloading()` block, and IntermediatesCache
+    # carrying activations forward so earlier layers are never re-run. This value
+    # is a cache, not a requirement.
     #
-    # Consequently the real load cost is the one-time 1485 GB read of the HF
-    # snapshot off cephfs (~135-258 MB/s aggregate), which is the same single
-    # pass over every weight that the sequential walk needs anyway -- not waste,
-    # just paid up front. No value here changes it.
-    #
-    # Before raising this again, measure the load -> from_accelerate boundary:
-    # DistributedCPUCache.offload does
-    # `super().offload(tensor).share_memory_()`, which is the one step that
-    # could turn 1485 GB of mmap views into 1485 GB of tmpfs charged to the pod's
-    # 1700 GiB memory cgroup. shm is still 0 because from_accelerate runs only
-    # after the load completes, so the peak is unmeasured. Upstream docs
-    # recommend CPU RAM = full model size and treat disk offload as only for
-    # models exceeding CPU memory (guides/big_models_and_distributed/
-    # model_loading, guides/memory) but say nothing about this peak.
-    cpu: 900000000000
-  # Distinct from the GPTQ arm — see (3) above.
+    # Superseded commits, kept findable: 3f918cd0 (the VRAM correction, still
+    # valid), 9efb919b (raised AWQ to 1350e9 against a "585 GB spill" that does
+    # not exist; its GPTQ Hessian ceiling reasoning IS still valid), 702d14d0
+    # (reverted that to 900e9, for a reason that was right by accident).
+    cpu: 32000000000
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke
 
 quantization:
@@ -167,16 +156,22 @@ quantization:
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
   dataset_split: train_sft
-  # 32, up from 8. Raising samples is the main lever on runtime, because the
-  # sequential pipeline propagates every sample through ALL 78 layers whether or
-  # not they are quantized -- restricting the target layers does not reduce that.
-  # It became affordable once the model went fully RAM-resident (max_memory.cpu
-  # 900e9): at 32e9 the propagation read from a 31 MB/s PVC and 35 untargeted
-  # layers cost 86 min at only 8 samples.
+  # 32, up from 8, and it is affordable for a reason opposite to the one first
+  # written here. That text said 32 "became affordable once the model went fully
+  # RAM-resident (max_memory.cpu 900e9)"; the budget is back at 32e9 and 32
+  # samples is still fine, because the sequential WALK is storage-bound and
+  # therefore sample-independent. Measured: 86 min for 35 untargeted layers is
+  # 2.5 min/layer = 19 GB/layer at ~127 MB/s, i.e. cephfs read speed. The walk
+  # pays per BYTE OF WEIGHTS, not per sample, so 8 -> 32 barely moves it.
   #
-  # 32 rather than the production 512 because the RAM-resident propagation rate
-  # is not yet measured. Watch the first inter-layer gap and extrapolate before
-  # raising it further.
+  # What samples DO scale is the work on targeted layers only, which is 2 of 78
+  # here. Keep an eye on that for the GPTQ arm specifically, where
+  # offload_hessians round-trips each Hessian over PCIe once per module per
+  # sample (~3.6 TiB/layer at 8 samples, ~14.4 TiB at 32).
+  #
+  # 32 rather than the production 512 because the per-targeted-layer cost at 32
+  # is still unmeasured -- no run has yet reached calibration on this model.
+  # Measure a targeted layer's compression time before raising it further.
   num_samples: 32
   max_seq_length: 512
   seed: 42

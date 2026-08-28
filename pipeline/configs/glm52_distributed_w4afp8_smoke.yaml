@@ -63,40 +63,26 @@ model:
   dtype: bfloat16
   device_map: auto_offload
   max_memory:
-    # 900 GB. Raised from the 32e9 inherited from M3, where this arm kept
-    # ~1133 GB of the 1485 GB model on the cephfs PVC (31 MB/s single-stream)
-    # and storage dominated: 86 min to propagate layers 7-41, which are not even
-    # quantized, vs ~4 min to compress a targeted layer.
+    # 32e9 -- MiniMax-M3's value. Held identical to the AWQ arm again, so the two
+    # are once more a paired method comparison with only `method` differing.
     #
-    # *** THIS DELIBERATELY DOES NOT MATCH THE AWQ ARM (1350e9). ***
-    # Every other knob in these two configs is held identical so the arms are a
-    # paired method comparison -- this one cannot be, and copying the AWQ value
-    # here evicts the pod several hours in, after calibration has been paid for.
+    # The full measured reasoning lives in the AWQ config's max_memory block; the
+    # short version is that this knob decides how many bytes the "Dispatching
+    # model" phase memcpy's into /dev/shm, that at 900e9 it cost 2h34m of setup
+    # against ~5 min here, and that the copy buys only best-effort-to-guaranteed
+    # residency because DiskCache.onload reads the symlinked original through the
+    # page cache anyway.
     #
-    # Why: GPTQ's Hessians are [in_features x in_features] fp32 per module, and
-    # with offload_hessians they live in CPU memory on TOP of the shm-resident
-    # model. One MoE layer of GLM-5.2 is 256 experts x (gate 144 + up 144 +
-    # down 16 MiB) = 76 GiB per rank, and every rank accumulates over all
-    # modules before the reduce, so 8 ranks = 608 GiB. Against the pod's
-    # 1700 GiB memory limit (tmpfs is charged to the same cgroup):
-    #     cpu=900e9  -> shm  838 + hess 608 + ws 150 = 1596 GiB  OK
-    #     cpu=1350e9 -> shm 1257 + hess 608 + ws 150 = 2015 GiB  EVICTED
-    # Max safe value here is ~1011 GB (1700 - 608 - 150); 900e9 keeps a real
-    # margin. AWQ has no equivalent term -- its statistic is a ~24 KiB x_sum
-    # per smooth-point on CPU, ~6000x smaller and not on the accelerator --
-    # which is the entire reason it can afford 1350e9.
-    #
-    # See the AWQ config's max_memory block for the rest of the reasoning that
-    # IS shared (why the budget is a cache and not a requirement, why GPUs
-    # contribute no residency under auto_offload, and the load-time cephfs read
-    # that no value here fixes).
-    #
-    # Requires dshm sizeLimit >= this in the Job template -- the tmpfs is the
-    # real ceiling, and raising this alone does nothing.
-    cpu: 900000000000
-  # Rancher only now: the old SSH cluster's /mnt/nfs is gone. /mnt/cephfs is the
-  # model-cache-shared PVC, the sole CA-region RWX storage. Scratch and output
-  # sit under an owned top-level dir, NOT inside the tool-managed .hf-cache.
+    # 9efb919b briefly argued this arm could not follow AWQ's budget UPWARD,
+    # because GPTQ's offloaded Hessians are [in_features x in_features] fp32 and
+    # sit in CPU memory on top of the model: one MoE layer is 256 experts x
+    # (gate 144 + up 144 + down 16 MiB) = 76 GiB per rank, and every rank
+    # accumulates before the reduce, so 8 ranks = 608 GiB against a 1700 GiB pod
+    # limit. That arithmetic is still correct and is now simply moot -- both arms
+    # went DOWN instead. It matters again the moment anyone raises this: at 32e9
+    # the Hessians leave ~1060 GiB for page cache, which comfortably holds the
+    # working set; at 900e9 they would not have.
+    cpu: 32000000000
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-smoke
 
 quantization:
@@ -141,16 +127,22 @@ quantization:
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
   dataset_split: train_sft
-  # 32, up from 8. Raising samples is the main lever on runtime, because the
-  # sequential pipeline propagates every sample through ALL 78 layers whether or
-  # not they are quantized -- restricting the target layers does not reduce that.
-  # It became affordable once the model went fully RAM-resident (max_memory.cpu
-  # 900e9): at 32e9 the propagation read from a 31 MB/s PVC and 35 untargeted
-  # layers cost 86 min at only 8 samples.
+  # 32, up from 8, and it is affordable for a reason opposite to the one first
+  # written here. That text said 32 "became affordable once the model went fully
+  # RAM-resident (max_memory.cpu 900e9)"; the budget is back at 32e9 and 32
+  # samples is still fine, because the sequential WALK is storage-bound and
+  # therefore sample-independent. Measured: 86 min for 35 untargeted layers is
+  # 2.5 min/layer = 19 GB/layer at ~127 MB/s, i.e. cephfs read speed. The walk
+  # pays per BYTE OF WEIGHTS, not per sample, so 8 -> 32 barely moves it.
   #
-  # 32 rather than the production 512 because the RAM-resident propagation rate
-  # is not yet measured. Watch the first inter-layer gap and extrapolate before
-  # raising it further.
+  # What samples DO scale is the work on targeted layers only, which is 2 of 78
+  # here. Keep an eye on that for the GPTQ arm specifically, where
+  # offload_hessians round-trips each Hessian over PCIe once per module per
+  # sample (~3.6 TiB/layer at 8 samples, ~14.4 TiB at 32).
+  #
+  # 32 rather than the production 512 because the per-targeted-layer cost at 32
+  # is still unmeasured -- no run has yet reached calibration on this model.
+  # Measure a targeted layer's compression time before raising it further.
   num_samples: 32
   max_seq_length: 512
   seed: 42

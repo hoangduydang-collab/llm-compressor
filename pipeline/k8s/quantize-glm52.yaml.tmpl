@@ -82,6 +82,12 @@ spec:
             # cost because layer L's calibration inputs come from layers 0..L-1.
             # Never for a production checkpoint -- the result is not a usable model.
             - {name: SUBSET_LAYERS, value: "@@SUBSET_LAYERS@@"}
+            # Block until a still-downloading source snapshot is complete AND
+            # verified before doing anything. Empty = start immediately. See the
+            # WAIT_FOR_REPO block in the script below.
+            - {name: WAIT_FOR_REPO, value: "@@WAIT_FOR_REPO@@"}
+            - {name: WAIT_FOR_SHARDS, value: "@@WAIT_FOR_SHARDS@@"}
+            - {name: WAIT_TIMEOUT, value: "@@WAIT_TIMEOUT@@"}
             - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
             - {name: REPO_REF, value: "@@REPO_REF@@"}
             # Point every HF cache at the CA-region PVC: the BF16 snapshot is
@@ -214,6 +220,72 @@ spec:
               if [ "${EVIDENCE_ONLY:-0}" = "1" ]; then
                 EVIDENCE_FLAG="--evidence-only"
                 echo "==> EVIDENCE_ONLY=1: calibration only, NO checkpoint saved"
+              fi
+
+              # --- optional wait for a source snapshot still downloading -------
+              #
+              # Lets the job be submitted BEFORE its weights exist. It then holds
+              # its GPUs and blocks here until the snapshot is complete and
+              # verified, so the launch survives the operator's laptop being
+              # closed: it is a Kubernetes Job, not a process on a workstation.
+              #
+              # This replaces waiting outside the cluster and then launching. It is
+              # also strictly better than holding the node with an idle sleep pod,
+              # which is what it took over from -- same GPUs reserved, except these
+              # ones start working the moment the data lands.
+              #
+              # It verifies rather than merely counting files, because the failure
+              # this guards against has already happened once: 64 GB of the GLM-5.3
+              # FP8 release was downloaded before anyone noticed it was the wrong
+              # artifact. The FP8 release has 141 shards and carries a
+              # quantization_config; the BF16 release has 282 and carries none. AWQ
+              # cannot consume block-scaled FP8 at all -- llm-compressor has no
+              # weight_scale_inv read path anywhere in src/.
+              #
+              # On timeout it EXITS NONZERO rather than proceeding or idling, so a
+              # download that never finishes releases the GPUs instead of holding
+              # 8 H100s indefinitely.
+              if [ -n "${WAIT_FOR_REPO:-}" ]; then
+                WAIT_SHARDS="${WAIT_FOR_SHARDS:-0}"
+                WAIT_TIMEOUT="${WAIT_TIMEOUT:-21600}"
+                WAIT_POLL="${WAIT_POLL:-60}"
+                CACHE="/mnt/cephfs/.hf-cache/${WAIT_FOR_REPO}"
+                echo "==> waiting for ${WAIT_FOR_REPO}: ${WAIT_SHARDS} shards, no"
+                echo "    quantization_config, timeout ${WAIT_TIMEOUT}s"
+                waited=0
+                while :; do
+                  SNAP=$(ls -d "$CACHE"/snapshots/* 2>/dev/null | head -1)
+                  if [ -n "$SNAP" ]; then
+                    n=$(ls -1 "$SNAP"/*.safetensors 2>/dev/null | wc -l)
+                    inc=$(ls -1 "$CACHE"/blobs/*.incomplete 2>/dev/null | wc -l)
+                    if [ "$n" -eq "$WAIT_SHARDS" ] && [ "$inc" -eq 0 ]; then
+                      # Fail-closed artifact identity check: a wrong-but-COMPLETE
+                      # download must abort, not proceed. A module rather than an
+                      # inline heredoc because a heredoc terminator has to sit at
+                      # column 0, which is impossible inside a YAML block scalar --
+                      # gate 0 caught that as "syntax error: unexpected end of
+                      # file" before anything ran.
+                      if ! python -m pipeline.verify_source_snapshot "$SNAP" \
+                          --require-unquantized --expect-layers 78 \
+                          --expect-arch GlmMoeDsaForCausalLM; then
+                        echo "ABORT: source artifact failed verification" >&2
+                        exit 1
+                      fi
+                      echo "==> ${WAIT_FOR_REPO} ready after ${waited}s ($n shards)"
+                      break
+                    fi
+                    echo "    ${waited}s: $n/${WAIT_SHARDS} shards, $inc incomplete"
+                  else
+                    echo "    ${waited}s: no snapshot directory yet"
+                  fi
+                  if [ "$waited" -ge "$WAIT_TIMEOUT" ]; then
+                    echo "ABORT: ${WAIT_FOR_REPO} not ready within ${WAIT_TIMEOUT}s;" >&2
+                    echo "       exiting so the GPUs are released" >&2
+                    exit 1
+                  fi
+                  sleep "$WAIT_POLL"
+                  waited=$((waited + WAIT_POLL))
+                done
               fi
 
               # --- optional depth-truncated subset on node-local NVMe ---------

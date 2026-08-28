@@ -31,6 +31,12 @@ SUBSET_LAYERS=""
 # Optional node pin. Empty = let the scheduler place the pod, which is the
 # right default (see the nodeSelector comment in the template).
 NODE=""
+# Submit before the weights exist: the pod holds its GPUs and blocks until the
+# named HF-cache repo has WAIT_FOR_SHARDS shards, no .incomplete blobs, and a
+# config.json that passes an identity check. Empty = start immediately.
+WAIT_FOR_REPO=""
+WAIT_FOR_SHARDS="0"
+WAIT_TIMEOUT="21600"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -45,6 +51,9 @@ while [[ $# -gt 0 ]]; do
     --evidence-only) EVIDENCE_ONLY=1; shift ;;
     --subset-layers) SUBSET_LAYERS="${2:-}"; shift 2 ;;
     --node)     NODE="${2:-}"; shift 2 ;;
+    --wait-for-repo)   WAIT_FOR_REPO="${2:-}"; shift 2 ;;
+    --wait-for-shards) WAIT_FOR_SHARDS="${2:-}"; shift 2 ;;
+    --wait-timeout)    WAIT_TIMEOUT="${2:-}"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -128,6 +137,9 @@ sed -e "s|@@METHOD@@|${METHOD}|g" \
     -e "s|@@EVIDENCE_ONLY@@|${EVIDENCE_ONLY}|g" \
     -e "s|@@SUBSET_LAYERS@@|${SUBSET_LAYERS}|g" \
     -e "s|@@NODESELECTOR@@|${NODESELECTOR}|g" \
+    -e "s|@@WAIT_FOR_REPO@@|${WAIT_FOR_REPO}|g" \
+    -e "s|@@WAIT_FOR_SHARDS@@|${WAIT_FOR_SHARDS}|g" \
+    -e "s|@@WAIT_TIMEOUT@@|${WAIT_TIMEOUT}|g" \
     "$TMPL" > "$RENDERED"
 
 grep -q '@@' "$RENDERED" && die "unsubstituted token remains: $(grep -o '@@[A-Z_]*@@' "$RENDERED" | sort -u | tr '\n' ' ')"

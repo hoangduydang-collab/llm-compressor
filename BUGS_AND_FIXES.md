@@ -2348,10 +2348,47 @@ latency-bound, not bandwidth-bound — against 135-260 MB/s aggregate across 8
 ranks. That is roughly 4x worse than the retired cluster's `/mnt/nfs`, and it is
 why M3 finished in 71 min and GLM-5.2 does not. The sequential walk is
 storage-bound and therefore *sample-independent*: 86 min for 35 untargeted
-layers is 2.5 min/layer = 19 GB/layer at ~127 MB/s. The lever is staging the
-snapshot onto flash — the cluster has an all-flash `sc-file-nfs-vast-my` class
-(region unverified; NFS port 2049 was not reachable from the GPU pod, and it
-needs a ~1.6 Ti PVC, so it is a decision rather than a tweak).
+layers is 2.5 min/layer = 19 GB/layer at ~127 MB/s, independently reconfirmed on
+2026-08-28 at **120-131 s per untargeted MoE layer**, timed directly from
+subgraph transitions on the 8-GPU run.
+
+**Staging onto flash is NOT available. Do not pursue it.** The cluster does have
+an all-flash `sc-file-nfs-vast-my` class with exactly the mount options this
+workload wants (`nconnect=16`, 1 MiB rsize/wsize, nfsvers=4.1 — 16 parallel TCP
+streams would defeat the single-stream latency limit). But it is region-locked:
+
+```yaml
+allowedTopologies:
+- matchLabelExpressions:
+  - key: topology.kubernetes.io/region
+    values: [my]
+```
+
+and every GPU node is in `ca-van3`:
+
+```
+aicloud-infermesh-test-ca-gpu01..06    ca-van3   ca-van3-a
+aicloud-infermesh-test-my-cpuworker*   my        my-a
+```
+
+So a VAST PVC cannot bind to a pod on any GPU node — which is also why port 2049
+was unreachable from the GPU pod: no route, not a network policy. The existing
+`benchmark-datasets` and `registry-cache` PVCs on that class are reachable only
+from the Malaysian CPU workers. `sc-file-ceph-ca` is the only storage GPU work
+can use here, so 31 MB/s single-stream is the floor.
+
+What IS available, ordered by how much is ours to control:
+1. **Parallelism.** cephfs reached 135-260 MB/s aggregate across 8 ranks against
+   31 MB/s single-stream, so it does scale with concurrent readers.
+   `DiskCache.onload` does one `safe_open`/`get_tensor` at a time, so the
+   per-layer weight onload is effectively serial per rank. Prefetching the next
+   subgraph's weights during the current subgraph's compute is the shape of the
+   fix. Note `sequential_prefetch` already exists but covers the ACTIVATION
+   cache, not weights.
+2. **`stop_after_last_target`** for anything layer-restricted — measured worth
+   35 x 131 s = ~76 min on this smoke.
+3. **Asking cluster admins for a `ca`-region flash class.** A conversation, not a
+   config change.
 
 **Do not oversell the revert.** A small budget *shifts* cost from dispatch to
 the walk rather than removing it. Projected after load: `32e9` -> ~5 + ~190 =

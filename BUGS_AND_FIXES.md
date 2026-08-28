@@ -2610,3 +2610,67 @@ whole run reads through — but what it must produce is metadata plus a few GB. 
 attribution needs the code path, not the wall clock: three separate hypotheses
 here (MoE weight conversion forcing a resave, kernel readahead, byte-driven
 placement copying) all fit the timing and all were wrong.
+
+### Tooling hazard: this shell collapses `\\` to `\` inside heredocs, and it silently corrupts shell templates (2026-08-28)
+
+**Environment fact.** In this development shell, a `python - <<'PY' ... PY` heredoc
+does **not** deliver backslashes literally: `\\` arrives as `\`. A single-quoted
+heredoc is supposed to be literal, so this violates the reasonable expectation
+and there is no warning.
+
+**Cost incurred, in order:**
+1. Three string-anchor edits matched zero times. I attributed this to CRLF and
+   then to invisible characters before finding the real cause.
+2. A `sed` continuation in `pipeline/k8s/launch-quant-glm52.sh` became a literal
+   `"\n"`. Caught before launch.
+3. **A wasted 6-GPU launch.** The same class of edit put a literal two-character
+   `\n` into `pipeline/k8s/quantize-glm52.yaml.tmpl` where a line continuation
+   belonged:
+
+   ```
+   --set "quantization.method=$METHOD" \n                $EVIDENCE_FLAG
+   ```
+
+   Bash parsed `\n` as an escaped `n` and passed a bare positional `n` to
+   argparse. All 6 ranks died at startup with
+   `run.py: error: unrecognized arguments: n`, killing the calibration-scaling
+   probe (`quant-glm52-awq-20260828t121642z`) two minutes in — before it read a
+   single weight. Fixed in `9c34c110`; relaunched as
+   `quant-glm52-awq-20260828t122858z`.
+
+**Rule.** Any edit whose text contains a backslash goes in a file (Write/Edit),
+never through a heredoc. This was already known when (3) happened: the launcher
+edit in (2) had deliberately been routed through a file
+(`scratchpad/add_sed_line.py`, whose docstring records the reason), and then the
+template edit went through the buggy path anyway.
+
+**Detection, since the rule will be broken again.** `grep '\\n'` cannot find this
+— grep's own BRE reduces `\n` to `n` and matches every line containing a letter
+`n`. That false-clean result nearly closed the investigation. Use a bracket
+expression, `[\]n`, or `grep -F`. Better: after editing any rendered template,
+diff the *rendered* output rather than trusting the source, which is how this was
+finally confirmed — the old and new manifests sat side by side in
+`.k8s-rendered/`, one with the literal `\n` and one with a real continuation.
+
+**Lesson about the gate that did not catch it.** The launcher has a fail-closed
+check for unsubstituted `@@TOKEN@@` placeholders, and it passed: substitution was
+never the problem. A template can render to *valid YAML containing a broken
+shell script*, and nothing between the edit and 6 allocated GPUs looked at the
+shell. A `bash -n` on the extracted container command would have caught it in
+milliseconds.
+
+**Fixed by gate 0** in `pipeline/k8s/launch-quant-glm52.sh`: the rendered
+container script is now extracted from the block scalar (awk, not a YAML parser —
+the only python on PATH in this dev shell is the Windows Store stub, and a launch
+gate must not depend on an interpreter that may be absent) and checked two ways
+before `kubectl apply`:
+
+1. `bash -n`, for genuine syntax errors;
+2. `grep '[\]n'`, because **a bare `n` argument is syntactically legal bash** and
+   `bash -n` alone would have passed the exact manifest that wasted the launch.
+
+Mutation-tested in both directions: the good template prints
+`gate 0: rendered container script parses as bash OK`; reintroducing the literal
+`\n` and, separately, an unterminated double quote each abort with exit 1 and a
+message naming the extracted body file. The template was then restored and
+verified byte-identical to the committed version.

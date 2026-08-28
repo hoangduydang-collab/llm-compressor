@@ -115,6 +115,47 @@ sed -e "s|@@METHOD@@|${METHOD}|g" \
 
 grep -q '@@' "$RENDERED" && die "unsubstituted token remains: $(grep -o '@@[A-Z_]*@@' "$RENDERED" | sort -u | tr '\n' ' ')"
 
+# Gate 0: the rendered container script must be valid bash.
+#
+# The placeholder check above passes on a manifest that is valid YAML but holds a
+# BROKEN SHELL SCRIPT, and nothing else between an edit and allocated GPUs ever
+# looks at the shell. That gap cost a 6-GPU launch on 2026-08-28: a template edit
+# landed a literal two-character "\n" where a line continuation belonged, bash
+# read it as an escaped "n", and all ranks died on
+# `run.py: error: unrecognized arguments: n` two minutes in. See BUGS_AND_FIXES.md
+# ("this shell collapses \\ to \ inside heredocs").
+#
+# Extraction is deliberately awk and not a YAML parser: the only python on PATH in
+# this dev shell is the Windows Store stub, and a launch gate must not depend on an
+# interpreter that may not exist. The body is a literal block scalar, so taking the
+# lines indented deeper than its "- |" introducer and stripping that indent is
+# exact for this template.
+BODY="$RENDER_DIR/${JOB}.body.sh"
+awk '
+  /^[[:space:]]*- \|[[:space:]]*$/ && !seen {
+    match($0, /^[[:space:]]*/); intro = RLENGTH; seen = 1; next
+  }
+  seen {
+    if ($0 ~ /^[[:space:]]*$/) { print ""; next }
+    match($0, /^[[:space:]]*/)
+    if (RLENGTH <= intro) exit          # dedented out of the block scalar
+    print substr($0, intro + 3)
+  }
+' "$RENDERED" > "$BODY"
+
+[[ -s "$BODY" ]] || die "could not extract the container script from $RENDERED (template layout changed? update the awk in gate 0)"
+if ! SYNTAX="$(bash -n "$BODY" 2>&1)"; then
+  echo "$SYNTAX" >&2
+  die "rendered container script is not valid bash -- see $BODY. Not launching."
+fi
+# A bare `n` argument is syntactically legal bash, so `bash -n` alone would have
+# missed the 2026-08-28 failure. Check for the specific corruption too.
+if grep -q '[\]n' "$BODY"; then
+  grep -n '[\]n' "$BODY" >&2
+  die "rendered container script contains a literal backslash-n (broken line continuation). Not launching."
+fi
+echo "==> gate 0: rendered container script parses as bash OK"
+
 echo
 echo "==> job      : $JOB"
 echo "==> method   : $METHOD   world_size: $GPUS"

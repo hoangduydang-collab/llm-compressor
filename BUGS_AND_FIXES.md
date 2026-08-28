@@ -2378,13 +2378,31 @@ from the Malaysian CPU workers. `sc-file-ceph-ca` is the only storage GPU work
 can use here, so 31 MB/s single-stream is the floor.
 
 What IS available, ordered by how much is ours to control:
-1. **Parallelism.** cephfs reached 135-260 MB/s aggregate across 8 ranks against
-   31 MB/s single-stream, so it does scale with concurrent readers.
-   `DiskCache.onload` does one `safe_open`/`get_tensor` at a time, so the
-   per-layer weight onload is effectively serial per rank. Prefetching the next
-   subgraph's weights during the current subgraph's compute is the shape of the
-   fix. Note `sequential_prefetch` already exists but covers the ACTIVATION
-   cache, not weights.
+1. **Read concurrency — and specifically NOT "hide I/O behind compute".**
+   Measured on the 8-GPU run mid-walk: GPU utilisation was 0-2% in 9 of 10
+   samples over 20 s (one sample at ~41%), i.e. **eight H100s idle ~90% of the
+   time waiting on cephfs**. There is essentially no compute on an untargeted
+   layer to overlap a prefetch with, so framing the fix as "prefetch the next
+   layer during this layer's compute" is wrong.
+
+   The lever is simply MORE REQUESTS IN FLIGHT, because cephfs is latency-bound
+   (28 ms RTT) and scales with concurrent readers: 31 MB/s single-stream ->
+   135-260 MB/s at 8 streams. Today `DiskCache.onload` issues one
+   `safe_open`/`get_tensor` at a time, so 8 ranks = 8 streams = the 152 MB/s we
+   observe (19 GB/layer in ~125 s). A layer holds ~768 expert tensors; reading
+   them through a small per-rank thread pool multiplies in-flight requests by the
+   pool size. Prefetching the next layer only doubles concurrency, so
+   parallelising WITHIN a layer is the larger win.
+
+   Note `sequential_prefetch` already exists but covers the ACTIVATION cache, not
+   weights.
+
+   Also measured: the page cache is useless for this access pattern. It sat at
+   757 GiB (its ceiling, evicting as fast as it filled) while the walk read from
+   cephfs anyway — a single sequential pass over 1485 GB through a 757 GiB cache
+   has a ~zero hit rate, because each layer is touched exactly once. Caching pays
+   only for repeated access and there is none here. Do not expect a larger pod
+   memory limit to speed the walk up.
 2. **`stop_after_last_target`** for anything layer-restricted — measured worth
    35 x 131 s = ~76 min on this smoke.
 3. **Asking cluster admins for a `ca`-region flash class.** A conversation, not a

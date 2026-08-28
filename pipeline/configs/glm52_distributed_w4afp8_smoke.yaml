@@ -73,7 +73,14 @@ model:
     # propagate layers 7-41 (not even quantized) vs ~4 min to compress a
     # targeted layer. This run is the clean A/B against those timings -- same
     # arm, same config, only the memory budget changed.
-    cpu: 550000000000
+    # 900 GB. At 8 GPUs: 640 GB VRAM + 900 GB CPU = 1540 GB against the
+    # model's 1485 GB, so nothing spills to the cephfs PVC during calibration.
+    # VMA projects ~131k shm segments of the 262144 limit; the gate measured
+    # ~65k at 550 GB, within 10 of the projection, so the estimate is sound.
+    #
+    # Requires dshm sizeLimit >= this in the Job template (900Gi) -- the tmpfs
+    # is the real ceiling, and raising this alone does nothing.
+    cpu: 900000000000
   # Rancher only now: the old SSH cluster's /mnt/nfs is gone. /mnt/cephfs is the
   # model-cache-shared PVC, the sole CA-region RWX storage. Scratch and output
   # sit under an owned top-level dir, NOT inside the tool-managed .hf-cache.

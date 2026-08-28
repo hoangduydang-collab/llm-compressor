@@ -187,14 +187,24 @@ spec:
             requests:
               nvidia.com/gpu: @@GPUS@@
               cpu: "16"
-              # M3 measured 600-850 GiB RSS with correct bf16 dtype; GLM-5.2 is
-              # larger. Nodes have 2015 GiB, so this leaves room for co-tenants.
-              memory: "400Gi"
+              # Sized to hold the model in RAM instead of streaming it from the
+              # cephfs PVC, which measured 31 MB/s single-stream and dominated
+              # wall clock (86 min to propagate 35 layers that are not even
+              # quantized). The dshm tmpfs below is charged to this container as
+              # it fills, so the limit must cover the CPU offload budget plus
+              # every rank's working set. M3 measured 600-850 GiB RSS.
+              #
+              # 1700Gi of the node's 2016 GiB is deliberate and assumes the run
+              # OWNS the node: an 8-GPU request already takes every GPU, and
+              # this was launched with explicit permission for a full node. A
+              # 4-GPU run on a shared node should lower this back down --
+              # otherwise it starves whatever else lands there.
+              memory: "700Gi"
               ephemeral-storage: "80Gi"
             limits:
               nvidia.com/gpu: @@GPUS@@
               cpu: "48"
-              memory: "1200Gi"
+              memory: "1700Gi"
               ephemeral-storage: "150Gi"
           securityContext:
             capabilities:
@@ -234,7 +244,13 @@ spec:
             # even full CPU residency projects ~200k segments against the
             # 262144 limit. The VMA gate in pipeline/quantize.py verifies this
             # per run -- do not raise this without letting that gate pass.
-            sizeLimit: 600Gi
+            # 900Gi pairs with model.max_memory.cpu: 900e9. At 8 GPUs that is
+            # 640 GB VRAM + 900 GB CPU = 1540 GB against GLM-5.2's 1485 GB, so
+            # NOTHING spills to the cephfs PVC during calibration. Verified
+            # against the VMA gate: 900 GB projects ~131k segments of the
+            # 262144 limit (the gate measured ~65k at 550 GB, within 10 of the
+            # projection, so the model is trustworthy).
+            sizeLimit: 900Gi
         - name: work
           emptyDir:
             sizeLimit: 100Gi

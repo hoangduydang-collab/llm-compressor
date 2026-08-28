@@ -11,11 +11,12 @@
 # On (3): MiniMax-M3's two smoke configs
 # (minimax_m3_distributed_r8_smoke.yaml and ..._r8a_awq_smoke.yaml) share ONE
 # output_dir. That was safe there because M3 ran "one exclusive 8xH100 node at a
-# time" — the arms never overlapped. Our plan is different: no node has 8 free
-# GPUs, so the two GLM-5.2 arms run CONCURRENTLY on 4 GPUs each (gpu03/gpu04)
-# against the same RWX cephfs PVC. Sharing an output_dir or offload_folder would
-# have the two runs interleaving safetensors shards and offload blobs into the
-# same paths. Do not "simplify" these back to matching paths.
+# time" — the arms never overlapped. Keep these paths distinct anyway: the two
+# GLM-5.2 arms HAVE already run concurrently on 4 GPUs each against the same RWX
+# cephfs PVC (2026-08-27), and sharing an output_dir or offload_folder would have
+# had them interleaving safetensors shards and offload blobs into the same paths.
+# Do not "simplify" these back to matching paths just because a given run happens
+# to have an exclusive node.
 #
 # What this smoke must prove that the GPTQ smoke does not:
 #   a. AWQ smooth-layer mappings RESOLVE for GlmMoeDsaForCausalLM. Unlike M3
@@ -63,26 +64,22 @@ model:
   dtype: bfloat16
   device_map: auto_offload
   max_memory:
-    # 550 GB, up from the 32e9 inherited from M3. That cap existed to stay under
-    # vm.max_map_count, but for GLM-5.2 the VMA arithmetic is not the binding
-    # constraint: 550 GB projects ~65k shm segments (+24k slack) against a
-    # 262144 limit, and even FULL CPU residency projects only ~200k. The real
-    # ceiling was the dshm emptyDir sizeLimit, raised to 600Gi alongside this.
+    # 900 GB, up from the 32e9 inherited from M3. That cap existed to stay under
+    # vm.max_map_count, but VMA is not the binding constraint for GLM-5.2: even
+    # FULL CPU residency projects only ~200k shm segments against a 262144
+    # limit. The real ceiling was the dshm emptyDir sizeLimit, raised to 900Gi
+    # in the Job template alongside this -- the tmpfs is what actually caps CPU
+    # offload, so raising this value alone would have changed nothing and the
+    # null result would have looked like the storage hypothesis being wrong.
     #
-    # Why it matters: at 32e9, ~1133 GB of the 1485 GB model lived on cephfs,
-    # measured at 31 MB/s single-stream. That put storage on the critical path
-    # of every propagation step -- 86 min to walk layers 7-41 (which are not
-    # even quantized) against ~4 min to compress a targeted layer. 550 GB cuts
-    # cephfs residency to ~615 GB.
+    # Why it matters: at 32e9, ~1133 GB of the 1485 GB model lived on the cephfs
+    # PVC, measured at 30.8 and 32.2 MB/s single-stream on two untouched blobs.
+    # Storage was on the critical path of every propagation step -- 86 min to
+    # walk layers 7-41 (which are not even quantized) against ~4 min to compress
+    # a targeted layer.
     #
-    # Not higher on this first run: tmpfs is charged to the pod's 1200Gi memory
-    # limit as it fills, and four ranks need working set on top (M3 measured
-    # 600-850 GiB RSS). 550 GB leaves a real margin; 1000 GB would not.
-    # 900 GB. At 8 GPUs: 640 GB VRAM + 900 GB CPU = 1540 GB against the
-    # model's 1485 GB, so nothing spills to the cephfs PVC during calibration
-    # (measured 31 MB/s single-stream, and the dominant cost at 32e9).
-    # Requires dshm sizeLimit >= this in the Job template (900Gi): the tmpfs is
-    # the real ceiling, so raising this alone would change nothing.
+    # At 8 GPUs this eliminates the problem rather than easing it:
+    #   640 GB VRAM + 900 GB CPU = 1540 GB  vs the model's 1485 GB  -> 0 on PVC
     cpu: 900000000000
   # Distinct from the GPTQ arm — see (3) above.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke

@@ -63,23 +63,36 @@ model:
   dtype: bfloat16
   device_map: auto_offload
   max_memory:
-    # 550 GB, matching the AWQ arm. Raised from the 32e9 inherited from M3 (a
-    # vm.max_map_count workaround that does not bind for GLM-5.2: 550 GB
-    # projects ~65k shm segments against a 262144 limit). The real ceiling was
-    # the dshm emptyDir sizeLimit, raised to 600Gi in the Job template.
+    # 900 GB. Raised from the 32e9 inherited from M3, where this arm kept
+    # ~1133 GB of the 1485 GB model on the cephfs PVC (31 MB/s single-stream)
+    # and storage dominated: 86 min to propagate layers 7-41, which are not even
+    # quantized, vs ~4 min to compress a targeted layer.
     #
-    # At 32e9 this arm kept ~1133 GB of the 1485 GB model on the cephfs PVC,
-    # measured at 31 MB/s single-stream, and storage dominated: 86 min to
-    # propagate layers 7-41 (not even quantized) vs ~4 min to compress a
-    # targeted layer. This run is the clean A/B against those timings -- same
-    # arm, same config, only the memory budget changed.
-    # 900 GB. At 8 GPUs: 640 GB VRAM + 900 GB CPU = 1540 GB against the
-    # model's 1485 GB, so nothing spills to the cephfs PVC during calibration.
-    # VMA projects ~131k shm segments of the 262144 limit; the gate measured
-    # ~65k at 550 GB, within 10 of the projection, so the estimate is sound.
+    # *** THIS DELIBERATELY DOES NOT MATCH THE AWQ ARM (1350e9). ***
+    # Every other knob in these two configs is held identical so the arms are a
+    # paired method comparison -- this one cannot be, and copying the AWQ value
+    # here evicts the pod several hours in, after calibration has been paid for.
     #
-    # Requires dshm sizeLimit >= this in the Job template (900Gi) -- the tmpfs
-    # is the real ceiling, and raising this alone does nothing.
+    # Why: GPTQ's Hessians are [in_features x in_features] fp32 per module, and
+    # with offload_hessians they live in CPU memory on TOP of the shm-resident
+    # model. One MoE layer of GLM-5.2 is 256 experts x (gate 144 + up 144 +
+    # down 16 MiB) = 76 GiB per rank, and every rank accumulates over all
+    # modules before the reduce, so 8 ranks = 608 GiB. Against the pod's
+    # 1700 GiB memory limit (tmpfs is charged to the same cgroup):
+    #     cpu=900e9  -> shm  838 + hess 608 + ws 150 = 1596 GiB  OK
+    #     cpu=1350e9 -> shm 1257 + hess 608 + ws 150 = 2015 GiB  EVICTED
+    # Max safe value here is ~1011 GB (1700 - 608 - 150); 900e9 keeps a real
+    # margin. AWQ has no equivalent term -- its statistic is a ~24 KiB x_sum
+    # per smooth-point on CPU, ~6000x smaller and not on the accelerator --
+    # which is the entire reason it can afford 1350e9.
+    #
+    # See the AWQ config's max_memory block for the rest of the reasoning that
+    # IS shared (why the budget is a cache and not a requirement, why GPUs
+    # contribute no residency under auto_offload, and the load-time cephfs read
+    # that no value here fixes).
+    #
+    # Requires dshm sizeLimit >= this in the Job template -- the tmpfs is the
+    # real ceiling, and raising this alone does nothing.
     cpu: 900000000000
   # Rancher only now: the old SSH cluster's /mnt/nfs is gone. /mnt/cephfs is the
   # model-cache-shared PVC, the sole CA-region RWX storage. Scratch and output

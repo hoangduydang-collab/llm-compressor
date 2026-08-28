@@ -89,14 +89,39 @@ model:
     # on PVC"; that arithmetic was wrong, and going from 4 to 8 GPUs bought no
     # residency at all.
     #
-    # 900 GB is instead chosen against node RAM (2015 GB on gpu03). The residual
-    # ~585 GB does spill to the cephfs offload_folder, but it is read back
-    # through the page cache, which at 2015 GB total can hold the whole model --
-    # so cephfs is paid once, at load, not once per propagation step. Measured
-    # cost of that one payment: page cache filling at 135 MB/s aggregate across
-    # 8 ranks (the HF snapshot itself lives on cephfs, HF_HUB_CACHE=
-    # /mnt/cephfs/.hf-cache), i.e. ~2 h before calibration starts.
-    cpu: 900000000000
+    # The budget is instead sized against node RAM (2015 GiB on gpu03), because
+    # the ONLY thing it controls is how much of the model spills to the cephfs
+    # offload_folder -- and the spill is what sits on the critical path.
+    #
+    # The algorithm does not need residency at all. The sequential pipeline
+    # onloads exactly one decoder layer (~19 GB) at a time: calibrate, compress
+    # and error-propagate all happen inside a single `disable_offloading()`
+    # block in pipelines/sequential/pipeline.py, and IntermediatesCache carries
+    # activations forward so earlier layers are never re-run. So each layer is
+    # touched about once, and the budget is a CACHE, not a requirement -- the
+    # 32e9 runs walked all 78 layers correctly, just slowly.
+    #
+    # Sizing (model 1485 GB = 1383 GiB; dshm sizeLimit and pod memory limit in
+    # pipeline/k8s/quantize-glm52.yaml.tmpl must move with this, since the
+    # shared-CPU cache lives in the /dev/shm tmpfs and tmpfs is charged to the
+    # pod's memory cgroup):
+    #   cpu=900e9,  dshm=900Gi  -> 585 GB spill (39%), node margin 315 GiB
+    #   cpu=1350e9, dshm=1350Gi -> 135 GB spill ( 9%), node margin 415 GiB  <-- chosen
+    #   cpu=1500e9, dshm=1550Gi ->   0 GB spill,       node margin 265 GiB
+    # Zero spill is reachable but buys little over 9% and halves the node
+    # margin; if shm exceeds its sizeLimit the pod is evicted, so headroom is
+    # worth more than the last 135 GB. VMA gate at 1350e9 projects ~160k
+    # segments + 24k slack vs vm.max_map_count=262144 -- passes with headroom
+    # (full residency would be ~176k, also passing).
+    #
+    # NOT fixed by any value here: the load itself still reads all 1485 GB of
+    # the HF snapshot off cephfs (HF_HUB_CACHE=/mnt/cephfs/.hf-cache), measured
+    # at 135 MB/s aggregate, ~1 h with 7 of 8 GPUs idle -- because
+    # from_pretrained has no lazy path and accelerate re-serializes weights into
+    # its own offload store (the ct_disk_cache_*.safetensors blobs) rather than
+    # mmapping the original safetensors. Removing that redundant copy is an
+    # upstream change, not a knob.
+    cpu: 1350000000000
   # Distinct from the GPTQ arm — see (3) above.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke
 

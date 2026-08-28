@@ -241,16 +241,27 @@ spec:
             # ranks' working set (M3 measured 600-850 GiB RSS).
             #
             # vm.max_map_count is NOT the binding constraint for GLM-5.2:
-            # even full CPU residency projects ~200k segments against the
+            # even full CPU residency projects ~176k segments against the
             # 262144 limit. The VMA gate in pipeline/quantize.py verifies this
             # per run -- do not raise this without letting that gate pass.
-            # 900Gi pairs with model.max_memory.cpu: 900e9. At 8 GPUs that is
-            # 640 GB VRAM + 900 GB CPU = 1540 GB against GLM-5.2's 1485 GB, so
-            # NOTHING spills to the cephfs PVC during calibration. Verified
-            # against the VMA gate: 900 GB projects ~131k segments of the
-            # 262144 limit (the gate measured ~65k at 550 GB, within 10 of the
-            # projection, so the model is trustworthy).
-            sizeLimit: 900Gi
+            #
+            # This is a CEILING shared by both arms, not a per-arm setting. The
+            # arm's actual shm consumption is model.max_memory.cpu, and the two
+            # arms deliberately differ there: AWQ 1350e9 (1257 GiB), GPTQ 900e9
+            # (838 GiB, capped by 608 GiB of offloaded Hessians that AWQ has no
+            # equivalent of -- see the GPTQ config's max_memory block). 1350Gi
+            # admits both; tmpfs only charges what is written, so the larger
+            # ceiling costs the GPTQ arm nothing.
+            #
+            # Do not read this as "the model is fully resident". GPUs contribute
+            # ZERO residency: compressed_tensors intercepts
+            # device_map="auto_offload" as "same as auto, but only cpu/disk are
+            # visible", so accelerate never places a weight on an accelerator
+            # (measured in situ, run 20260828t052128z: 1509 MiB per GPU, bare
+            # CUDA context, for the whole load). An earlier version of this
+            # comment claimed 640 GB VRAM + 900 GB CPU = 1540 GB > 1485 GB and
+            # therefore no spill; that was wrong.
+            sizeLimit: 1350Gi
         - name: work
           emptyDir:
             sizeLimit: 100Gi

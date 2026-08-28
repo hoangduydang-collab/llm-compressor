@@ -593,6 +593,86 @@ def _offloaded_save_health(save_pretrained_source: str) -> str:
     return "healthy"
 
 
+# Sampling knobs whose non-default presence makes transformers' strict
+# validation demand do_sample=True. Values are the transformers defaults; a
+# config left at the default does not trip validation.
+_SAMPLING_DEFAULTS = {
+    "top_p": 1.0,
+    "top_k": 50,
+    "typical_p": 1.0,
+    "min_p": None,
+    "temperature": 1.0,
+}
+
+
+def repair_generation_config(model) -> list[str]:
+    """Make ``model.generation_config`` survive transformers strict validation.
+
+    WHY THIS EXISTS. GLM-5.2 ships a ``generation_config.json`` written by
+    transformers 5.12.0 that sets ``top_p: 0.95`` with no ``do_sample``. 5.12's
+    validation tolerated it; 5.14's ``save_pretrained`` calls
+    ``validate(strict=True)`` and raises::
+
+        ValueError: GenerationConfig is invalid:
+        - `top_p`: `do_sample` is not set to `True`. However, `top_p` is set to
+          `0.95` -- this flag is only used in sample-based generation modes.
+
+    It fires at the very END of the save, so both GLM-5.2 smoke arms burned
+    ~5-6 h of 4-GPU calibration each and wrote no checkpoint. Pinning to 5.14.1
+    to match the M3 environment is what surfaced it -- the same shape as the
+    sharded-save hotfix in envs/.
+
+    WHY do_sample=True RATHER THAN DROPPING top_p. Both silence the error, but
+    unsetting ``top_p`` would change the checkpoint's default decoding relative
+    to the official model, silently, for everyone who loads it downstream.
+    ``temperature: 1.0`` + ``top_p: 0.95`` is unambiguously a sampling recipe,
+    so enabling sampling is the semantics-preserving repair; dropping the
+    parameter is not.
+
+    Fail-closed: if the config still will not validate, raise rather than let
+    the save die hours later, and rather than shipping a config we silently
+    mangled.
+
+    :param model: model about to be saved.
+    :return: human-readable descriptions of the repairs made (empty if none).
+    """
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is None:
+        return []
+
+    try:
+        generation_config.validate(strict=True)
+        return []
+    except Exception:
+        pass  # needs repair; the specific complaint is handled below
+
+    changes: list[str] = []
+    if not getattr(generation_config, "do_sample", False):
+        active = sorted(
+            name
+            for name, default in _SAMPLING_DEFAULTS.items()
+            if getattr(generation_config, name, default) not in (default, None)
+        )
+        if active:
+            generation_config.do_sample = True
+            changes.append(
+                "do_sample: False -> True (config sets sampling params: "
+                f"{', '.join(active)})"
+            )
+
+    try:
+        generation_config.validate(strict=True)
+    except Exception as exc:
+        raise RuntimeError(
+            "model.generation_config cannot be made to pass transformers' "
+            f"strict validation. Repairs applied: {changes or 'none'}. "
+            f"Remaining problem: {exc}. Refusing to start rather than failing "
+            "at the end of a multi-hour save."
+        ) from exc
+
+    return changes
+
+
 def assert_transformers_offloaded_save_healthy() -> None:
     """Fail-closed gate: refuse to start a run whose offloaded save is
     known-broken, instead of crashing hours later at the end of shard 1.
@@ -877,6 +957,16 @@ def run_quantize(
             "(source-rank write + barrier; see BUGS_AND_FIXES.md)"
         )
     model, tokenizer = _load_model_and_tokenizer(cfg)
+
+    # Repair the generation config HERE, immediately after load, not at save
+    # time. transformers validates it strictly at the very end of
+    # save_pretrained, so an unrepairable config costs the entire calibration
+    # before it surfaces: GLM-5.2's shipped top_p-without-do_sample cost both
+    # smoke arms ~5-6 h of 4-GPU time and produced no checkpoint. Running it
+    # here makes that failure mode cost seconds.
+    for change in repair_generation_config(model):
+        print(f"[pipeline] generation_config repaired: {change}", flush=True)
+
     # Capture load/environment provenance BEFORE calibration: where the loaded
     # modeling code comes from (installed transformers vs trust_remote_code) and
     # whether sequential_targets match any module. A zero match count is the

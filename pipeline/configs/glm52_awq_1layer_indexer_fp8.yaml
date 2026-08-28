@@ -1,0 +1,142 @@
+# The cheapest run that exercises every gate written on 2026-08-27/28.
+#
+# ONE quantized layer: layer 3, the earliest MoE layer. Everything else in the
+# subset exists only to feed it.
+#
+# WHY THE INDEXER IS ON LAYER 0 AND NOT ON THE TARGETED LAYER. `indexer_types`
+# marks layers 0, 1, 2 and then every 4th from 6 to 74 as "full" (own indexer);
+# every other layer is "shared" and reuses the previous full layer's top-k, with
+# `self.indexer is None` and no indexer weights at all. LAYER 3 IS "shared".
+# So "earliest MoE layer" and "carries an indexer" cannot be the same layer --
+# the earliest MoE layer with its own indexer is 6.
+#
+# Putting the indexer FP8 target on layer 0 instead costs a 4-layer subset
+# (24.17 GiB, builds in under a minute, fits the 80Gi node-local scratch) where
+# targeting layer 6 would need a 7-layer subset (~75.8 GiB, plus a scratch
+# raise). That trade is sound because the indexer is architecturally INDEPENDENT
+# of MoE-ness: `indexer_types` and `first_k_dense_replace` are separate config
+# lists, GlmMoeDsaAttention constructs the indexer identically either way, and
+# the attention-side AWQ mappings are skipped in both cases (see below). There is
+# no dense-vs-MoE interaction for the indexer path to miss.
+#
+# If belt-and-braces coverage of an indexer inside a MoE layer is wanted later,
+# it is `--subset-layers 7` with this file's layer-0 fp8 targets moved to 6, and
+# scratch raised past 76 GiB. Not needed for the questions below.
+#
+# WHAT THIS ANSWERS, and none of it is answerable offline:
+#
+#   1. Does FP8 quantization of `indexer.wq_b` / `indexer.wk` work end to end --
+#      scales written, checkpoint structurally valid? Never once attempted; the
+#      whole indexer has been BF16 in every run to date.
+#   2. Does the new serve-ignore resolver produce a SHADOW-FREE config on a real
+#      save? Proven so far only by replaying the resolver over an
+#      already-shipped checkpoint. This runs it in the save path.
+#   3. Does `assert_no_ignore_shadowing` pass on a freshly-saved checkpoint?
+#   4. Does the smooth-fold gate actually RUN rather than print "skipped"? It
+#      silently no-opped on every single-shard save until 2026-08-28, which is
+#      why the router-fix validation never produced a number.
+#   5. Router compensation on a fresh save. Post-fix reference from replaying the
+#      audit over the routerfix checkpoint: 1.810e-03, scale mean 0.7764
+#      (pre-fix was 1.08e-1 to 2.42e-1).
+#   6. THE ONE GENUINELY NEW QUESTION: does FP8-quantizing the indexer activate
+#      the attention-side AWQ mappings? It should NOT -- `_is_grid_search_targeted`
+#      excludes float-schemed modules, so `any_targeted` stays False and
+#      awq/base.py `continue`s the mapping. Expected evidence: the attention-fold
+#      audit reports `scale_mean = 1.0000` exactly, now with
+#      `fp8_dequantized=True` on indexer_wk / indexer_wq_b. If instead the scale
+#      moves off 1.0, the mapping activated and the indexer balance-layer fix
+#      (889d186e) stops being latent insurance and becomes load-bearing --
+#      which the same audit would then verify.
+#   7. Do the new audit component names resolve against a FRESH checkpoint, not
+#      just the one they were developed against?
+#
+# WHAT IT CANNOT ANSWER, said plainly so the pass is not over-read:
+#   - Serving. No engine has ever loaded a GLM W4AFP8 checkpoint of ours. The
+#     shadowing fix is name-level matching plus M3's verified diagnosis.
+#   - The MTP head. Needs a full run plus a safetensors graft.
+#   - Weight-prefetch benefit. The subset lives on node-local NVMe, so the
+#     cephfs read path this was built for is not exercised.
+#   - QUALITY, and not by accident: a 4-layer truncated model is not a model. It
+#     emits garbage by construction, so `sample_generation` stays off and
+#     pipeline/sample_output_check.py must NOT be pointed at this checkpoint --
+#     it would fail for a reason that has nothing to do with quantization.
+#
+# LAUNCH:
+#   pipeline/k8s/launch-quant-glm52.sh --method awq --gpus 4 \
+#       --subset-layers 4 --config pipeline/configs/glm52_awq_1layer_indexer_fp8.yaml
+#
+# 4 GPUs, not 8, and no nodeSelector: the scheduler places it, and gpu03 is full
+# (duy-gpu03-hold), so this lands on gpu02 or gpu04 and the hold survives without
+# a delete/relaunch race.
+name: glm52_awq_1layer_indexer_fp8
+
+model:
+  id: zai-org/GLM-5.2
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  # Node-local NVMe: 1632 MB/s at one reader against cephfs's 31 MB/s, which is
+  # what turns a ~63 min setup into under a minute and made two bugs surface in
+  # ~1 min each.
+  offload_folder: /scratch/offload/glm52-1layer-indexer-fp8
+
+quantization:
+  method: awq
+  scheme: W4AFP8
+  ignore:
+    - "lm_head"
+    # NOT quantized, but still an AWQ BALANCE layer -- different lists. Removing
+    # this line is the defect 7d08e0fa shipped and 5cc823b5 fixed.
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+    # int4 on layer 3 alone.
+    - "re:.*model[.]layers[.](?!3(?:[.]|$))[0-9]+(?:[.]|$).*"
+  fp8_dynamic_targets:
+    # The targeted MoE layer's attention and shared experts.
+    - "re:.*model[.]layers[.]3[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]3[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
+    # Layer 0: attention, the dense MLP, and THE INDEXER -- the new coverage.
+    - "re:.*model[.]layers[.]0[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    - "re:.*model[.]layers[.]0[.]mlp[.](gate_proj|up_proj|down_proj)$"
+    # wq_b and wk only. weights_proj is deliberately absent, matching BOTH
+    # reference checkpoints (zai-org's FP8 release and PhalaCloud's W4AFP8) --
+    # and for a mechanical reason found in the modeling code: the indexer computes
+    # `self.weights_proj(hidden_states.to(self.weights_proj.weight.dtype))`, an
+    # explicit cast of activations to follow the WEIGHT's dtype. Quantize
+    # weights_proj and that line hard-casts activations to fp8 with no scale.
+    # wk and wq_b carry no such cast.
+    - "re:.*model[.]layers[.]0[.]self_attn[.]indexer[.](wq_b|wk)$"
+  # A 4-layer truncated model generates garbage by construction; an output check
+  # here would fail for reasons unrelated to quantization.
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  # Deliberately the cheapest that still produces non-degenerate scales. 32 x 512
+  # is what the earlier GLM smokes used successfully. This run is about plumbing
+  # and gates, not calibration quality -- the token-scaling work (256 vs 512) is
+  # a separate, already-answered question.
+  num_samples: 32
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+  # Layer 3 is the last targeted layer AND the last layer of a 4-layer subset, so
+  # this cuts nothing. Kept explicit so the run is labelled partial-scope.
+  stop_after_last_target: true
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm52-1layer-indexer-fp8

@@ -1439,22 +1439,17 @@ def run_quantize(
             # into unscaled parameters, garbage output, exit code 0 (M3 r8 ABI
             # smoke, 2026-07-24). Runs LAST because it reads the final config,
             # after _persist_ignore_to_config and any serve-config patching.
+            # Enforced unconditionally, including on partial-scope smokes. An
+            # earlier revision exempted them, reasoning that their
+            # layer-restriction pattern covers too many unquantized modules to
+            # enumerate. That exemption was unnecessary AND weakening: when
+            # resolution overflows, _persist_ignore_to_config DROPS the pattern
+            # and warns, so no shadowing survives and this gate passes anyway.
+            # The only way it fires is a pattern that genuinely hides a quantized
+            # module -- which is never acceptable, smoke or not.
             from pipeline.serve_ignore import assert_no_ignore_shadowing
 
-            if cfg.calibration.stop_after_last_target:
-                # A partial-scope smoke legitimately cannot be made serve-safe:
-                # its layer-restriction pattern covers tens of thousands of
-                # unquantized modules. Report, do not fail; it is not served.
-                from pipeline.serve_ignore import audit_checkpoint_ignore
-
-                audit = audit_checkpoint_ignore(ckpt)
-                print(
-                    "[pipeline] serve-ignore audit (partial-scope smoke, not "
-                    f"gated): shadowed={audit['shadowed_module_count']} of "
-                    f"{audit['quantized_modules']} quantized modules"
-                )
-            else:
-                assert_no_ignore_shadowing(ckpt)
+            assert_no_ignore_shadowing(ckpt)
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.

@@ -2747,3 +2747,137 @@ class of defect. Both were caught by inspection before the run reached them, and
 both would have presented as a catastrophic numerics/corruption failure on a
 healthy checkpoint. The remaining M3-shaped gates in `pipeline/` deserve the same
 pass before the full GLM-5.2 run, not after it fails.
+
+### GLM-5.2 AWQ leaves the MoE router uncompensated, so smoothing changes expert routing (2026-08-28)
+
+**Status: real defect, root-caused, NOT yet fixed. Blocks the production run.**
+Found by post-hoc verification of the AWQ smoke
+(`quant-glm52-awq-20260828t070917z`), whose checkpoint saved completely and whose
+own gates then failed.
+
+**Measurement.** `audit_checkpoint` on the saved checkpoint vs the base snapshot,
+run under BOTH norm-gain forms to discriminate a wrong-form artifact from a real
+inconsistency:
+
+| component | offset 0.0 (ordinary, correct for GLM) | offset 1.0 (M3 offset form) |
+|---|---|---|
+| layer 3 `shared_gate_up` | **2.06e-2** | 2.32e-1 |
+| layer 42 `shared_gate_up` | **2.15e-3** | 8.19e-2 |
+| layer 3 `router` | 2.42e-1 | 6.75e-3 |
+| layer 42 `router` | 1.08e-1 | 2.66e-2 |
+| implied scale mean (layer 3) | 0.779 | 0.9956 |
+
+`GlmMoeDsaRMSNorm` applies plain `output * weight`, so 0.0 is the correct form
+(it is registered in `KNOWN_ORDINARY_NORM_CLASSES`). Under it, the shared experts
+match the norm-implied fold at **2.15e-3** at layer 42 -- a textbook consistent
+fold, against a 0.02 threshold -- while the router is off by 1.08e-1 to 2.42e-1.
+
+The offset-1.0 column is a trap and worth understanding: it makes the router look
+*healthy* (6.75e-3). That is because the wrong form collapses the implied scale to
+0.9956 ~= 1, so the check degenerates into "candidate router ~= base router" --
+which is trivially true precisely BECAUSE the router was never touched. A gate run
+only under the wrong form would have reported the router fine and the shared
+experts broken, i.e. exactly backwards.
+
+**Root cause, and it is documented in our own tree.**
+`src/llmcompressor/modifiers/transform/awq/mappings.py` registers
+`_mla_mixed_dense_moe_mappings` for `GlmMoeDsaForCausalLM`, and its comment says:
+
+> The dense layers have no mlp.gate router, so mlp.gate must NOT appear in the
+> balance layers: match_modules_set groups a mapping per layer only when every
+> balance pattern matches inside that layer [...] **Dropping mlp.gate costs
+> nothing: the router is never quantized (it is in every recipe's ignore list),
+> so it was never a legitimate balance layer to begin with.**
+
+The constraint is real -- including `mlp.gate` globally does break resolution,
+because dense layers 0-2 have no router and `match_modules_set` never closes the
+set. **The justification for the workaround is wrong.** It conflates two
+different requirements:
+
+* whether the router must be **quantized** -- it must not, and the ignore list is
+  correct;
+* whether the router must be **compensated** -- it must, and quantization has
+  nothing to do with it.
+
+AWQ smoothing divides the smooth layer (`post_attention_layernorm`) by a
+per-channel scale `s` and multiplies every consumer by `s`, so that
+`(x/s) @ (W*s)^T == x @ W^T`. The router consumes that norm's output exactly like
+the experts and shared experts do. Leaving `W_router` untouched while the norm is
+divided by `s` means the router sees inputs scaled by `1/s` **per channel**, so
+its logits change non-uniformly, so **top-k expert selection changes**. An
+unquantized consumer of a rescaled input still needs the compensation; being
+exempt from quantization does not exempt it from algebra.
+
+Evidence that the norm really was rescaled and this is the AWQ fold rather than
+some unrelated drift: the shared experts were multiplied by exactly the
+norm-implied 0.779 (residual 2e-3). Same `s`, same layer, one consumer
+compensated and one not.
+
+**Why the shared experts are compensated but not the router:** the mapping's
+balance list contains the expert and shared-expert projections and omits only
+`mlp.gate`.
+
+**Proposed fix** (not applied yet; it changes quantization numerics and needs a
+validation run): keep `mlp.gate` out of the mapping that must also match dense
+layers, and add a **MoE-layer-scoped** mapping that includes it -- the technique
+`dynamic_mappings.py` already uses, building `re:.*layers\.({moe_re})\.` from
+`first_k_dense_replace`. Note `dynamic_mappings.py`'s existing MoE entry cannot be
+reused as-is: its balance patterns are Qwen-style (`moe.gate`,
+`share_expert.gate_proj`) and do not match GLM's `mlp.gate` /
+`mlp.shared_experts.gate_proj`.
+
+**Also flagged by the same comment, still unfixed:** `DeepseekV3ForCausalLM` has
+`first_k_dense_replace=3` and is still pointed at `_deepseek_mappings`, which does
+include `mlp.gate`, so it is expected to fail resolution the same way GLM-5.2
+originally did.
+
+**What this does NOT explain**, kept separate because the smoke used only 32
+samples x 512 tokens and low sample count is a legitimate alternative explanation
+for numeric-margin failures:
+
+* `dequant mismatch model.layers.3.mlp.experts.50.up_proj: resid=0.323` against
+  `_DEQUANT_MAX_RESID = 0.25`. That threshold was calibrated on **MiniMax-M3 r9
+  full calibration**, where a healthy checkpoint fits at 0.09-0.12. Our run is a
+  different model at 1/64 the calibration tokens, and AWQ scales fitted from
+  16,384 tokens are noisier, which raises W4 reconstruction residual. Not evidence
+  of corruption on its own; re-check on a higher-sample run before treating it as
+  a defect.
+* `shared_gate_up` at layer 3 reading 2.06e-2 against a 0.02 threshold -- 3% over,
+  while layer 42 reads 2.15e-3. That marginality is also consistent with noisier
+  scales at low sample count.
+
+**What passed cleanly and is unaffected by sample count:** 12 sampled identity
+tensors and 12/12 norm tensors match the base bitwise/allclose, so there is no
+stray-write or offload-corruption problem; expert coverage, packed weights and
+finite scales are all structurally sound.
+
+**Lesson.** A workaround's justification needs to be checked against the algebra
+it is waving away, not just against the error it silences. "The router is never
+quantized" is true and irrelevant; it made a function-preservation bug look like a
+free simplification, and the bug then survived into a checkpoint. Related: run
+consistency gates under the *correct* architectural form -- the wrong form here
+did not merely weaken the gate, it inverted which component looked broken.
+
+**Confirmed from the saved checkpoint: the router is NOT quantized, which is
+correct.** Read directly from the index and config:
+
+```
+quant_method: compressed-tensors   format: mixed-precision
+model.layers.3.mlp.gate.weight                 <- plain bf16, packed=0
+model.layers.42.mlp.gate.weight                <- plain bf16, packed=0
+model.layers.3.mlp.experts.0.gate_proj.weight_packed / _scale / _shape
+```
+
+Quantizing the router WOULD be wrong -- it produces the top-k selection and 4-bit
+logits would perturb routing directly -- and we do not. The ignore list (expanded
+to 56,817 explicit module names, which is why config.json is 2.8 MB) covers it.
+
+This sharpens the defect rather than softening it: the router is correctly exempt
+from quantization and incorrectly exempt from compensation. Two different lists,
+two different purposes, and only one of them is right.
+
+**Side note relevant to serving:** the saved format is literally
+`format: mixed-precision`. Published reports are that SGLang's compressed-tensors
+integration does not properly support mixed-precision checkpoints, which is direct
+evidence for the earlier conclusion that vLLM is the only validated path for this
+artifact.

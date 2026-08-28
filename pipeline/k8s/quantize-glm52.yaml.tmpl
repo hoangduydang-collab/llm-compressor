@@ -246,12 +246,13 @@ spec:
             # per run -- do not raise this without letting that gate pass.
             #
             # This is a CEILING shared by both arms, not a per-arm setting. The
-            # arm's actual shm consumption is model.max_memory.cpu, and the two
-            # arms deliberately differ there: AWQ 1350e9 (1257 GiB), GPTQ 900e9
-            # (838 GiB, capped by 608 GiB of offloaded Hessians that AWQ has no
-            # equivalent of -- see the GPTQ config's max_memory block). 1350Gi
-            # admits both; tmpfs only charges what is written, so the larger
-            # ceiling costs the GPTQ arm nothing.
+            # arm's actual shm consumption is model.max_memory.cpu, currently
+            # 900e9 (838 GiB) for both. Raising either above ~1011 GB is blocked
+            # on an unmeasured quantity -- whether from_accelerate turns the
+            # model's mmap views into real tmpfs pages -- and for GPTQ it is
+            # blocked outright by 608 GiB of offloaded Hessians (see that
+            # config's max_memory block). Kept at 900Gi to stay coherent with
+            # the validated budget; raise both together, never this alone.
             #
             # Do not read this as "the model is fully resident". GPUs contribute
             # ZERO residency: compressed_tensors intercepts
@@ -261,7 +262,7 @@ spec:
             # CUDA context, for the whole load). An earlier version of this
             # comment claimed 640 GB VRAM + 900 GB CPU = 1540 GB > 1485 GB and
             # therefore no spill; that was wrong.
-            sizeLimit: 1350Gi
+            sizeLimit: 900Gi
         - name: work
           emptyDir:
             sizeLimit: 100Gi

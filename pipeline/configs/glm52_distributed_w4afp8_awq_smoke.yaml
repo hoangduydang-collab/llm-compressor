@@ -101,27 +101,44 @@ model:
     # touched about once, and the budget is a CACHE, not a requirement -- the
     # 32e9 runs walked all 78 layers correctly, just slowly.
     #
-    # Sizing (model 1485 GB = 1383 GiB; dshm sizeLimit and pod memory limit in
-    # pipeline/k8s/quantize-glm52.yaml.tmpl must move with this, since the
-    # shared-CPU cache lives in the /dev/shm tmpfs and tmpfs is charged to the
-    # pod's memory cgroup):
-    #   cpu=900e9,  dshm=900Gi  -> 585 GB spill (39%), node margin 315 GiB
-    #   cpu=1350e9, dshm=1350Gi -> 135 GB spill ( 9%), node margin 415 GiB  <-- chosen
-    #   cpu=1500e9, dshm=1550Gi ->   0 GB spill,       node margin 265 GiB
-    # Zero spill is reachable but buys little over 9% and halves the node
-    # margin; if shm exceeds its sizeLimit the pod is evicted, so headroom is
-    # worth more than the last 135 GB. VMA gate at 1350e9 projects ~160k
-    # segments + 24k slack vs vm.max_map_count=262144 -- passes with headroom
-    # (full residency would be ~176k, also passing).
+    # 900e9 is the only value proven in situ (run 20260828t052128z). A 1350e9
+    # variant was committed in 9efb919b on the theory that the budget controls a
+    # 585 GB "spill" of copied weights to the cephfs offload_folder; direct
+    # measurement of that run showed the theory was wrong, so it is reverted
+    # here. What the filesystem actually shows, mid-load at 61%:
     #
-    # NOT fixed by any value here: the load itself still reads all 1485 GB of
-    # the HF snapshot off cephfs (HF_HUB_CACHE=/mnt/cephfs/.hf-cache), measured
-    # at 135 MB/s aggregate, ~1 h with 7 of 8 GPUs idle -- because
-    # from_pretrained has no lazy path and accelerate re-serializes weights into
-    # its own offload store (the ct_disk_cache_*.safetensors blobs) rather than
-    # mmapping the original safetensors. Removing that redundant copy is an
-    # upstream change, not a knob.
-    cpu: 1350000000000
+    #   offload_folder:  36838 symlinks -> the original HF blobs under
+    #                    /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2/blobs/,
+    #                    8070 real files totalling 39.4 GB, and ALL of them
+    #                    timestamped 2026-08-27 19:21-23:10 -- i.e. residue from
+    #                    the failed earlier runs. This run had written ZERO.
+    #   /dev/shm:        empty (0 files)
+    #   RSS, 8 ranks:    17 GiB combined
+    #   page cache:      696 GB and climbing at the cephfs read rate
+    #
+    # So "cpu placement" is not a copy into RAM and disk placement is not a copy
+    # onto disk: compressed_tensors' disk cache SYMLINKS unmodified tensors
+    # straight back to the original safetensors blob, and CPU-placed tensors are
+    # mmap views of the same blobs, so their bytes live in reclaimable page
+    # cache rather than anon memory. Only genuinely modified tensors become real
+    # files. The 585 GB of redundant copying this budget was supposed to prevent
+    # does not happen at any value.
+    #
+    # Consequently the real load cost is the one-time 1485 GB read of the HF
+    # snapshot off cephfs (~135-258 MB/s aggregate), which is the same single
+    # pass over every weight that the sequential walk needs anyway -- not waste,
+    # just paid up front. No value here changes it.
+    #
+    # Before raising this again, measure the load -> from_accelerate boundary:
+    # DistributedCPUCache.offload does
+    # `super().offload(tensor).share_memory_()`, which is the one step that
+    # could turn 1485 GB of mmap views into 1485 GB of tmpfs charged to the pod's
+    # 1700 GiB memory cgroup. shm is still 0 because from_accelerate runs only
+    # after the load completes, so the peak is unmeasured. Upstream docs
+    # recommend CPU RAM = full model size and treat disk offload as only for
+    # models exceeding CPU memory (guides/big_models_and_distributed/
+    # model_loading, guides/memory) but say nothing about this peak.
+    cpu: 900000000000
   # Distinct from the GPTQ arm — see (3) above.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke
 

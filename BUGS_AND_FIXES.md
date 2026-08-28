@@ -3183,3 +3183,76 @@ the silent one completely.
 
 14 new tests, including `test_reproduces_the_measured_glm_shadowing`, which encodes
 the real 16-module case at the real shape so it stays fixed.
+
+
+---
+
+## 2026-08-28 — RESOLVED: the expert `up_proj` dequant residual (closes the r5-era "re-check on a higher-sample run")
+
+An earlier entry recorded `dequant mismatch model.layers.3.mlp.experts.50.up_proj:
+resid=0.323` and said: *"Not evidence of corruption on its own; re-check on a
+higher-sample run before treating it as a defect."* That follow-up is now done, and
+the recorded hypothesis (low calibration sample count) is **disconfirmed**.
+
+**Measured** on the saved one-layer checkpoint (20260828-191059), 12 experts, three
+fits per module, all at the SAME 32-sample calibration:
+
+                per-column   per-row   separable
+  down_proj          0.064     0.090       0.064
+  gate_proj          0.089     0.106       0.089
+  up_proj            0.267     0.231       0.194
+
+Sample-count noise would raise all three -- they draw their scales from the same
+calibration. It raises only `up_proj`. So the asymmetry is projection-specific and
+needs a projection-specific explanation.
+
+**Two independent effects, both pointing the same way.**
+
+1. *Intrinsic.* The published layer-sensitivity literature puts MLP up- and
+   down-projections as the most quantization-sensitive and the gate projection as
+   only moderately so (alphaXiv 2603.08747, NVFP4/MXFP4 layer-wise sensitivity;
+   arXiv 2503.06518). So `up_proj > gate_proj` in difficulty is expected before any
+   fold is applied.
+2. *The fold.* `up_proj -> down_proj` is canonical AWQ, confirmed in three primary
+   sources: MIT HAN Lab's own `auto_scale.py`
+   (`prev_op=module.mlp.up_proj, layers=[module.mlp.down_proj]`), AutoAWQ's
+   `scale_fc_fc`, and upstream llm-compressor's default, `_deepseek_mappings` and
+   `_glm_moe_dsa_mappings` -- the last being our exact architecture, with no
+   caveats. `scale_fc_fc` divides prev_op along OUTPUT ROWS
+   (`fc1.weight.div_(scales.view(-1, 1))`) and multiplies the balance layer along
+   INPUT COLUMNS (`fc2.weight.mul_(scales.view(1, -1))`).
+
+Together: `down_proj` is normally the hardest projection yet lands BEST here
+(0.064) because the mapping protects it, while `up_proj` is intrinsically hard AND
+pays for that protection. The literature's "down_proj is hardest" and our
+"down_proj is best" are consistent once you account for which layer the fold
+protects.
+
+**Fix applied:** the dequant check's fit is now separable (per-output-row x
+per-input-column) instead of per-column only. A per-column fit cannot absorb a
+per-row division, which is exactly what this mapping applies, so the check was
+measuring a legitimate transform as error. up_proj 0.267 -> 0.194, inside the 0.25
+bound; the other projections are unchanged.
+
+**Two overclaims of mine to retract, both made before measuring.** First I called
+0.253-0.358 "marginal" and "1.8% of modules" -- it was 14 of ~20 SAMPLED modules,
+and 2-3x the healthy band. Then I attributed the whole gap to AWQ error-shifting
+"by design", which the sources do not support at that strength: the AWQ paper's
+trade-off analysis is about salient vs non-salient channels WITHIN the protected
+layer and never analyses cost to the producing layer, and a per-row division is in
+principle absorbable by int4 g128 scales (one scale per row per group). The
+intrinsic-sensitivity effect is doing real work in this explanation and I reached
+for the fold alone.
+
+**Still not established:** the precise decomposition between the two effects. The
+discriminating experiment would be M3 r7, whose gate-alpha fold moves the division
+to the GATE path -- if the fold dominates, r7's gate_proj should be the elevated
+one. That checkpoint is unrecoverable: M3 artifacts lived on the retired cluster's
+/mnt/nfs and cephfs holds none. A GLM A/B with the mapping disabled would answer it
+on this family instead.
+
+**Lesson, and it is a repeat.** This entry existed, with the correct next step
+written in it, and I re-derived two wrong explanations without reading it. The
+prior lesson in this file was "check a workaround's justification against the
+algebra"; the one here is to check whether the question has already been asked and
+answered in our own log before theorising about it.

@@ -71,6 +71,13 @@ def _glm_like_model(
             shared = torch.nn.Module()
             shared.gate_proj = torch.nn.Linear(4, 4)
             shared.up_proj = torch.nn.Linear(4, 4)
+            # down_proj is NOT optional in this fixture. The real model has it
+            # (model.layers.N.mlp.shared_experts.down_proj, read from the GLM-5.3
+            # weight index). Omitting it made `re:.*up_proj$` match
+            # shared_experts.up_proj AND experts.0.up_proj before any down_proj
+            # appeared, which collapsed match_modules_set's parent_context and
+            # produced a resolution failure the real model does not have.
+            shared.down_proj = torch.nn.Linear(4, 4)
             mlp.shared_experts = shared
             experts = torch.nn.Module()
             for e in range(num_experts):
@@ -148,8 +155,12 @@ def test_mla_projections_still_smoothed():
         b for m in build_mla_mixed_dense_moe_mappings(_glm_like_model())
         for b in m.balance_layers
     ]
-    for required in ("re:.*kv_a_proj_with_mqa$", "re:.*q_b_proj$", "re:.*kv_b_proj$"):
-        assert required in patterns, f"lost MLA balance layer {required}"
+    # Bodies, not whole patterns: these are layer-scoped now, so the prefix
+    # carries a layer set. What must not change is which modules are balanced.
+    for required in ("kv_a_proj_with_mqa$", "q_b_proj$", "kv_b_proj$"):
+        assert any(p.endswith(required) for p in patterns), (
+            f"lost MLA balance layer {required}"
+        )
 
 
 def test_absent_shared_expert_form_is_not_emitted():
@@ -225,18 +236,18 @@ def _mapping_for(mappings, smooth_substring, must_contain=None):
 def test_indexer_wk_and_weights_proj_balance_the_attention_input():
     mappings = build_mla_mixed_dense_moe_mappings(_glm_like_model())
     balance = _mapping_for(mappings, "input_layernorm", "indexer[.]wk").balance_layers
-    assert "re:.*self_attn[.]indexer[.]wk$" in balance
-    assert "re:.*self_attn[.]indexer[.]weights_proj$" in balance
+    assert any(b.endswith("self_attn[.]indexer[.]wk$") for b in balance)
+    assert any(b.endswith("self_attn[.]indexer[.]weights_proj$") for b in balance)
     # the projections that already worked must not have been dropped
-    assert "re:.*(q|q_a)_proj$" in balance
-    assert "re:.*kv_a_proj_with_mqa$" in balance
+    assert any(b.endswith("self_attn[.](q|q_a)_proj$") for b in balance)
+    assert any(b.endswith("self_attn[.]kv_a_proj_with_mqa$") for b in balance)
 
 
 def test_indexer_wq_b_balances_q_a_layernorm():
     mappings = build_mla_mixed_dense_moe_mappings(_glm_like_model())
     balance = _mapping_for(mappings, "q_a_layernorm", "indexer[.]wq_b").balance_layers
-    assert "re:.*self_attn[.]indexer[.]wq_b$" in balance
-    assert "re:.*q_b_proj$" in balance
+    assert any(b.endswith("self_attn[.]indexer[.]wq_b$") for b in balance)
+    assert any(b.endswith("q_b_proj$") for b in balance)
 
 
 def test_indexer_patterns_are_layer_scoped_to_indexer_layers_only():
@@ -267,7 +278,7 @@ def test_layers_without_an_indexer_get_their_own_unpolluted_mapping():
     assert len(plain) == 1
     indices = re.search(r"layers\[\.\]\(([0-9|]+)\)", plain[0].smooth_layer)
     assert sorted(int(i) for i in indices.group(1).split("|")) == [1, 2, 3, 5, 6]
-    assert "re:.*(q|q_a)_proj$" in plain[0].balance_layers
+    assert any(b.endswith("self_attn[.](q|q_a)_proj$") for b in plain[0].balance_layers)
 
 
 def test_every_layer_is_covered_by_exactly_one_attention_input_mapping():
@@ -302,7 +313,13 @@ def test_no_indexer_anywhere_reproduces_the_previous_mapping():
     )
     mapping = _mapping_for(mappings, "input_layernorm")
     assert mapping.smooth_layer == "re:.*input_layernorm$"
-    assert mapping.balance_layers == ["re:.*(q|q_a)_proj$", "re:.*kv_a_proj_with_mqa$"]
+    # The bodies now carry the `self_attn[.]` prefix. That is deliberate: the
+    # scoped form has to name the full layer-relative path, and using one body for
+    # both forms is what keeps them from drifting apart.
+    assert mapping.balance_layers == [
+        "re:.*self_attn[.](q|q_a)_proj$",
+        "re:.*self_attn[.]kv_a_proj_with_mqa$",
+    ]
     assert not any("indexer" in b for m in mappings for b in m.balance_layers)
 
 
@@ -314,5 +331,127 @@ def test_partial_indexer_module_set_does_not_emit_an_absent_pattern():
     del model.layers._modules["4"].self_attn.indexer.weights_proj
     mappings = build_mla_mixed_dense_moe_mappings(model)
     balance = _mapping_for(mappings, "input_layernorm", "indexer[.]wk").balance_layers
-    assert "re:.*self_attn[.]indexer[.]wk$" in balance
+    assert any(b.endswith("self_attn[.]indexer[.]wk$") for b in balance)
     assert not any("weights_proj" in b for b in balance)
+
+
+# --- RESOLUTION, which is what the string tests above cannot check -----------
+#
+# Every indexer test above inspects the PATTERNS the builder returns. All 8 passed
+# while the mapping was unresolvable on the real model, because a pattern's text
+# says nothing about whether match_modules_set can group it. The smoke run caught
+# it in ~10 minutes with:
+#
+#   ValueError: AWQ needs to match a single smoothlayer for each mapping but got
+#   ['model.layers.6.input_layernorm', ..., 'model.layers.74.input_layernorm']
+#
+# Mechanism: match_modules_set is a STREAMING grouper. It accumulates matches
+# until every target has one, then yields when a new match's lowest-common-ancestor
+# differs from the running parent_context. With the smooth pattern scoped to the
+# indexer layers and the balance patterns unscoped, the non-indexer layers matched
+# balance-only, which collapsed parent_context to `model.layers` -- and once
+# collapsed, `new_parent_context != parent_context` can never fire again. Every
+# later smooth layer piled into a single set.
+#
+# These tests run the real matcher. That is the only kind that could have failed.
+
+
+def _resolve(mappings, model):
+    """Group each mapping with the matcher AWQ itself uses."""
+    from compressed_tensors.utils.match import match_modules_set
+
+    resolved = []
+    for mapping in mappings:
+        targets = [mapping.smooth_layer, *mapping.balance_layers]
+        for group in match_modules_set(model, targets):
+            resolved.append((mapping, group))
+    return resolved
+
+
+def test_every_mapping_resolves_to_exactly_one_smooth_layer_per_set():
+    """AWQ's own precondition. This is the assertion the smoke failure violated."""
+    model = _glm_like_model(num_dense=3, num_moe=8, indexer_layers=(0, 1, 2, 6, 10))
+    mappings = build_mla_mixed_dense_moe_mappings(model)
+    for mapping, group in _resolve(mappings, model):
+        smooth_matches = group[0]
+        assert len(smooth_matches) == 1, (
+            f"{mapping.smooth_layer} matched {len(smooth_matches)} smooth layers in "
+            "one set; AWQ requires exactly one"
+        )
+
+
+def test_attention_mappings_yield_one_set_per_layer_in_scope():
+    """Not merely 'resolves' -- the right NUMBER of sets. A mapping that yields one
+    set for 21 layers would fold one layer's norm into another layer's weights."""
+    indexer_layers = (0, 1, 2, 6, 10)
+    model = _glm_like_model(num_dense=3, num_moe=8, indexer_layers=indexer_layers)
+    mappings = build_mla_mixed_dense_moe_mappings(model)
+    indexer_mapping = _mapping_for(mappings, "input_layernorm", "indexer[.]wk")
+    sets = [g for m, g in _resolve([indexer_mapping], model)]
+    assert len(sets) == len(indexer_layers), (
+        f"expected one set per indexer layer ({len(indexer_layers)}), got {len(sets)}"
+    )
+
+
+def test_complement_mapping_yields_one_set_per_non_indexer_layer():
+    indexer_layers = (0, 1, 2, 6, 10)
+    model = _glm_like_model(num_dense=3, num_moe=8, indexer_layers=indexer_layers)
+    mappings = build_mla_mixed_dense_moe_mappings(model)
+    plain = [
+        m for m in mappings
+        if "input_layernorm" in m.smooth_layer
+        and not any("indexer" in b for b in m.balance_layers)
+    ][0]
+    sets = [g for m, g in _resolve([plain], model)]
+    assert len(sets) == 11 - len(indexer_layers)  # 11 layers total, 5 with indexers
+
+
+def test_balance_patterns_are_scoped_when_the_smooth_layer_is():
+    """The specific regression. An unscoped balance pattern next to a scoped smooth
+    pattern is what collapsed parent_context."""
+    model = _glm_like_model(num_dense=3, num_moe=8, indexer_layers=(0, 1, 2, 6, 10))
+    mappings = build_mla_mixed_dense_moe_mappings(model)
+    for mapping in mappings:
+        # Attention-side only. The dense and MoE post_attention_layernorm mappings
+        # keep UNSCOPED balance patterns and that is correct: their balance modules
+        # exist ONLY in the layers their smooth pattern names (a dense layer has
+        # mlp.gate_proj, a MoE layer has mlp.shared_experts.gate_proj and
+        # mlp.experts.N.gate_proj, and neither pattern matches the other's
+        # layers), so scope and presence already coincide and the context cannot
+        # collapse. The attention patterns have no such luck -- q_a_proj exists in
+        # EVERY layer -- which is why they must be scoped explicitly.
+        if not ("input_layernorm" in mapping.smooth_layer
+                or "q_a_layernorm" in mapping.smooth_layer):
+            continue
+        if "layers[.](" not in mapping.smooth_layer:
+            continue  # uniform stack, unscoped is correct
+        for balance in mapping.balance_layers:
+            assert "layers[.](" in balance, (
+                f"balance pattern {balance!r} is unscoped while its smooth layer "
+                f"{mapping.smooth_layer!r} is scoped -- this is the collapse"
+            )
+
+
+def test_uniform_indexer_stack_still_resolves_unscoped():
+    """When every layer has an indexer, unscoped patterns are correct AND must
+    still resolve one set per layer."""
+    model = _glm_like_model(num_dense=1, num_moe=4, indexer_layers=(0, 1, 2, 3, 4))
+    mappings = build_mla_mixed_dense_moe_mappings(model)
+    mapping = _mapping_for(mappings, "input_layernorm")
+    assert "layers[.](" not in mapping.smooth_layer
+    assert len([g for m, g in _resolve([mapping], model)]) == 5
+
+
+def test_moe_and_dense_mlp_mappings_still_resolve():
+    """Guard the mappings this change did not touch, since the failure mode is a
+    property of the whole target list rather than of one pattern."""
+    model = _glm_like_model(num_dense=3, num_moe=8, indexer_layers=(0, 1, 2, 6, 10))
+    mappings = build_mla_mixed_dense_moe_mappings(model)
+    moe = _moe_input_mapping(mappings)
+    assert len([g for m, g in _resolve([moe], model)]) == 8
+    dense = [
+        m for m in mappings
+        if "post_attention_layernorm" in m.smooth_layer
+        and not any(b.endswith("mlp[.]gate$") for b in m.balance_layers)
+    ][0]
+    assert len([g for m, g in _resolve([dense], model)]) == 3

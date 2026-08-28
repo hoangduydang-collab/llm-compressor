@@ -287,12 +287,16 @@ _MLA_MOE_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
 # pipeline/m3_checkpoint_scale_audit.py audits only post_attention_layernorm,
 # mlp.gate and the shared experts, so no gate looks at input_layernorm or
 # q_a_layernorm at all.
+# Entries are (layer-RELATIVE pattern body, matcher). The body is spliced into
+# either an unscoped `re:.*<body>$` or a layer-scoped
+# `re:.*layers[.](<indices>)[.]<body>$`, because WHICH FORM IS USED IS A
+# CORRECTNESS MATTER, not cosmetics -- see _partitioned_mappings.
 _MLA_ATTN_INPUT_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
-    ("re:.*(q|q_a)_proj$", re.compile(r"^self_attn\.(q|q_a)_proj$")),
-    ("re:.*kv_a_proj_with_mqa$", re.compile(r"^self_attn\.kv_a_proj_with_mqa$")),
-    ("re:.*self_attn[.]indexer[.]wk$", re.compile(r"^self_attn\.indexer\.wk$")),
+    ("self_attn[.](q|q_a)_proj", re.compile(r"^self_attn\.(q|q_a)_proj$")),
+    ("self_attn[.]kv_a_proj_with_mqa", re.compile(r"^self_attn\.kv_a_proj_with_mqa$")),
+    ("self_attn[.]indexer[.]wk", re.compile(r"^self_attn\.indexer\.wk$")),
     (
-        "re:.*self_attn[.]indexer[.]weights_proj$",
+        "self_attn[.]indexer[.]weights_proj",
         re.compile(r"^self_attn\.indexer\.weights_proj$"),
     ),
 ]
@@ -300,8 +304,8 @@ _MLA_ATTN_INPUT_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
 # Candidate balance layers for the q_a_layernorm output. `q_resid =
 # q_a_layernorm(q_a_proj(x))` is consumed by q_b_proj AND by the indexer's wq_b.
 _MLA_QA_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
-    ("re:.*q_b_proj$", re.compile(r"^self_attn\.q_b_proj$")),
-    ("re:.*self_attn[.]indexer[.]wq_b$", re.compile(r"^self_attn\.indexer\.wq_b$")),
+    ("self_attn[.]q_b_proj", re.compile(r"^self_attn\.q_b_proj$")),
+    ("self_attn[.]indexer[.]wq_b", re.compile(r"^self_attn\.indexer\.wq_b$")),
 ]
 
 _INDEXER_PRESENT = re.compile(r"^self_attn\.indexer(\.|$)")
@@ -344,11 +348,33 @@ def _partitioned_mappings(
     """One mapping per group of layers that share a balance set.
 
     Layers are grouped by whether they carry a DSA indexer, because only 21 of
-    GLM-5.2's 78 layers do (`indexer_types`), and an unscoped indexer pattern is
-    the exact trap the router fell into: absent from the other 57 layers, it stops
-    ``match_modules_set`` from closing any set. When every layer agrees the
-    mapping is left UNSCOPED, which keeps the common case's patterns simple and
-    preserves the previous behaviour for models with no indexer at all.
+    GLM-5.2's 78 layers do (``indexer_types``) and an indexer pattern absent from
+    the other 57 stops ``match_modules_set`` from closing a set -- the trap the
+    router fell into.
+
+    THE BALANCE PATTERNS ARE SCOPED TOO, AND THAT IS THE WHOLE POINT. An earlier
+    revision scoped only the smooth layer and left the balance patterns unscoped
+    (``re:.*(q|q_a)_proj$``). That FAILED on the real model, and the reason is
+    worth keeping because it is not obvious from the docstring of
+    ``match_modules_set``:
+
+        AWQ needs to match a single smoothlayer for each mapping but got
+        ['model.layers.6.input_layernorm', ..., 'model.layers.74.input_layernorm']
+
+    ``match_modules_set`` is a STREAMING grouper. It accumulates matches until
+    every target has one, then yields when a new match's lowest-common-ancestor
+    differs from the running ``parent_context``. With the smooth pattern scoped to
+    21 layers and ``q_a_proj`` matching in all 78, layers 3-5 matched
+    balance-only; that collapsed ``parent_context`` to ``model.layers``, and once
+    collapsed the ``new_parent_context != parent_context`` condition can NEVER
+    fire again. So every later smooth layer piled into one set -- 18 of them --
+    and AWQ's own single-smooth-layer check rejected it.
+
+    So a mapping must be scoped CONSISTENTLY: in-scope and out-of-scope layers
+    have to partition cleanly, or the grouper cannot recover. When every layer
+    agrees, unscoped is correct and simpler (each layer matches everything, so
+    each yields its own set), which also preserves prior behaviour for models
+    with no indexer at all.
     """
     scoped = [i for i, rel in members.items() if any(smooth_matcher.match(r) for r in rel)]
     if not scoped:
@@ -357,16 +383,22 @@ def _partitioned_mappings(
     without = sorted(i for i in scoped if i not in set(with_indexer))
 
     if not with_indexer or not without:
-        balance = _present_in_all(candidates, sorted(scoped), members)
+        bodies = _present_in_all(candidates, sorted(scoped), members)
+        balance = [f"re:.*{body}$" for body in bodies]
         return [AWQMapping(f"re:.*{smooth_rel}$", balance)] if balance else []
 
     mappings = []
     for group in (with_indexer, without):
-        balance = _present_in_all(candidates, group, members)
-        if not balance:
+        bodies = _present_in_all(candidates, group, members)
+        if not bodies:
             continue
         scope = "|".join(str(i) for i in group)
-        mappings.append(AWQMapping(f"re:.*layers[.]({scope})[.]{smooth_rel}$", balance))
+        mappings.append(
+            AWQMapping(
+                f"re:.*layers[.]({scope})[.]{smooth_rel}$",
+                [f"re:.*layers[.]({scope})[.]{body}$" for body in bodies],
+            )
+        )
     return mappings
 
 
@@ -427,8 +459,15 @@ def build_mla_mixed_dense_moe_mappings(model: Module) -> list[AWQMapping] | None
             members,
             re.compile(r"^input_layernorm$"),
         ),
+        # NOTE the `self_attn[.]` prefix. q_a_layernorm is nested under self_attn,
+        # so the layer-relative path is `self_attn.q_a_layernorm`, not
+        # `q_a_layernorm`. The unscoped form `re:.*q_a_layernorm$` matched anyway
+        # and hid this; the scoped form spliced the scope in the wrong place and
+        # produced `layers[.](...)[.]q_a_layernorm$`, which matches nothing.
+        # input_layernorm below sits directly on the decoder layer, so it needs no
+        # prefix -- the asymmetry is real, not an oversight.
         *_partitioned_mappings(
-            "q_a_layernorm",
+            "self_attn[.]q_a_layernorm",
             _MLA_QA_BALANCE_CANDIDATES,
             members,
             re.compile(r"^self_attn\.q_a_layernorm$"),

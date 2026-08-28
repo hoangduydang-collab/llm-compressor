@@ -28,6 +28,9 @@ RUN_TAG=""
 DRY_RUN=0
 EVIDENCE_ONLY=0
 SUBSET_LAYERS=""
+# Optional node pin. Empty = let the scheduler place the pod, which is the
+# right default (see the nodeSelector comment in the template).
+NODE=""
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -41,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run)  DRY_RUN=1; shift ;;
     --evidence-only) EVIDENCE_ONLY=1; shift ;;
     --subset-layers) SUBSET_LAYERS="${2:-}"; shift 2 ;;
+    --node)     NODE="${2:-}"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -107,6 +111,15 @@ RENDER_DIR=".k8s-rendered"
 cd "$REPO_ROOT"
 mkdir -p "$RENDER_DIR"
 RENDERED="$RENDER_DIR/${JOB}.yaml"
+# A flow mapping on ONE line. Multi-line YAML through sed would have to carry
+# its own indentation, and getting that wrong yields a manifest that still
+# parses but nests the key in the wrong place -- a silent misconfiguration.
+if [ -n "$NODE" ]; then
+  NODESELECTOR="nodeSelector: {kubernetes.io/hostname: ${NODE}}"
+else
+  NODESELECTOR="# nodeSelector: none (scheduler places this pod)"
+fi
+
 sed -e "s|@@METHOD@@|${METHOD}|g" \
     -e "s|@@GPUS@@|${GPUS}|g" \
     -e "s|@@CONFIG@@|${CONFIG}|g" \
@@ -114,6 +127,7 @@ sed -e "s|@@METHOD@@|${METHOD}|g" \
     -e "s|@@RUN_TAG@@|${RUN_TAG}|g" \
     -e "s|@@EVIDENCE_ONLY@@|${EVIDENCE_ONLY}|g" \
     -e "s|@@SUBSET_LAYERS@@|${SUBSET_LAYERS}|g" \
+    -e "s|@@NODESELECTOR@@|${NODESELECTOR}|g" \
     "$TMPL" > "$RENDERED"
 
 grep -q '@@' "$RENDERED" && die "unsubstituted token remains: $(grep -o '@@[A-Z_]*@@' "$RENDERED" | sort -u | tr '\n' ' ')"

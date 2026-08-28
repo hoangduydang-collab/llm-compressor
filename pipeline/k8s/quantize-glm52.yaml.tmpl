@@ -51,9 +51,18 @@ spec:
         method: "@@METHOD@@"
     spec:
       restartPolicy: Never
-      # GPU nodes are tainted nvidia.com/gpu=present:NoSchedule. No nodeSelector:
-      # let the scheduler place us, since it is the only authority that sees true
-      # cluster-wide allocation (our token cannot list pods at cluster scope).
+      # GPU nodes are tainted nvidia.com/gpu=present:NoSchedule.
+      #
+      # By DEFAULT there is no nodeSelector, and that default is deliberate: the
+      # scheduler is the only authority that sees true cluster-wide allocation
+      # (our token cannot list pods at cluster scope, and Rancher's accounting has
+      # been observed OVER-reporting used GPUs -- see RANCHER_GPU_ACCESS.md).
+      # Pinning trades that away for placement certainty, so `--node` is opt-in.
+      #
+      # Pin only when the node matters: taking over a node we are deliberately
+      # holding, or sitting next to data staged on its local disk. A pinned pod
+      # whose node is full sits Pending forever rather than running elsewhere.
+      @@NODESELECTOR@@
       tolerations:
         - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
       containers:

@@ -64,6 +64,8 @@ spec:
             - {name: METHOD, value: "@@METHOD@@"}
             - {name: CONFIG, value: "@@CONFIG@@"}
             - {name: GPUS, value: "@@GPUS@@"}
+            # "1" skips the checkpoint save -- see the torchrun line below.
+            - {name: EVIDENCE_ONLY, value: "@@EVIDENCE_ONLY@@"}
             - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
             - {name: REPO_REF, value: "@@REPO_REF@@"}
             # Point every HF cache at the CA-region PVC: the BF16 snapshot is
@@ -177,10 +179,30 @@ spec:
               # One process per GPU, single node. Not an Indexed Job: this is
               # data-parallel calibration within one node, so it needs no
               # rendezvous service.
+              # --evidence-only skips the checkpoint save. What that saves:
+              # a layer-restricted smoke still writes the WHOLE model, because
+              # unquantized layers are copied verbatim into the new checkpoint.
+              # Measured on run 20260828t070917z (2 of 78 layers targeted):
+              # ~1457 GB across 29 shards at ~106 MB/s of cephfs write = ~3.8 h,
+              # against ~20 min of actual compression. Read-back was only 0.9 GB,
+              # so this is purely write cost; the 16-thread save-prewarm already
+              # handles the read side.
+              #
+              # EVIDENCE_ONLY=1 for iteration smokes that only need calibration
+              # mechanics (mapping resolution, scale application, layer selection,
+              # timings). Use 0 when the checkpoint is the deliverable, or when the
+              # SAVE PATH itself is under test -- three GLM-5.2 runs died inside
+              # save_pretrained before producing a single shard, so a green
+              # calibration proves nothing about it.
+              EVIDENCE_FLAG=""
+              if [ "${EVIDENCE_ONLY:-0}" = "1" ]; then
+                EVIDENCE_FLAG="--evidence-only"
+                echo "==> EVIDENCE_ONLY=1: calibration only, NO checkpoint saved"
+              fi
               echo "==> launching torchrun --nproc_per_node=$GPUS"
               torchrun --nproc_per_node="$GPUS" -m pipeline.run \
                 --config "$CONFIG" --stage quantize \
-                --set "quantization.method=$METHOD"
+                --set "quantization.method=$METHOD" \n                $EVIDENCE_FLAG
 
               echo DONE
           resources:

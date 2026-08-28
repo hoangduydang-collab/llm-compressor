@@ -251,6 +251,62 @@ _MLA_MOE_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
 ]
 
 
+# Candidate balance layers for the ATTENTION input (post input_layernorm) of an
+# MLA stack. The DSA indexer's projections are here for the same reason the router
+# is in the MoE-input set: they consume the smoothed norm's output and must be
+# multiplied by s to preserve the function.
+#
+# Verified against transformers/models/glm_moe_dsa/modeling_glm_moe_dsa.py, not
+# assumed. GlmMoeDsaDecoderLayer.forward computes
+# `hidden_states = self.input_layernorm(hidden_states)` and hands that tensor to
+# self_attn, which passes it VERBATIM to `self.indexer(hidden_states, q_resid, ...)`;
+# inside the indexer, `self.wk(hidden_states)` and
+# `self.weights_proj(hidden_states)` consume it. So wk and weights_proj see exactly
+# what q_a_proj and kv_a_proj_with_mqa see.
+#
+# Leaving them out would feed them x/s, changing the DSA index scores and
+# therefore WHICH TOKENS ARE ATTENDED -- the uncompensated-router defect, one
+# block earlier.
+#
+# THIS IS A LATENT TRAP, NOT A SHIPPED DEFECT. Read the skip logic in
+# awq/base.py before concluding otherwise: a mapping is `continue`d when
+# `any_targeted` is False, i.e. when neither the smooth layer nor ANY balance
+# layer is int-quantized (`_is_grid_search_targeted` deliberately excludes
+# float-schemed modules). On today's GLM recipes every attention-side balance
+# layer -- q_a_proj, q_b_proj, kv_a_proj_with_mqa, kv_b_proj -- is FP8_DYNAMIC, so
+# all three attention mappings are skipped and those norms are never divided by s.
+# No GLM checkpoint we have produced has an uncompensated indexer. Contrast the
+# MoE-input mapping, whose routed experts ARE int4: that one applies, which is why
+# the router defect was real and measured at 1.08e-1 to 2.42e-1.
+#
+# What makes it worth fixing anyway is how cheaply it goes live: move anything in
+# the attention block to int4 -- deliberately, or by a typo dropping an entry from
+# `fp8_dynamic_targets`, which sends those projections THROUGH to the int4
+# modifier rather than to BF16 -- and `any_targeted` flips to True, the fold
+# applies, and the indexer is silently uncompensated. Nothing would catch it:
+# pipeline/m3_checkpoint_scale_audit.py audits only post_attention_layernorm,
+# mlp.gate and the shared experts, so no gate looks at input_layernorm or
+# q_a_layernorm at all.
+_MLA_ATTN_INPUT_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
+    ("re:.*(q|q_a)_proj$", re.compile(r"^self_attn\.(q|q_a)_proj$")),
+    ("re:.*kv_a_proj_with_mqa$", re.compile(r"^self_attn\.kv_a_proj_with_mqa$")),
+    ("re:.*self_attn[.]indexer[.]wk$", re.compile(r"^self_attn\.indexer\.wk$")),
+    (
+        "re:.*self_attn[.]indexer[.]weights_proj$",
+        re.compile(r"^self_attn\.indexer\.weights_proj$"),
+    ),
+]
+
+# Candidate balance layers for the q_a_layernorm output. `q_resid =
+# q_a_layernorm(q_a_proj(x))` is consumed by q_b_proj AND by the indexer's wq_b.
+_MLA_QA_BALANCE_CANDIDATES: list[tuple[str, re.Pattern]] = [
+    ("re:.*q_b_proj$", re.compile(r"^self_attn\.q_b_proj$")),
+    ("re:.*self_attn[.]indexer[.]wq_b$", re.compile(r"^self_attn\.indexer\.wq_b$")),
+]
+
+_INDEXER_PRESENT = re.compile(r"^self_attn\.indexer(\.|$)")
+
+
 def _layer_members(model: Module) -> dict[int, set[str]]:
     """Layer index -> set of module paths relative to that decoder layer."""
     members: dict[int, set[str]] = {}
@@ -259,6 +315,59 @@ def _layer_members(model: Module) -> dict[int, set[str]]:
         if match is not None:
             members.setdefault(int(match.group("idx")), set()).add(match.group("rel"))
     return members
+
+
+def _present_in_all(
+    candidates: list[tuple[str, re.Pattern]],
+    indices: list[int],
+    members: dict[int, set[str]],
+) -> list[str]:
+    """Candidate patterns that match a module in EVERY one of ``indices``.
+
+    The same rule ``match_modules_set`` applies: a mapping closes per layer only
+    when every balance pattern finds something there, so emitting a pattern that
+    is absent from one layer in scope makes AWQ resolve zero mappings.
+    """
+    return [
+        pattern
+        for pattern, matcher in candidates
+        if all(any(matcher.match(rel) for rel in members[index]) for index in indices)
+    ]
+
+
+def _partitioned_mappings(
+    smooth_rel: str,
+    candidates: list[tuple[str, re.Pattern]],
+    members: dict[int, set[str]],
+    smooth_matcher: re.Pattern,
+) -> list[AWQMapping]:
+    """One mapping per group of layers that share a balance set.
+
+    Layers are grouped by whether they carry a DSA indexer, because only 21 of
+    GLM-5.2's 78 layers do (`indexer_types`), and an unscoped indexer pattern is
+    the exact trap the router fell into: absent from the other 57 layers, it stops
+    ``match_modules_set`` from closing any set. When every layer agrees the
+    mapping is left UNSCOPED, which keeps the common case's patterns simple and
+    preserves the previous behaviour for models with no indexer at all.
+    """
+    scoped = [i for i, rel in members.items() if any(smooth_matcher.match(r) for r in rel)]
+    if not scoped:
+        return []
+    with_indexer = sorted(i for i in scoped if any(_INDEXER_PRESENT.match(r) for r in members[i]))
+    without = sorted(i for i in scoped if i not in set(with_indexer))
+
+    if not with_indexer or not without:
+        balance = _present_in_all(candidates, sorted(scoped), members)
+        return [AWQMapping(f"re:.*{smooth_rel}$", balance)] if balance else []
+
+    mappings = []
+    for group in (with_indexer, without):
+        balance = _present_in_all(candidates, group, members)
+        if not balance:
+            continue
+        scope = "|".join(str(i) for i in group)
+        mappings.append(AWQMapping(f"re:.*layers[.]({scope})[.]{smooth_rel}$", balance))
+    return mappings
 
 
 def _detect_mla_dense_moe_layers(
@@ -312,11 +421,18 @@ def build_mla_mixed_dense_moe_mappings(model: Module) -> list[AWQMapping] | None
         return None
 
     mappings = [
-        AWQMapping(
-            "re:.*input_layernorm$",
-            ["re:.*(q|q_a)_proj$", "re:.*kv_a_proj_with_mqa$"],
+        *_partitioned_mappings(
+            "input_layernorm",
+            _MLA_ATTN_INPUT_BALANCE_CANDIDATES,
+            members,
+            re.compile(r"^input_layernorm$"),
         ),
-        AWQMapping("re:.*q_a_layernorm$", ["re:.*q_b_proj$"]),
+        *_partitioned_mappings(
+            "q_a_layernorm",
+            _MLA_QA_BALANCE_CANDIDATES,
+            members,
+            re.compile(r"^self_attn\.q_a_layernorm$"),
+        ),
         AWQMapping("re:.*kv_a_layernorm$", ["re:.*kv_b_proj$"]),
     ]
 
@@ -353,10 +469,20 @@ def build_mla_mixed_dense_moe_mappings(model: Module) -> list[AWQMapping] | None
     )
     mappings.append(AWQMapping("re:.*up_proj$", ["re:.*down_proj$"]))
 
+    indexer_indices = sorted(
+        i for i, rel in members.items() if any(_INDEXER_PRESENT.match(r) for r in rel)
+    )
     logger.info(
         f"Built MLA mixed dense/MoE AWQ mappings: {len(dense_indices)} dense + "
-        f"{len(moe_indices)} MoE layers; MoE-input balance set: {balance}"
+        f"{len(moe_indices)} MoE layers, {len(indexer_indices)} with a DSA indexer; "
+        f"MoE-input balance set: {balance}"
     )
+    for mapping in mappings:
+        if "layernorm" in mapping.smooth_layer:
+            logger.info(
+                f"  attention-side mapping: {mapping.smooth_layer} -> "
+                f"{mapping.balance_layers}"
+            )
     return mappings
 
 

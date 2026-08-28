@@ -2397,12 +2397,29 @@ What IS available, ordered by how much is ours to control:
    Note `sequential_prefetch` already exists but covers the ACTIVATION cache, not
    weights.
 
-   Also measured: the page cache is useless for this access pattern. It sat at
-   757 GiB (its ceiling, evicting as fast as it filled) while the walk read from
-   cephfs anyway — a single sequential pass over 1485 GB through a 757 GiB cache
-   has a ~zero hit rate, because each layer is touched exactly once. Caching pays
-   only for repeated access and there is none here. Do not expect a larger pod
-   memory limit to speed the walk up.
+   About the page cache, stated carefully because an earlier revision of this
+   entry got it wrong in a way that would cause harm if acted on. It said the
+   cache "is useless for this access pattern" and that each layer is "touched
+   exactly once". The second half is false: all 8 ranks work the SAME layer
+   simultaneously (each needs the whole layer in its own GPU because each holds
+   different calibration samples), so every layer is requested EIGHT times. The
+   first request pulls from cephfs and **the other seven are page-cache hits.**
+   The arithmetic confirms it: 19 GB of unique bytes per ~150 s is ~127 MB/s,
+   the cephfs rate, whereas 8 x 19 GB in 150 s would demand ~1 GB/s.
+
+   So DO NOT try to bypass or aggressively drop the page cache — losing the
+   cross-rank sharing would multiply cephfs traffic by 8. What is genuinely
+   useless is the ACCUMULATION: the cache sat at 757 GiB, its ceiling, evicting
+   as fast as it filled, and nothing ever revisits layer 5 once the walk is on
+   layer 20. Only the current layer (and usefully the next) needs to be resident
+   — tens of GB, not hundreds. A larger pod memory limit therefore does not speed
+   the walk up, but a much smaller one would.
+
+   Corollary for the concurrency fix above: because 7 of 8 reads per layer are
+   cache hits, the ranks are NOT 8 independent streams pulling unique bytes. The
+   unique-byte fetch achieves ~127 MB/s against 31 MB/s single-stream, i.e. only
+   ~4x effective concurrency, which is why aggregate throughput sits well below
+   the 260 MB/s seen elsewhere. The headroom is real.
 2. **`stop_after_last_target`** for anything layer-restricted — measured worth
    35 x 131 s = ~76 min on this smoke.
 3. **Asking cluster admins for a `ca`-region flash class.** A conversation, not a

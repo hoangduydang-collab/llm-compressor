@@ -47,6 +47,16 @@ _MUST_NOT_QUANTIZE = {
 }
 
 # Ignore patterns we expect to be persisted into the saved config (order-independent).
+#
+# THIS LIST IS MODEL-SPECIFIC. It encodes the MiniMax-M3 keep-bf16 recipe, and on
+# any other architecture the missing entries are false failures, not defects: a
+# GLM-5.2 checkpoint has no vision_tower, multi_modal_projector, patch_merge,
+# indexer or block_sparse_moe to ignore, so this list fails five times on a
+# perfectly healthy checkpoint. Pass `expect_ignore=` (or --expect-ignore /
+# --expect-ignore-preset) for non-M3 models.
+#
+# The name is kept because pipeline/tests/test_m3_routed_diagnostics_runner.py
+# imports it.
 _EXPECTED_IGNORE_SUBSTR = [
     "lm_head",
     "vision_tower",
@@ -58,6 +68,25 @@ _EXPECTED_IGNORE_SUBSTR = [
     "indexer",
     "layers[.][0-2]",
 ]
+
+# GLM-5.2 keep-bf16 recipe, from pipeline/configs/glm52_distributed_w4afp8_*.yaml.
+# Attention is ignored wholesale here (M3 quantized sparse attention), the dense
+# prefix is layers 0-2 as on M3, and layer 78 (the MTP/final layer) is excluded.
+# Deliberately does NOT include the layer-restriction regex that a partial-layer
+# smoke adds: that is a sampling choice, not a keep-bf16 requirement, and asserting
+# it would make this preset reject a full run.
+_GLM52_EXPECTED_IGNORE_SUBSTR = [
+    "lm_head",
+    "mlp[.]gate$",
+    "shared_experts",
+    "self_attn",
+    "layers[.][0-2]",
+]
+
+_IGNORE_PRESETS = {
+    "m3": _EXPECTED_IGNORE_SUBSTR,
+    "glm52": _GLM52_EXPECTED_IGNORE_SUBSTR,
+}
 
 # Naming-agnostic classification. Post-linearize the routed experts become a
 # ``ModuleList`` that replaces the original fused-experts submodule *in place*, so the
@@ -112,9 +141,25 @@ def _ok(msg: str) -> None:
     print(f"  [ok]   {msg}")
 
 
-def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) -> int:
+def verify(
+    ckpt: Path,
+    check_tensors: bool,
+    dequant_base: Path | None = None,
+    expect_ignore: list[str] | None = None,
+) -> int:
     errors: list[str] = []
     warnings: list[str] = []
+    # None keeps the historical M3 behaviour for existing callers. An explicitly
+    # EMPTY list is rejected rather than treated as "nothing to check", so the
+    # keep-bf16 assertion cannot be silently disabled into a vacuous pass.
+    if expect_ignore is not None and not expect_ignore:
+        raise ValueError(
+            "expect_ignore=[] would make the keep-bf16 check vacuous; pass None "
+            "for the M3 default or a non-empty list of expected substrings"
+        )
+    expected_ignore = (
+        _EXPECTED_IGNORE_SUBSTR if expect_ignore is None else list(expect_ignore)
+    )
 
     # ---- 1. config.json quantization_config ---------------------------------
     print("== config.json quantization_config ==")
@@ -163,7 +208,7 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
     print(f"  ignore ({len(ignore)}):")
     for p in ignore:
         print(f"    - {p}")
-    for sub in _EXPECTED_IGNORE_SUBSTR:
+    for sub in expected_ignore:
         if not any(sub in p for p in ignore):
             _fail(f"expected ignore pattern containing '{sub}' missing from config", errors)
     if not errors:
@@ -248,7 +293,10 @@ def verify(ckpt: Path, check_tensors: bool, dequant_base: Path | None = None) ->
             _ok(f"{name}: none quantized")
 
     # ---- 4. routed experts + sparse attention must BE quantized ------------
-    print("\n== expected-quantized coverage (sparse layers 3-59) ==")
+    # Layer range, expert count and projection names are all DISCOVERED from the
+    # checkpoint below, so this section is model-agnostic; the old heading said
+    # "sparse layers 3-59", which is M3's range and merely misleading on GLM-5.2.
+    print("\n== expected-quantized coverage (layer range discovered below) ==")
     # experts_by_layer[layer][expert_idx] = {proj names present}
     experts_by_layer: dict[int, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
     attn_by_layer: dict[int, set[str]] = defaultdict(set)
@@ -650,11 +698,25 @@ def main(argv: list[str] | None = None) -> int:
                     help="base checkpoint dir: dequantize sampled modules and "
                          "require value-level agreement (fitted per-column "
                          "smoothing scale, W4-error residual)")
+    ap.add_argument("--expect-ignore-preset", choices=sorted(_IGNORE_PRESETS),
+                    default="m3",
+                    help="which keep-bf16 recipe the checkpoint's ignore list is "
+                         "expected to satisfy (default: m3). The M3 preset fails "
+                         "5x on a healthy GLM-5.2 checkpoint, which has no "
+                         "vision_tower/projector/patch_merge/indexer to ignore.")
+    ap.add_argument("--expect-ignore", action="append", default=None,
+                    metavar="SUBSTR",
+                    help="expected ignore substring; repeatable. Overrides "
+                         "--expect-ignore-preset entirely.")
     args = ap.parse_args(argv)
     if not (args.ckpt / "config.json").exists():
         print(f"error: {args.ckpt}/config.json not found")
         return 2
-    return verify(args.ckpt, args.check_tensors, args.dequant_base)
+    expect_ignore = args.expect_ignore or _IGNORE_PRESETS[args.expect_ignore_preset]
+    print(f"== keep-bf16 expectations: "
+          f"{'explicit --expect-ignore' if args.expect_ignore else args.expect_ignore_preset} "
+          f"({len(expect_ignore)} patterns) ==")
+    return verify(args.ckpt, args.check_tensors, args.dequant_base, expect_ignore)
 
 
 if __name__ == "__main__":

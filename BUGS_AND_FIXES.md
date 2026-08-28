@@ -2674,3 +2674,76 @@ Mutation-tested in both directions: the good template prints
 `\n` and, separately, an unterminated double quote each abort with exit 1 and a
 message naming the extracted body file. The template was then restored and
 verified byte-identical to the committed version.
+
+### Second hardcoded-M3-assumption gate: verify_quant_checkpoint rejects healthy GLM-5.2 checkpoints (2026-08-28)
+
+**Found by inspection while the GLM-5.2 AWQ smoke was still saving**, i.e. before
+the gate ran. Same defect class as the scale audit's hardcoded norm-gain form,
+found the same way, in a different file — which is the reason this entry exists
+rather than a one-line fix note.
+
+**The bug.** `pipeline/verify_quant_checkpoint.py::_EXPECTED_IGNORE_SUBSTR` is a
+hardcoded MiniMax-M3 keep-bf16 list, asserted unconditionally:
+
+```python
+for sub in _EXPECTED_IGNORE_SUBSTR:
+    if not any(sub in p for p in ignore):
+        _fail(f"expected ignore pattern containing '{sub}' missing from config", errors)
+```
+
+Five of its nine entries name modules that **do not exist in GLM-5.2** —
+`vision_tower`, `multi_modal_projector`, `patch_merge`, `block_sparse_moe`,
+`indexer`. A healthy GLM-5.2 checkpoint therefore collects five `[FAIL]` lines.
+
+**Why that is not cosmetic.** `pipeline/quantize.py:1278` calls this from
+`assert_quant_checkpoint_verified`, which raises on a non-zero return:
+
+```python
+rc = verify(Path(ckpt), check_tensors=True, dequant_base=dequant_base)
+if rc != 0:
+    raise RuntimeError("quant checkpoint verification gate FAILED ... do not serve or evaluate this checkpoint")
+```
+
+and the branch guard is `if save_checkpoint:` (:1173) — **not** a partial-layer
+check, despite the `else` arm's comment about smokes. So any GLM-5.2 run that
+saves a checkpoint ends with a fail-closed gate telling the operator the
+checkpoint is corrupt and must not be served. The checkpoint is fine; the gate is
+wrong about which model it is looking at.
+
+**What was NOT wrong**, checked before changing anything, because the cheap
+assumption was that the whole file was M3-shaped:
+- The expected-quantized coverage section derives `sparse_layers`, `n_experts`,
+  `proj_names` and `attn_names` from the checkpoint itself (`:289`), so it is
+  model-agnostic by construction. GLM-5.2 ignores attention wholesale, which
+  makes `attn_names` empty and the per-layer attention assertion vacuous rather
+  than false — correct behaviour.
+- `_NORM_MAX_DELTA = 5.0` is a loose corruption bound, not a fold computation, so
+  unlike the audit script this file does **not** encode the `1 + w` norm form. Its
+  comment asserts the offset-norm rewrite happens universally, which is an
+  M3-only claim, but nothing computes on it.
+- The `"sparse layers 3-59"` heading was a stale print label only.
+
+**Fix.** `verify(..., expect_ignore=None)` plus `--expect-ignore-preset {m3,glm52}`
+and repeatable `--expect-ignore`. `None` keeps the M3 list, so every existing
+caller is unaffected. An explicitly empty list raises rather than passing
+vacuously — the failure mode to avoid here is someone silencing a wrong-model gate
+into a gate that checks nothing. 15 tests in
+`pipeline/tests/test_verify_expect_ignore.py`, including a characterization test
+asserting the M3 preset still fails 5x on GLM-5.2 (if that stops failing, the
+presets have been conflated) and drop-one mutation tests proving the GLM preset is
+a real gate.
+
+**Post-hoc verification of the in-flight smoke** must therefore use:
+
+```
+python -m pipeline.verify_quant_checkpoint --ckpt <ckpt> --check-tensors \
+    --expect-ignore-preset glm52
+```
+
+**Lesson.** Fixing one hardcoded-M3 gate is evidence that the others exist, not
+that they don't. `m3_checkpoint_scale_audit.py` was corrected earlier today for
+the norm-gain form; the same afternoon's read of a *different* gate found the same
+class of defect. Both were caught by inspection before the run reached them, and
+both would have presented as a catastrophic numerics/corruption failure on a
+healthy checkpoint. The remaining M3-shaped gates in `pipeline/` deserve the same
+pass before the full GLM-5.2 run, not after it fails.

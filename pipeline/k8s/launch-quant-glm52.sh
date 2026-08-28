@@ -125,11 +125,14 @@ grep -q '@@' "$RENDERED" && die "unsubstituted token remains: $(grep -o '@@[A-Z_
 # `run.py: error: unrecognized arguments: n` two minutes in. See BUGS_AND_FIXES.md
 # ("this shell collapses \\ to \ inside heredocs").
 #
-# Extraction is deliberately awk and not a YAML parser: the only python on PATH in
-# this dev shell is the Windows Store stub, and a launch gate must not depend on an
-# interpreter that may not exist. The body is a literal block scalar, so taking the
-# lines indented deeper than its "- |" introducer and stripping that indent is
-# exact for this template.
+# Extraction is deliberately awk and not a YAML parser, so this gate needs nothing
+# but the shell it already runs in. (An earlier version of this comment claimed the
+# only python here was the Windows Store stub; that was wrong -- python 3.14.3 with
+# PyYAML 6.0.3 is on PATH. The real reason is portability: the launcher must gate
+# identically from a bare cluster shell, where an interpreter plus PyYAML is not
+# guaranteed.) The body is a literal block scalar, so taking the lines indented
+# deeper than its "- |" introducer and stripping that indent is exact for this
+# template -- and the [[ -s ]] check below fails closed if the layout ever changes.
 BODY="$RENDER_DIR/${JOB}.body.sh"
 awk '
   /^[[:space:]]*- \|[[:space:]]*$/ && !seen {

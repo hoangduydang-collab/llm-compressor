@@ -2512,3 +2512,101 @@ fails good work or blesses bad work, and both cost more than having no gate. Whe
 reusing an `m3_*` gate on a new family, check every architectural constant in it
 — the suffix table (already once "had never successfully run against these
 checkpoints") and the norm semantics were both M3-specific here.
+
+### The ~53 min "Loading weights" phase reads every tensor and throws almost all of them away (2026-08-28)
+
+**Not filed upstream.** Needs sign-off, and the fix is not a two-line patch — see
+"Is it fixable" below.
+
+**Symptom.** GLM-5.2 spends ~53 min in transformers' `Loading weights` phase
+(58,794 tensors) before calibration. During it, GPUs hold 1509 MiB — bare CUDA
+context, nothing loaded — and the page cache fills at 135-260 MB/s, i.e. several
+hundred GB is genuinely read. The end state is meta tensors plus an index of
+symlinks pointing back at the original HF blobs. The sequential walk then re-reads
+every layer from those same files anyway (measured 120-150 s/layer).
+
+**What the load legitimately has to produce**, and it is all cheap:
+1. the module tree (built on meta, no data),
+2. `disk_offload_index`: `{param -> (safetensors_file, weight_name, dtype)}`,
+3. real bytes for the small non-offloaded minority (~4 GB in shm at `cpu=32e9`,
+   plus embeddings/norms).
+
+Item 2 costs essentially nothing —
+`transformers/integrations/accelerate.py::accelerate_disk_offload` builds it by
+dict manipulation over `model.safetensors.index.json`:
+
+```python
+weight_map = {k: os.path.join(folder, v) for k, v in sharded_metadata["weight_map"].items()}
+...
+disk_offload_index = {target_name: {"safetensors_file": weight_map[source_name], ...}}
+```
+
+Zero weight reads. And its docstring documents the intended fast path:
+
+> If reading from a safetensors file, parameters which do not need any special
+> WeightConverter operation during loading (i.e. they are used as-is, or only
+> renamed) will be mapped to where they already reside on disk. Otherwise, the
+> parameters will be resaved inside `disk_offload_folder` during loading.
+
+**We are on that fast path.** Verified three independent ways:
+- `ARCH_TO_2D_MAPPINGS` entries are `WeightRenaming`, the class transformers
+  exempts (`renamings = [e for e in weight_mapping if isinstance(e, WeightRenaming)]`).
+- our own guard in `modeling/moe/conversion_mappings.py` that warns
+  `"Linearized model performs a weight conversion during loading"` never fired —
+  grep count 0 across the whole run log.
+- the offload folder holds 119k symlinks and ~0 new real bytes, which is what the
+  no-resave path looks like.
+
+So nothing is converted and nothing is resaved. **The waste is that the read
+happens upstream of the decision not to use it.**
+`transformers/core_model_loading.py`:
+
+```python
+for first_param_name, mapping in tqdm(param_name_to_load.items(), desc="Loading weights"):
+    realized_value = mapping.convert(...)             # materializes the tensor
+    for target_name, param in realized_value.items():
+        param_device = get_device(device_map, target_name)
+        if param_device == "disk" and (...):
+            disk_offload_index = offload_and_maybe_resave_param(
+                target_name, param, ..., disk_offload_index, mapping)
+```
+
+and inside that (`core_model_loading.py:1376`):
+
+```python
+if target_name not in disk_offload_index or isinstance(applied_ops, WeightConverter):
+    disk_offload_index = offload_weight(param, target_name, disk_offload_folder, disk_offload_index)
+return disk_offload_index      # already indexed and no converter -> do nothing
+```
+
+`mapping.convert()` realizes the value for EVERY parameter; only afterwards does
+the loop discover the parameter is disk-destined and already covered by the index,
+and then does nothing with what it just read. For GLM-5.2 that is ~99% of 58,794
+iterations.
+
+**Supporting evidence that this is per-tensor, not byte-driven** (and a warning
+against a wrong hypothesis): load time barely moved between `cpu=900e9` (66 min)
+and `cpu=32e9` (53 min) despite 26x less CPU placement. 58,794 tensors in 53 min
+is 60 ms/tensor, ~2x the measured 28 ms cephfs RTT. An earlier hypothesis
+attributed the ~700 GB of page cache to kernel readahead on header reads; that
+arithmetic happened to fit but the code trace above is the real answer — the bytes
+are genuinely read tensor data, faulted in by `mapping.convert` and dropped.
+
+**Is it fixable?** In principle yes and cleanly, because the test already exists —
+it is simply on the wrong side of the read. Hoisting
+`param_device == "disk" and target_name in disk_offload_index and not
+isinstance(applied_ops, WeightConverter)` above `mapping.convert()` would skip
+materialization entirely for those params. But `mapping.convert()` may have side
+effects the loop depends on — populating `loading_info` (missing/unexpected keys),
+resolving tied weights, per-tensor dtype validation — so this needs reading the
+whole `convert` path before touching it. Do not attempt as a quick patch.
+
+**Worth, here:** ~53 min per run, on every run including production. Worse for
+larger models or higher-latency storage.
+
+**Lesson.** "Necessary phase" and "necessarily expensive phase" are different
+claims. The load IS required — the module tree and the offload index are what the
+whole run reads through — but what it must produce is metadata plus a few GB. Cost
+attribution needs the code path, not the wall clock: three separate hypotheses
+here (MoE weight conversion forcing a resave, kernel readahead, byte-driven
+placement copying) all fit the timing and all were wrong.

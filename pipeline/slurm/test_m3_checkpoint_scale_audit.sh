@@ -17,7 +17,13 @@ LAYERS="${M3_DIAGNOSTIC_LAYERS:-$(seq -s, 3 59)}"
 source "$ENV_FILE"
 source "$VENV_ACTIVATE"
 export PYTHONPATH="$REPO_ROOT"
+# --norm-gain-offset 1.0: MiniMaxM3VLRMSNorm is Gemma-style, applying
+# output * (1 + weight). A plain norm such as GLM-5.2's GlmMoeDsaRMSNorm needs
+# 0.0. The flag is required rather than defaulted because a wrong value does not
+# error -- it produces a wrong implied scale, so a healthy fold reports a large
+# relative L2 and the gate fails a good run at the very end.
 python -m pipeline.m3_checkpoint_scale_audit \
   --base "$BASE_CKPT" --reference "$REFERENCE_CKPT" \
   --awq "$AWQ_CKPT" --gptq "$GPTQ_CKPT" \
-  --layers "$LAYERS" --output "$OUTPUT"
+  --layers "$LAYERS" --output "$OUTPUT" \
+  --norm-gain-offset 1.0

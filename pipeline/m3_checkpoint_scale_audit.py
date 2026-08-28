@@ -103,12 +103,27 @@ def compensation_error(
     candidate_norm: torch.Tensor,
     base_weight: torch.Tensor,
     candidate_weight: torch.Tensor,
+    *,
+    norm_gain_offset: float,
 ) -> dict[str, Any]:
-    # MiniMaxM3VLRMSNorm is Gemma-style: smooth the effective 1 + weight.
-    base_gain = 1.0 + base_norm
-    cand_gain = 1.0 + candidate_norm
+    """Relative L2 error of the norm-implied inverse fold.
+
+    ``norm_gain_offset`` is the architecture's norm gain form and there is NO
+    default, deliberately. MiniMaxM3VLRMSNorm is Gemma-style, applying
+    ``output * (1 + weight)``, so its effective gain is ``1 + w`` and the offset
+    is 1.0. GLM-5.2's GlmMoeDsaRMSNorm applies plain ``output * weight``, so its
+    offset is 0.0. Getting this wrong does not produce an obviously broken
+    number -- it produces a WRONG implied scale, so a perfectly consistent fold
+    reports a large error and the post-save gate fails a run that was fine, at
+    the very end, after all the calibration has been paid for. The authority for
+    which form a class uses is KNOWN_OFFSET_NORM_CLASSES /
+    KNOWN_ORDINARY_NORM_CLASSES in llmcompressor/preflight/quantization.py.
+    """
+    base_gain = norm_gain_offset + base_norm
+    cand_gain = norm_gain_offset + candidate_norm
     scale = base_gain / cand_gain
-    # Dead channels (base weight exactly -1 -> gain 0: M3 layers 8/10-13)
+    # Dead channels (offset form: base weight exactly -1 -> gain 0, M3
+    # layers 8/10-13; plain form: base weight exactly 0)
     # make the implied scale 0/0. A consistent fold leaves them at gain 0
     # (scale 1); any other combination is inconsistent and must show up in
     # the error, so pin only the both-zero case.
@@ -124,7 +139,13 @@ def compensation_error(
     }
 
 
-def audit_checkpoint(base: Path, candidate: Path, layers: list[int]) -> dict[str, Any]:
+def audit_checkpoint(
+    base: Path,
+    candidate: Path,
+    layers: list[int],
+    *,
+    norm_gain_offset: float,
+) -> dict[str, Any]:
     records: dict[str, Any] = {}
     for layer in layers:
         norm_suffixes = _component_suffixes(layer, "norm")
@@ -137,24 +158,37 @@ def audit_checkpoint(base: Path, candidate: Path, layers: list[int]) -> dict[str
         _, base_shared = load_suffix(base, shared_suffixes)
         _, cand_shared, shared_fp8 = load_weight_dequant(candidate, shared_suffixes)
         router_comp = compensation_error(
-            base_norm, cand_norm, base_router, cand_router
+            base_norm,
+            cand_norm,
+            base_router,
+            cand_router,
+            norm_gain_offset=norm_gain_offset,
         )
         router_comp["fp8_dequantized"] = router_fp8
         shared_comp = compensation_error(
-            base_norm, cand_norm, base_shared, cand_shared
+            base_norm,
+            cand_norm,
+            base_shared,
+            cand_shared,
+            norm_gain_offset=norm_gain_offset,
         )
         shared_comp["fp8_dequantized"] = shared_fp8
         records[str(layer)] = {
             "normalization": {
                 "base": tensor_stats(base_norm),
                 "candidate": tensor_stats(cand_norm),
-                "base_effective": tensor_stats(1.0 + base_norm),
-                "candidate_effective": tensor_stats(1.0 + cand_norm),
+                "norm_gain_offset": norm_gain_offset,
+                "base_effective": tensor_stats(norm_gain_offset + base_norm),
+                "candidate_effective": tensor_stats(norm_gain_offset + cand_norm),
             },
             "router_compensation": router_comp,
             "shared_gate_up_compensation": shared_comp,
         }
-    return {"checkpoint": str(candidate.resolve()), "layers": records}
+    return {
+        "checkpoint": str(candidate.resolve()),
+        "norm_gain_offset": norm_gain_offset,
+        "layers": records,
+    }
 
 
 def audit_checkpoints(
@@ -163,13 +197,24 @@ def audit_checkpoints(
     awq: Path,
     gptq: Path,
     layers: list[int],
+    *,
+    norm_gain_offset: float = 1.0,
 ) -> dict[str, Any]:
+    """Audit three candidates against a base.
+
+    ``norm_gain_offset`` defaults to 1.0 only because every caller of THIS
+    function is a MiniMax-M3 path (Gemma-style norm). ``audit_checkpoint`` and
+    ``compensation_error`` require it explicitly; new families go through those.
+    """
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "base": str(base.resolve()),
-        "reference": audit_checkpoint(base, reference, layers),
-        "awq": audit_checkpoint(base, awq, layers),
-        "gptq": audit_checkpoint(base, gptq, layers),
+        "norm_gain_offset": norm_gain_offset,
+        "reference": audit_checkpoint(
+            base, reference, layers, norm_gain_offset=norm_gain_offset
+        ),
+        "awq": audit_checkpoint(base, awq, layers, norm_gain_offset=norm_gain_offset),
+        "gptq": audit_checkpoint(base, gptq, layers, norm_gain_offset=norm_gain_offset),
     }
 
 
@@ -180,10 +225,28 @@ def main() -> int:
     parser.add_argument("--awq", type=Path, required=True)
     parser.add_argument("--gptq", type=Path, required=True)
     parser.add_argument("--layers", default="3,4,5,6,7,8,9")
+    parser.add_argument(
+        "--norm-gain-offset",
+        type=float,
+        required=True,
+        help="Norm gain form: 1.0 for offset norms applying output*(1+weight) "
+        "(Gemma, MiniMaxM3VLRMSNorm), 0.0 for plain norms applying "
+        "output*weight (GlmMoeDsaRMSNorm). Required -- a wrong value silently "
+        "produces a wrong implied scale and fails a healthy fold. Authority: "
+        "KNOWN_OFFSET_NORM_CLASSES / KNOWN_ORDINARY_NORM_CLASSES in "
+        "llmcompressor/preflight/quantization.py.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     layers = [int(item) for item in args.layers.split(",")]
-    result = audit_checkpoints(args.base, args.reference, args.awq, args.gptq, layers)
+    result = audit_checkpoints(
+        args.base,
+        args.reference,
+        args.awq,
+        args.gptq,
+        layers,
+        norm_gain_offset=args.norm_gain_offset,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     return 0

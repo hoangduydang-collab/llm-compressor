@@ -770,12 +770,49 @@ def assert_transformers_offloaded_save_healthy() -> None:
     print(f"[pipeline] offloaded-save gate OK: transformers path is {health}")
 
 
+def resolve_norm_gain_offset(model) -> float | None:
+    """The architecture's norm gain form, or None if it cannot be established.
+
+    The smooth-fold gate re-derives the norm-implied scale from saved tensors,
+    which requires knowing whether the norm applies ``output * weight`` (offset
+    0.0) or ``output * (1 + weight)`` (offset 1.0). Guessing is not safe in
+    either direction: with the wrong form a perfectly consistent fold reports a
+    large relative L2 error, so the gate fails a healthy run at the very end,
+    after all the calibration has been paid for.
+
+    Authority is the two registries in llmcompressor/preflight/quantization.py,
+    which are assertions that someone READ the class's forward. Anything not in
+    either registry, or a model mixing both forms, returns None so the caller
+    skips rather than inventing an answer.
+    """
+    from llmcompressor.preflight.quantization import (
+        KNOWN_OFFSET_NORM_CLASSES,
+        KNOWN_ORDINARY_NORM_CLASSES,
+    )
+
+    seen: set[str] = set()
+    for module in model.modules():
+        name = type(module).__name__
+        if name in KNOWN_OFFSET_NORM_CLASSES:
+            seen.add("offset")
+        elif name in KNOWN_ORDINARY_NORM_CLASSES:
+            seen.add("ordinary")
+
+    if seen == {"offset"}:
+        return 1.0
+    if seen == {"ordinary"}:
+        return 0.0
+    return None
+
+
 def assert_smooth_fold_consistency(
     ckpt: Path,
     base: Path,
     layers: list[int],
     threshold: float = 0.02,
     scale_mean_range: tuple[float, float] = (0.05, 20.0),
+    *,
+    norm_gain_offset: float | None = None,
 ) -> None:
     """Fail-closed post-save gate: a smoothing fold applied to balance layers
     (router / shared experts) must be matched by the inverse fold in the norm,
@@ -806,8 +843,19 @@ def assert_smooth_fold_consistency(
     """
     from pipeline.m3_checkpoint_scale_audit import audit_checkpoint
 
+    if norm_gain_offset is None:
+        print(
+            "[pipeline] smooth-fold gate skipped: the norm gain form could not "
+            "be established (no norm class in KNOWN_OFFSET_NORM_CLASSES or "
+            "KNOWN_ORDINARY_NORM_CLASSES, or the model mixes both). Auditing "
+            "with the wrong form fails a healthy fold, so this skips instead."
+        )
+        return
+
     try:
-        report = audit_checkpoint(Path(base), Path(ckpt), layers)
+        report = audit_checkpoint(
+            Path(base), Path(ckpt), layers, norm_gain_offset=norm_gain_offset
+        )
     except (ValueError, KeyError, FileNotFoundError) as err:
         print(f"[pipeline] smooth-fold gate skipped (names not resolvable): {err}")
         return
@@ -1212,7 +1260,21 @@ def run_quantize(
                 ]
             else:
                 gate_layers = list(range(3, 60))
-            assert_smooth_fold_consistency(ckpt, Path(cfg.model.id), gate_layers)
+            norm_gain_offset = resolve_norm_gain_offset(model)
+            print(
+                "[pipeline] norm gain form: "
+                + (
+                    "unresolved"
+                    if norm_gain_offset is None
+                    else f"output * ({norm_gain_offset:g} + weight)"
+                )
+            )
+            assert_smooth_fold_consistency(
+                ckpt,
+                Path(cfg.model.id),
+                gate_layers,
+                norm_gain_offset=norm_gain_offset,
+            )
             assert_quant_checkpoint_verified(ckpt, Path(cfg.model.id))
     else:
         # A partial-layer smoke is evidence only. The completion marker appears

@@ -79,8 +79,23 @@ model:
     # walk layers 7-41 (which are not even quantized) against ~4 min to compress
     # a targeted layer.
     #
-    # At 8 GPUs this eliminates the problem rather than easing it:
-    #   640 GB VRAM + 900 GB CPU = 1540 GB  vs the model's 1485 GB  -> 0 on PVC
+    # DO NOT add GPU capacity to this budget. `auto_offload` is NOT `auto`:
+    # compressed_tensors/offload/load.py intercepts it as "same as auto, but
+    # only cpu/disk are visible", so accelerate's device map never places a
+    # weight on an accelerator and the GPUs contribute ZERO residency. Measured
+    # in situ on the 8-GPU run 20260828t052128z: 1509 MiB per GPU (bare CUDA
+    # context) through the whole load. An earlier version of this comment
+    # claimed "640 GB VRAM + 900 GB CPU = 1540 GB vs the model's 1485 GB -> 0
+    # on PVC"; that arithmetic was wrong, and going from 4 to 8 GPUs bought no
+    # residency at all.
+    #
+    # 900 GB is instead chosen against node RAM (2015 GB on gpu03). The residual
+    # ~585 GB does spill to the cephfs offload_folder, but it is read back
+    # through the page cache, which at 2015 GB total can hold the whole model --
+    # so cephfs is paid once, at load, not once per propagation step. Measured
+    # cost of that one payment: page cache filling at 135 MB/s aggregate across
+    # 8 ranks (the HF snapshot itself lives on cephfs, HF_HUB_CACHE=
+    # /mnt/cephfs/.hf-cache), i.e. ~2 h before calibration starts.
     cpu: 900000000000
   # Distinct from the GPTQ arm — see (3) above.
   offload_folder: /mnt/cephfs/hoangduy/offload/glm52-w4afp8-awq-smoke

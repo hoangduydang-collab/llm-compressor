@@ -1,11 +1,67 @@
-# AWQ calibration cost is NOT linear in tokens; and we are using the documented worst-case I/O pattern
+# AWQ calibration cost is ~linear in tokens (RETRACTION); and we are using the documented worst-case I/O pattern
 
 2026-08-28. Two findings, both from measurements taken today. The first changes the
 production plan for GLM-5.2 (and GLM-5.3). The second explains the storage
 behaviour we have been fighting all week and identifies what is actually ours to
 fix.
 
-## 1. Token scaling is decisively sublinear
+## RETRACTION (same day, later): finding 1 below was WRONG
+
+**The claim "token scaling is decisively sublinear" does not survive measurement.**
+Two compounding errors produced it:
+
+1. **The 256-sample run's log was rotated by the kubelet.** Its grid search logged
+   134 distinct modules; the 512-sample run logs **257**, matching the
+   `Smoothing: /257` progress bar. Module count is a property of the model, not the
+   sample count, so 256 must also be 257 -- meaning ~48% of its grid search was cut
+   off and the "2m00s" figure below covers only the tail.
+2. **The argument defending that figure was also wrong.** It reads "804 lines / 6
+   ranks = 134 = one rank's share of ~771 modules". In fact every rank logs all 257
+   modules (1542 = 257 x 6). The suspicious coincidence -- the log beginning at
+   exactly the first grid-search line -- was noticed and then reasoned past.
+
+Both runs were then re-run with `kubectl logs -f` capturing from process start.
+Both show 1542 lines / 257 distinct modules, so neither is truncated:
+
+| | 256 x 2048 | 512 x 2048 | ratio |
+|---|---|---|---|
+| layer-3 calibrating pass | ~36 s (42-43 batches) | ~66 s (85-86 batches) | 1.83x |
+| layer-3 propagating pass | ~3 s | ~5 s | 1.7x |
+| **layer-3 grid search** | **220 s** | **407 s** | **1.85x** |
+| per-layer total | ~259 s | ~478 s | 1.85x |
+| whole 4-layer pipeline | 412 s | 683 s | 1.66x |
+| load + dispatch (NVMe subset) | ~21-44 s | ~21-39 s | flat |
+
+So **doubling calibration tokens costs ~1.85x**, i.e. cost is essentially linear
+(exponent ~0.89), and the mechanism claimed below -- "the grid search is
+independent of token count" -- is false. AWQ's grid search evaluates candidate
+smoothing scales against the cached calibration activations, so it scales with
+tokens like the forwards do.
+
+Why the original comparison misled: the smoke's 7.4 min for layer 3 at 32x512 was
+not a usable baseline. It ran on cephfs rather than NVMe, with 8 ranks rather than
+6, and paid per-module disk-offload onload/offload overhead. Treating it as
+comparable to a subset run made a storage difference look like a scaling law.
+
+**Corrected projections** (per-layer compute measured, cephfs stream ~120 s/layer):
+
+| config | walk | + load ~53 min, save ~35-80 min | with prefetch + load fix |
+|---|---|---|---|
+| 256 x 2048 | 8.2 h | **~10.0 h** | **~6.9 h** |
+| 512 x 2048 | 13.0 h | ~14.8 h | ~11 h |
+
+Both still fit inside a day, so the recommendation to run 256 x 2048 stands -- but
+because it is affordable, NOT because extra tokens are free. Do not read the
+sections below as saying calibration data is cheap.
+
+One incidental confirmation of the contention finding: the same 24.17 GiB subset
+build took 2m53s, then 5m01s while the smoke's 1457 GB save was running, then
+**32 s** once the save had finished. Same work, same code, 9x spread from
+filesystem contention alone.
+
+---
+
+## 1. Token scaling is decisively sublinear (SUPERSEDED -- see retraction above)
 
 **Run:** `quant-glm52-awq-20260828t132157z`, exit 0. AWQ, W4AFP8, 6 GPUs,
 `--evidence-only`, `--subset-layers 4`. 256 samples x 2048 tokens = **524,288

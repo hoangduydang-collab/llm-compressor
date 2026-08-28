@@ -2274,3 +2274,114 @@ run before the repo is installed and cannot import `pipeline.quantize`.
 - "Pin to the validated environment" is not automatically safer than the status
   quo. Here it removed a shim that was protecting us, so the pin needed its own
   gate — which, fortunately, already existed.
+
+## GLM-5.2 distributed PTQ: `max_memory.cpu` and the ~3.7 h setup (2026-08-28)
+
+**Symptom.** GLM-5.2 AWQ on an exclusive 8xH100 node spent ~3.7 h before
+calibration even started, against MiniMax-M3's 71 min for a comparable run
+*including the save*. No error, no OOM — just slow.
+
+```
+weight load                                          66 min
+"Dispatching model", 78460 tensors at 8-9.5 it/s     ETA 2h34m
+```
+
+**Root cause: `model.max_memory.cpu`, raised from M3's 32e9 to 900e9 earlier in
+this work.** That knob decides how many bytes the dispatch phase *copies*.
+Everything inside the budget is memcpy'd into `/dev/shm` by
+`DistributedCPUCache.offload` (`share_memory_()` + `broadcast_object_list` +
+`barrier`, per tensor); everything beyond it becomes a near-free symlink to the
+original HF blob. 900e9 copies ~838 GiB; 32e9 copies ~30 GiB.
+
+Copy-bound, not per-tensor-bound: 6197 tensors dispatched corresponded to
+100 GiB of shm (~16.5 MB/tensor against a 19 MB average tensor). A purely
+per-tensor cost at the observed 8.15 it/s would have made M3's ~40k tensors take
+82 min on their own, which its 71 min total rules out.
+
+And the copy buys almost nothing, because `DiskCache.onload` reads straight from
+the symlinked original through the page cache:
+
+```python
+with safe_open(weight_info["safetensors_file"], framework="pt", device=device) as file:
+    onloaded = file.get_tensor(weight_info["weight_name"])
+```
+
+A disk-placed unmodified weight served from cache is about as fast as an shm
+copy. The copy upgrades *best-effort* residency to *guaranteed* residency,
+nothing more.
+
+**Fix.** `cpu: 32000000000` on both GLM-5.2 smoke arms (`a098fb56`), plus
+`stop_after_last_target` to skip the untargeted tail of the sequential walk
+(`3eaad356`, smoke-only, fail-closed — see below).
+
+**Four things that were measured and are worth not re-deriving.**
+
+1. **`auto_offload` is not `auto`; GPUs contribute ZERO residency.**
+   `compressed_tensors/offload/load.py` intercepts it: "same as `auto`, but only
+   cpu/disk are visible", rewriting `max_memory` to a cpu-only dict. Measured in
+   situ: 1509 MiB per GPU (bare CUDA context) for the entire load on all 8 GPUs.
+   Never size this budget as "VRAM + CPU". Going 4 -> 8 GPUs buys no residency.
+
+2. **The offload folder is not a copy of the model.** 36838 of its ~45k entries
+   are symlinks straight to
+   `/mnt/cephfs/.hf-cache/models--zai-org--GLM-5.2/blobs/`; only genuinely
+   modified tensors become real files. Do not size `max_memory.cpu` to "avoid a
+   spill" — there is no spill to avoid. (Beware stale residue when diagnosing:
+   the 39.4 GB of real files present during the 2026-08-28 run were all
+   timestamped 2026-08-27 19:21-23:10, from the previous day's failed runs, and
+   were briefly misread as evidence of the live run copying weights.)
+
+3. **Page cache is charged to the pod's memory cgroup.** `memory.current`
+   697 GiB broke down as anon 12 / file 683 / shmem 15.6. So shm and page cache
+   are *substitutes*, not additions — total residency is bounded by model size +
+   working set (~1500 GiB) however the budget splits it, and the POD MEMORY LIMIT
+   is what actually bounds it. Peak over the whole run was 980 GiB against a
+   1700 GiB limit, so eviction was never the risk.
+
+4. **CPU is NOT the bottleneck**, despite the pod having a 48-core quota against
+   M3's 192: `cpu.stat` showed `nr_throttled 12` of 54566 periods (0.02%, 26 s
+   total) at load average 9.36. The ranks wait on I/O and collectives.
+
+**The real regression is storage, and no `max_memory` value fixes it.** cephfs
+measures 31 MB/s single-stream with a **28 ms** TCP RTT to the monitor — it is
+latency-bound, not bandwidth-bound — against 135-260 MB/s aggregate across 8
+ranks. That is roughly 4x worse than the retired cluster's `/mnt/nfs`, and it is
+why M3 finished in 71 min and GLM-5.2 does not. The sequential walk is
+storage-bound and therefore *sample-independent*: 86 min for 35 untargeted
+layers is 2.5 min/layer = 19 GB/layer at ~127 MB/s. The lever is staging the
+snapshot onto flash — the cluster has an all-flash `sc-file-nfs-vast-my` class
+(region unverified; NFS port 2049 was not reachable from the GPU pod, and it
+needs a ~1.6 Ti PVC, so it is a decision rather than a tweak).
+
+**Do not oversell the revert.** A small budget *shifts* cost from dispatch to
+the walk rather than removing it. Projected after load: `32e9` -> ~5 + ~190 =
+~195 min; `900e9` -> ~155 + ~82 = ~237 min. Worth ~45 min, not hours. The large
+win came from `stop_after_last_target`, not from the budget.
+
+**`stop_after_last_target` (smoke only).** A layer-restricted smoke quantizes 2
+of 78 layers but still propagates through all 78; trailing subgraphs exist only
+to feed subgraphs after them. Skipping layers 43-77 saves ~87 min per run. It is
+**fail-closed** because the failure mode is silent — stopping one subgraph early
+leaves a layer that should have been quantized in BF16, and the checkpoint still
+saves and still loads. `last_subgraph_with_targets()` returns `None` (walk
+everything) unless every module carrying a `quantization_scheme` is attributable
+to a subgraph at or before the cut. It reads the graph's `call_module` targets as
+name prefixes rather than `subgraph.submodules()`, because
+`self.experts(...).view(*orig_shape)` cannot be traced (fx does not handle
+`*args` unpacking) so the AST autowrapper wraps the whole expression and GLM's
+expert modules get zero graph nodes. Covered by
+`tests/llmcompressor/pipelines/test_stop_after_last_target.py` (10 cases,
+mutation-tested: removing the coverage invariant reproduces the
+silent-unquantized-layer bug).
+
+**Lessons.**
+- Measure the cost of the fix, not just the cost of the problem. Raising
+  `max_memory.cpu` was justified by a real measurement (86 min of storage-bound
+  propagation) but the remedy's own price — 2h34m of dispatch — went unpriced
+  for two runs.
+- `sum(VmRSS)` is not the memory a cgroup limit enforces. Shared pages are
+  counted once by the cgroup and up to N times across N ranks; the first sampler
+  here read 68 GiB while `memory.current` was 697 GiB, and its growth ratio
+  would have projected a false eviction.
+- Timestamp the artifacts before drawing conclusions from a shared scratch
+  directory. Stale residue from a failed run looks exactly like live output.

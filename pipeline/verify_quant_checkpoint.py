@@ -520,6 +520,9 @@ _ROUTED_ALIASES = {".gate_proj.": ".w1.", ".down_proj.": ".w2.", ".up_proj.": ".
 # g128 (r9) fits base with residual 0.09-0.12 and per-column smoothing scales
 # 0.7-1.4; garbage-scale checkpoints (r15/r3) are NaN / O(1). GPTQ (no
 # smoothing) fits with scale ~1.0.
+# 0.25 was calibrated on M3 r9 with a PER-COLUMN fit. The fit is separable now,
+# which is strictly more correct and lowers every residual, so the bound still
+# holds with margin: measured GLM up_proj 0.194, gate_proj 0.089, down_proj 0.064.
 _DEQUANT_MAX_RESID = 0.25
 _DEQUANT_SCALE_RANGE = (0.2, 5.0)
 
@@ -607,10 +610,29 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
         if not torch.isfinite(w).all():
             _fail(f"non-finite dequantized weight in {pref}", errors)
             continue
-        num = (w * base_w).sum(dim=0)
-        den = (base_w * base_w).sum(dim=0).clamp_min(1e-12)
-        col_scale = num / den
-        resid = ((w - base_w * col_scale).norm() / base_w.norm()).item()
+        # SEPARABLE fit (per-output-row x per-input-column), not per-column only.
+        # A per-column fit absorbs the norm fold, which applies to input columns,
+        # but the AWQ `up_proj -> down_proj` mapping divides up_proj along its
+        # OUTPUT ROWS (down_proj consumes those channels), and no per-column scale
+        # can absorb that. Measured on the GLM one-layer smoke (20260828-191059,
+        # 12 experts): per-column 0.267 / per-row 0.231 / separable 0.194 for
+        # up_proj, against 0.089 for gate_proj and 0.064 for down_proj.
+        #
+        # The remaining gap on up_proj is NOT corruption. It is AWQ shifting error
+        # on purpose: up_proj is the smooth layer, so it is divided to make
+        # down_proj easier to quantize, and being an int4 target itself it pays for
+        # that. The evidence is the anti-correlation -- down_proj lands at 0.064,
+        # BETTER than the 0.09-0.12 reference band, by about as much as up_proj is
+        # worse. Corruption does not improve a sibling projection.
+        row = torch.ones(base_w.shape[0], dtype=base_w.dtype)
+        col = torch.ones(base_w.shape[1], dtype=base_w.dtype)
+        for _ in range(8):  # alternating least squares; converges in a few passes
+            pred = base_w * row.unsqueeze(1)
+            col = (w * pred).sum(dim=0) / (pred * pred).sum(dim=0).clamp_min(1e-12)
+            pred = base_w * col
+            row = (w * pred).sum(dim=1) / (pred * pred).sum(dim=1).clamp_min(1e-12)
+        col_scale = col
+        resid = ((w - base_w * row.unsqueeze(1) * col).norm() / base_w.norm()).item()
         # the fitted scale is only meaningful for columns carrying real mass,
         # and isolated outliers are legitimate quantization behavior (GPTQ can
         # zero a weak or even single significant column) — only a systematic

@@ -284,6 +284,23 @@ def audit_checkpoint(
         norm_suffixes = _component_suffixes(layer, "norm")
         router_suffixes = _component_suffixes(layer, "router")
         shared_suffixes = _component_suffixes(layer, "shared_gate_up")
+        # A DENSE layer has no router and no shared experts, so the MoE side of
+        # this audit does not apply to it. Raising here would be caught by
+        # assert_smooth_fold_consistency's except clause and SKIP THE WHOLE GATE
+        # for every layer -- which is what happened when the gate's layer list was
+        # extended to include GLM's indexer layers 0-2 so the attention-side audit
+        # would stop reporting `absent`. Record the MoE side as absent and audit
+        # the attention side, rather than losing both.
+        if not (
+            _resolves(base, router_suffixes) and _resolves(candidate, router_suffixes)
+        ):
+            records[str(layer)] = {
+                "moe_side": "absent (dense layer: no router / shared experts)",
+                "attention_fold": audit_attention_fold(
+                    base, candidate, layer, norm_gain_offset=norm_gain_offset
+                ),
+            }
+            continue
         _, base_norm = load_suffix(base, norm_suffixes)
         _, cand_norm = load_suffix(candidate, norm_suffixes)
         _, base_router = load_suffix(base, router_suffixes)

@@ -918,7 +918,11 @@ def assert_smooth_fold_consistency(
     attention_absent = 0
     lo, hi = scale_mean_range
     for layer, record in report["layers"].items():
+        if "moe_side" in record:
+            print(f"[pipeline] smooth-fold gate: layer {layer} {record['moe_side']}")
         for component in ("router_compensation", "shared_gate_up_compensation"):
+            if component not in record:
+                continue
             err = record[component]["relative_l2_error"]
             comp_threshold = threshold
             if record[component].get("fp8_dequantized"):
@@ -1017,7 +1021,11 @@ def assert_smooth_fold_consistency(
     )
 
 
-def assert_quant_checkpoint_verified(ckpt: Path, base: Path | None = None) -> None:
+def assert_quant_checkpoint_verified(
+    ckpt: Path,
+    base: Path | None = None,
+    fp8_dynamic_targets: list[str] | None = None,
+) -> None:
     """Fail-closed post-save gate: structural + sampled tensor verification.
 
     Runs ``pipeline.verify_quant_checkpoint.verify(ckpt, check_tensors=True,
@@ -1057,11 +1065,24 @@ def assert_quant_checkpoint_verified(ckpt: Path, base: Path | None = None) -> No
         pass
     preset = "glm52" if "Glm" in arch else "m3"
     print(f"[pipeline] quant-verify keep-bf16 preset: {preset} (arch={arch!r})")
+    # DERIVED FROM THE RECIPE, not a flag. The verifier lists the DSA indexer under
+    # must-stay-bf16, which was right while the indexer was BF16 by policy. A recipe
+    # that deliberately FP8-quantizes indexer.wq_b / wk -- matching zai-org's own
+    # FP8 release and PhalaCloud's W4AFP8, both of which do -- must not be failed by
+    # a gate encoding the older stance. Reading it off the targets means the two
+    # cannot disagree, where a flag would go stale the first time someone copied a
+    # config.
+    allow_fp8: set[str] = set()
+    if any("indexer" in t for t in (fp8_dynamic_targets or [])):
+        allow_fp8.add("msa_indexer")
+        print("[pipeline] quant-verify: recipe FP8-targets the DSA indexer, so "
+              "msa_indexer is allowed to be fp8-quantized")
     rc = verify(
         Path(ckpt),
         check_tensors=True,
         dequant_base=dequant_base,
         expect_ignore=_IGNORE_PRESETS[preset],
+        allow_fp8_components=allow_fp8,
     )
     if rc != 0:
         raise RuntimeError(
@@ -1417,6 +1438,26 @@ def run_quantize(
                     getattr(model, "config", None), "first_k_dense_replace", 3
                 )
                 gate_layers = list(range(int(first_dense), int(depth)))
+                # Add the DSA indexer layers. Starting at first_k_dense_replace
+                # covers every MoE layer, which is right for the router and shared
+                # experts -- but GLM's indexer_types marks layers 0,1,2 as "full"
+                # (own indexer) and layer 3 as "shared" (no indexer at all), so the
+                # attention-side audit reported `absent=3` and checked no indexer on
+                # a run whose whole point was an indexer change. An audit that
+                # cannot see the component under test is not an audit.
+                indexer_types = getattr(
+                    getattr(model, "config", None), "indexer_types", None
+                ) or []
+                indexer_layers = [
+                    i for i, kind in enumerate(indexer_types) if kind == "full"
+                ]
+                added = sorted(set(indexer_layers) - set(gate_layers))
+                if added:
+                    gate_layers = sorted(set(gate_layers) | set(indexer_layers))
+                    print(
+                        f"[pipeline] smooth-fold gate: added indexer layers {added} "
+                        "so the attention-side audit is not vacuous"
+                    )
             norm_gain_offset = resolve_norm_gain_offset(model)
             print(
                 "[pipeline] norm gain form: "
@@ -1432,7 +1473,11 @@ def run_quantize(
                 gate_layers,
                 norm_gain_offset=norm_gain_offset,
             )
-            assert_quant_checkpoint_verified(ckpt, Path(cfg.model.id))
+            assert_quant_checkpoint_verified(
+                ckpt,
+                Path(cfg.model.id),
+                fp8_dynamic_targets=list(cfg.quantization.fp8_dynamic_targets or []),
+            )
             # Storage-vs-scheme consistency: no ignore entry may hide a module
             # that IS quantized. Loaders check ignore before targets, so a
             # shadowed module serves as unquantized -- its quantized bytes cast

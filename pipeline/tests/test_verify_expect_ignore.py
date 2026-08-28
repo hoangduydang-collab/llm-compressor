@@ -49,7 +49,22 @@ M3_PERSISTED_IGNORE = [
 ]
 
 
-def _write_ckpt(tmp_path, ignore):
+# Unquantized modules a GLM-5.2 checkpoint really has. The coverage check reads
+# these, so a fixture without them makes every token vacuous and every assertion
+# below pass for the wrong reason -- which is exactly what happened when the check
+# moved from pattern text to coverage.
+GLM52_MODULES = (
+    "lm_head.weight",
+    "model.layers.0.self_attn.q_a_proj.weight",
+    "model.layers.0.self_attn.indexer.wk.weight",
+    "model.layers.1.mlp.gate_proj.weight",
+    "model.layers.3.mlp.gate.weight",
+    "model.layers.3.mlp.shared_experts.gate_proj.weight",
+    "model.layers.3.self_attn.o_proj.weight",
+)
+
+
+def _write_ckpt(tmp_path, ignore, modules=None):
     """Minimal checkpoint that lets verify() run to a clean return.
 
     config.json drives section 1 (the ignore assertion under test). A weight
@@ -73,16 +88,13 @@ def _write_ckpt(tmp_path, ignore):
         ),
         encoding="utf-8",
     )
+    weight_map = {
+        name: "model-00001.safetensors" for name in (modules or GLM52_MODULES)
+    }
+    weight_map["model.embed_tokens.weight"] = "model-00001.safetensors"
+    weight_map["model.norm.weight"] = "model-00001.safetensors"
     (ckpt / "model.safetensors.index.json").write_text(
-        json.dumps(
-            {
-                "metadata": {"total_size": 0},
-                "weight_map": {
-                    "model.embed_tokens.weight": "model-00001.safetensors",
-                    "model.norm.weight": "model-00001.safetensors",
-                },
-            }
-        ),
+        json.dumps({"metadata": {"total_size": 0}, "weight_map": weight_map}),
         encoding="utf-8",
     )
     return ckpt
@@ -93,22 +105,29 @@ def _ignore_failures(capsys):
     return [
         line
         for line in out.splitlines()
-        if "expected ignore pattern containing" in line
+        if "NOT covered by any ignore entry" in line
     ]
 
 
 # --- the bug being fixed ----------------------------------------------------
 
-def test_m3_preset_false_fails_on_glm52_checkpoint(tmp_path, capsys):
-    """Characterizes the defect: the M3 default rejects a healthy GLM-5.2
-    ignore list. If this ever stops failing, the presets have been conflated."""
+def test_m3_preset_no_longer_false_fails_on_a_glm_checkpoint(tmp_path, capsys):
+    """The defect this file was written for is now fixed BY CONSTRUCTION.
+
+    It used to fail five times, because the check asked whether the ignore list's
+    TEXT contained 'vision_tower', 'multi_modal_projector', 'patch_merge',
+    'block_sparse_moe' and 'indexer'. A GLM checkpoint has none of those modules,
+    so there was nothing for an ignore entry to protect and the demand was
+    meaningless.
+
+    Since 2026-08-28 the check asks whether every UNQUANTIZED MODULE of each
+    component is covered by some ignore entry, so a component with no such modules
+    is vacuous. Picking the right preset is still good hygiene -- it documents what
+    a recipe intends -- but it is no longer load-bearing for correctness, which is
+    the better place for this to have landed."""
     ckpt = _write_ckpt(tmp_path, GLM52_PERSISTED_IGNORE)
     verify(ckpt, check_tensors=False)
-    fails = _ignore_failures(capsys)
-    assert len(fails) == 5, fails
-    for token in ("vision_tower", "multi_modal_projector", "patch_merge",
-                  "block_sparse_moe", "indexer"):
-        assert any(token in f for f in fails), (token, fails)
+    assert _ignore_failures(capsys) == []
 
 
 def test_glm52_preset_accepts_glm52_checkpoint(tmp_path, capsys):
@@ -166,10 +185,28 @@ def test_cli_preset_selects_glm52(tmp_path, capsys):
 
 
 def test_cli_defaults_to_m3(tmp_path, capsys):
-    """Default must stay m3 so existing M3 callers are unaffected."""
+    """Default must stay m3 so existing M3 callers are unaffected.
+
+    Asserted on the PRESET rather than on a failure count. It used to assert 5
+    failures, which only worked while the check compared pattern text; under
+    coverage the M3 tokens a GLM checkpoint has no modules for are vacuous, so the
+    default produces no failures here. The default itself still matters, so this
+    checks the thing that has to hold.
+    """
     ckpt = _write_ckpt(tmp_path, GLM52_PERSISTED_IGNORE)
     main(["--ckpt", str(ckpt)])
-    assert len(_ignore_failures(capsys)) == 5
+    assert _ignore_failures(capsys) == []
+    # and the M3 preset is genuinely enforced where the modules DO exist
+    m3_dir = tmp_path / "m3"
+    m3_dir.mkdir()
+    m3_ckpt = _write_ckpt(
+        m3_dir,
+        ["lm_head"],
+        modules=("lm_head.weight", "vision_tower.layers.0.attn.qkv.weight"),
+    )
+    main(["--ckpt", str(m3_ckpt)])
+    fails = _ignore_failures(capsys)
+    assert any("vision_tower" in f for f in fails), fails
 
 
 def test_cli_explicit_overrides_preset(tmp_path, capsys):

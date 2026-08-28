@@ -132,6 +132,68 @@ def _load_weight_keys(ckpt: Path) -> list[str]:
     raise FileNotFoundError(f"no safetensors index or single shard under {ckpt}")
 
 
+# Maps an expected-ignore token to a matcher against MODULE names. The tokens are
+# the historical substrings, so the presets keep working; what changed is that they
+# are now resolved against the checkpoint's modules instead of against the text of
+# the ignore patterns.
+_IGNORE_TOKEN_MATCHERS: dict[str, re.Pattern] = {
+    "lm_head": re.compile(r"lm_head"),
+    "vision_tower": re.compile(r"vision_tower"),
+    "multi_modal_projector": re.compile(r"multi_modal_projector"),
+    "patch_merge": re.compile(r"patch_merge"),
+    "mlp[.]gate$": re.compile(r"\.mlp\.gate$"),
+    "shared_experts": re.compile(r"\.mlp\.shared_experts\."),
+    "block_sparse_moe": re.compile(r"\.block_sparse_moe\."),
+    "indexer": re.compile(r"\.self_attn\.indexer\."),
+    "self_attn": re.compile(r"\.self_attn\."),
+    "layers[.][0-2]": re.compile(r"\.layers\.[0-2]\."),
+}
+
+
+def _check_ignore_coverage(
+    ckpt: Path,
+    ignore: list[str],
+    expected_ignore: list[str],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Every module that must stay BF16 has to be covered by some ignore entry.
+
+    A component with NO unquantized modules is vacuous rather than a failure: when
+    the recipe deliberately FP8-quantizes all 75 shared experts, there is nothing
+    left for an ignore entry to protect, and demanding one would require the very
+    pattern that shadows them.
+    """
+    from pipeline.serve_ignore import checkpoint_modules, match_name
+
+    try:
+        modules, quantized = checkpoint_modules(ckpt)
+    except (FileNotFoundError, KeyError, ValueError) as err:
+        warnings.append(f"ignore-coverage check skipped (tensor names unreadable): {err}")
+        return
+
+    unquantized = modules - quantized
+    for token in expected_ignore:
+        matcher = _IGNORE_TOKEN_MATCHERS.get(token)
+        if matcher is None:
+            warnings.append(f"no module matcher for expected-ignore token {token!r}")
+            continue
+        targets = sorted(m for m in unquantized if matcher.search(m))
+        if not targets:
+            print(f"    {token}: no unquantized modules (vacuous)")
+            continue
+        uncovered = [m for m in targets if not any(match_name(m, p) for p in ignore)]
+        if uncovered:
+            _fail(
+                f"{token}: {len(uncovered)} of {len(targets)} unquantized modules are "
+                f"NOT covered by any ignore entry, so a loader will treat them as "
+                f"quantized, e.g. {uncovered[:3]}",
+                errors,
+            )
+        else:
+            print(f"    {token}: all {len(targets)} unquantized modules covered")
+
+
 def _fail(msg: str, errors: list[str]) -> None:
     errors.append(msg)
     print(f"  [FAIL] {msg}")
@@ -146,6 +208,7 @@ def verify(
     check_tensors: bool,
     dequant_base: Path | None = None,
     expect_ignore: list[str] | None = None,
+    allow_fp8_components: set[str] | None = None,
 ) -> int:
     errors: list[str] = []
     warnings: list[str] = []
@@ -208,9 +271,24 @@ def verify(
     print(f"  ignore ({len(ignore)}):")
     for p in ignore:
         print(f"    - {p}")
-    for sub in expected_ignore:
-        if not any(sub in p for p in ignore):
-            _fail(f"expected ignore pattern containing '{sub}' missing from config", errors)
+    # COVERAGE, NOT PATTERN TEXT. This used to assert that each expected substring
+    # appeared in some ignore pattern, and that broke the moment
+    # _persist_ignore_to_config started resolving broad patterns against the saved
+    # tensors (2026-08-28). Two ways it failed on a healthy checkpoint:
+    #
+    #   - 're:.*mlp[.]shared_experts[.].*' is correctly ABSENT when every shared
+    #     expert is FP8-quantized, because keeping it would shadow them and make a
+    #     loader serve them unquantized. The full run quantizes all 75, so the
+    #     text check would fail every production save.
+    #   - the concrete entries replacing 're:.*layers[.][0-2][.].*' name real
+    #     modules and so do not contain the literal string 'layers[.][0-2]'.
+    #
+    # What actually matters is what the original check was a proxy for: every
+    # module that must stay BF16 is covered by SOME ignore entry, so no loader
+    # treats it as quantized. That is decidable against the artifact, it composes
+    # with pattern resolution, and it is strictly stronger -- a pattern can be
+    # present and still miss modules.
+    _check_ignore_coverage(ckpt, ignore, expected_ignore, errors, warnings)
     if not errors:
         _ok("all expected keep-bf16 ignore patterns present in saved config")
 
@@ -277,7 +355,14 @@ def verify(
     # int4 must still never touch them, and every other keep-bf16 module must
     # not be quantized in ANY format.
     print("\n== keep-bf16 modules must not be quantized ==")
-    fp8_ok_in_mixed = {"shared_experts", "dense_layers_0_2"}
+    # Components a MIXED int4+FP8 recipe is allowed to FP8-quantize. Extendable
+    # per-run because the DSA indexer moved from "must be BF16" to a decision:
+    # zai-org's own FP8 release and PhalaCloud's W4AFP8 both quantize
+    # indexer.wq_b and indexer.wk, our BF16 stance turned out to rest on no
+    # measurement, and it is worth only ~0.7% of decode weight traffic either way.
+    # A run that deliberately matches upstream must not be failed by a gate
+    # encoding the older stance as a constant.
+    fp8_ok_in_mixed = {"shared_experts", "dense_layers_0_2"} | set(allow_fp8_components or ())
     for name, pat in _MUST_NOT_QUANTIZE.items():
         packed_leak = sorted(m for m in quantized if pat.search(m))
         fp8_hits = sorted(m for m in fp8_quantized if pat.search(m))
@@ -463,11 +548,16 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
         warnings.append(f"dequant check skipped (no unpacker): {err}")
         return
 
-    idx_path = ckpt / "model.safetensors.index.json"
-    weight_map = json.loads(idx_path.read_text())["weight_map"]
-    base_map = json.loads(
-        (base / "model.safetensors.index.json").read_text()
-    )["weight_map"]
+    # Single-shard checkpoints have no index. save_pretrained omits it for anything
+    # small enough, which is every subset probe and small smoke -- and this raised
+    # FileNotFoundError on exactly those, AFTER a successful quantization and save
+    # (2026-08-28, the one-layer indexer smoke). The same assumption was silently
+    # skipping the smooth-fold gate in m3_checkpoint_scale_audit; this one at least
+    # failed loudly.
+    from pipeline.serve_ignore import weight_map_of
+
+    weight_map = weight_map_of(ckpt)
+    base_map = weight_map_of(base)
 
     sample_scales = [k for k in keys if k.endswith(f".{_SCALE}")]
     sample = sample_scales[:: max(1, len(sample_scales) // 20)][:20]

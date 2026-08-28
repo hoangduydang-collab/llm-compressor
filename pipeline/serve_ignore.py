@@ -62,17 +62,31 @@ def match_name(name: str, target: str) -> bool:
     return target == name
 
 
-def _weight_keys(ckpt: Path) -> list[str]:
+def weight_map_of(ckpt: Path) -> dict[str, str]:
+    """Tensor name -> shard filename, for sharded AND single-shard checkpoints.
+
+    The single-shard case is not an edge case worth skipping: save_pretrained omits
+    the index for anything small enough, which is every subset probe and small
+    smoke we use for fast validation. Assuming the index exists has already bitten
+    twice -- it made the smooth-fold gate print "skipped" and return (silent), and
+    made verify_quant_checkpoint's dequant check raise FileNotFoundError after a
+    successful save (loud). Both on the same day.
+    """
+    ckpt = Path(ckpt)
     index = ckpt / "model.safetensors.index.json"
     if index.exists():
-        return list(json.loads(index.read_text(encoding="utf-8"))["weight_map"])
+        return dict(json.loads(index.read_text(encoding="utf-8"))["weight_map"])
     single = ckpt / "model.safetensors"
     if single.exists():
         from safetensors import safe_open
 
         with safe_open(single, framework="pt") as handle:
-            return list(handle.keys())
+            return {name: single.name for name in handle.keys()}
     raise FileNotFoundError(f"no safetensors index or single shard under {ckpt}")
+
+
+def _weight_keys(ckpt: Path) -> list[str]:
+    return list(weight_map_of(ckpt))
 
 
 def checkpoint_modules(ckpt: Path) -> tuple[set[str], set[str]]:

@@ -2385,3 +2385,58 @@ silent-unquantized-layer bug).
   would have projected a false eviction.
 - Timestamp the artifacts before drawing conclusions from a shared scratch
   directory. Stale residue from a failed run looks exactly like live output.
+
+### Follow-on: the scale audit had the wrong norm semantics for GLM-5.2 (fixed 2026-08-28, `727bf6f0`)
+
+Caught by inspection before the run reached it, not by a failure.
+`compensation_error()` in `pipeline/m3_checkpoint_scale_audit.py` hardcoded the
+Gemma/MiniMax-M3 gain form:
+
+```python
+# MiniMaxM3VLRMSNorm is Gemma-style: smooth the effective 1 + weight.
+base_gain = 1.0 + base_norm
+cand_gain = 1.0 + candidate_norm
+```
+
+GLM-5.2's `GlmMoeDsaRMSNorm` applies plain `self.weight * hidden_states` — that
+is asserted in `KNOWN_ORDINARY_NORM_CLASSES`, verified by reading its forward on
+2026-08-27. Auditing a plain norm with the offset form does not error; it derives
+a **wrong implied smoothing scale**, so a perfectly consistent fold reports a
+large relative L2 and the fail-closed post-save gate rejects a healthy run at
+the very end, after all the calibration has been paid for.
+
+Measured on a synthetic consistent plain-norm fold:
+
+```
+audited correctly (offset 0.0):  rel_l2 = 0.000e+00
+audited as offset (offset 1.0):  rel_l2 = 1.694e-01
+gate threshold 2.0e-02        ->  FAILS
+```
+
+`1.694e-01` sits inside the M3 **"lost fold" reference band (0.09–0.27)**, so
+this would not merely have failed — it would have looked exactly like the
+catastrophic r2 lost-smoothing signature and sent someone chasing a numerics bug
+that did not exist. The GLM-5.2 smoke does reach this gate: it runs inside
+`if save_checkpoint:` over `range(3, 60)`, covering both targeted layers.
+
+**Fix.** `norm_gain_offset` is now a required keyword-only argument on
+`compensation_error()` and `audit_checkpoint()` (no default — a new family must
+state the form), a required `--norm-gain-offset` on the CLI, and is recorded in
+the output JSON (`schema_version` 2). `resolve_norm_gain_offset(model)` in
+`pipeline/quantize.py` derives it from `KNOWN_OFFSET_NORM_CLASSES` /
+`KNOWN_ORDINARY_NORM_CLASSES` — the existing single source of truth, where each
+entry is an assertion that someone read the class's forward — and returns `None`
+for an unclassified norm *or* a model mixing both forms, in which case the gate
+skips with a printed reason instead of guessing. Guessing is unsafe in both
+directions. Tests: `pipeline/tests/test_scale_audit_norm_gain_form.py` (15).
+
+**For GLM-5.2, run the audit with `--norm-gain-offset 0.0`.** A rel_l2 in
+0.09–0.27 *with that flag set* is a genuine lost fold; ~3e-3 is a consistent one
+(M3 r9 reference).
+
+**Lesson.** A verification tool inherits the assumptions of the model it was
+written for, and a verification tool that is wrong is worse than none: it either
+fails good work or blesses bad work, and both cost more than having no gate. When
+reusing an `m3_*` gate on a new family, check every architectural constant in it
+— the suffix table (already once "had never successfully run against these
+checkpoints") and the norm semantics were both M3-specific here.

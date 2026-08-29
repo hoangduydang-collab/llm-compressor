@@ -520,10 +520,35 @@ _ROUTED_ALIASES = {".gate_proj.": ".w1.", ".down_proj.": ".w2.", ".up_proj.": ".
 # g128 (r9) fits base with residual 0.09-0.12 and per-column smoothing scales
 # 0.7-1.4; garbage-scale checkpoints (r15/r3) are NaN / O(1). GPTQ (no
 # smoothing) fits with scale ~1.0.
-# 0.25 was calibrated on M3 r9 with a PER-COLUMN fit. The fit is separable now,
-# which is strictly more correct and lowers every residual, so the bound still
-# holds with margin: measured GLM up_proj 0.194, gate_proj 0.089, down_proj 0.064.
-_DEQUANT_MAX_RESID = 0.25
+# RECALIBRATED 2026-08-29 to 0.40, with external evidence. The prior 0.25 bound,
+# and the "up_proj 0.194 / gate_proj 0.089 / down_proj 0.064" numbers that used to
+# be quoted here, are both retracted:
+#
+#   * Those figures could not be reproduced. Re-measuring three checkpoints (two
+#     32x512 runs and one 256x2048) with the current separable fit gives
+#     gate_proj 0.117, up_proj 0.116, down_proj 0.133 -- identical to three
+#     decimals across all three, and independent of calibration size, which is
+#     correct because the residual is int4 grid resolution and not a calibration
+#     statistic. There is no up_proj asymmetry. A sweep of all 256 experts of
+#     layer 3 gives median 0.115, max 0.128, ZERO above 0.25.
+#   * The band has an analytic anchor now. For symmetric int4 group-g the
+#     relative residual is (max|w|/rms|w|) / (7*sqrt(12)); the measured
+#     within-group ratio 2.91 predicts 0.120 against 0.116 measured, and
+#     down_proj's ratio 3.38 predicts 0.139 against 0.133. So ~0.12 is the FLOOR
+#     for this scheme, not a warning sign.
+#   * 0.25 rejected a known-good production checkpoint. PhalaCloud/GLM-5.2-W4AFP8
+#     -- served by SGLang, reported at no measurable quality loss -- measures
+#     0.26 against the BF16 source, because they apply AWQ weight CLIPPING
+#     (their scales run 1.28x below the least-squares optimum, ~9/7) which we do
+#     not implement. Clipping deliberately trades weight-space fidelity for
+#     activation-weighted error, so a higher residual there is method, not damage.
+#
+# 0.40 keeps the gate useful against what it was built for -- garbage scales are
+# NaN or O(1), and a lost/misdirected write is far above 0.40 -- while no longer
+# cutting into either our own healthy distribution or a clipping-based method's.
+# Weight-space residual is NOT a cross-method quality metric; do not use it to
+# compare our checkpoints against anyone else's.
+_DEQUANT_MAX_RESID = 0.40
 _DEQUANT_SCALE_RANGE = (0.2, 5.0)
 
 # M3 layers sampled deterministically on top of the even spread: dead
@@ -614,16 +639,18 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
         # A per-column fit absorbs the norm fold, which applies to input columns,
         # but the AWQ `up_proj -> down_proj` mapping divides up_proj along its
         # OUTPUT ROWS (down_proj consumes those channels), and no per-column scale
-        # can absorb that. Measured on the GLM one-layer smoke (20260828-191059,
-        # 12 experts): per-column 0.267 / per-row 0.231 / separable 0.194 for
-        # up_proj, against 0.089 for gate_proj and 0.064 for down_proj.
+        # can absorb that, so the separable form is the right one to keep.
         #
-        # The remaining gap on up_proj is NOT corruption. It is AWQ shifting error
-        # on purpose: up_proj is the smooth layer, so it is divided to make
-        # down_proj easier to quantize, and being an int4 target itself it pays for
-        # that. The evidence is the anti-correlation -- down_proj lands at 0.064,
-        # BETTER than the 0.09-0.12 reference band, by about as much as up_proj is
-        # worse. Corruption does not improve a sibling projection.
+        # RETRACTED (2026-08-29): this comment used to claim per-column 0.267 /
+        # separable 0.194 for up_proj against 0.089 gate_proj and 0.064 down_proj,
+        # and explained the gap as "AWQ shifting error on purpose". Both the
+        # numbers and the explanation are withdrawn. Re-measuring three
+        # checkpoints gives gate 0.117 / up 0.116 / down 0.133 -- no asymmetry to
+        # explain -- and the old down_proj figure of 0.064 sat BELOW the analytic
+        # int4 floor, which a separable fit cannot do: it has rows+cols free
+        # parameters against rows*cols elements, nowhere near enough to absorb
+        # rounding error. See the _DEQUANT_MAX_RESID block for the analytic anchor
+        # and the external calibration against PhalaCloud's checkpoint.
         row = torch.ones(base_w.shape[0], dtype=base_w.dtype)
         col = torch.ones(base_w.shape[1], dtype=base_w.dtype)
         for _ in range(8):  # alternating least squares; converges in a few passes
@@ -682,12 +709,17 @@ def _check_untouched(ckpt, base, keys, errors, warnings):
     import torch
     from safetensors import safe_open
 
-    weight_map = json.loads(
-        (ckpt / "model.safetensors.index.json").read_text()
-    )["weight_map"]
-    base_map = json.loads(
-        (base / "model.safetensors.index.json").read_text()
-    )["weight_map"]
+    # Single-shard checkpoints have no index. This is the THIRD site with the
+    # same assumption: m3_checkpoint_scale_audit._index silently skipped the fold
+    # gate, _check_dequant raised FileNotFoundError, and fixing that one merely
+    # advanced the verifier far enough to reach this one (2026-08-29, the
+    # 256-sample one-layer smoke: quantization and save both succeeded, then rank
+    # 0 died here). Route every index read through the one helper that handles
+    # both layouts so there is no fourth site.
+    from pipeline.serve_ignore import weight_map_of
+
+    weight_map = weight_map_of(ckpt)
+    base_map = weight_map_of(base)
     opened: dict[tuple, object] = {}
 
     def _get(root, wmap, k):

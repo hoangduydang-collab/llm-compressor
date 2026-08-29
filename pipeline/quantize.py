@@ -250,8 +250,40 @@ def _prewarm_read_file(path: Path) -> int:
     return read
 
 
+def _prewarm_threads(default: int = 64) -> int:
+    """Thread count for the offload prefetch. ``M3_SAVE_PREWARM_THREADS`` overrides.
+
+    Raised 16 -> 64 on 2026-08-29 after measuring the GLM-5.3 full run's save.
+    The compression walk is LATENCY-bound, not bandwidth-bound: all 8 ranks sat in
+    uninterruptible ``D`` state with GPUs at 0% and 23 of 192 cores busy, moving
+    ~25 MB per module in ~10 s (~2.6 MB/s per rank) against a 28 ms cephfs RTT --
+    while the LOAD phase, which prefetches in parallel, sustained ~350 MB/s on the
+    same filesystem. So the bandwidth was always there; 16 concurrent readers
+    simply could not cover the round trips.
+
+    The prefetch was demonstrably winning, just too slowly to matter: per-module
+    cost fell 27 -> 9.7 -> 6.4 -> 3.7 s as page cache filled 1496 -> 1563 GB of
+    the node's 2015 GB, i.e. enough to hold the whole ~1.5 TB offload set. Warming
+    it faster is the whole fix. Bounded at 64 rather than pushed higher because
+    beyond the streaming ceiling extra readers only add MDS pressure, and this
+    prefetch shares the filesystem with whatever else is on the node.
+    """
+    raw = os.environ.get("M3_SAVE_PREWARM_THREADS")
+    if not raw:
+        return default
+    try:
+        return max(1, min(256, int(raw)))
+    except ValueError:
+        print(
+            f"[pipeline] save-prewarm: ignoring non-integer "
+            f"M3_SAVE_PREWARM_THREADS={raw!r}; using {default}",
+            flush=True,
+        )
+        return default
+
+
 def prewarm_offload_page_cache(
-    offload_dir: Path, max_threads: int = 16
+    offload_dir: Path, max_threads: int | None = None
 ) -> threading.Thread | None:
     """Prefetch every disk-offload file into the OS page cache, in background.
 
@@ -269,6 +301,8 @@ def prewarm_offload_page_cache(
 
     if os.environ.get("M3_SAVE_PREWARM", "1") == "0":
         return None
+    if max_threads is None:
+        max_threads = _prewarm_threads()
     try:
         # resolve symlinks (disk cache links unmodified tensors to base shards)
         files = sorted(
@@ -293,7 +327,8 @@ def prewarm_offload_page_cache(
 
     print(
         f"[pipeline] save-prewarm: prefetching {len(files)} offload files "
-        f"into page cache with {max_threads} threads (M3_SAVE_PREWARM=0 disables)",
+        f"into page cache with {max_threads} threads "
+        f"(M3_SAVE_PREWARM=0 disables, M3_SAVE_PREWARM_THREADS sets the count)",
         flush=True,
     )
     controller = threading.Thread(target=_run, name="save-prewarm", daemon=True)

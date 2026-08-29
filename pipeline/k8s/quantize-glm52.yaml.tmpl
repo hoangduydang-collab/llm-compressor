@@ -90,6 +90,13 @@ spec:
             - {name: WAIT_TIMEOUT, value: "@@WAIT_TIMEOUT@@"}
             - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
             - {name: REPO_REF, value: "@@REPO_REF@@"}
+            # Recorded in the durable run log. On 2026-08-29 the whole ca-van3 GPU
+            # pool went unreachable and the first question was "which node was it
+            # on" -- answerable from `kubectl get pod` only while the API still
+            # knows about the pod, which is precisely what fails in that scenario.
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
             # Point every HF cache at the CA-region PVC: the BF16 snapshot is
             # already there, and the calibration dataset is then downloaded once
             # and shared by both arms instead of twice over a congested link.
@@ -326,13 +333,42 @@ spec:
                 du -sh /scratch/glm52-subset
                 MODEL_OVERRIDE="--set model.id=/scratch/glm52-subset"
               fi
+              # --- durable run log on the PVC, next to the artifact -----------
+              # Observability failed FOUR separate ways on the 2026-08-28 GLM-5.3
+              # full run, and each time the evidence was simply gone:
+              #   1. `kubectl logs` ring-buffer rotation ate the first 70 min
+              #      (the entire model-load phase) within two hours.
+              #   2. The Rancher bearer token expired mid-run, killing both
+              #      kubectl and the `logs -f` stream it was feeding.
+              #   3. A nohup'd `logs -f` follower died on its own after ~24 min.
+              #   4. The whole ca-van3 GPU pool stopped heartbeating, so logs and
+              #      exec (both via kubelet :10250) went dark for the rest of the
+              #      run -- which then lost 18.5 h to an eviction we could not see
+              #      coming.
+              # Every one of those is a path THROUGH the control plane. A file on
+              # the PVC is not: it survives rotation, token expiry, a dead
+              # follower, and a partitioned kubelet, and it can be read afterwards
+              # from any pod in the region. Keep the stdout copy so `kubectl logs`
+              # still works while the cluster is healthy.
+              RUN_LOG_DIR=/mnt/cephfs/hoangduy/runlogs
+              mkdir -p "$RUN_LOG_DIR"
+              RUN_LOG="$RUN_LOG_DIR/quant-glm52-@@METHOD@@-@@RUN_TAG@@.log"
+              echo "==> run log: $RUN_LOG (survives log rotation and kubelet loss)"
+              {
+                echo "=== run @@RUN_TAG@@ method=$METHOD config=$CONFIG gpus=$GPUS"
+                echo "=== node=${NODE_NAME:-unknown} started=$(date -u +%FT%TZ)"
+              } >> "$RUN_LOG"
+
               echo "==> launching torchrun --nproc_per_node=$GPUS"
+              # NOTE: pipefail is set, so ${PIPESTATUS[0]} is not needed -- the
+              # pipeline's exit status is torchrun's, and tee cannot mask it.
               torchrun --nproc_per_node="$GPUS" -m pipeline.run \
                 --config "$CONFIG" --stage quantize \
                 --set "quantization.method=$METHOD" \
                 $MODEL_OVERRIDE \
-                $EVIDENCE_FLAG
+                $EVIDENCE_FLAG 2>&1 | tee -a "$RUN_LOG"
 
+              echo "=== finished=$(date -u +%FT%TZ)" >> "$RUN_LOG"
               echo DONE
           resources:
             requests:

@@ -64,6 +64,39 @@ quantization:
     - "re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
     - "re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$"
+  # BLOCK, not per-channel (changed 2026-08-29; the killed run used the
+  # FP8_DYNAMIC default). This is a SERVING-COMPATIBILITY choice, not a numerics
+  # or speed one, and the reasoning is worth keeping because the obvious argument
+  # for per-channel is wrong in an interesting way.
+  #
+  # WHY BLOCK. 128x128 with `weight_scale_inv` is what zai-org's own FP8 releases
+  # ship, what DeepSeek-V3 deployment uses, and what PhalaCloud/GLM-5.2-W4AFP8
+  # ships -- the only W4AFP8 GLM checkpoint we have CONFIRMED SGLang serves (H200,
+  # SGLang >= v0.5.13.post1, `--quantization w4afp8`). Under that quant_method the
+  # non-expert linears go through SGLang's Fp8LinearMethod, whose exercised input
+  # is block. Per-channel is unproven there, and we already burned a GPU probe
+  # discovering that SGLang's compressed-tensors path refuses our scheme outright
+  # ("The W4A8Int8 Fused MoE scheme is implemented only for NPU for now").
+  #
+  # WHY NOT FOR SPEED. Hopper has NO hardware fine-grained FP8 scaling -- that is
+  # Blackwell's MXFP8/NVFP4 -- so per-channel and block are both software on SM90,
+  # and the scale counts are near-identical: o_proj [6144,16384] needs 6144 either
+  # way; shared_experts.gate_proj [2048,6144] needs 2048 per-channel vs 768 per
+  # block. Same FP8 weight bytes, bandwidth-bound decode: performance-neutral.
+  #
+  # AND WHY IT STILL MATTERS. These layers look negligible at ~2% of parameters,
+  # but every token runs all of them while only 8 of 256 experts fire, so they are
+  # ~40% of active parameters and ~57% of bytes read per decode step once the
+  # experts are int4. Getting their format wrong is not a rounding error.
+  #
+  # Also removes the fold-aware-assembly problem: because these layers stay OURS,
+  # nothing needs reconciling against the vendor's unfolded weights. AWQ divides
+  # post_attention_layernorm by s and multiplies the router and shared experts by
+  # s, so sourcing shared experts from the vendor while keeping our folded norm
+  # would break the identity by exactly s -- silently. Only layer 78 (MTP) comes
+  # from the vendor, and that is safe: it is outside this recipe's scope entirely
+  # and never folded.
+  fp8_scheme: FP8_BLOCK
   sample_generation: false
 
 calibration:

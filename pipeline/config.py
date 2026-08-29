@@ -80,6 +80,28 @@ class QuantizationConfig:
     # only modules the main `ignore` excludes (e.g. M3 attention, shared
     # experts, dense MLPs). Empty list = no extra FP8 pass.
     fp8_dynamic_targets: list[str] = field(default_factory=list)
+    # Preset applied to `fp8_dynamic_targets`. Both options are data-free (RTN
+    # weights, dynamic activations) so neither adds calibration cost:
+    #   FP8_DYNAMIC  weights float8_e4m3 per output CHANNEL, acts per token
+    #   FP8_BLOCK    weights float8_e4m3 per 128x128 BLOCK,  acts per group
+    #
+    # FP8_BLOCK is the right choice for anything destined for SGLang. It is the
+    # convention of zai-org's own FP8 releases, of DeepSeek-V3 deployment, and of
+    # PhalaCloud/GLM-5.2-W4AFP8 -- the one W4AFP8 GLM checkpoint we have confirmed
+    # SGLang serves, on H200. Per-channel is unproven against SGLang's
+    # `Fp8LinearMethod` under `quant_method: w4afp8`.
+    #
+    # It is NOT a speed choice. Hopper has no hardware fine-grained FP8 scaling
+    # (that arrived with Blackwell's MXFP8/NVFP4), so per-channel and block are
+    # both software on SM90, and the scale COUNTS are near-identical: o_proj
+    # [6144,16384] needs 6144 either way, and shared_experts.gate_proj [2048,6144]
+    # needs 2048 per-channel vs 768 per-block. Decode is bandwidth-bound and the
+    # FP8 weight bytes are the same, so granularity is performance-neutral here.
+    #
+    # Worth knowing these layers are not negligible despite being ~2% of params:
+    # every token runs all of them while only 8 of 256 experts fire, so they are
+    # ~40% of active params and ~57% of decode bytes read once experts are int4.
+    fp8_scheme: str = "FP8_DYNAMIC"
     # Post-quant sanity generation. Disable for very large offloaded models, where
     # autoregressive generation runs on CPU/disk (~minutes per token) and adds hours.
     sample_generation: bool = True

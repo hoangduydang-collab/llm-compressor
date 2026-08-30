@@ -615,6 +615,15 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
         return None
 
     checked = 0
+    # Keep the actual residuals, not just the pass/fail verdict. A line that says
+    # only "resid <= 0.40" cannot distinguish a healthy 0.116 from a 0.39 that is
+    # one bad layer away from failing, and reading a distribution off a
+    # threshold-filtered view is precisely how the 2026-08-29 "the sample count
+    # did not fix it" misreading happened -- the gate prints only modules ABOVE
+    # the bound, so three FAIL lines were mistaken for the whole population when
+    # the median was in fact 0.115. The numbers are also the baseline any
+    # requantization has to be compared against.
+    resids: list[tuple[float, str]] = []
     for sk in sample:
         pref = sk[: -len(f".{_SCALE}")]
         bk = _base_key(pref)
@@ -660,6 +669,7 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
             row = (w * pred).sum(dim=1) / (pred * pred).sum(dim=1).clamp_min(1e-12)
         col_scale = col
         resid = ((w - base_w * row.unsqueeze(1) * col).norm() / base_w.norm()).item()
+        resids.append((resid, pref))
         # the fitted scale is only meaningful for columns carrying real mass,
         # and isolated outliers are legitimate quantization behavior (GPTQ can
         # zero a weak or even single significant column) — only a systematic
@@ -679,6 +689,28 @@ def _check_dequant(ckpt, base, keys, errors, warnings):
         elif out_frac > 0.01:
             _fail(f"implausible column scales in {pref}: {out_frac:.1%} of "
                   f"significant columns outside {_DEQUANT_SCALE_RANGE}", errors)
+    if resids:
+        from statistics import median as _median
+
+        ordered = sorted(resids)
+        lo, lo_name = ordered[0]
+        hi, hi_name = ordered[-1]
+        print(f"  residuals: n={len(ordered)} min={lo:.3f} "
+              f"median={_median([v for v, _ in ordered]):.3f} "
+              f"max={hi:.3f} (bound {_DEQUANT_MAX_RESID})")
+        print(f"    min: {lo_name}")
+        print(f"    max: {hi_name}")
+        # Per-projection breakdown. up_proj vs gate_proj vs down_proj is the axis a
+        # retracted comment in this file once claimed a large asymmetry on, so
+        # report it rather than leaving the next reader to re-derive it by hand.
+        families: dict[str, list[float]] = {}
+        for value, name in resids:
+            families.setdefault(name.rsplit(".", 1)[-1], []).append(value)
+        for family in sorted(families):
+            values = sorted(families[family])
+            print(f"    {family}: n={len(values)} "
+                  f"median={_median(values):.3f} max={values[-1]:.3f}")
+
     if checked and not any("dequant" in e or "column scales" in e for e in errors):
         _ok(f"sampled {checked} modules: dequantized weights match base "
             f"(resid <= {_DEQUANT_MAX_RESID}, scales sane)")

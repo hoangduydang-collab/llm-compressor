@@ -1,0 +1,117 @@
+---
+# One GLM-5.3 W4AFP8 quality arm on the Rancher infermesh-test cluster.
+#
+# TEMPLATE — do not `kubectl apply` this directly. Substitute the @@...@@
+# placeholders; a leftover placeholder is a launch error, not a default.
+#   @@ARM@@       ours | phala
+#   @@MODEL@@     absolute checkpoint path on cephfs
+#   @@RUN_TAG@@   run tag, e.g. 20260830t1400z
+#   @@REF@@       llm-compressor commit to pin the code to
+#   @@LIMIT@@     items per general task, or "" for full populations
+#   @@TASKS@@     space-separated GENERAL_TASKS override, or "" for the profile default
+#   @@NODESELECTOR@@  rendered nodeSelector block, or "{}" for scheduler choice
+#
+# The server and the eval client share ONE pod: the arm script serves on
+# 127.0.0.1 and points the orchestrator at it. So there is no Service, no exposed
+# port, and nothing another tenant can reach.
+#
+# SEQUENTIAL BY DESIGN. Run `ours` to completion, then `phala`. Both arms want 8
+# GPUs and this cluster has one node with 8 free, so they cannot overlap; the
+# arm-to-arm delta is rebuilt offline afterwards with `quality.rebuild_delta`.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: glm53-qual-@@ARM@@-@@RUN_TAG@@
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: quality-eval
+    model: glm-5-3
+    arm: "@@ARM@@"
+spec:
+  restartPolicy: Never
+  # GPU nodes are tainted nvidia.com/gpu=present:NoSchedule.
+  tolerations:
+    - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+  @@NODESELECTOR@@
+  containers:
+    - name: arm
+      image: lmsysorg/sglang:v0.5.17   # already pulled on these nodes
+      imagePullPolicy: IfNotPresent
+      env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: ARM, value: "@@ARM@@"}
+        - {name: MODEL_PATH, value: "@@MODEL@@"}
+        - {name: REPO_REF, value: "@@REF@@"}
+        - {name: RUN_TAG, value: "@@RUN_TAG@@"}
+        - {name: LIMIT, value: "@@LIMIT@@"}
+        - {name: GENERAL_TASKS, value: "@@TASKS@@"}
+        - {name: PROFILE, value: "configs/glm/glm-5.3-w4afp8-@@ARM@@.sh"}
+        - {name: PORT, value: "30000"}
+        - {name: RUN_ID, value: "glm53-@@RUN_TAG@@"}
+        - {name: BENCH, value: "/mnt/cephfs/hoangduy/projects/benchmarks"}
+        - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef: {fieldPath: spec.nodeName}
+      resources:
+        # 8 GPUs: TP8 is the topology the GLM-5.2 W4AFP8 arm was proven at, and a
+        # 394 GB checkpoint does not fit in fewer on 80 GB cards.
+        requests: {cpu: "16", memory: "200Gi", nvidia.com/gpu: 8}
+        limits: {cpu: "32", memory: "600Gi", nvidia.com/gpu: 8}
+      command: ["bash", "-lc"]
+      args:
+        - |
+          set -uo pipefail
+          ROOT=/mnt/cephfs/hoangduy/results/glm53-quality-paired/$RUN_TAG
+          mkdir -p "$ROOT" /mnt/cephfs/hoangduy/runlogs
+          RUN_LOG=/mnt/cephfs/hoangduy/runlogs/glm53-qual-$ARM-$RUN_TAG.log
+          exec > >(tee -a "$RUN_LOG") 2>&1
+          echo "==> durable log: $RUN_LOG"
+          echo "==> node=${NODE_NAME:-unknown} arm=$ARM run_tag=$RUN_TAG"
+          nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
+
+          # Code pinned to a pushed commit, so the artifact records which version
+          # of the arm runner produced it.
+          git clone --quiet --filter=blob:none "$REPO_URL" /work/repo || exit 1
+          cd /work/repo && git checkout --quiet "$REPO_REF" || exit 1
+          echo "==> code at $(git rev-parse --short HEAD)"
+
+          # GENERAL_TASKS is only exported when actually overridden — an empty
+          # value would shadow the profile's own default with the empty string.
+          [ -n "${GENERAL_TASKS:-}" ] && export GENERAL_TASKS || unset GENERAL_TASKS
+          [ -n "${LIMIT:-}" ] || unset LIMIT
+
+          ARM="$ARM" PROFILE="$PROFILE" PORT="$PORT" ROOT="$ROOT" \
+          MODEL_PATH="$MODEL_PATH" RUN_ID="$RUN_ID" BENCH="$BENCH" \
+            bash pipeline/k8s/glm53_quality_arm.sh
+          rc=$?
+          echo "==> arm done (rc=$rc)"
+          exit $rc
+      volumeMounts:
+        - {name: model-cache, mountPath: /mnt/cephfs}
+        - {name: dshm, mountPath: /dev/shm}
+        - {name: work, mountPath: /work}
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - name: model-cache
+      persistentVolumeClaim:
+        claimName: model-cache-shared
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        # TP8 moves activations between ranks through shared memory; the 64Mi
+        # default breaks NCCL outright. Far smaller than the quantization job's
+        # budget because serving holds no CPU-offloaded weights.
+        sizeLimit: 64Gi
+    - name: work
+      # /work/repo (code) + /work/bvenv (lm-eval client venv). The venv is
+      # deliberately pod-local rather than on cephfs: it is throwaway, cephfs is
+      # 31 MB/s single-stream, and a venv on the shared PVC would be one more
+      # thing a collaborator could trip over.
+      emptyDir: {sizeLimit: 32Gi}
+    - name: tmp
+      # Backs TRITON_CACHE_DIR / TORCHINDUCTOR_CACHE_DIR. Per-pod, so the
+      # cross-job cache poisoning that the cluster-1 arm script had to work
+      # around cannot happen here — and the caches can never land on cephfs.
+      emptyDir: {sizeLimit: 50Gi}

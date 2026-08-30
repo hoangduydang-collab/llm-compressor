@@ -1,0 +1,93 @@
+# GLM-5.3 W4AFP8 quick quality check -- OUR AWQ artifact (arm A).
+#
+# Paired with eval_glm53_w4afp8_quick_phala.yaml, which runs PhalaCloud's
+# GLM-5.3-W4AFP8 on the SAME tasks and, crucially, the SAME sample indices via
+# `samples_manifest`. Run THIS one first: it writes the manifest that arm B
+# consumes, so the two arms score identical examples and a per-example flip rate
+# is meaningful.
+#
+# WHY A PEER AND NOT A BASELINE. There is no BF16 or FP8 baseline available on
+# this cluster: GLM-5.3-BF16 is 1.51 TB and zai-org/GLM-5.3 (FP8) is 755.6 GB,
+# against 640 GB of HBM on an 8xH100 node, and there is no multi-node scheduler
+# here. PhalaCloud/GLM-5.3-W4AFP8 is the same model in the same target format at
+# ~394 GB, so it fits and it isolates the QUANTIZER rather than confounding
+# model, format and quantizer together.
+#
+# WHAT THESE NUMBERS ARE NOT. Not comparable to any published leaderboard score
+# for GLM-5.3: the task subset is truncated for speed, arc_challenge runs
+# 0-shot rather than the leaderboard's 25-shot, and the context is 2048. They are
+# valid ONLY as a paired candidate-vs-peer comparison under an identical harness.
+#
+# WEIGHT-SPACE RESIDUAL IS NOT AN ALTERNATIVE TO THIS. PhalaCloud measures 0.26
+# against the BF16 source where we measure 0.102-0.117, and that is method rather
+# than damage -- they apply AWQ weight clipping (scales ~1.28x below the
+# least-squares optimum) and we do not. See the _DEQUANT_MAX_RESID block in
+# verify_quant_checkpoint.py: "Weight-space residual is NOT a cross-method
+# quality metric; do not use it to compare our checkpoints against anyone
+# else's." Behavioural comparison is the only valid instrument here.
+
+name: eval-glm53-w4afp8-quick-ours
+
+model:
+  # The MTP artifact, not glm53-w4afp8-fixed: it is the internally consistent
+  # superset (num_nextn_predict_layers=1 WITH layer 78 present) and it matches
+  # PhalaCloud's structure, which also ships the MTP layer. Speculative decoding
+  # stays OFF in both arms, so the draft head is loaded-but-unused and the
+  # comparison is unaffected by it.
+  id: /mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint
+  trust_remote_code: true
+
+serve:
+  # Every value below is inherited from eval_glm52_w4afp8_sglang.yaml, which is
+  # the tuning that made a 394 GB w4afp8 checkpoint serve on 8xH100. Do not relax
+  # these casually:
+  #   0.72 + max_total_tokens 8192 + max_running_requests 1 is what leaves KV
+  #   headroom once ~394 GB of weights are resident in 640 GB of HBM.
+  #   disable_shared_experts_fusion matters MORE for us than for PhalaCloud: our
+  #   shared experts are the modules carrying the AWQ fold, and fusing them into
+  #   the routed path is unexercised territory for a folded checkpoint.
+  tensor_parallel_size: 8
+  max_model_len: 2048
+  gpu_memory_utilization: 0.72
+  kv_cache_dtype: fp8_e4m3
+  sglang_compat_fallbacks: true
+  sglang_kwargs:
+    quantization: w4afp8
+    disable_shared_experts_fusion: true
+    disable_cuda_graph: true
+    disable_piecewise_cuda_graph: true
+    max_total_tokens: 8192
+    chunked_prefill_size: 1024
+    max_running_requests: 1
+
+eval:
+  enabled: true
+  backend: sglang
+  log_samples: true          # required for the per-example flip-rate comparison
+  apply_chat_template: true  # matches the established GLM-5.2 w4afp8 config
+  baseline: null             # arm A has nothing to compare against yet
+  # "auto" probes and can stall on the first batch (see config.py); pin it.
+  lm_eval_batch_size: 8
+  tasks:
+    # Teacher-forced, no sampling, no answer extraction, no judge -- the
+    # lowest-variance instrument available and the one most sensitive to a purely
+    # numerical change in the weights. wikitext-2 test is small, so limit: null
+    # is still quick.
+    - name: wikitext
+      metric: word_perplexity,none
+      higher_is_better: false
+      num_fewshot: 0
+      limit: null
+    # One accuracy task, because PPL has no task-ability component at all. 250
+    # examples is enough to see a gross regression and to compute a flip rate;
+    # it is NOT enough to resolve a small accuracy difference, and the report
+    # must not claim otherwise.
+    - name: arc_challenge
+      metric: acc_norm,none
+      num_fewshot: 0
+      limit: 250
+
+agentic:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm53-quality-quick-ours

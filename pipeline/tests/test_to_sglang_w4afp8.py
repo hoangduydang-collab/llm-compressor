@@ -475,3 +475,26 @@ def test_conversion_fails_closed_if_indexer_modules_stop_matching(synthetic,
     monkeypatch.setattr(mod.Plan, "is_engine_fp8", lambda self, module: False)
     assert mod.convert(ckpt_dir, base_dir, out, shard_bytes=10**7,
                        unpacker=_unpack_int32) == 2
+
+
+def test_no_mtp_layer_means_num_nextn_predict_layers_is_zero(synthetic):
+    """A config claiming a draft head the checkpoint lacks is a latent trap.
+
+    The source inherits num_nextn_predict_layers=1 from GLM-5.3-BF16, but
+    AutoModelForCausalLM never instantiates the MTP layer so no layer-78 tensors
+    are emitted. Left at 1, the field is inert until someone enables speculative
+    decoding, and then the failure is a missing-weight error that names nothing.
+    Observed on the real glm53-w4afp8-fixed artifact: 1 declared, 0 present.
+    """
+    base_dir, ckpt_dir, out = synthetic
+    config = json.loads((ckpt_dir / "config.json").read_text())
+    config["num_nextn_predict_layers"] = 1
+    (ckpt_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+
+    assert convert(ckpt_dir, base_dir, out, shard_bytes=10**7,
+                   unpacker=_unpack_int32) == 0
+    written = json.loads((out / "config.json").read_text())
+    assert written["num_nextn_predict_layers"] == 0
+    keys = json.loads(
+        (out / "model.safetensors.index.json").read_text())["weight_map"]
+    assert not any(".layers.78." in k for k in keys)

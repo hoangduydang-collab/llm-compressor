@@ -589,11 +589,22 @@ def convert(
     written_modules = sorted({
         key[: -len(".weight")] for key in weight_map if key.endswith(".weight")
     })
+    out_config = build_config(src_config, module_names=written_modules)
+    # Keep num_nextn_predict_layers HONEST. The source config inherits 1 from
+    # GLM-5.3-BF16, but AutoModelForCausalLM never instantiates the MTP layer so
+    # we emit no layer-78 tensors -- leaving the field at 1 describes a draft head
+    # that is not in the checkpoint. It is inert until someone enables
+    # speculative decoding, and then it fails with missing weights rather than
+    # with anything that names the cause. graft_mtp_w4afp8 sets it back to 1 when
+    # it actually adds the layer, so the two compose.
+    if 78 not in {_layer_of(m) for m in written_modules
+                  if _layer_of(m) is not None}:
+        if out_config.get("num_nextn_predict_layers"):
+            print("[convert] no layer 78 emitted, so setting "
+                  "num_nextn_predict_layers 1 -> 0", flush=True)
+        out_config["num_nextn_predict_layers"] = 0
     (out / "config.json").write_text(
-        json.dumps(
-            build_config(src_config, module_names=written_modules), indent=2
-        ),
-        encoding="utf-8",
+        json.dumps(out_config, indent=2), encoding="utf-8",
     )
     for extra in (
         "generation_config.json",

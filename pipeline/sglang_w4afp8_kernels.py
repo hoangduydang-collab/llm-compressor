@@ -27,6 +27,8 @@ FORMAT FACTS, each established from a primary source rather than assumed:
 
 from __future__ import annotations
 
+import sys
+
 import torch
 
 E4M3_MAX = 448.0
@@ -91,6 +93,43 @@ def dequantize_block_fp8(
         block_k, dim=-1
     )
     return qweight.float() * expanded[:out_features, :in_features]
+
+
+def repack_int32_to_int8(packed: torch.Tensor, logical_cols: int) -> torch.Tensor:
+    """Reinterpret int32-packed 4-bit values as int8 two-per-byte. No compute.
+
+    The two formats are THE SAME BYTES on a little-endian machine. int32 packing
+    puts column ``i`` at bits ``[4i, 4i+4)`` of its word, so byte 0 of each word
+    holds columns 0 and 1 (column 0 in the low nibble), byte 1 holds 2 and 3, and
+    so on -- which is exactly the int8 layout SGLang wants. So the expert
+    conversion is a view plus a rename, not an unpack and a repack.
+
+    Worth doing for correctness as much as speed: a reinterpret cannot lose or
+    reorder a value, whereas unpack-then-repack has two conventions to get right
+    and materializes an intermediate eight times the packed size. The caller
+    must still assert this against the authoritative unpacker on real data --
+    ``pipeline.to_sglang_w4afp8`` does, on a sample of every conversion -- since
+    the claim rests on compressed-tensors' bit order, not on ours.
+
+    ``logical_cols`` is the unpacked column count, needed because int32 packing
+    rounds up to a multiple of 8 and the tail nibbles of the last word are
+    padding.
+    """
+    if packed.dtype != torch.int32:
+        raise ValueError(f"expected int32 packed input, got {packed.dtype}")
+    if sys.byteorder != "little":
+        raise RuntimeError(
+            "the int32 -> int8 reinterpret assumes little-endian byte order; "
+            f"this machine is {sys.byteorder}-endian, so unpack and repack "
+            "explicitly instead"
+        )
+    if logical_cols % 2:
+        raise ValueError(
+            f"logical column count {logical_cols} is odd, so nibbles cannot be "
+            f"paired into bytes"
+        )
+    as_bytes = packed.contiguous().view(torch.int8).reshape(packed.shape[0], -1)
+    return as_bytes[:, : logical_cols // 2].contiguous()
 
 
 def pack_nibbles_int8(values: torch.Tensor) -> torch.Tensor:

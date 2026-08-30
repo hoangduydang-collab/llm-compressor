@@ -87,6 +87,7 @@ from pipeline.sglang_w4afp8_kernels import (
     dequantize_block_fp8,
     pack_nibbles_int8,
     quantize_block_fp8,
+    repack_int32_to_int8,
     unpack_nibbles_int8,
 )
 
@@ -214,6 +215,7 @@ def convert(
     emit_input_scale: bool = True,
     dry_run: bool = False,
     unpacker=default_unpacker,
+    fastpath_samples: int = 8,
 ) -> int:
     import torch
     from safetensors import safe_open
@@ -318,6 +320,7 @@ def convert(
             )
 
     checked_layers: set[int] = set()
+    fastpath_checked = 0
     shard: dict[str, object] = {}
     shard_size = 0
     shard_index = 0
@@ -356,8 +359,20 @@ def convert(
         if plan.is_expert(module):
             packed = _get(ckpt, ckpt_map, f"{module}.weight_packed")
             shape = torch.Size(_get(ckpt, ckpt_map, f"{module}.weight_shape").tolist())
-            values = unpacker(packed, shape)
-            emit(f"{module}.weight", pack_nibbles_int8(values))
+            repacked = repack_int32_to_int8(packed, shape[1])
+            # The reinterpret is only valid if compressed-tensors' bit order is
+            # what we believe. Assert that against the authoritative unpacker on
+            # the first few real modules of every conversion, rather than
+            # trusting a claim verified once on synthetic data.
+            if fastpath_checked < fastpath_samples:
+                fastpath_checked += 1
+                explicit = pack_nibbles_int8(unpacker(packed, shape))
+                if not torch.equal(repacked, explicit):
+                    print(f"[convert] FAIL: int32->int8 reinterpret disagrees "
+                          f"with unpack+repack on {module}; compressed-tensors' "
+                          f"bit order is not what this assumes", flush=True)
+                    return 1
+            emit(f"{module}.weight", repacked)
             emit(
                 f"{module}.weight_scale_inv",
                 _get(ckpt, ckpt_map, f"{module}.weight_scale"),

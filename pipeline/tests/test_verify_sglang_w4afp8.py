@@ -355,3 +355,29 @@ def _read(path):
     with safe_open(str(path / "model-00001-of-00001.safetensors"),
                    framework="pt") as handle:
         return {k: handle.get_tensor(k) for k in handle.keys()}
+
+
+def test_a_grafted_layer_with_a_bf16_indexer_fails(pair):
+    """The blind spot that let the MTP graft ship a BF16 layer-78 indexer.
+
+    Layer 78 exists only in the OUTPUT -- the AWQ source has no MTP layer at all
+    -- so every source-relative check skips it, the coverage check calls it "a
+    BF16 Linear correctly listed in ignored_layers", and no slice loads it
+    because the slicer forces num_nextn_predict_layers=0. The engine-required
+    check is source-blind precisely so this cannot hide.
+    """
+    src, dst, tensors = pair
+    key = "model.layers.78.self_attn.indexer.wk"
+    tensors[f"{key}.weight"] = torch.randn(128, HIDDEN).bfloat16()
+    _rewrite(dst, tensors, ignored=_IGNORED + [key])
+    assert verify(src, dst, samples=10) == 1
+
+
+def test_a_grafted_layer_with_an_fp8_indexer_passes(pair):
+    src, dst, tensors = pair
+    key = "model.layers.78.self_attn.indexer.wk"
+    q, s = quantize_block_fp8(torch.randn(128, HIDDEN).float(), (128, 128))
+    tensors[f"{key}.weight"] = q
+    tensors[f"{key}.weight_scale_inv"] = s
+    _rewrite(dst, tensors)
+    assert verify(src, dst, samples=10) == 0

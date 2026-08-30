@@ -50,6 +50,10 @@ from pipeline.sglang_w4afp8_kernels import (
     dequantize_block_fp8,
     unpack_nibbles_int8,
 )
+# Imported, not restated. A second copy of this list is what let the MTP graft
+# ship a BF16 layer-78 indexer while the converter handled layers 0-77
+# correctly.
+from pipeline.to_sglang_w4afp8 import ENGINE_FP8_SUFFIXES, _layer_of
 
 # Two independent e4m3 roundings give sqrt(2) * 0.0265 = 0.037. 0.06 leaves
 # headroom for the fold reconstruction's BF16 rounding while still catching a
@@ -280,6 +284,40 @@ def verify(
         _ok(f"sampled {len(picks)} of {len(passthrough)} passthrough tensors: "
             f"identical")
 
+    print("\n== engine-required scales (independent of the source) ==")
+    # Structural, and deliberately source-blind. The section below compares
+    # against the source, which cannot see the grafted MTP layer at all -- layer
+    # 78 is absent from the AWQ checkpoint. That is exactly how the graft shipped
+    # a BF16 layer-78 indexer on 2026-08-30: every source-relative check passed,
+    # the coverage check happily called it "a BF16 Linear correctly ignored", and
+    # no slice loads the MTP layer because the slicer sets
+    # num_nextn_predict_layers=0. It would have failed first on an 8-GPU serve.
+    #
+    # The invariant needs no source: SGLang builds these modules with a
+    # quant_config in EVERY layer, so any of them present in the output must
+    # carry a weight_scale_inv.
+    required = sorted(
+        _stem(k) for k in dst_map
+        if k.endswith(".weight") and _stem(k).endswith(ENGINE_FP8_SUFFIXES)
+    )
+    if not required:
+        warnings.append(
+            "no DSA indexer wk/wq_b modules in the output at all; expected on "
+            "GLM-5.3"
+        )
+    else:
+        missing = [m for m in required
+                   if f"{m}.weight_scale_inv" not in dst_map]
+        if missing:
+            _fail(f"{len(missing)} of {len(required)} module(s) that the engine "
+                  f"builds with a quant_config have no weight_scale_inv, so "
+                  f"Fp8LinearMethod cannot load them, e.g. {missing[:4]}",
+                  errors)
+        else:
+            layers = {_layer_of(m) for m in required}
+            _ok(f"all {len(required)} engine-quantized module(s) carry a scale "
+                f"(across {len(layers)} layer(s))")
+
     print("\n== engine-forced fp8 (BF16 in the source) ==")
     # Modules the engine quantizes even though the recipe did not: currently the
     # DSA indexer's wk and wq_b. They are excluded from the passthrough check
@@ -375,7 +413,7 @@ def _check_quant_method_coverage(
     listed here; on SGLang that cannot happen, because nothing is ever skipped.
 
     What actually decides loadability there is which modules the MODEL builds
-    with a quant_config -- see _ENGINE_FP8_SUFFIXES in to_sglang_w4afp8. This
+    with a quant_config -- see ENGINE_FP8_SUFFIXES in to_sglang_w4afp8. This
     check cannot see that, and passing it does not mean the artifact loads.
 
     It is still worth running, for two reasons:

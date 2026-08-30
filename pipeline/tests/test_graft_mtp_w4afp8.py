@@ -118,11 +118,16 @@ def test_int4_rejects_ragged_group():
         (f"model.layers.{LAYER}.self_attn.o_proj.weight", "fp8"),
         (f"model.layers.{LAYER}.self_attn.kv_a_proj_with_mqa.weight", "fp8"),
         (f"model.layers.{LAYER}.mlp.shared_experts.up_proj.weight", "fp8"),
-        # Divergences from the vendor, asserted so they cannot drift: the DSA
-        # indexer and eh_proj stay BF16 because that is how the other 78 layers
-        # of this artifact are built.
-        (f"model.layers.{LAYER}.self_attn.indexer.wk.weight", "copy"),
-        (f"model.layers.{LAYER}.self_attn.indexer.wq_b.weight", "copy"),
+        # The DSA indexer's wk/wq_b are quantized -- SGLang builds them with a
+        # quant_config, so Fp8LinearMethod demands a scale. weights_proj is
+        # built without one and stays BF16. This matched the vendor all along;
+        # an earlier version of this file asserted "copy" for wk/wq_b and called
+        # it a deliberate divergence, which was simply wrong.
+        (f"model.layers.{LAYER}.self_attn.indexer.wk.weight", "fp8"),
+        (f"model.layers.{LAYER}.self_attn.indexer.wq_b.weight", "fp8"),
+        (f"model.layers.{LAYER}.self_attn.indexer.weights_proj.weight", "copy"),
+        (f"model.layers.{LAYER}.self_attn.indexer.k_norm.weight", "copy"),
+        # eh_proj genuinely stays BF16, and that agrees with the vendor too.
         (f"model.layers.{LAYER}.eh_proj.weight", "copy"),
         (f"model.layers.{LAYER}.enorm.weight", "copy"),
         (f"model.layers.{LAYER}.hnorm.weight", "copy"),
@@ -165,6 +170,10 @@ def scene(tmp_path):
     src[f"{pref}.eh_proj.weight"] = torch.randn(HIDDEN, 2 * HIDDEN).bfloat16()
     src[f"{pref}.mlp.gate.weight"] = torch.randn(8, HIDDEN).bfloat16()
     src[f"{pref}.self_attn.indexer.wk.weight"] = torch.randn(64, HIDDEN).bfloat16()
+    src[f"{pref}.self_attn.indexer.wq_b.weight"] = torch.randn(128, HIDDEN).bfloat16()
+    src[f"{pref}.self_attn.indexer.weights_proj.weight"] = torch.randn(
+        32, HIDDEN
+    ).bfloat16()
     src[f"{pref}.shared_head.norm.weight"] = torch.rand(HIDDEN).bfloat16()
     # A layer the graft must ignore entirely.
     src["model.layers.5.mlp.gate.weight"] = torch.randn(8, HIDDEN).bfloat16()
@@ -205,7 +214,12 @@ def test_graft_appends_without_touching_existing_shards(scene):
     # BF16 passthrough keeps its plain name and gains no scale
     assert f"model.layers.{LAYER}.enorm.weight" in keys
     assert f"model.layers.{LAYER}.eh_proj.weight_scale_inv" not in keys
-    assert f"model.layers.{LAYER}.self_attn.indexer.wk.weight_scale_inv" not in keys
+    # weights_proj is built without a quant_config, so it stays BF16...
+    assert (f"model.layers.{LAYER}.self_attn.indexer.weights_proj.weight_scale_inv"
+            not in keys)
+    # ...but wk/wq_b are built WITH one and must carry scales.
+    assert f"model.layers.{LAYER}.self_attn.indexer.wk.weight_scale_inv" in keys
+    assert f"model.layers.{LAYER}.self_attn.indexer.wq_b.weight_scale_inv" in keys
     # unrelated layers are not dragged in
     assert not any(".layers.5." in k for k in keys)
 
@@ -238,12 +252,17 @@ def test_graft_ignores_exactly_the_linears_it_leaves_bf16(scene):
     pref = f"model.layers.{LAYER}"
     # BF16 Linears: must be ignored.
     assert f"{pref}.eh_proj" in ignored
-    assert f"{pref}.self_attn.indexer.wk" in ignored
     assert f"{pref}.mlp.gate" in ignored
     # Quantized: must NOT be.
     assert f"{pref}.mlp.experts.0.gate_proj" not in ignored
     assert f"{pref}.self_attn.o_proj" not in ignored
     assert f"{pref}.mlp.shared_experts.gate_proj" not in ignored
+    # The indexer's wk/wq_b are QUANTIZED, so they must not be ignored either.
+    # An earlier version of this test asserted the opposite, pinning a belief
+    # held before ignored_layers was discovered to be inert. See
+    # test_layer_78_indexer_is_fp8_like_every_other_layer.
+    assert f"{pref}.self_attn.indexer.wk" not in ignored
+    assert f"{pref}.self_attn.indexer.wq_b" not in ignored
     # Norms are 1-D; get_quant_method is never consulted for them, so an entry
     # would be noise rather than protection.
     assert f"{pref}.enorm" not in ignored
@@ -350,3 +369,36 @@ def test_graft_requires_an_index_and_a_source_layer(scene, tmp_path):
     empty.mkdir()
     assert graft(base, empty, layer=LAYER) == 2      # no index
     assert graft(base, out, layer=77) == 2           # no such layer in source
+
+
+def test_layer_78_indexer_is_fp8_like_every_other_layer(scene):
+    """The graft reintroduced the indexer bug for layer 78 on 2026-08-30.
+
+    Its _FP8_SUFFIXES listed the attention and shared-expert projections but not
+    the DSA indexer, so wk/wq_b were copied as BF16 and then -- worse -- added to
+    ignored_layers, which is inert. Nothing would have caught it: the verifier's
+    engine-forced-fp8 check keys off the source, which has no layer 78 at all,
+    and the slicer sets num_nextn_predict_layers=0 so no probe ever loads the MTP
+    layer. It would have failed first on the full 8-GPU serve.
+
+    Layer 78 is not special: dsa_indexer.py builds wk/wq_b with a quant_config
+    for every layer, and zai-org/GLM-5.3 plus both PhalaCloud w4afp8 releases all
+    ship layers.78.self_attn.indexer.{wk,wq_b} with weight_scale_inv.
+    """
+    from safetensors import safe_open
+
+    base, out = scene
+    assert graft(base, out, layer=LAYER, shard_bytes=10**6) == 0
+    wmap = json.loads(
+        (out / "model.safetensors.index.json").read_text())["weight_map"]
+
+    key = f"model.layers.{LAYER}.self_attn.indexer.wk"
+    assert f"{key}.weight_scale_inv" in wmap, "wk left unquantized"
+    with safe_open(str(out / wmap[f"{key}.weight"]), framework="pt") as handle:
+        assert handle.get_slice(f"{key}.weight").get_dtype() == "F8_E4M3"
+
+    # weights_proj is built without a quant_config, so it must stay BF16.
+    plain = f"model.layers.{LAYER}.self_attn.indexer.weights_proj.weight"
+    assert plain.replace(".weight", ".weight_scale_inv") not in wmap
+    with safe_open(str(out / wmap[plain]), framework="pt") as handle:
+        assert handle.get_slice(plain).get_dtype() == "BF16"

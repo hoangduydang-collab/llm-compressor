@@ -131,7 +131,7 @@ _EXPERT_RE = re.compile(r"\.mlp\.experts\.(\d+)\.(gate_proj|up_proj|down_proj)$"
 # Safe to rebuild from BF16: the indexer reads input_layernorm's output, and that
 # mapping has no integer balance layer, so it was never grid-searched and carries
 # no fold. check_input_layernorm_unfolded verifies that rather than assuming it.
-_ENGINE_FP8_SUFFIXES = (
+ENGINE_FP8_SUFFIXES = (
     ".self_attn.indexer.wk",
     ".self_attn.indexer.wq_b",
 )
@@ -182,9 +182,9 @@ class Plan:
 
         Kept separate from is_fp8_rest so the counts stay honest about
         provenance: fp8_targets records what the AWQ recipe quantized, and these
-        modules are not in it. See _ENGINE_FP8_SUFFIXES.
+        modules are not in it. See ENGINE_FP8_SUFFIXES.
         """
-        return module.endswith(_ENGINE_FP8_SUFFIXES)
+        return module.endswith(ENGINE_FP8_SUFFIXES)
 
     def needs_fp8(self, module: str) -> bool:
         return self.is_fp8_rest(module) or self.is_engine_fp8(module)
@@ -363,7 +363,7 @@ def convert(
     # artifact would not load -- which is exactly the bug this exists to fix.
     # A whole-model conversion must find them; a --layers subset need not.
     if layers is None:
-        present = [m for m in modules if m.endswith(_ENGINE_FP8_SUFFIXES)]
+        present = [m for m in modules if m.endswith(ENGINE_FP8_SUFFIXES)]
         if present and n_engine != len(present):
             print(f"error: {len(present)} engine-fp8 module(s) in the source but "
                   f"{n_engine} selected for conversion", flush=True)

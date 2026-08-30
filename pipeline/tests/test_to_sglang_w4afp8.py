@@ -468,7 +468,7 @@ def test_conversion_fails_closed_if_indexer_modules_stop_matching(synthetic,
     import pipeline.to_sglang_w4afp8 as mod
 
     base_dir, ckpt_dir, out = synthetic
-    # Patch the SELECTOR, not _ENGINE_FP8_SUFFIXES. Patching the constant would
+    # Patch the SELECTOR, not ENGINE_FP8_SUFFIXES. Patching the constant would
     # also empty the set of modules the check expects to find, so the two would
     # agree at zero and the guard could never fire -- the check has to notice
     # that modules exist while nothing selected them.

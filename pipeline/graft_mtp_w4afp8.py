@@ -60,6 +60,7 @@ import json
 import sys
 from pathlib import Path
 
+from pipeline.to_sglang_w4afp8 import ENGINE_FP8_SUFFIXES
 from pipeline.sglang_w4afp8_kernels import (
     DEFAULT_BLOCK,
     dequantize_block_fp8,
@@ -79,7 +80,16 @@ GROUP = 128
 # to what layer 78 actually has. Named explicitly rather than regex-matched: the
 # list is short, closed, and a silent miss here means a tensor ships BF16 into a
 # slot the loader expects fp8.
-_FP8_SUFFIXES = (
+#
+# ENGINE_FP8_SUFFIXES is IMPORTED, not restated. This file used to carry its own
+# list that omitted the DSA indexer, so the graft shipped a BF16
+# layers.78.self_attn.indexer.{wk,wq_b} while the converter handled layers 0-77
+# correctly -- and ignored_layers could not save it, because
+# W4AFp8Config.from_config never passes that field. Layer 78 is not special:
+# dsa_indexer.py builds wk/wq_b with a quant_config in every layer, and
+# zai-org/GLM-5.3 plus both PhalaCloud w4afp8 releases all ship them with
+# weight_scale_inv. weights_proj and k_norm stay BF16, built without one.
+_FP8_SUFFIXES = ENGINE_FP8_SUFFIXES + (
     "self_attn.q_a_proj",
     "self_attn.q_b_proj",
     "self_attn.kv_a_proj_with_mqa",

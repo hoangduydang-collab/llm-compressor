@@ -410,6 +410,32 @@ def convert(
                 _get(ckpt, ckpt_map, f"{module}.weight_scale"),
             )
             if emit_input_scale:
+                # Ones, and provably harmless whether or not the name matches.
+                # Read from the installed SGLang (v0.5.17) rather than assumed:
+                #
+                #   w4afp8.py:199-211  registers w13_input_scale (experts, 2)
+                #                      and w2_input_scale (experts,) as
+                #                      torch.ones. A scale that is never loaded
+                #                      therefore already holds the value we want.
+                #   fused_moe_triton/layer.py:1595  the checkpoint-side name in
+                #                      make_expert_input_scale_params_mapping is
+                #                      experts.{i}.{w1,w2,w3}.input_scale -- NOT
+                #                      gate_proj/up_proj/down_proj. So this key
+                #                      most likely matches nothing, which is the
+                #                      same outcome as omitting it.
+                #   layer.py:1160      if it DID match, the "w1 and w3 input
+                #                      scales must be equal" check only raises
+                #                      when the existing value != 1 and differs
+                #                      from the loaded one. Ones on both sides
+                #                      keeps that guard False.
+                #
+                # NUMERICS. moe_activation_scheme is static-only, so this scale
+                # quantizes activations to e4m3. Unlike int8, an e4m3 target
+                # barely cares about the scale: it is a floating format, so
+                # relative precision is constant and 1.0 only matters if
+                # activations leave roughly [2^-9, 448]. Post-norm activations
+                # are well inside that. The logit comparison against BF16 is
+                # what actually measures this.
                 emit(
                     f"{module}.input_scale",
                     torch.ones(1, dtype=torch.bfloat16),

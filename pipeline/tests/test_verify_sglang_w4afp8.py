@@ -265,3 +265,26 @@ def test_missing_shard_fails(pair):
     src, dst, _ = pair
     (dst / "model-00001-of-00001.safetensors").unlink()
     assert verify(src, dst, samples=10) == 1
+
+
+def test_norm_entries_in_ignored_layers_are_not_reported_absent(pair, capsys):
+    """A warning that fires on every healthy run trains you to ignore it.
+
+    Norms legitimately appear in ignored_layers (the AWQ recipe lists them) and
+    are present in the checkpoint as 1-D tensors. Classifying "present" as only
+    the 2-D Linears reported all 184 of them as absent on the real artifact.
+    """
+    src, dst, tensors = pair
+    _rewrite(dst, tensors,
+             ignored=_IGNORED + ["model.layers.3.input_layernorm"])
+    assert verify(src, dst, samples=10) == 0
+    out = capsys.readouterr().out
+    assert "model.layers.3.input_layernorm" not in out.split("== summary ==")[-1]
+
+
+def test_genuinely_absent_entries_still_warn(pair, capsys):
+    src, dst, tensors = pair
+    _rewrite(dst, tensors, ignored=_IGNORED + ["model.layers.99.mlp.gate"])
+    assert verify(src, dst, samples=10) == 0
+    summary = capsys.readouterr().out.split("== summary ==")[-1]
+    assert "model.layers.99.mlp.gate" in summary

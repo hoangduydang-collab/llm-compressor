@@ -381,7 +381,13 @@ def _check_quant_method_coverage(
 
     # Stale entries are harmless -- the loader never queries a module that does
     # not exist -- but they are how a silently dropped layer looks, so say so.
-    present = set(bf16_linear) | set(quantized)
+    #
+    # "Present" means any module with a weight, NOT just the Linears classified
+    # above. An earlier version used bf16_linear | quantized, which reported all
+    # 184 norm entries (input_layernorm, k_norm, kv_a_layernorm, ...) as "absent
+    # from the checkpoint" when they were present and merely 1-D. A warning that
+    # cries wolf on every healthy run is worse than no warning.
+    present = {k[: -len(".weight")] for k in dst_map if k.endswith(".weight")}
     stale = sorted(e for e in ignored_set
                    if not e.startswith("re:") and e not in present)
     if stale:

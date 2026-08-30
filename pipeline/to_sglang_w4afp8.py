@@ -105,6 +105,45 @@ _REBUILD_CROSSCHECK_MAX = 0.06
 _LAYER_RE = re.compile(r"\.layers\.(\d+)\.")
 _EXPERT_RE = re.compile(r"\.mlp\.experts\.(\d+)\.(gate_proj|up_proj|down_proj)$")
 
+# Modules the ENGINE forces to FP8, regardless of what the recipe quantized.
+#
+# The AWQ run left the whole DSA indexer in BF16 (its recipe ignores wq_b, wk and
+# weights_proj). SGLang cannot honour that. W4AFp8Config.from_config never passes
+# ignored_layers to the constructor, so self.ignored_layers is [] for every
+# checkpoint and is_layer_skipped is always False -- there is NO config field,
+# under any name, that makes the loader skip a Linear. Every LinearBase gets
+# Fp8LinearMethod and is asked for a weight_scale_inv.
+#
+# So the question is not "what does the config say" but "which modules does the
+# model build with a quant_config". From dsa_indexer.py:
+#
+#   257  self.wq_b         = ReplicatedLinear(..., quant_config=quant_config)  -> FP8
+#   274  self.wk           = ReplicatedLinear(..., quant_config=quant_config)  -> FP8
+#   281  self.weights_proj = ReplicatedLinear(..., params_dtype=bfloat16)      -> BF16
+#                                              (no quant_config passed)
+#
+# PhalaCloud/GLM-5.3-W4AFP8 confirms it empirically: their config declares
+# modules_to_not_convert including "indexer", and they quantized wk and wq_b
+# anyway while leaving weights_proj and k_norm in BF16. If declaring it worked
+# they would have declared it. A module-family diff of our checkpoint against
+# that release matches on all 26 families except exactly these two.
+#
+# Safe to rebuild from BF16: the indexer reads input_layernorm's output, and that
+# mapping has no integer balance layer, so it was never grid-searched and carries
+# no fold. check_input_layernorm_unfolded verifies that rather than assuming it.
+_ENGINE_FP8_SUFFIXES = (
+    ".self_attn.indexer.wk",
+    ".self_attn.indexer.wq_b",
+)
+
+# gate_proj -> w1, up_proj -> w3, down_proj -> w2. Fixed by SGLang, not by us:
+# make_expert_input_scale_params_mapping (fused_moe_triton/layer.py:1595) emits
+# shard ids w1/w2/w3 and routes w1/w3 into w13_input_scale, w2 into
+# w2_input_scale. The vendor checkpoint uses exactly these names while keeping
+# gate_proj/up_proj/down_proj for the weights -- an upstream inconsistency, but
+# one we have to match, since a name that misses simply never loads.
+_EXPERT_SHARD_ID = {"gate_proj": "w1", "up_proj": "w3", "down_proj": "w2"}
+
 
 def _layer_of(name: str) -> int | None:
     match = _LAYER_RE.search(name)
@@ -137,6 +176,18 @@ class Plan:
 
     def is_fp8_rest(self, module: str) -> bool:
         return any(self._match(module, target) for target in self._fp8_targets)
+
+    def is_engine_fp8(self, module: str) -> bool:
+        """FP8 because the engine cannot skip it, not because the recipe said so.
+
+        Kept separate from is_fp8_rest so the counts stay honest about
+        provenance: fp8_targets records what the AWQ recipe quantized, and these
+        modules are not in it. See _ENGINE_FP8_SUFFIXES.
+        """
+        return module.endswith(_ENGINE_FP8_SUFFIXES)
+
+    def needs_fp8(self, module: str) -> bool:
+        return self.is_fp8_rest(module) or self.is_engine_fp8(module)
 
     def is_expert(self, module: str) -> bool:
         return bool(_EXPERT_RE.search(module))
@@ -300,10 +351,26 @@ def convert(
         ]
 
     n_expert = sum(1 for m in selected if plan.is_expert(m))
-    n_fp8 = sum(1 for m in selected if plan.is_fp8_rest(m))
-    n_copy = len(selected) - n_expert - n_fp8
+    n_engine = sum(1 for m in selected if plan.is_engine_fp8(m))
+    n_fp8 = sum(1 for m in selected
+                if plan.is_fp8_rest(m) and not plan.is_engine_fp8(m))
+    n_copy = len(selected) - n_expert - n_fp8 - n_engine
     print(f"[convert] modules: expert={n_expert} fp8-rest={n_fp8} "
-          f"passthrough={n_copy}", flush=True)
+          f"engine-fp8={n_engine} passthrough={n_copy}", flush=True)
+
+    # Fail closed. The indexer modules are BF16 in the source, so if the suffix
+    # match ever stops firing they would pass silently to the copy path and the
+    # artifact would not load -- which is exactly the bug this exists to fix.
+    # A whole-model conversion must find them; a --layers subset need not.
+    if layers is None:
+        present = [m for m in modules if m.endswith(_ENGINE_FP8_SUFFIXES)]
+        if present and n_engine != len(present):
+            print(f"error: {len(present)} engine-fp8 module(s) in the source but "
+                  f"{n_engine} selected for conversion", flush=True)
+            return 2
+        if not present:
+            print("[convert] WARNING: no DSA indexer wk/wq_b modules found; "
+                  "either this model has none or the naming changed", flush=True)
     if dry_run:
         return 0
 
@@ -355,7 +422,7 @@ def convert(
     shard_index = 0
     total_bytes = 0
     weight_map: dict[str, str] = {}
-    stats = {"expert": 0, "fp8": 0, "copy": 0}
+    stats = {"expert": 0, "fp8": 0, "engine_fp8": 0, "copy": 0}
     crosscheck: list[float] = []
 
     def flush() -> None:
@@ -436,14 +503,16 @@ def convert(
                 # activations leave roughly [2^-9, 448]. Post-norm activations
                 # are well inside that. The logit comparison against BF16 is
                 # what actually measures this.
+                parent, _, proj = module.rpartition(".")
+                shard_id = _EXPERT_SHARD_ID[proj]
                 emit(
-                    f"{module}.input_scale",
+                    f"{parent}.{shard_id}.input_scale",
                     torch.ones(1, dtype=torch.bfloat16),
                 )
             stats["expert"] += 1
             continue
 
-        if plan.is_fp8_rest(module):
+        if plan.needs_fp8(module):
             base_key = f"{module}.weight"
             if base_key not in base_map:
                 print(f"[convert] WARNING: no base weight for {module}; copying "
@@ -473,6 +542,7 @@ def convert(
             qweight, scale_inv = quantize_block_fp8(weight, DEFAULT_BLOCK)
             emit(f"{module}.weight", qweight)
             emit(f"{module}.weight_scale_inv", scale_inv)
+            engine_forced = plan.is_engine_fp8(module)
 
             # Cross-check against what the run itself saved. Independent of the
             # rebuild: disagreement beyond two roundings means the fold was
@@ -489,7 +559,7 @@ def convert(
                     crosscheck.append(
                         ((rebuilt - on_disk).norm() / denom).item()
                     )
-            stats["fp8"] += 1
+            stats["engine_fp8" if engine_forced else "fp8"] += 1
             continue
 
         for key in keys:

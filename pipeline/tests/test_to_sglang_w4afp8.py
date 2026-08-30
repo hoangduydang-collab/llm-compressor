@@ -119,6 +119,16 @@ def synthetic(tmp_path):
         base[f"{pref}.mlp.gate.weight"] = torch.randn(8, HIDDEN).bfloat16()
         ckpt[f"{pref}.mlp.gate.weight"] = base[f"{pref}.mlp.gate.weight"].clone()
 
+        # --- DSA indexer: BF16 in the source, because the AWQ recipe ignores
+        # it, but the engine builds wk/wq_b with a quant_config and so demands
+        # FP8. weights_proj is built WITHOUT one and must stay BF16. ---
+        for name, shape in (("wk", (64, HIDDEN)),
+                            ("wq_b", (64, HIDDEN)),
+                            ("weights_proj", (4, HIDDEN))):
+            key = f"{pref}.self_attn.indexer.{name}.weight"
+            base[key] = torch.randn(*shape).bfloat16()
+            ckpt[key] = base[key].clone()
+
         # --- int4 experts ---
         for expert in (0, 1):
             for proj in ("gate_proj", "up_proj", "down_proj"):
@@ -374,3 +384,94 @@ def test_shards_are_named_with_the_final_count(synthetic):
     total = len(shards)
     for name in shards:
         assert name.endswith(f"of-{total:05d}.safetensors"), name
+
+
+def test_indexer_wk_and_wq_b_are_fp8_even_though_the_recipe_ignored_them(synthetic):
+    """The bug that cost a 2.5 h conversion re-run.
+
+    SGLang's W4AFp8Config.from_config never passes ignored_layers to the
+    constructor, so self.ignored_layers is [] for every checkpoint and
+    is_layer_skipped always returns False. Every LinearBase gets
+    Fp8LinearMethod. dsa_indexer.py builds wk and wq_b with quant_config and
+    weights_proj without one, so the first two need weight_scale_inv and the
+    third must not have it -- regardless of what any config field says.
+
+    PhalaCloud/GLM-5.3-W4AFP8 does exactly this: its config declares
+    modules_to_not_convert including "indexer", and wk/wq_b carry
+    weight_scale_inv anyway.
+    """
+    base_dir, ckpt_dir, out = synthetic
+    assert convert(ckpt_dir, base_dir, out, shard_bytes=10**7,
+                   unpacker=_unpack_int32) == 0
+    keys = set(json.loads(
+        (out / "model.safetensors.index.json").read_text())["weight_map"])
+
+    for layer in (0, 1):
+        pref = f"model.layers.{layer}.self_attn.indexer"
+        for name in ("wk", "wq_b"):
+            assert f"{pref}.{name}.weight" in keys
+            assert f"{pref}.{name}.weight_scale_inv" in keys, (
+                f"{name} has no scale; Fp8LinearMethod would fail to load it")
+        # Built without a quant_config, so a scale here would be wrong.
+        assert f"{pref}.weights_proj.weight" in keys
+        assert f"{pref}.weights_proj.weight_scale_inv" not in keys
+
+
+def test_indexer_weights_are_actually_e4m3_not_copied_bf16(synthetic):
+    """Presence of a scale is not enough -- the weight must be re-encoded."""
+    from safetensors import safe_open
+
+    base_dir, ckpt_dir, out = synthetic
+    assert convert(ckpt_dir, base_dir, out, shard_bytes=10**7,
+                   unpacker=_unpack_int32) == 0
+    wmap = json.loads(
+        (out / "model.safetensors.index.json").read_text())["weight_map"]
+    key = "model.layers.0.self_attn.indexer.wk.weight"
+    with safe_open(str(out / wmap[key]), framework="pt") as handle:
+        assert handle.get_slice(key).get_dtype() == "F8_E4M3"
+    plain = "model.layers.0.self_attn.indexer.weights_proj.weight"
+    with safe_open(str(out / wmap[plain]), framework="pt") as handle:
+        assert handle.get_slice(plain).get_dtype() == "BF16"
+
+
+def test_expert_input_scale_uses_the_shard_ids_sglang_looks_for(synthetic):
+    """gate_proj -> w1, up_proj -> w3, down_proj -> w2.
+
+    make_expert_input_scale_params_mapping builds checkpoint names as
+    experts.{i}.{w1,w2,w3}.input_scale, NOT gate_proj/up_proj/down_proj. The
+    old names matched nothing, so the tensors were dead weight -- harmless only
+    because the parameters are pre-filled with ones. The vendor release uses
+    w1/w2/w3 for input_scale while keeping gate_proj/up_proj/down_proj for the
+    weights; an upstream inconsistency we have to match.
+    """
+    base_dir, ckpt_dir, out = synthetic
+    assert convert(ckpt_dir, base_dir, out, shard_bytes=10**7,
+                   unpacker=_unpack_int32) == 0
+    keys = set(json.loads(
+        (out / "model.safetensors.index.json").read_text())["weight_map"])
+
+    pref = "model.layers.0.mlp.experts.0"
+    assert f"{pref}.w1.input_scale" in keys
+    assert f"{pref}.w3.input_scale" in keys
+    assert f"{pref}.w2.input_scale" in keys
+    # The names that never matched must be gone.
+    for proj in ("gate_proj", "up_proj", "down_proj"):
+        assert f"{pref}.{proj}.input_scale" not in keys
+        # ...while the WEIGHTS keep the proj names.
+        assert f"{pref}.{proj}.weight" in keys
+
+
+def test_conversion_fails_closed_if_indexer_modules_stop_matching(synthetic,
+                                                                  monkeypatch):
+    """A silent miss here produces an artifact that cannot load, so the
+    converter must refuse rather than fall through to the copy path."""
+    import pipeline.to_sglang_w4afp8 as mod
+
+    base_dir, ckpt_dir, out = synthetic
+    # Patch the SELECTOR, not _ENGINE_FP8_SUFFIXES. Patching the constant would
+    # also empty the set of modules the check expects to find, so the two would
+    # agree at zero and the guard could never fire -- the check has to notice
+    # that modules exist while nothing selected them.
+    monkeypatch.setattr(mod.Plan, "is_engine_fp8", lambda self, module: False)
+    assert mod.convert(ckpt_dir, base_dir, out, shard_bytes=10**7,
+                       unpacker=_unpack_int32) == 2

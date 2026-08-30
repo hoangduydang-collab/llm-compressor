@@ -141,3 +141,24 @@ def test_result_json_is_written(tmp_path):
     assert main(["--ref", str(ref), "--test", str(test), "--out", str(outp)]) == 0
     written = json.loads(outp.read_text())
     assert written["top1_agreement"] == 1.0
+
+
+def test_non_ascii_continuations_do_not_kill_the_report(tmp_path, capsys):
+    """A quantized model emits arbitrary text, and the verdict must survive it.
+
+    On a cp1252 console, printing repr() of a non-ASCII continuation raised
+    UnicodeEncodeError after every number had already been computed -- losing
+    the result to a formatting detail.
+    """
+    lp = [_pos([(-0.1, 5)])]
+    ref = tmp_path / "ref.json"
+    test = tmp_path / "test.json"
+    ref.write_text(json.dumps(_probe([_out(lp, text="\u4f60\u597d\u2013ok")],
+                                     prompts=["a"])), encoding="utf-8")
+    test.write_text(json.dumps(_probe([_out(lp, text="\u00e9\u2014\U0001f600")],
+                                      prompts=["a"])), encoding="utf-8")
+    assert main(["--ref", str(ref), "--test", str(test)]) == 0
+    out = capsys.readouterr().out
+    assert "RESULT: PASS" in out
+    # escaped, not raw
+    assert "\u4f60" not in out

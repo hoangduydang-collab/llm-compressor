@@ -153,11 +153,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[compare] identical continuations : "
           f"{result['identical_sequences']}/{result['sequences']}")
     for item in result["per_prompt"]:
-        print(f"    {item['prompt']!r}: top1={_fmt(item['top1_agreement'])} "
+        print(f"    {_safe(item['prompt'])}: top1={_fmt(item['top1_agreement'])} "
               f"mean={_fmt(item['mean_delta'])} "
               f"ids_match={item['identical_output_ids']}")
-        print(f"      ref : {item['ref_text']!r}")
-        print(f"      test: {item['test_text']!r}")
+        print(f"      ref : {_safe(item['ref_text'])}")
+        print(f"      test: {_safe(item['test_text'])}")
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -183,6 +183,17 @@ def main(argv: list[str] | None = None) -> int:
 
 def _fmt(value) -> str:
     return "n/a" if value is None else f"{value:.4f}"
+
+
+def _safe(text) -> str:
+    """repr() that cannot kill the report on a non-ASCII continuation.
+
+    A quantized model's output is arbitrary bytes as far as this tool is
+    concerned, and on a cp1252 console printing it raised UnicodeEncodeError
+    AFTER every number had been computed -- losing the verdict to a formatting
+    detail. ascii() escapes non-ASCII rather than emitting it.
+    """
+    return "None" if text is None else ascii(text)
 
 
 if __name__ == "__main__":

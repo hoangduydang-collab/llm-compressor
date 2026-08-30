@@ -87,6 +87,39 @@ if [ ! -x "$BVENV/bin/python" ]; then
 fi
 PY="$BVENV/bin/python"
 
+# ---- 0b. tokenizer-only dirs (the served-templating identity) ---------------
+# The arm profiles point SERVED_TOKENIZER at these, NOT at the checkpoints.
+# evidence.py treats an existing local directory as a `local_content` identity and
+# pins it with _sha256_dir, which hashes every byte of every file it finds. Aimed
+# at a checkpoint that is 394 GB of shared-cephfs reads per arm (measured: 22
+# minutes) for an identity that is supposed to describe the tokenizer and template,
+# not the weights. Copying those few files out makes the digest instant AND
+# correct. Rebuilt every run so it can never drift from the checkpoints.
+note "step 0b: building tokenizer-only identity dirs"
+TOKDIR="$OUT/tok"
+for arm in ours phala; do
+  case "$arm" in ours) SRC="$OURS";; phala) SRC="$PHALA";; esac
+  rm -rf "$TOKDIR/$arm"; mkdir -p "$TOKDIR/$arm"
+  for f in tokenizer.json tokenizer_config.json special_tokens_map.json \
+           chat_template.jinja vocab.json merges.txt added_tokens.json; do
+    [ -f "$SRC/$f" ] && cp -f "$SRC/$f" "$TOKDIR/$arm/$f"
+  done
+  n=$(ls -1 "$TOKDIR/$arm" | wc -l)
+  [ "$n" -gt 0 ] || { note "FATAL: no tokenizer files found under $SRC"; exit 1; }
+  note "  $arm: $n file(s)"
+done
+# Print the digests the profiles must declare. A mismatch here is a fail-closed
+# refusal inside evidence.py, so surface the right values rather than making the
+# operator reverse-engineer them from a traceback.
+"$PY" - "$TOKDIR" <<'PY' | tee "$OUT/tok-digests.txt"
+import sys
+sys.path.insert(0, "/mnt/cephfs/hoangduy/projects/benchmarks")
+from quality.general.evidence import _sha256_dir
+for arm in ("ours", "phala"):
+    dg, n = _sha256_dir(f"{sys.argv[1]}/{arm}")
+    print(f"SERVED_TOKENIZER_REVISION[{arm}] = {dg}  ({n} files)")
+PY
+
 # ---- 1. datasets -----------------------------------------------------------
 # Downloaded ONCE here, with the network available, then frozen. The arms run
 # offline against exactly these bytes. A missing corpus must break staging, which
@@ -153,8 +186,13 @@ gate datasets_offline $?
 # The dry run is the same code path as --execute for everything except sending
 # requests, so a field that renders identically here renders identically there.
 note "step 2: arm parity (protocol fields must be identical)"
+# GENERAL_TASKS is exported so the parity check renders THE SAME task set the arms
+# will actually run. Without it the profile default was rendered instead, which
+# still contains ifeval, and ifeval is fail-closed on served chat-template
+# provenance -- so parity failed on a task that was never going to run. A parity
+# check that validates a different plan than the one executed is worse than none.
 for arm in ours phala; do
-  ( cd "$BENCH" && "$PY" -m quality.orchestrator \
+  ( cd "$BENCH" && GENERAL_TASKS="$TASKS" "$PY" -m quality.orchestrator \
       --profile "configs/glm/glm-5.3-w4afp8-$arm.sh" \
       --dry-run --suite general ) > "$OUT/dryrun-$arm.txt" 2>&1
   note "rendered $arm (rc=$?) -> $OUT/dryrun-$arm.txt"
@@ -200,16 +238,41 @@ def digests(root):
         out[f] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
     return out
 a, b = digests("$OURS"), digests("$PHALA")
-# tokenizer.json / tokenizer_config.json / chat_template.jinja decide what text
-# the model is shown. generation_config.json does NOT (the server's flags and the
-# task's pinned kwargs govern decoding here), so a difference there is recorded
-# but does not block.
-BLOCKING = ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja")
+# tokenizer.json and chat_template.jinja decide what text the model is shown, so a
+# byte difference there blocks. generation_config.json does NOT (the server's flags
+# and the task's pinned kwargs govern decoding here), so it is recorded only.
+BLOCKING = ("tokenizer.json", "chat_template.jinja")
 diff = {f: {"ours": a[f], "phala": b[f]} for f in FILES if a[f] != b[f]}
+blocking = sorted(f for f in diff if f in BLOCKING)
+
+# tokenizer_config.json is compared SEMANTICALLY rather than by digest. Measured
+# on these two checkpoints, it differs only in `is_local` / `local_files_only` --
+# HF loader bookkeeping recording how each snapshot happened to be written, which
+# changes neither tokenization nor templating. Blocking on the raw digest would
+# fail a comparison that is in fact sound. Any difference OUTSIDE this inert set
+# does block, because then the two arms really are configured differently.
+INERT = {"is_local", "local_files_only", "_name_or_path", "name_or_path",
+         "tokenizer_file", "auto_map"}
+cfg_note = None
+try:
+    ca = json.loads((Path("$OURS") / "tokenizer_config.json").read_text(encoding="utf-8"))
+    cb = json.loads((Path("$PHALA") / "tokenizer_config.json").read_text(encoding="utf-8"))
+    semantic = sorted(k for k in set(ca) | set(cb)
+                      if k not in INERT and ca.get(k) != cb.get(k))
+    inert_diff = sorted(k for k in set(ca) | set(cb)
+                        if k in INERT and ca.get(k) != cb.get(k))
+    cfg_note = {"semantic_differences": semantic, "inert_differences": inert_diff,
+                "keys_compared": len(set(ca) | set(cb))}
+    if semantic:
+        blocking.append("tokenizer_config.json:" + ",".join(semantic))
+except Exception as e:
+    cfg_note = {"error": "%s: %s" % (type(e).__name__, e)}
+    blocking.append("tokenizer_config.json:unreadable")
+
 res = {"ours": a, "phala": b, "differs": sorted(diff),
-       "blocking_differences": sorted(f for f in diff if f in BLOCKING)}
+       "tokenizer_config": cfg_note, "blocking_differences": blocking}
 print(json.dumps(res, indent=2))
-sys.exit(1 if res["blocking_differences"] else 0)
+sys.exit(1 if blocking else 0)
 PY
 gate template_parity $?
 

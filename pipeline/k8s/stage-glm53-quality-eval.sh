@@ -138,9 +138,22 @@ staged, failed = {}, {}
 for t in tasks:
     try:
         d = tm.load_task_or_group([t])
-        n = 0
-        for name, obj in d.items():
+        # A GROUP task (mmlu = 57 subtasks) comes back as a nested dict keyed by
+        # a ConfigurableGroup, so the flat `d.items()` walk reported "1 subtask,
+        # 0 docs" for mmlu -- which looked like a staging failure and was only a
+        # counting failure. Flatten first, and SUM leaf docs rather than taking a
+        # max, because for a group the total is what the run will actually score.
+        def leaves(node):
+            if isinstance(node, dict):
+                for v in node.values():
+                    yield from leaves(v)
+            else:
+                yield node
+
+        n, k = 0, 0
+        for obj in leaves(d):
             task = getattr(obj, "task", obj)
+            k += 1
             for split in ("test_docs", "validation_docs"):
                 fn = getattr(task, split, None)
                 if fn is None:
@@ -150,10 +163,14 @@ for t in tasks:
                 except Exception:
                     continue
                 if docs is not None:
-                    n = max(n, len(list(docs)))
+                    n += len(list(docs))
                     break
-        staged[t] = {"subtasks": len(d), "docs": n}
-        print(f"[stage] {t}: {len(d)} subtask(s), {n} docs")
+        if not n:
+            # Zero docs after a successful load is not a warning, it is a broken
+            # corpus: the task would silently score nothing.
+            raise RuntimeError(f"{t} resolved {k} leaf task(s) but 0 documents")
+        staged[t] = {"leaf_tasks": k, "docs": n}
+        print(f"[stage] {t}: {k} leaf task(s), {n} docs")
     except Exception as e:
         failed[t] = f"{type(e).__name__}: {e}"
         print(f"[stage] {t}: FAILED {type(e).__name__}: {e}")
@@ -186,17 +203,52 @@ gate datasets_offline $?
 # The dry run is the same code path as --execute for everything except sending
 # requests, so a field that renders identically here renders identically there.
 note "step 2: arm parity (protocol fields must be identical)"
+# CRLF GUARD, FIRST. These profiles are authored on Windows and sourced by bash on
+# Linux, and a CR survives into the VALUE: BASE_URL became
+# 'http://127.0.0.1:30000\r/v1', which command.py then refused as a character its
+# --model_args parser would split on. That cost a full staging round, and it
+# presented as "PROTOCOL DIVERGENCE" rather than "this file has CRLF" -- so check
+# it explicitly and say so.
+for arm in ours phala; do
+  f="$BENCH/configs/glm/glm-5.3-w4afp8-$arm.sh"
+  if grep -qU $'\r' "$f" 2>/dev/null; then
+    note "FATAL: $f has CRLF line endings; bash keeps the CR inside every value"
+    note "  fix: python -c \"import pathlib,sys;p=pathlib.Path(sys.argv[1]);p.write_bytes(p.read_bytes().replace(b'\\\\r\\\\n',b'\\\\n'))\" $f"
+    gate profile_line_endings 1
+  fi
+done
+[ "$fail" = 0 ] || { note "GATES FAILED — do not launch an arm"; exit 1; }
+gate profile_line_endings 0
+
 # GENERAL_TASKS is exported so the parity check renders THE SAME task set the arms
 # will actually run. Without it the profile default was rendered instead, which
 # still contains ifeval, and ifeval is fail-closed on served chat-template
 # provenance -- so parity failed on a task that was never going to run. A parity
 # check that validates a different plan than the one executed is worse than none.
+#
+# Each render's rc is captured and gated SEPARATELY from the diff. A crashed
+# render also produces two unequal files, so without this a crash is reported as
+# a protocol divergence and the operator goes looking for a config difference
+# that does not exist.
+render_rc=0
 for arm in ours phala; do
   ( cd "$BENCH" && GENERAL_TASKS="$TASKS" "$PY" -m quality.orchestrator \
       --profile "configs/glm/glm-5.3-w4afp8-$arm.sh" \
       --dry-run --suite general ) > "$OUT/dryrun-$arm.txt" 2>&1
-  note "rendered $arm (rc=$?) -> $OUT/dryrun-$arm.txt"
+  rc=$?
+  note "rendered $arm (rc=$rc) -> $OUT/dryrun-$arm.txt"
+  if [ "$rc" != 0 ]; then
+    render_rc=1
+    note "  render FAILED; tail:"
+    tail -6 "$OUT/dryrun-$arm.txt" | sed 's/^/    /'
+  fi
 done
+gate profile_renders "$render_rc"
+if [ "$render_rc" != 0 ]; then
+  note "a profile did not render, so the diff below would be meaningless"
+  note "GATES FAILED — do not launch an arm"
+  exit 1
+fi
 "$PY" - <<PY
 import re, sys
 from pathlib import Path

@@ -532,10 +532,28 @@ _ROUTED_ALIASES = {".gate_proj.": ".w1.", ".down_proj.": ".w2.", ".up_proj.": ".
 #     statistic. There is no up_proj asymmetry. A sweep of all 256 experts of
 #     layer 3 gives median 0.115, max 0.128, ZERO above 0.25.
 #   * The band has an analytic anchor now. For symmetric int4 group-g the
-#     relative residual is (max|w|/rms|w|) / (7*sqrt(12)); the measured
-#     within-group ratio 2.91 predicts 0.120 against 0.116 measured, and
-#     down_proj's ratio 3.38 predicts 0.139 against 0.133. So ~0.12 is the FLOOR
-#     for this scheme, not a warning sign.
+#     relative residual is (max|w|/rms|w|) / (8*sqrt(12)) = ratio/27.71.
+#
+#     CORRECTED 2026-08-30: this said 7*sqrt(12) (= ratio/24.25) on the
+#     assumption that symmetric int4 uses the grid [-7,7]. It does not.
+#     Measured on the GLM-5.3 checkpoint, max|w_group|/scale_group is 7.958 to
+#     8.040 across sampled modules and the unpacked values span exactly [-8,7],
+#     so compressed-tensors uses scale = max|w|/8 and the full two's-complement
+#     range. The old divisor overstated the floor by 14%.
+#
+#     That choice also CLIPS: a group whose extreme weight is positive wants
+#     +8, which is not representable, so it clamps to +7. Measured at 0.56-0.62%
+#     of elements, and those are the largest ones, so the true floor sits a
+#     little above ratio/27.71 rather than exactly on it. It is a deliberate
+#     trade and almost certainly net-favourable -- the step is 14% finer for the
+#     99.4% of elements that are not clipped -- but it is not a pure-rounding
+#     floor, so do not treat the formula as tight.
+#
+#     Note the two residual definitions do not agree numerically and should not
+#     be compared: this gate reports the residual AFTER a separable per-row x
+#     per-column fit, which absorbs the fold, while a raw `q*scale vs base`
+#     comparison does not. Sampled down_proj measures 0.104 fitted and
+#     0.122-0.128 raw on the same checkpoint. Both are healthy.
 #   * 0.25 rejected a known-good production checkpoint. PhalaCloud/GLM-5.2-W4AFP8
 #     -- served by SGLang, reported at no measurable quality loss -- measures
 #     0.26 against the BF16 source, because they apply AWQ weight CLIPPING

@@ -555,10 +555,17 @@ def conformance_check(ckpt: Path, samples: int = 6) -> int:
               f"int8={tuple(repacked.shape)}", flush=True)
         if not ok:
             failures += 1
-        # Symmetric int4 must use the full [-7,7] grid; a max below 7 means the
-        # scales were computed against a different range than we assume.
-        if grid != 7:
-            print(f"       WARNING: grid maximum is {grid}, expected 7", flush=True)
+        # compressed-tensors symmetric int4 uses scale = max|w|/8 and the full
+        # two's-complement grid [-8, 7] -- MEASURED, not assumed: on the GLM-5.3
+        # checkpoint max|w_group|/scale_group is 7.958-8.040 and the unpacked
+        # values span exactly [-8, 7]. An earlier revision of this check expected
+        # 7 and therefore warned on every healthy module, which is worse than no
+        # check: a warning that always fires teaches people to ignore warnings.
+        # A grid maximum BELOW 7 is the real anomaly (scales computed against a
+        # narrower range than the values, i.e. wasted resolution).
+        if grid < 7:
+            print(f"       WARNING: grid maximum is {grid}, expected 7 or 8; "
+                  f"the scales may not match the value range", flush=True)
 
     print(f"[conformance] {len(picks) - failures}/{len(picks)} modules "
           f"round-trip bit-exactly", flush=True)

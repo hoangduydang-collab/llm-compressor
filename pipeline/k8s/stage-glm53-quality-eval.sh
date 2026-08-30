@@ -60,10 +60,28 @@ gate() { echo "$1=$2" >> "$OUT/stage-gates.txt"; note "gate $1=$2"
 note "bench=$BENCH ours=$OURS phala=$PHALA"
 [ -d "$BENCH/quality" ] || { note "FATAL: benchmarks not staged at $BENCH (see header)"; exit 1; }
 
+# gpqa_diamond_zeroshot needs Idavidrein/gpqa, the general suite's one gated
+# dataset. Say so up front rather than letting the download fail 40 lines later.
+# Never echo the token itself: presence and length only.
+if echo "$TASKS" | grep -q gpqa; then
+  if [ -n "${HF_TOKEN:-}" ]; then
+    note "gpqa requested and HF_TOKEN is present (${#HF_TOKEN} chars)"
+    note "  a token alone is not enough: the licence must be ACCEPTED on that"
+    note "  account at https://huggingface.co/datasets/Idavidrein/gpqa"
+  else
+    note "FATAL: gpqa requested but HF_TOKEN is unset. Create the secret and"
+    note "  mount it (see glm53-quality-arm.yaml.tmpl), or drop gpqa from TASKS."
+    exit 1
+  fi
+fi
+
 # ---- client venv ------------------------------------------------------------
 if [ ! -x "$BVENV/bin/python" ]; then
   note "building client venv at $BVENV"
-  python -m venv "$BVENV" || exit 1
+  # --system-site-packages: reuse the image's CUDA-matched torch instead of
+  # letting pip pull ~2.5 GB of its own. See the same note in
+  # glm53_quality_arm.sh.
+  python -m venv --system-site-packages "$BVENV" || exit 1
   "$BVENV/bin/pip" install -q --upgrade pip
   "$BVENV/bin/pip" install -q "lm-eval[api,ifeval]==0.4.10" "openai>=1.40" jsonschema 2>&1 | tail -5
 fi

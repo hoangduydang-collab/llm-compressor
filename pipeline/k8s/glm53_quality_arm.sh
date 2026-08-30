@@ -97,7 +97,13 @@ note "step 0: preflight"
 
 if [ ! -x "$BVENV/bin/python" ]; then
   note "building client venv at $BVENV"
-  python -m venv "$BVENV" >/dev/null 2>&1 || virtualenv "$BVENV" >/dev/null 2>&1
+  # --system-site-packages is not cosmetic: lm-eval depends on torch, and the
+  # sglang image already ships a CUDA-matched build (2.11.0+cu130). An isolated
+  # venv makes pip download ~2.5 GB of torch it does not need, per pod, and then
+  # shadows the image's build with a generic one. lm-eval 0.4.10 only requires
+  # torch>=1.8, so the resident version satisfies it and pip leaves it alone.
+  python -m venv --system-site-packages "$BVENV" >/dev/null 2>&1 \
+    || virtualenv --system-site-packages "$BVENV" >/dev/null 2>&1
   # lm-eval 0.4.10 is the version the GLM-5.2 official run used; pinning it is
   # what makes task aliases and metric keys comparable across the two runs.
   # The extras are not optional: quality/general/command.py documents

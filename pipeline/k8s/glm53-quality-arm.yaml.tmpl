@@ -54,6 +54,22 @@ spec:
         - name: NODE_NAME
           valueFrom:
             fieldRef: {fieldPath: spec.nodeName}
+        # Only gpqa_diamond_zeroshot needs this: Idavidrein/gpqa is the general
+        # suite's one gated dataset (quality/general/tasks.py GATED_DATASETS).
+        # Every other task in the default set is ungated, so the arms run without
+        # it — hence optional: true, which lets the pod start when the secret is
+        # absent instead of blocking on a credential it does not need.
+        #
+        # A SECRET, NOT A FILE ON THE PVC. model-cache-shared is mounted by
+        # collaborators' pods, and a plaintext token under /mnt/cephfs would be
+        # readable by every one of them; file modes buy nothing there because
+        # those containers run as root. The secret also keeps the token out of
+        # this repo and out of any agent transcript — the operator creates it:
+        #   kubectl -n evaluation create secret generic hd-hf-token \
+        #     --from-file=HF_TOKEN=/path/to/token.txt
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
       resources:
         # 8 GPUs: TP8 is the topology the GLM-5.2 W4AFP8 arm was proven at, and a
         # 394 GB checkpoint does not fit in fewer on 80 GB cards.

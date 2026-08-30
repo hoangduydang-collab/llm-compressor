@@ -40,12 +40,16 @@ BVENV="${BVENV:-/work/bvenv}"
 OURS="${OURS:-/mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint}"
 PHALA="${PHALA:-/mnt/cephfs/.hf-cache/models--PhalaCloud--GLM-5.3-W4AFP8/snapshots/7e77d7b5592d748778459a0dac802e7fd407e593}"
 OUT="${OUT:-/mnt/cephfs/hoangduy/results/glm53-quality-paired}"
-# The default task set is the GLM-5.2 official seven MINUS the two that cannot
-# run unattended here: gpqa_diamond_zeroshot (gated dataset, needs an accepted
-# licence on the token's account) and ifeval (fail-closed on served
-# chat-template provenance, which is an operator observation of the running
-# engine). Both stay addable for the formal run.
-TASKS="${TASKS:-gsm8k mmlu arc_challenge hellaswag truthfulqa_mc2}"
+# Default = the M3 "full4" seven, which the GLM-5.2 run also used. Both of the
+# tasks that used to be excluded are now runnable:
+#   gpqa_diamond_cot_zeroshot - gated dataset; needs HF_TOKEN in the env AND the
+#     licence accepted on that account. Note the task id: the CoT variant
+#     (generate_until), not gpqa_diamond_zeroshot, which is multiple_choice and a
+#     different benchmark despite the similar name.
+#   ifeval - fail-closed on served chat-template provenance, which is an
+#     observation of the RUNNING engine. Satisfied by capturing the engine's own
+#     args (chat_template=None etc. => no override), recorded in the profiles.
+TASKS="${TASKS:-gsm8k ifeval gpqa_diamond_cot_zeroshot mmlu arc_challenge hellaswag truthfulqa_mc2}"
 
 export HF_HOME=/mnt/cephfs/.hf-cache
 export HF_HUB_CACHE=/mnt/cephfs/.hf-cache
@@ -249,27 +253,51 @@ if [ "$render_rc" != 0 ]; then
   note "GATES FAILED — do not launch an arm"
   exit 1
 fi
-"$PY" - <<PY
-import re, sys
+# QUOTED heredoc + argv. An unquoted <<PY makes bash expand the body, and a
+# backtick in a COMMENT is then run as a command -- `is_local` in step 3 below
+# did exactly that. Nothing here needs shell expansion, so nothing gets it.
+"$PY" - "$OUT" "$OURS" "$PHALA" <<'PY'
+import difflib, re, sys
 from pathlib import Path
-out = Path("$OUT")
-# Compare the rendered plans with the two arms' IDENTITIES normalised away.
-# Whatever differs after that is a protocol difference, which is exactly what
-# must not exist.
+out, ours, phala = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+
+# Normalise away everything that is ARM IDENTITY, so that whatever remains is a
+# PROTOCOL difference -- the only kind that invalidates the comparison.
+#
+# The list is explicit rather than clever, and it grew: the first version stripped
+# only the profile/model names, so the per-arm tokenizer-identity fields I added
+# later (tok/<arm> and their content digests) read as a protocol divergence and
+# failed the gate on a comparison that was in fact sound. An identity field that
+# is SUPPOSED to differ must be named here.
+_SHA64 = re.compile(r"\b[0-9a-f]{64}\b")
+
+
 def norm(p):
     t = p.read_text(encoding="utf-8", errors="replace")
-    for ident in ("glm-5.3-w4afp8-ours", "glm-5.3-w4afp8-phala",
-                  "$OURS", "$PHALA"):
+    for ident in ("glm-5.3-w4afp8-ours", "glm-5.3-w4afp8-phala", ours, phala):
         t = t.replace(ident, "<ARM>")
-    return [l.rstrip() for l in t.splitlines()
-            # drop lines that only carry identity/paths
-            if "<ARM>" not in l or "--tasks" in l or "model_args" in l]
+    lines = []
+    for line in t.splitlines():
+        line = line.rstrip()
+        # Per-arm served-tokenizer identity: the directory and its content
+        # digest are meant to differ, and the digest is a bare 64-hex token.
+        if "served tokenizer:" in line or "served revision:" in line:
+            line = _SHA64.sub("<DIGEST>", line).replace("/tok/ours", "/tok/<ARM>") \
+                         .replace("/tok/phala", "/tok/<ARM>")
+        # NOT normalised, deliberately: `served template sha256` must be EQUAL,
+        # because that is what decides both arms see the same prompt text.
+        if "<ARM>" in line and not ("--tasks" in line or "model_args" in line):
+            continue
+        lines.append(line)
+    return lines
+
+
 a, b = norm(out / "dryrun-ours.txt"), norm(out / "dryrun-phala.txt")
 if a == b:
-    print("[parity] identical after identity normalisation"); sys.exit(0)
-import difflib
+    print("[parity] identical after identity normalisation")
+    sys.exit(0)
 d = list(difflib.unified_diff(a, b, "ours", "phala", lineterm="", n=1))
-print("[parity] PROTOCOL DIVERGENCE — the arms are not comparable:")
+print("[parity] PROTOCOL DIVERGENCE - the arms are not comparable:")
 print("\n".join(d[:60]))
 sys.exit(1)
 PY
@@ -277,9 +305,10 @@ gate arm_parity $?
 
 # ---- 3. tokenizer / chat template across the two checkpoints ---------------
 note "step 3: tokenizer + chat-template identity across checkpoints"
-"$PY" - <<PY | tee "$OUT/template-parity.json"
+"$PY" - "$OURS" "$PHALA" <<'PY' | tee "$OUT/template-parity.json"
 import hashlib, json, sys
 from pathlib import Path
+OURS, PHALA = sys.argv[1], sys.argv[2]
 FILES = ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja",
          "special_tokens_map.json", "generation_config.json")
 def digests(root):
@@ -289,7 +318,7 @@ def digests(root):
         p = r / f
         out[f] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
     return out
-a, b = digests("$OURS"), digests("$PHALA")
+a, b = digests(OURS), digests(PHALA)
 # tokenizer.json and chat_template.jinja decide what text the model is shown, so a
 # byte difference there blocks. generation_config.json does NOT (the server's flags
 # and the task's pinned kwargs govern decoding here), so it is recorded only.
@@ -298,7 +327,7 @@ diff = {f: {"ours": a[f], "phala": b[f]} for f in FILES if a[f] != b[f]}
 blocking = sorted(f for f in diff if f in BLOCKING)
 
 # tokenizer_config.json is compared SEMANTICALLY rather than by digest. Measured
-# on these two checkpoints, it differs only in `is_local` / `local_files_only` --
+# on these two checkpoints, it differs only in is_local / local_files_only --
 # HF loader bookkeeping recording how each snapshot happened to be written, which
 # changes neither tokenization nor templating. Blocking on the raw digest would
 # fail a comparison that is in fact sound. Any difference OUTSIDE this inert set
@@ -307,8 +336,8 @@ INERT = {"is_local", "local_files_only", "_name_or_path", "name_or_path",
          "tokenizer_file", "auto_map"}
 cfg_note = None
 try:
-    ca = json.loads((Path("$OURS") / "tokenizer_config.json").read_text(encoding="utf-8"))
-    cb = json.loads((Path("$PHALA") / "tokenizer_config.json").read_text(encoding="utf-8"))
+    ca = json.loads((Path(OURS) / "tokenizer_config.json").read_text(encoding="utf-8"))
+    cb = json.loads((Path(PHALA) / "tokenizer_config.json").read_text(encoding="utf-8"))
     semantic = sorted(k for k in set(ca) | set(cb)
                       if k not in INERT and ca.get(k) != cb.get(k))
     inert_diff = sorted(k for k in set(ca) | set(cb)
@@ -333,9 +362,10 @@ gate template_parity $?
 # PhalaCloud's GLM-5.3 is 21.7 MB larger than our artifact and nothing has yet
 # explained which tensors account for it.
 note "step 4: checkpoint inventory (non-gating)"
-"$PY" - <<PY > "$OUT/inventory.json"
-import json
+"$PY" - "$OURS" "$PHALA" <<'PY' > "$OUT/inventory.json"
+import json, sys
 from pathlib import Path
+OURS, PHALA = sys.argv[1], sys.argv[2]
 def inv(root):
     idx = json.loads((Path(root) / "model.safetensors.index.json").read_text())
     wm = idx["weight_map"]
@@ -343,9 +373,9 @@ def inv(root):
     total = sum((Path(root) / s).stat().st_size for s in shards)
     return {"tensors": len(wm), "shards": len(shards), "bytes": total,
             "metadata_total_size": idx.get("metadata", {}).get("total_size")}
-a, b = inv("$OURS"), inv("$PHALA")
-names_a = set(json.loads((Path("$OURS") / "model.safetensors.index.json").read_text())["weight_map"])
-names_b = set(json.loads((Path("$PHALA") / "model.safetensors.index.json").read_text())["weight_map"])
+a, b = inv(OURS), inv(PHALA)
+names_a = set(json.loads((Path(OURS) / "model.safetensors.index.json").read_text())["weight_map"])
+names_b = set(json.loads((Path(PHALA) / "model.safetensors.index.json").read_text())["weight_map"])
 print(json.dumps({
     "ours": a, "phala": b,
     "byte_delta_phala_minus_ours": b["bytes"] - a["bytes"],

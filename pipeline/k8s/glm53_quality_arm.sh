@@ -255,12 +255,36 @@ if [ -n "${LIMIT:-}" ]; then
 fi
 SUITE_ARGS=""
 [ -n "${SUITE:-}" ] && SUITE_ARGS="--suite $SUITE"
+# Thinking ON is the M3/GLM-5.2 protocol and it is load-bearing, not cosmetic:
+# --reasoning-mode threads the profile's THINK_ON_EXTRA_BODY
+# ({"chat_template_kwargs": {"enable_thinking": true}}) into every generative
+# request. It also means an answer-less, budget-exhausted response scores zero,
+# which is exactly how M3's AWQ non-termination pathology became visible.
+REASONING_MODE_ARGS=""
+[ -n "${REASONING_MODE:-}" ] && REASONING_MODE_ARGS="--reasoning-mode $REASONING_MODE"
+
+# TOKEN SPEND. The benchmarks repo at this ref has no usage-proxy capture -- the
+# per-request accounting behind M3's "token spend 2.19x BF16" and the GLM-5.2
+# report's exhaustion rates is not in the pushed tree. SGLang's Prometheus
+# endpoint is a coarse substitute that needs no benchmarks change: scraping it
+# either side of the suite gives per-arm TOTALS (generated tokens, request
+# counts), which is the axis that mattered most. It is aggregate, not
+# per-request, so it cannot attribute spend to a task or an item -- do not
+# report it as if it could.
+scrape_metrics() {
+  curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
+    | grep -aE "^sglang:(prompt_tokens_total|generation_tokens_total|num_requests_total|num_aborted_requests_total|cached_tokens_total)" \
+    > "$CLIENT/metrics-$1.txt" || echo "(scrape failed)" > "$CLIENT/metrics-$1.txt"
+  note "metrics[$1]: $(tr '\n' ' ' < "$CLIENT/metrics-$1.txt" | cut -c1-200)"
+}
+scrape_metrics before
 
 ( cd "$BENCH" && BASE_URL="http://localhost:$PORT" BASELINE_REF="" PATH="$BVENV/bin:$PATH" \
     "$BVENV/bin/python" -m quality.orchestrator \
     --profile "$PROFILE" --out-root "$ROOT/results" --run-id "$RUN_ID" \
-    $SUITE_ARGS $LIMIT_ARGS --execute ) >"$CLIENT/general.log" 2>&1
+    $SUITE_ARGS $LIMIT_ARGS $REASONING_MODE_ARGS --execute ) >"$CLIENT/general.log" 2>&1
 rc=$?; gate general_suite "$rc"
+scrape_metrics after
 tail -30 "$CLIENT/general.log" | tee -a "$CLIENT/client.log"
 
 # ---- step 4: shutdown ------------------------------------------------------

@@ -9,6 +9,7 @@
 #   @@REF@@       llm-compressor commit to pin the code to
 #   @@LIMIT@@     items per general task, or "" for full populations
 #   @@TASKS@@     space-separated GENERAL_TASKS override, or "" for the profile default
+#   @@REASONING@@ reasoning | nonreasoning | "" (send no thinking toggle)
 #   @@NODESELECTOR@@  rendered nodeSelector block, or "{}" for scheduler choice
 #
 # The server and the eval client share ONE pod: the arm script serves on
@@ -46,6 +47,11 @@ spec:
         - {name: RUN_TAG, value: "@@RUN_TAG@@"}
         - {name: LIMIT, value: "@@LIMIT@@"}
         - {name: GENERAL_TASKS, value: "@@TASKS@@"}
+        # Thinking ON is the M3 / GLM-5.2 protocol, and load-bearing: it threads
+        # the profile's THINK_ON_EXTRA_BODY into every generative request, and it
+        # is what makes a budget-exhausted, answer-less response score zero --
+        # the signal that exposed M3's AWQ non-termination.
+        - {name: REASONING_MODE, value: "@@REASONING@@"}
         - {name: PROFILE, value: "configs/glm/glm-5.3-w4afp8-@@ARM@@.sh"}
         - {name: PORT, value: "30000"}
         - {name: RUN_ID, value: "glm53-@@RUN_TAG@@"}
@@ -97,9 +103,11 @@ spec:
           # value would shadow the profile's own default with the empty string.
           [ -n "${GENERAL_TASKS:-}" ] && export GENERAL_TASKS || unset GENERAL_TASKS
           [ -n "${LIMIT:-}" ] || unset LIMIT
+          [ -n "${REASONING_MODE:-}" ] || unset REASONING_MODE
 
           ARM="$ARM" PROFILE="$PROFILE" PORT="$PORT" ROOT="$ROOT" \
           MODEL_PATH="$MODEL_PATH" RUN_ID="$RUN_ID" BENCH="$BENCH" \
+          REASONING_MODE="${REASONING_MODE:-}" \
             bash pipeline/k8s/glm53_quality_arm.sh
           rc=$?
           echo "==> arm done (rc=$rc)"

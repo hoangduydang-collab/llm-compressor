@@ -312,29 +312,34 @@ def _check_quant_method_coverage(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Every module must resolve to the loader method its bytes are encoded for.
+    """Keep ignored_layers consistent with the tensors, for engines that read it.
 
-    WHY THIS IS NOT REDUNDANT WITH THE ENGINE PROBE. The probe loads a 4-layer
-    slice, so it exercises layers 0-3 and nothing else. GLM-5.3 gives only some
-    layers their own DSA indexer (``indexer_types``: 'full' vs 'shared'), and
-    the first 'full' one is layer 6 -- outside every slice we can afford to
-    load on one GPU. A missing ignore entry there would first appear on the
-    full 8-GPU serve.
+    READ THIS BEFORE TRUSTING THE RESULT. SGLang v0.5.17 does NOT read this
+    field. W4AFp8Config.from_config never passes ignored_layers to the
+    constructor, so self.ignored_layers is [] for every checkpoint and
+    is_layer_skipped always returns False -- every LinearBase gets
+    Fp8LinearMethod no matter what any config field says, under any name
+    (ignored_layers, modules_to_not_convert, ignore). An earlier version of this
+    docstring claimed a silent-corruption hazard from a quantized module being
+    listed here; on SGLang that cannot happen, because nothing is ever skipped.
 
-    BOTH DIRECTIONS ARE FAILURES, and they fail differently:
+    What actually decides loadability there is which modules the MODEL builds
+    with a quant_config -- see _ENGINE_FP8_SUFFIXES in to_sglang_w4afp8. This
+    check cannot see that, and passing it does not mean the artifact loads.
 
-      BF16 Linear absent from ignored_layers -> the loader hands it
-      Fp8LinearMethod, which asks for a ``weight_scale_inv`` that was never
-      written. Loud (KeyError at load), but only where the slice reaches.
+    It is still worth running, for two reasons:
 
-      Quantized module PRESENT in ignored_layers -> the loader hands it
-      UnquantizedLinearMethod, which reads int8/e4m3 bytes as if they were
-      BF16. SILENT: the engine starts and serves noise.
+      vLLM DOES read ignore lists, and reads them FIRST -- that is the incident
+      serve_ignore.py exists for, where fp8 bytes were served as unquantized and
+      every offline gate stayed green. Anything we hand to vLLM needs this field
+      honest.
+
+      If upstream ever wires the parameter up (it exists and is unused, so this
+      is a plausible fix), a checkpoint that was already consistent keeps
+      working instead of silently changing behaviour.
 
     Matching is exact module-name membership, which is what both the AWQ
-    recipe's ignore list and ``build_config`` emit. A loader that also does
-    suffix matching would skip a superset of this, so exact membership is the
-    conservative direction: it never claims coverage the loader lacks.
+    recipe's ignore list and ``build_config`` emit.
     """
     print("\n== quant-method coverage ==")
     ignored_set = set(ignored)

@@ -19,15 +19,25 @@ FORMAT FACTS, each established from a primary source rather than assumed:
   always True on this path and there is no per-channel fallback -- a per-channel
   ``weight_scale`` simply fails to load.
 * e4m3 max finite magnitude is 448.0.
-* Expert int4 values are stored two-per-byte as signed nibbles in [-7, +7]
-  (-8 unused), low nibble in the EVEN column. Determined empirically from
-  PhalaCloud/GLM-5.2-W4AFP8 by testing eight orderings and confirming with an
-  independent least-squares refit and a value histogram.
+* Expert int4 values are stored two-per-byte as signed nibbles, low nibble in
+  the EVEN column. Determined empirically from PhalaCloud/GLM-5.2-W4AFP8 by
+  testing eight orderings and confirming with an independent least-squares refit
+  and a value histogram.
+* The value range is [-8, +7], not [-7, +7]. Measured on our own checkpoint:
+  max|w_group|/scale_group is 7.958-8.040, so compressed-tensors uses
+  scale = max|w|/8 and the full two's-complement range. An earlier version of
+  this docstring said -8 was unused, which was wrong.
+* THE INT32 -> INT8 STEP IS NOT A REINTERPRET. If compressed-tensors placed
+  column i at bits [4i, 4i+4), the int32 bytes would already BE this layout on a
+  little-endian machine. They do not: the converter tried exactly that and its
+  guard rejected it on the first real module (2026-08-30). Unpack with
+  compressed-tensors, then pack with :func:`pack_nibbles_int8`. Beware of
+  "verifying" a bit convention against a reference packer that encodes the same
+  assumption -- that proves nothing, and is how the reinterpret got as far as a
+  394 GB job.
 """
 
 from __future__ import annotations
-
-import sys
 
 import torch
 
@@ -93,43 +103,6 @@ def dequantize_block_fp8(
         block_k, dim=-1
     )
     return qweight.float() * expanded[:out_features, :in_features]
-
-
-def repack_int32_to_int8(packed: torch.Tensor, logical_cols: int) -> torch.Tensor:
-    """Reinterpret int32-packed 4-bit values as int8 two-per-byte. No compute.
-
-    The two formats are THE SAME BYTES on a little-endian machine. int32 packing
-    puts column ``i`` at bits ``[4i, 4i+4)`` of its word, so byte 0 of each word
-    holds columns 0 and 1 (column 0 in the low nibble), byte 1 holds 2 and 3, and
-    so on -- which is exactly the int8 layout SGLang wants. So the expert
-    conversion is a view plus a rename, not an unpack and a repack.
-
-    Worth doing for correctness as much as speed: a reinterpret cannot lose or
-    reorder a value, whereas unpack-then-repack has two conventions to get right
-    and materializes an intermediate eight times the packed size. The caller
-    must still assert this against the authoritative unpacker on real data --
-    ``pipeline.to_sglang_w4afp8`` does, on a sample of every conversion -- since
-    the claim rests on compressed-tensors' bit order, not on ours.
-
-    ``logical_cols`` is the unpacked column count, needed because int32 packing
-    rounds up to a multiple of 8 and the tail nibbles of the last word are
-    padding.
-    """
-    if packed.dtype != torch.int32:
-        raise ValueError(f"expected int32 packed input, got {packed.dtype}")
-    if sys.byteorder != "little":
-        raise RuntimeError(
-            "the int32 -> int8 reinterpret assumes little-endian byte order; "
-            f"this machine is {sys.byteorder}-endian, so unpack and repack "
-            "explicitly instead"
-        )
-    if logical_cols % 2:
-        raise ValueError(
-            f"logical column count {logical_cols} is odd, so nibbles cannot be "
-            f"paired into bytes"
-        )
-    as_bytes = packed.contiguous().view(torch.int8).reshape(packed.shape[0], -1)
-    return as_bytes[:, : logical_cols // 2].contiguous()
 
 
 def pack_nibbles_int8(values: torch.Tensor) -> torch.Tensor:

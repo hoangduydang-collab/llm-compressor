@@ -21,7 +21,6 @@ from pipeline.sglang_w4afp8_kernels import (  # noqa: E402
     dequantize_block_fp8,
     pack_nibbles_int8,
     quantize_block_fp8,
-    repack_int32_to_int8,
     unpack_nibbles_int8,
 )
 
@@ -189,54 +188,3 @@ def test_nibble_scale_semantics_survive_a_full_expert_round_trip():
     expected = q.float() * scale.repeat_interleave(group, dim=1)
     actual = recovered.float() * scale.repeat_interleave(group, dim=1)
     assert torch.equal(actual, expected)
-
-
-# --------------------------------------------------------------------------
-# int32 -> int8 reinterpret (the conversion fast path)
-# --------------------------------------------------------------------------
-
-
-def _pack_int32_reference(values):
-    """Column i at bits [4i, 4i+4) -- compressed-tensors' documented layout."""
-    rows, cols = values.shape
-    v = (values.to(torch.int32) & 0xF).reshape(rows, cols // 8, 8)
-    out = torch.zeros(rows, cols // 8, dtype=torch.int32)
-    for i in range(8):
-        out |= v[:, :, i] << (4 * i)
-    return out
-
-
-def test_reinterpret_equals_unpack_then_repack():
-    """The whole justification for the fast path: same bytes, no compute."""
-    torch.manual_seed(11)
-    q = torch.randint(-8, 8, (128, 512), dtype=torch.int8)
-    packed = _pack_int32_reference(q)
-    assert torch.equal(
-        repack_int32_to_int8(packed, q.shape[1]), pack_nibbles_int8(q)
-    )
-
-
-def test_reinterpret_round_trips_every_value():
-    values = torch.arange(-8, 8, dtype=torch.int8).repeat(4, 4)[:, :64]
-    packed = _pack_int32_reference(values)
-    out = repack_int32_to_int8(packed, values.shape[1])
-    assert torch.equal(unpack_nibbles_int8(out), values)
-
-
-def test_reinterpret_crops_int32_padding():
-    """int32 packing rounds up to a multiple of 8; the tail nibbles are padding
-    and must not appear in the output."""
-    q = torch.randint(-8, 8, (8, 24), dtype=torch.int8)
-    packed = _pack_int32_reference(q)
-    assert packed.shape == (8, 3)
-    out = repack_int32_to_int8(packed, 20)  # pretend only 20 columns are real
-    assert out.shape == (8, 10)
-    assert torch.equal(unpack_nibbles_int8(out), q[:, :20])
-
-
-def test_reinterpret_rejects_wrong_dtype_and_odd_width():
-    with pytest.raises(ValueError, match="int32"):
-        repack_int32_to_int8(torch.zeros(2, 2, dtype=torch.int8), 4)
-    with pytest.raises(ValueError, match="odd"):
-        repack_int32_to_int8(torch.zeros(2, 2, dtype=torch.int32), 5)
-

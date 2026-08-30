@@ -64,29 +64,6 @@ quantization:
     - "re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
     - "re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$"
-    # THE DSA INDEXER. Added 2026-08-30, and its absence is why the 20260828
-    # checkpoint could not be served: SGLang's dsa_indexer.py builds wq_b and wk
-    # with a quant_config, so Fp8LinearMethod demands a weight_scale_inv for them
-    # in EVERY layer, and W4AFp8Config.from_config never reads ignored_layers --
-    # so nothing in a config can excuse a BF16 indexer. zai-org/GLM-5.3 (official
-    # FP8) and both PhalaCloud W4AFP8 releases all quantize exactly these two and
-    # leave weights_proj / k_norm in BF16, which is what this pattern reproduces.
-    #
-    # quantize.py already anticipated this (see its allow_fp8 / "msa_indexer"
-    # block, which un-fails the BF16-indexer gate when a recipe targets the
-    # indexer), and glm52_awq_1layer_indexer_fp8.yaml existed to probe it. The
-    # production config simply never adopted the line, so the whole fix had to be
-    # applied downstream instead -- to_sglang_w4afp8's ENGINE_FP8_SUFFIXES and a
-    # 19-shard post-hoc patch of a finished 394 GB artifact.
-    #
-    # OPEN QUESTION, carried from the probe config: FP8-targeting the indexer
-    # makes it an apply-time balance layer of the input_layernorm mapping. It
-    # should NOT fold, because _is_grid_search_targeted is False for float
-    # schemes and no balance layer of that mapping is integer-quantized, so s
-    # stays 1 -- which is what the converter's check_input_layernorm_unfolded
-    # measured on the 20260828 run. Verify that gate still passes on the first
-    # run that uses this line rather than assuming it.
-    - "re:.*model[.]layers[.][0-9]+[.]self_attn[.]indexer[.](wq_b|wk)$"
   # BLOCK, not per-channel (changed 2026-08-29; the killed run used the
   # FP8_DYNAMIC default). This is a SERVING-COMPATIBILITY choice, not a numerics
   # or speed one, and the reasoning is worth keeping because the obvious argument

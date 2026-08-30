@@ -54,8 +54,12 @@ serve:
   sglang_kwargs:
     quantization: w4afp8
     disable_shared_experts_fusion: true
+    # NOT disable_piecewise_cuda_graph: the GLM-5.2 config carried it for
+    # SGLang >= v0.5.13, and v0.5.17's ServerArgs rejects it outright
+    # (TypeError, 18 s in, before any weight load). This version splits it into
+    # disable_prefill_cuda_graph / disable_decode_cuda_graph, both of which
+    # disable_cuda_graph already covers.
     disable_cuda_graph: true
-    disable_piecewise_cuda_graph: true
     max_total_tokens: 8192
     chunked_prefill_size: 1024
     max_running_requests: 1

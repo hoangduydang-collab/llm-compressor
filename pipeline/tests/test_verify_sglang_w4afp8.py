@@ -288,3 +288,70 @@ def test_genuinely_absent_entries_still_warn(pair, capsys):
     assert verify(src, dst, samples=10) == 0
     summary = capsys.readouterr().out.split("== summary ==")[-1]
     assert "model.layers.99.mlp.gate" in summary
+
+
+def _add_forced_fp8(src_tensors, dst_tensors, bad_scale=False, leave_bf16=False):
+    """The DSA indexer shape: BF16 in the source, block-FP8 in the output."""
+    key = "model.layers.3.self_attn.indexer.wk"
+    torch.manual_seed(5)
+    w = torch.randn(128, HIDDEN).bfloat16()
+    src_tensors[f"{key}.weight"] = w
+    if leave_bf16:
+        dst_tensors[f"{key}.weight"] = w
+        dst_tensors[f"{key}.weight_scale_inv"] = torch.ones(
+            1, HIDDEN // 128, dtype=torch.float32)
+        return key
+    q, s = quantize_block_fp8(w.float(), (128, 128))
+    dst_tensors[f"{key}.weight"] = q
+    dst_tensors[f"{key}.weight_scale_inv"] = s * (4.0 if bad_scale else 1.0)
+    return key
+
+
+def test_engine_forced_fp8_indexer_passes_when_re_encoded(pair, capsys):
+    """BF16 in the source and e4m3 in the output is CORRECT here, so the
+    passthrough check must not demand bit-exactness -- but something must still
+    check it, since a missing indexer scale is what made the first artifact
+    unloadable."""
+    src, dst, tensors = pair
+    src_t = dict(_read(src))
+    _add_forced_fp8(src_t, tensors)
+    _write(src, src_t, {"quantization_config": {
+        "quant_method": "compressed-tensors", "ignore": ["lm_head"]}})
+    _rewrite(dst, tensors)
+    assert verify(src, dst, samples=10) == 0
+    assert "engine-forced fp8 module(s) are e4m3" in capsys.readouterr().out
+
+
+def test_an_indexer_left_in_bf16_fails(pair):
+    """The original bug: a scale present but the weight never re-encoded."""
+    src, dst, tensors = pair
+    src_t = dict(_read(src))
+    _add_forced_fp8(src_t, tensors, leave_bf16=True)
+    _write(src, src_t, {"quantization_config": {
+        "quant_method": "compressed-tensors", "ignore": ["lm_head"]}})
+    _rewrite(dst, tensors)
+    assert verify(src, dst, samples=10) == 1
+
+
+def test_a_wrong_indexer_scale_fails(pair):
+    src, dst, tensors = pair
+    src_t = dict(_read(src))
+    _add_forced_fp8(src_t, tensors, bad_scale=True)
+    _write(src, src_t, {"quantization_config": {
+        "quant_method": "compressed-tensors", "ignore": ["lm_head"]}})
+    _rewrite(dst, tensors)
+    assert verify(src, dst, samples=10) == 1
+
+
+def test_a_checkpoint_with_no_forced_fp8_warns(pair, capsys):
+    """On GLM-5.3 their absence means the artifact cannot load, so silence is
+    the wrong response."""
+    src, dst, _ = pair
+    assert verify(src, dst, samples=10) == 0
+    assert "no engine-forced fp8 modules found" in capsys.readouterr().out
+
+
+def _read(path):
+    with safe_open(str(path / "model-00001-of-00001.safetensors"),
+                   framework="pt") as handle:
+        return {k: handle.get_tensor(k) for k in handle.keys()}

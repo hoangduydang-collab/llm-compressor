@@ -261,6 +261,12 @@ def verify(
         and not k.endswith((".weight_scale_inv", ".input_scale"))
         and f"{_stem(k)}.weight_packed" not in src_map
         and f"{_stem(k)}.weight_scale" not in src_map
+        # ...and NOT quantized in the output. The DSA indexer is BF16 in the
+        # source (the AWQ recipe ignores it) but must be block-FP8 in the output,
+        # because SGLang builds wk/wq_b with a quant_config and cannot skip
+        # them. Those are re-encoded, not copied, so requiring bit-exactness
+        # here would fail on a correct artifact.
+        and f"{_stem(k)}.weight_scale_inv" not in dst_map
     ]
     picks = passthrough[:: max(1, len(passthrough) // samples)][:samples]
     bad = 0
@@ -273,6 +279,51 @@ def verify(
     if not bad:
         _ok(f"sampled {len(picks)} of {len(passthrough)} passthrough tensors: "
             f"identical")
+
+    print("\n== engine-forced fp8 (BF16 in the source) ==")
+    # Modules the engine quantizes even though the recipe did not: currently the
+    # DSA indexer's wk and wq_b. They are excluded from the passthrough check
+    # above, so without this section nothing would look at them at all -- and
+    # they are exactly the tensors whose absence made the first artifact
+    # unloadable.
+    forced = sorted(
+        _stem(k) for k in dst_map
+        if k.endswith(".weight_scale_inv")
+        and f"{_stem(k)}.weight_packed" not in src_map
+        and f"{_stem(k)}.weight_scale" not in src_map
+        and f"{_stem(k)}.weight" in src_map
+    )
+    if not forced:
+        warnings.append(
+            "no engine-forced fp8 modules found; on GLM-5.3 the DSA indexer "
+            "wk/wq_b should be here, and without them the artifact cannot load"
+        )
+    else:
+        bad = 0
+        resids = []
+        for module in forced:
+            src_w = get(src, src_map, f"{module}.weight")
+            dst_w = get(dst, dst_map, f"{module}.weight")
+            if dst_w.dtype != torch.float8_e4m3fn:
+                _fail(f"{module} is {dst_w.dtype}, expected float8_e4m3fn; the "
+                      f"loader would ask Fp8LinearMethod to read it", errors)
+                bad += 1
+                continue
+            scale = get(dst, dst_map, f"{module}.weight_scale_inv")
+            back = dequantize_block_fp8(dst_w, scale, DEFAULT_BLOCK)
+            ref = src_w.float()
+            resids.append((((back - ref).norm() / ref.norm()).item(), module))
+        if resids:
+            ordered = sorted(resids)
+            print(f"  residuals: n={len(ordered)} min={ordered[0][0]:.4f} "
+                  f"max={ordered[-1][0]:.4f} (bound {_FP8_MAX_RESID})",
+                  flush=True)
+            if ordered[-1][0] > _FP8_MAX_RESID:
+                _fail(f"engine-fp8 residual {ordered[-1][0]:.4f} on "
+                      f"{ordered[-1][1]} exceeds {_FP8_MAX_RESID}", errors)
+            elif not bad:
+                _ok(f"all {len(forced)} engine-forced fp8 module(s) are e4m3 "
+                    f"and within one rounding of the BF16 source")
 
     print("\n== index integrity ==")
     declared = int(dst_index.get("metadata", {}).get("total_size", 0))

@@ -180,8 +180,8 @@ def slice_checkpoint(ckpt: Path, out: Path, layers: int = 4) -> int:
     print(f"[slice] layers 0..{layers - 1} ({dense} dense + {moe} MoE)", flush=True)
     print(f"[slice] tensors {len(kept)} of {len(weight_map)}", flush=True)
     print(f"[slice] kept bytes {kept_bytes / 1e9:.2f} GB "
-          f"(symlinked {len(shards)} shard(s), {total / 1e9:.1f} GB on disk)",
-          flush=True)
+          f"({len(shards)} linked shard(s) holding {total / 1e9:.1f} GB, the "
+          f"excess being layers this slice excludes)", flush=True)
     print(f"[slice] -> {out}", flush=True)
     return 0
 

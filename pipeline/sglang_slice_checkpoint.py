@@ -141,6 +141,32 @@ def slice_checkpoint(ckpt: Path, out: Path, layers: int = 4) -> int:
         total += (ckpt / shard).stat().st_size
     print(f"[slice] shard linking: {'/'.join(sorted(how))}", flush=True)
 
+    # Prove the links are usable before handing the directory to an engine.
+    # A dangling symlink is a directory entry that `ls` shows and `is_file()`
+    # rejects, so this is cheap -- and it is exactly the failure the HF cache's
+    # relative symlinks produced, surfacing at load time as "incomplete
+    # download?" rather than as anything about linking. Opening the header too,
+    # because a link can resolve and still point at a truncated blob.
+    from safetensors import safe_open
+
+    unusable = []
+    for shard in shards:
+        path = out / shard
+        if not path.is_file():
+            unusable.append(f"{shard}: not a readable file (dangling link?)")
+            continue
+        try:
+            with safe_open(str(path), framework="pt") as handle:
+                next(iter(handle.keys()), None)
+        except Exception as err:  # noqa: BLE001
+            unusable.append(f"{shard}: {type(err).__name__}: {err}")
+    if unusable:
+        for line in unusable:
+            print(f"[slice] FAIL {line}", flush=True)
+        return 1
+    _ok = len(shards)
+    print(f"[slice] verified {_ok} linked shard(s) are readable", flush=True)
+
     # total_size must describe the KEPT tensors, not the symlinked files, which
     # still hold the layers we excluded.
     from safetensors import safe_open
@@ -198,16 +224,25 @@ def _link(source: Path, dest: Path) -> str:
     on the real checkpoint that is hundreds of gigabytes appearing on a shared
     volume because a link failed -- a failure worth surfacing, not absorbing.
     """
+    # RESOLVE FIRST. A HuggingFace cache snapshot is a symlink farm: every
+    # snapshots/<rev>/*.safetensors entry is a symlink to ../../blobs/<sha>.
+    # os.link on Linux does NOT follow symlinks -- it hardlinks the symlink
+    # inode, target string and all -- so linking one into a directory at a
+    # different depth reproduces a RELATIVE target that now resolves to
+    # nowhere. The result is a slice full of dangling symlinks that pass `ls`
+    # and fail at load time as "incomplete download?", which is what happened
+    # on 2026-08-30. Resolving turns the source into the blob's real path.
+    real = source.resolve(strict=True)
     try:
-        os.link(source, dest)
+        os.link(real, dest)
         return "hardlink"
     except OSError as hard_err:
         try:
-            os.symlink(source.resolve(), dest)
+            os.symlink(real, dest)
             return "symlink"
         except OSError as soft_err:
             raise OSError(
-                f"cannot link {dest} -> {source}: hard link failed "
+                f"cannot link {dest} -> {real}: hard link failed "
                 f"({hard_err}); symlink failed ({soft_err}). Refusing to copy, "
                 f"which would duplicate the shards on a shared volume."
             ) from soft_err

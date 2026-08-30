@@ -22,6 +22,21 @@ DEPTH = 8
 DENSE = 3
 
 
+def _can_symlink(tmp) -> bool:
+    """Probe rather than check the platform: an unelevated Windows process
+    cannot create symlinks (WinError 1314), but an elevated one can, and WSL
+    paths behave differently again."""
+    import os
+
+    target = tmp / "_probe_target"
+    target.write_text("x", encoding="utf-8")
+    try:
+        os.symlink(target, tmp / "_probe_link")
+    except OSError:
+        return False
+    return True
+
+
 @pytest.fixture
 def full(tmp_path):
     """A miniature 8-layer checkpoint spread over two shards."""
@@ -180,3 +195,71 @@ def test_slice_is_rerunnable(full):
     assert slice_checkpoint(ckpt, out, layers=5) == 0
     index = json.loads((out / "model.safetensors.index.json").read_text())
     assert any(".layers.4." in k for k in index["weight_map"])
+
+
+def test_slice_resolves_hf_cache_style_relative_symlinks(tmp_path):
+    """The bug that broke the first real slice.
+
+    Skipped where symlinks cannot be CREATED (unelevated Windows); it runs in
+    the Linux container where the conversion and slicing actually happen, which
+    is the environment the bug occurred in.
+
+    A HuggingFace cache snapshot is a symlink farm: snapshots/<rev>/x.safetensors
+    -> ../../blobs/<sha>. os.link does NOT follow symlinks on Linux, so linking
+    such an entry into a directory at a different depth reproduces the RELATIVE
+    target, which then resolves to nowhere. The slice ends up full of dangling
+    symlinks that `ls` displays happily and the engine reports as
+    "incomplete download?".
+    """
+    import os
+
+    if not _can_symlink(tmp_path):
+        pytest.skip("cannot create symlinks on this platform/privilege level")
+
+    root = tmp_path / "cache"
+    blobs = root / "blobs"
+    snap = root / "snapshots" / "abc123"
+    blobs.mkdir(parents=True)
+    snap.mkdir(parents=True)
+
+    tensors = {
+        "model.embed_tokens.weight": torch.ones(4, 8),
+        "model.layers.0.self_attn.o_proj.weight": torch.ones(8, 8),
+        "model.layers.3.mlp.experts.0.gate_proj.weight": torch.ones(
+            4, 8, dtype=torch.int8
+        ),
+        "model.norm.weight": torch.ones(8),
+        "lm_head.weight": torch.ones(4, 8),
+    }
+    blob = blobs / "deadbeef"
+    save_file(tensors, str(blob), metadata={"format": "pt"})
+    shard = "model-00001-of-00001.safetensors"
+    # Relative target, exactly as huggingface_hub writes it.
+    os.symlink(os.path.join("..", "..", "blobs", "deadbeef"), snap / shard)
+
+    (snap / "model.safetensors.index.json").write_text(
+        json.dumps({
+            "metadata": {"total_size": 0},
+            "weight_map": {k: shard for k in tensors},
+        }),
+        encoding="utf-8",
+    )
+    (snap / "config.json").write_text(
+        json.dumps({
+            "architectures": ["GlmMoeDsaForCausalLM"],
+            "num_hidden_layers": 8,
+            "first_k_dense_replace": 3,
+        }),
+        encoding="utf-8",
+    )
+
+    # A directory at a different depth, so a relative target cannot survive.
+    out = tmp_path / "a" / "b" / "slice"
+    assert slice_checkpoint(snap, out, layers=4) == 0
+
+    linked = out / shard
+    assert linked.is_file(), "slice entry does not resolve to a real file"
+    from safetensors import safe_open
+
+    with safe_open(str(linked), framework="pt") as handle:
+        assert "model.embed_tokens.weight" in handle.keys()

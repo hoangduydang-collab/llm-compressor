@@ -280,21 +280,62 @@ def test_recover_fold_scale_survives_a_zero_gain():
     assert recovered[1].item() == 1.0  # pinned, not nan
 
 
-def test_build_config_drops_regex_ignores():
+_IGNORE_SRC = {
+    "architectures": ["X"],
+    "quantization_config": {
+        "ignore": ["lm_head", "re:.*mlp[.]gate$", "model.layers.0.mlp.gate"],
+    },
+}
+
+
+def test_build_config_drops_regex_ignores_when_it_cannot_resolve_them():
     """is_layer_skipped does prefix matching, so an unresolved `re:` pattern
-    would match nothing and silently un-ignore a module."""
-    out = build_config({
-        "architectures": ["X"],
-        "quantization_config": {
-            "ignore": ["lm_head", "re:.*mlp[.]gate$", "model.layers.0.mlp.gate"],
-        },
-    })
+    would match nothing and silently un-ignore a module. With no module list to
+    resolve against, dropping it is the least-bad option -- emitting it would
+    look like coverage while providing none."""
+    out = build_config(_IGNORE_SRC)
     assert out["quantization_config"]["quant_method"] == "w4afp8"
     assert out["quantization_config"]["group_size"] == 128
     assert out["quantization_config"]["ignored_layers"] == [
         "lm_head", "model.layers.0.mlp.gate"
     ]
     assert out["architectures"] == ["X"]
+
+
+def test_build_config_expands_regex_ignores_against_real_module_names():
+    """The reason dropping is not good enough.
+
+    Whether the source ALSO lists every regex match literally is a property of
+    the llm-compressor version that wrote the checkpoint. Here layer 1's gate is
+    matched only by the pattern, so dropping it would leave a BF16 Linear the
+    loader does not know to skip.
+    """
+    out = build_config(_IGNORE_SRC, module_names=[
+        "model.layers.0.mlp.gate",
+        "model.layers.1.mlp.gate",
+        "model.layers.1.self_attn.o_proj",
+        "model.layers.1.mlp.experts.0.gate_proj",
+    ])
+    ignored = out["quantization_config"]["ignored_layers"]
+    assert "model.layers.1.mlp.gate" in ignored
+    # Literals stay, and stay first; no duplicate for the layer-0 gate that both
+    # the literal list and the pattern name.
+    assert ignored[:2] == ["lm_head", "model.layers.0.mlp.gate"]
+    assert ignored.count("model.layers.0.mlp.gate") == 1
+    # The pattern must not drag in modules it does not match.
+    assert "model.layers.1.self_attn.o_proj" not in ignored
+    assert "model.layers.1.mlp.experts.0.gate_proj" not in ignored
+
+
+def test_build_config_expansion_only_matches_modules_that_exist():
+    """A pattern naming a layer the checkpoint does not carry (layer 78, the MTP
+    block, until it is grafted) must resolve to nothing rather than be copied
+    through as an unusable pattern."""
+    out = build_config(
+        {"quantization_config": {"ignore": ["re:.*layers[.]78[.].*"]}},
+        module_names=["model.layers.0.mlp.gate"],
+    )
+    assert out["quantization_config"]["ignored_layers"] == []
 
 
 def test_layer_subset_and_dry_run(synthetic):

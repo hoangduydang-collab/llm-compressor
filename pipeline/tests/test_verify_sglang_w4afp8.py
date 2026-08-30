@@ -112,13 +112,21 @@ def pair(tmp_path):
         "model.layers.3.mlp.gate.weight": src["model.layers.3.mlp.gate.weight"],
     }
     _write(dst_dir, dst, {"quantization_config": {
-        "quant_method": "w4afp8", "group_size": 128, "ignored_layers": ["lm_head"]}})
+        "quant_method": "w4afp8", "group_size": 128,
+        "ignored_layers": _IGNORED}})
     return src_dir, dst_dir, dst
 
 
-def _rewrite(dst_dir, tensors):
+# mlp.gate is a Linear the router uses and it stays BF16, so the loader must be
+# told to skip it. A conversion that omits it is not a correct conversion, which
+# is why it belongs in the baseline fixture rather than only in a failure case.
+_IGNORED = ["lm_head", "model.layers.3.mlp.gate"]
+
+
+def _rewrite(dst_dir, tensors, ignored=None):
     _write(dst_dir, tensors, {"quantization_config": {
-        "quant_method": "w4afp8", "group_size": 128, "ignored_layers": []}})
+        "quant_method": "w4afp8", "group_size": 128,
+        "ignored_layers": _IGNORED if ignored is None else ignored}})
 
 
 def test_a_correct_conversion_passes(pair):
@@ -203,6 +211,45 @@ def test_unresolved_regex_in_ignored_layers_fails(pair):
     _write(dst, tensors, {"quantization_config": {
         "quant_method": "w4afp8", "ignored_layers": ["re:.*mlp[.]gate$"]}})
     assert verify(src, dst, samples=10) == 1
+
+
+def test_unquantized_linear_missing_from_ignored_layers_fails(pair):
+    """The loud direction: the loader hands mlp.gate Fp8LinearMethod, which
+    demands a weight_scale_inv nobody wrote.
+
+    The engine probe would also catch this -- but only for layers inside the
+    4-layer slice it can afford on one GPU. GLM-5.3's first per-layer DSA
+    indexer is at layer 6, so for those modules this check is the only one that
+    runs before an 8-GPU serve.
+    """
+    src, dst, tensors = pair
+    _rewrite(dst, tensors, ignored=["lm_head"])
+    assert verify(src, dst, samples=10) == 1
+
+
+def test_quantized_module_listed_in_ignored_layers_fails(pair):
+    """The silent direction, and the worse one.
+
+    Ignoring a quantized module makes the loader read its int8 nibbles as BF16.
+    Nothing raises: the engine starts and serves noise. Structural verification
+    is the only place this is catchable cheaply.
+    """
+    src, dst, tensors = pair
+    _rewrite(dst, tensors,
+             ignored=_IGNORED + ["model.layers.3.mlp.experts.0.gate_proj"])
+    assert verify(src, dst, samples=10) == 1
+
+
+def test_norms_and_embeddings_need_no_ignore_entry(pair):
+    """Only Linear modules are at risk. get_quant_method returns None for
+    embeddings and is never called for norms, so requiring entries for them
+    would make every real checkpoint fail this check."""
+    src, dst, tensors = pair
+    extra = dict(tensors)
+    extra["model.embed_tokens.weight"] = torch.randn(32, HIDDEN).bfloat16()
+    extra["model.norm.weight"] = torch.rand(HIDDEN).bfloat16()
+    _rewrite(dst, extra)
+    assert verify(src, dst, samples=10) == 0
 
 
 def test_index_total_size_mismatch_fails(pair):

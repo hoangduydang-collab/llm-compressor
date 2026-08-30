@@ -161,7 +161,11 @@ def recover_fold_scale(base_norm, ckpt_norm):
     return scale
 
 
-def build_config(src_config: dict, group_size: int = 128) -> dict:
+def build_config(
+    src_config: dict,
+    group_size: int = 128,
+    module_names=None,
+) -> dict:
     """The output config.json: compressed-tensors' quantization_config replaced.
 
     PhalaCloud/GLM-5.2-W4AFP8 carries only ``{"quant_method": "w4afp8"}``, and
@@ -170,16 +174,44 @@ def build_config(src_config: dict, group_size: int = 128) -> dict:
     "static" regardless of what the file says. The extra keys are therefore
     documentation for humans, not inputs to the loader; ignored_layers is the one
     field the loader genuinely reads.
+
+    ``re:`` PATTERNS ARE EXPANDED, NOT DROPPED. The loader's is_layer_skipped
+    does prefix matching, not regex, so a pattern copied through verbatim would
+    silently match nothing -- and a BF16 Linear that the loader does not know to
+    skip gets handed Fp8LinearMethod, which asks for a weight_scale_inv that was
+    never written. Dropping the pattern instead was the earlier behaviour and is
+    only safe when the source ALSO lists every match literally; that is a
+    property of whichever llm-compressor version wrote the checkpoint, not
+    something to rely on. Given ``module_names`` (the modules actually present
+    in the output) each pattern is resolved to the concrete names it matches,
+    using ``re.match`` to mirror compressed-tensors' own semantics.
+
+    With no ``module_names`` the old drop-and-hope behaviour remains, because
+    the alternative -- emitting the pattern -- is strictly worse: it looks like
+    coverage and provides none.
     """
     config = dict(src_config)
-    ignored = []
     quant = src_config.get("quantization_config", {}) or {}
-    for entry in quant.get("ignore", []) or []:
-        # Concrete module names only. The loader's is_layer_skipped does prefix
-        # matching, not regex, so an unresolved `re:` pattern would silently
-        # match nothing.
-        if not str(entry).startswith("re:"):
-            ignored.append(entry)
+    entries = [str(e) for e in (quant.get("ignore", []) or [])]
+    literal = [e for e in entries if not e.startswith("re:")]
+    patterns = [e for e in entries if e.startswith("re:")]
+
+    ignored = list(literal)
+    if module_names is not None and patterns:
+        known = sorted(set(module_names))
+        seen = set(ignored)
+        for entry in patterns:
+            regex = re.compile(entry[len("re:"):])
+            matched = [n for n in known if regex.match(n) and n not in seen]
+            seen.update(matched)
+            ignored.extend(matched)
+            print(f"[convert] ignore {entry!r} -> {len(matched)} module(s)",
+                  flush=True)
+    elif patterns:
+        print(f"[convert] WARNING: dropping {len(patterns)} unresolved ignore "
+              f"pattern(s) {patterns}; no module list was supplied to resolve "
+              f"them against", flush=True)
+
     config["quantization_config"] = {
         "quant_method": "w4afp8",
         "group_size": group_size,
@@ -456,8 +488,16 @@ def convert(
         ),
         encoding="utf-8",
     )
+    # Resolve ignore patterns against the modules actually written, so a `re:`
+    # entry becomes concrete names the loader's prefix matching can use.
+    written_modules = sorted({
+        key[: -len(".weight")] for key in weight_map if key.endswith(".weight")
+    })
     (out / "config.json").write_text(
-        json.dumps(build_config(src_config), indent=2), encoding="utf-8"
+        json.dumps(
+            build_config(src_config, module_names=written_modules), indent=2
+        ),
+        encoding="utf-8",
     )
     for extra in (
         "generation_config.json",

@@ -107,6 +107,11 @@ def verify(
         return 1
     _ok(f"all {len({v for v in dst_map.values()})} referenced shard(s) present")
 
+    # One header walk, reused by the coverage check and the index-integrity
+    # check. Headers carry dtype and shape without touching tensor data, so
+    # this is cheap even on a 390 GB checkpoint -- but doing it twice is not.
+    dst_header = _scan_headers(dst, dst_map)
+
     print("\n== config ==")
     config = json.loads((dst / "config.json").read_text(encoding="utf-8"))
     quant = config.get("quantization_config", {}) or {}
@@ -115,11 +120,14 @@ def verify(
               errors)
     else:
         _ok("quant_method: w4afp8")
-    for entry in quant.get("ignored_layers", []) or []:
-        if str(entry).startswith("re:"):
+    ignored = [str(e) for e in (quant.get("ignored_layers", []) or [])]
+    for entry in ignored:
+        if entry.startswith("re:"):
             _fail(f"ignored_layers contains an unresolved regex {entry!r}; the "
                   f"loader does prefix matching, so it would match nothing",
                   errors)
+
+    _check_quant_method_coverage(dst_map, dst_header, ignored, errors, warnings)
 
     print("\n== source-encoding leftovers ==")
     stale = [
@@ -269,18 +277,11 @@ def verify(
     print("\n== index integrity ==")
     declared = int(dst_index.get("metadata", {}).get("total_size", 0))
     actual = 0
-    for shard in sorted({v for v in dst_map.values()}):
-        path = dst / shard
-        if not path.is_file():
-            _fail(f"index references a missing shard: {shard}", errors)
-            continue
-        with safe_open(str(path), framework="pt") as handle:
-            for key in handle.keys():
-                slice_ = handle.get_slice(key)
-                numel = 1
-                for dim in slice_.get_shape():
-                    numel *= dim
-                actual += numel * _dtype_bytes(slice_.get_dtype())
+    for dtype, shape in dst_header.values():
+        numel = 1
+        for dim in shape:
+            numel *= dim
+        actual += numel * _dtype_bytes(dtype)
     if declared != actual:
         _fail(f"index total_size {declared} != {actual} bytes on disk "
               f"(delta {actual - declared})", errors)
@@ -296,6 +297,118 @@ def verify(
         return 1
     print("  RESULT: PASS", flush=True)
     return 0
+
+
+# Handled by VocabParallelEmbedding / ParallelLMHead, for which
+# ``W4AFp8Config.get_quant_method`` returns None rather than a linear method, so
+# they need no entry in ignored_layers.
+_EMBEDDING_MODULES = ("embed_tokens", "lm_head")
+
+
+def _check_quant_method_coverage(
+    dst_map: dict,
+    dst_header: dict,
+    ignored: list[str],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Every module must resolve to the loader method its bytes are encoded for.
+
+    WHY THIS IS NOT REDUNDANT WITH THE ENGINE PROBE. The probe loads a 4-layer
+    slice, so it exercises layers 0-3 and nothing else. GLM-5.3 gives only some
+    layers their own DSA indexer (``indexer_types``: 'full' vs 'shared'), and
+    the first 'full' one is layer 6 -- outside every slice we can afford to
+    load on one GPU. A missing ignore entry there would first appear on the
+    full 8-GPU serve.
+
+    BOTH DIRECTIONS ARE FAILURES, and they fail differently:
+
+      BF16 Linear absent from ignored_layers -> the loader hands it
+      Fp8LinearMethod, which asks for a ``weight_scale_inv`` that was never
+      written. Loud (KeyError at load), but only where the slice reaches.
+
+      Quantized module PRESENT in ignored_layers -> the loader hands it
+      UnquantizedLinearMethod, which reads int8/e4m3 bytes as if they were
+      BF16. SILENT: the engine starts and serves noise.
+
+    Matching is exact module-name membership, which is what both the AWQ
+    recipe's ignore list and ``build_config`` emit. A loader that also does
+    suffix matching would skip a superset of this, so exact membership is the
+    conservative direction: it never claims coverage the loader lacks.
+    """
+    print("\n== quant-method coverage ==")
+    ignored_set = set(ignored)
+
+    quantized: list[str] = []
+    bf16_linear: list[str] = []
+    for key in dst_map:
+        if not key.endswith(".weight"):
+            continue
+        stem = key[: -len(".weight")]
+        if f"{stem}.weight_scale_inv" in dst_map:
+            quantized.append(stem)
+            continue
+        entry = dst_header.get(key)
+        if entry is None:
+            continue
+        dtype, shape = entry
+        # 2-D is what separates a Linear from a norm (1-D) without needing to
+        # instantiate the model.
+        if len(shape) == 2 and stem.rsplit(".", 1)[-1] not in _EMBEDDING_MODULES:
+            bf16_linear.append(stem)
+
+    unlisted = sorted(m for m in bf16_linear if m not in ignored_set)
+    if unlisted:
+        _fail(f"{len(unlisted)} unquantized Linear module(s) are missing from "
+              f"ignored_layers, so the loader would demand a weight_scale_inv "
+              f"they do not have, e.g. {unlisted[:5]}", errors)
+    else:
+        _ok(f"all {len(bf16_linear)} unquantized Linear module(s) are listed in "
+            f"ignored_layers")
+
+    wrongly_listed = sorted(m for m in quantized if m in ignored_set)
+    if wrongly_listed:
+        _fail(f"{len(wrongly_listed)} QUANTIZED module(s) appear in "
+              f"ignored_layers, so the loader would read their int8/e4m3 bytes "
+              f"as BF16 and serve noise, e.g. {wrongly_listed[:5]}", errors)
+    else:
+        _ok(f"none of the {len(quantized)} quantized module(s) are ignored")
+
+    # Stale entries are harmless -- the loader never queries a module that does
+    # not exist -- but they are how a silently dropped layer looks, so say so.
+    present = set(bf16_linear) | set(quantized)
+    stale = sorted(e for e in ignored_set
+                   if not e.startswith("re:") and e not in present)
+    if stale:
+        warnings.append(
+            f"{len(stale)} ignored_layers entr(ies) name modules absent from "
+            f"the checkpoint (harmless unless a layer was dropped): "
+            f"{stale[:5]}"
+        )
+
+
+def _scan_headers(root: Path, weight_map: dict) -> dict:
+    """dtype and shape for every tensor in the referenced shards.
+
+    Reads safetensors headers only, so it costs one small read per shard rather
+    than a pass over the data. Covers every tensor in those files, including
+    any the index does not mention -- the index-integrity check needs exactly
+    that to catch bytes on disk the index fails to account for.
+    """
+    # Imported here, not at module scope, to match the rest of this file: the
+    # module must stay importable where safetensors is absent.
+    from safetensors import safe_open
+
+    header: dict = {}
+    for shard in sorted({v for v in weight_map.values()}):
+        path = root / shard
+        if not path.is_file():
+            continue
+        with safe_open(str(path), framework="pt") as handle:
+            for key in handle.keys():
+                slice_ = handle.get_slice(key)
+                header[key] = (slice_.get_dtype(), list(slice_.get_shape()))
+    return header
 
 
 def _stem(key: str) -> str:

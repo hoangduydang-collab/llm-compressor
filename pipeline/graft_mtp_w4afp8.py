@@ -253,8 +253,27 @@ def graft(
         back = dequantize_block_fp8(qweight, scale_inv, DEFAULT_BLOCK)
         fp8_resid.append(((back - weight).norm() / weight.norm()).item())
 
+    # Linears this graft leaves BF16. The loader consults ignored_layers to
+    # decide whether a module gets UnquantizedLinearMethod or Fp8LinearMethod,
+    # and layer 78 is not covered by anything the AWQ run wrote: its only entry
+    # was the pattern `re:.*layers[.]78[.].*`, which matched nothing at the time
+    # because the layer did not exist yet. Left alone, eh_proj and the DSA
+    # indexer would be handed Fp8LinearMethod and asked for a weight_scale_inv
+    # that was never written.
+    #
+    # The pattern also cannot simply be expanded now: it says "ignore ALL of
+    # layer 78", whereas this graft deliberately quantizes layer 78's experts
+    # and attention. Expanding it would make the loader read grafted int4
+    # nibbles as BF16 -- no error, just noise. So the entries are derived from
+    # what was actually copied, not from the recipe.
+    newly_ignored: list[str] = []
     for name in buckets["copy"]:
-        emit(name, _get(name))
+        tensor = _get(name)
+        emit(name, tensor)
+        # 2-D is what separates a Linear from a norm without instantiating the
+        # model; norms and the router bias need no entry.
+        if name.endswith(".weight") and tensor.dim() == 2:
+            newly_ignored.append(name[: -len(".weight")])
 
     flush()
 
@@ -301,11 +320,18 @@ def graft(
     config_path = out / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["num_nextn_predict_layers"] = 1
+    quant = config.setdefault("quantization_config", {})
+    ignored = list(quant.get("ignored_layers", []) or [])
+    added_ignores = [m for m in newly_ignored if m not in set(ignored)]
+    quant["ignored_layers"] = ignored + added_ignores
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     print(f"[graft] OK: added {len(names)} source tensors as "
           f"{len(new_names)} shard(s), {added_bytes / 1e9:.2f} GB; "
-          f"num_nextn_predict_layers=1", flush=True)
+          f"num_nextn_predict_layers=1; "
+          f"ignored_layers += {len(added_ignores)} "
+          f"({', '.join(m.rsplit('.', 1)[-1] for m in added_ignores[:6])})",
+          flush=True)
     return 0
 
 

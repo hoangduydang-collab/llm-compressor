@@ -214,6 +214,63 @@ def test_graft_appends_without_touching_existing_shards(scene):
     assert config["quantization_config"]["quant_method"] == "w4afp8"
 
 
+def test_graft_ignores_exactly_the_linears_it_leaves_bf16(scene):
+    """The graft owns layer 78's ignore entries, and both mistakes are fatal.
+
+    The AWQ run's only layer-78 entry was `re:.*layers[.]78[.].*`, which matched
+    nothing because the layer did not exist yet. So nothing else can supply
+    these. Two ways to get it wrong:
+
+      omit a BF16 Linear -> the loader hands eh_proj / the indexer
+      Fp8LinearMethod and asks for a weight_scale_inv nobody wrote (load fails)
+
+      ignore a quantized module -> the loader reads int4 nibbles as BF16 and the
+      engine serves noise with no error at all
+
+    Which is why expanding the recipe's "ignore all of layer 78" pattern would
+    be exactly wrong here: this graft quantizes layer 78 on purpose.
+    """
+    base, out = scene
+    assert graft(base, out, layer=LAYER, shard_bytes=10**6) == 0
+    config = json.loads((out / "config.json").read_text())
+    ignored = set(config["quantization_config"]["ignored_layers"])
+
+    pref = f"model.layers.{LAYER}"
+    # BF16 Linears: must be ignored.
+    assert f"{pref}.eh_proj" in ignored
+    assert f"{pref}.self_attn.indexer.wk" in ignored
+    assert f"{pref}.mlp.gate" in ignored
+    # Quantized: must NOT be.
+    assert f"{pref}.mlp.experts.0.gate_proj" not in ignored
+    assert f"{pref}.self_attn.o_proj" not in ignored
+    assert f"{pref}.mlp.shared_experts.gate_proj" not in ignored
+    # Norms are 1-D; get_quant_method is never consulted for them, so an entry
+    # would be noise rather than protection.
+    assert f"{pref}.enorm" not in ignored
+    assert f"{pref}.hnorm" not in ignored
+    assert f"{pref}.shared_head.norm" not in ignored
+
+
+def test_graft_preserves_pre_existing_ignore_entries(scene):
+    """The converted checkpoint arrives with 322 entries for layers 0-77; the
+    graft appends to them rather than replacing them."""
+    base, out = scene
+    config_path = out / "config.json"
+    config = json.loads(config_path.read_text())
+    config["quantization_config"]["ignored_layers"] = [
+        "lm_head", "model.layers.5.mlp.gate"
+    ]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    assert graft(base, out, layer=LAYER, shard_bytes=10**6) == 0
+    ignored = json.loads(config_path.read_text())["quantization_config"][
+        "ignored_layers"
+    ]
+    assert ignored[:2] == ["lm_head", "model.layers.5.mlp.gate"]
+    assert f"model.layers.{LAYER}.eh_proj" in ignored
+    assert len(ignored) == len(set(ignored))
+
+
 def test_graft_dtypes_match_what_the_loader_registers(scene):
     from safetensors import safe_open
 

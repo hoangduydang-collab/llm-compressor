@@ -133,6 +133,9 @@ def verify(
 
     _check_quant_method_coverage(dst_map, dst_header, ignored, errors, warnings)
 
+    print("\n== expert input_scale names ==")
+    _check_expert_input_scale_names(dst, dst_map, get, errors, warnings)
+
     print("\n== source-encoding leftovers ==")
     stale = [
         k for k in dst_map
@@ -485,6 +488,94 @@ def _check_quant_method_coverage(
             f"the checkpoint (harmless unless a layer was dropped): "
             f"{stale[:5]}"
         )
+
+
+_SGLANG_EXPERT_SHARD_IDS = ("w1", "w2", "w3")
+
+
+def _check_expert_input_scale_names(
+    dst: Path,
+    dst_map: dict,
+    get,
+    errors: list[str],
+    warnings: list[str],
+    sample_cap: int = 512,
+) -> None:
+    """Every expert input_scale must carry a name SGLang can actually resolve.
+
+    WHY THIS EXISTS. SGLang builds its expert-scale lookup in
+    make_expert_input_scale_params_mapping (fused_moe_triton/layer.py:1603) as
+    f"experts.{expert_id}.{shard_id}." with shard_id in (w1, w2, w3). A
+    checkpoint that names them experts.{i}.{gate_proj,up_proj,down_proj}
+    .input_scale matches NOTHING -- and layer.py:285 skips an unmatched
+    mlp.experts.* tensor with `continue`, no warning and no log line. The param
+    then keeps the torch.ones that w4afp8.py:199-211 registered.
+
+    So an unresolvable name is invisible: it costs checkpoint size, changes no
+    numerics while the values are ones, and silently discards them the moment
+    they are not. That is exactly the shape of defect an offline gate should
+    catch, and the reason this check is not merely advisory.
+
+    Found on 2026-08-30 in the GLM-5.3 artifact, by diffing tensor names against
+    PhalaCloud's release: 19,456 x 3 tensors under the gate/up/down names. Not a
+    converter bug -- to_sglang_w4afp8 emits w1/w2/w3 as of 8a9ffa08 -- but that
+    artifact was converted BEFORE that commit, and patch_indexer_fp8 rewrites
+    only indexer tensors, so it kept the old names. Nothing detected the drift
+    between the fixed code and the stale artifact. Now something does.
+
+    VERDICT POLICY. Unresolvable names are an ERROR only when they would change
+    behaviour, i.e. when a sampled value is not exactly 1.0; otherwise a warning
+    that names the drift. Values are SAMPLED (cap %d), not read exhaustively --
+    there are tens of thousands of these and each is one scalar in a different
+    shard -- so a clean sample is evidence, not proof.
+    """ % sample_cap
+    keys = [k for k in dst_map
+            if k.endswith(".input_scale") and ".mlp.experts." in k]
+    if not keys:
+        _ok("no expert input_scale tensors (loader defaults to ones)")
+        return
+
+    def shard_of(key: str) -> str:
+        # ...experts.<id>.<proj>.input_scale -> <proj>
+        return key[: -len(".input_scale")].rpartition(".")[2]
+
+    bad = sorted({shard_of(k) for k in keys} - set(_SGLANG_EXPERT_SHARD_IDS))
+    if not bad:
+        _ok(f"all {len(keys)} expert input_scale name(s) use SGLang shard ids "
+            f"{_SGLANG_EXPERT_SHARD_IDS}")
+        return
+
+    unresolvable = [k for k in keys if shard_of(k) in bad]
+    # Sample across the whole set rather than the first N, which would all sit in
+    # the same early shard and say nothing about the rest.
+    step = max(1, len(unresolvable) // sample_cap)
+    sampled = unresolvable[::step][:sample_cap]
+    non_unit, read_errors = [], 0
+    for k in sampled:
+        try:
+            t = get(dst, dst_map, k)
+        except Exception:
+            read_errors += 1
+            continue
+        if not bool((t == 1).all()):
+            non_unit.append((k, float(t.flatten()[0])))
+
+    detail = (f"{len(unresolvable)} expert input_scale tensor(s) use shard "
+              f"id(s) {bad}, which SGLang cannot resolve (it looks for "
+              f"{list(_SGLANG_EXPERT_SHARD_IDS)}); they will be skipped "
+              f"silently and the param stays at ones")
+    if non_unit:
+        _fail(f"{detail}. {len(non_unit)} of {len(sampled)} sampled value(s) are "
+              f"NOT 1.0 (e.g. {non_unit[0][0]}={non_unit[0][1]:.6g}), so real "
+              f"scales would be discarded and the served model would disagree "
+              f"with the checkpoint", errors)
+        return
+    warnings.append(
+        f"{detail}. All {len(sampled)} sampled value(s) are exactly 1.0, which "
+        f"is what the loader defaults to, so numerics are unaffected -- but "
+        f"re-emit with w1/w2/w3 before shipping any non-unit activation scale"
+        + (f" ({read_errors} tensor(s) unreadable)" if read_errors else ""))
+    print(f"  WARN: {warnings[-1]}")
 
 
 def _scan_headers(root: Path, weight_map: dict) -> dict:

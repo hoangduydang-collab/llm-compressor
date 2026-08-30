@@ -105,7 +105,14 @@ def pair(tmp_path):
     dst = {
         f"{ep}.weight": pack_nibbles_int8(q),
         f"{ep}.weight_scale_inv": scale,
-        f"{ep}.input_scale": torch.ones(1, dtype=torch.bfloat16),
+        # w1, NOT gate_proj. The WEIGHT is named by projection, but the
+        # input_scale is named by SGLang shard id: its lookup is built as
+        # f"experts.{id}.{shard_id}." with shard_id in (w1, w2, w3), and
+        # _EXPERT_SHARD_ID maps gate_proj -> w1. An earlier version of this
+        # fixture used gate_proj here, which made the "correct conversion"
+        # baseline reproduce the very drift the artifact had.
+        f"{ep.rpartition('.')[0]}.w1.input_scale":
+            torch.ones(1, dtype=torch.bfloat16),
         f"{fp}.weight": bq,
         f"{fp}.weight_scale_inv": bs,
         "model.layers.3.input_layernorm.weight": norm,
@@ -381,3 +388,46 @@ def test_a_grafted_layer_with_an_fp8_indexer_passes(pair):
     tensors[f"{key}.weight_scale_inv"] = s
     _rewrite(dst, tensors)
     assert verify(src, dst, samples=10) == 0
+
+
+# ---- expert input_scale names -------------------------------------------- #
+# SGLang resolves expert activation scales by shard id, not by projection name
+# (make_expert_input_scale_params_mapping, fused_moe_triton/layer.py:1603), and
+# layer.py:285 drops an unmatched mlp.experts.* tensor with a bare `continue`.
+# So a misnamed scale is invisible: no warning, no log line, param left at the
+# torch.ones the loader registered. These two tests pin the resulting policy --
+# tolerated while the values ARE ones, refused the moment they are not.
+
+_UNRESOLVABLE = "model.layers.3.mlp.experts.0.gate_proj.input_scale"
+_RESOLVABLE = "model.layers.3.mlp.experts.0.w1.input_scale"
+
+
+def test_unresolvable_input_scale_name_warns_while_the_value_is_unit(pair, capsys):
+    src, dst, tensors = pair
+    tensors.pop(_RESOLVABLE)
+    tensors[_UNRESOLVABLE] = torch.ones(1, dtype=torch.bfloat16)
+    _rewrite(dst, tensors)
+    # Still 0: ones is exactly what the loader defaults to, so skipping the
+    # tensor changes no numerics. The report must say so out loud anyway.
+    assert verify(src, dst, samples=10) == 0
+    out = capsys.readouterr().out
+    assert "cannot resolve" in out
+    assert "exactly 1.0" in out
+
+
+def test_non_unit_input_scale_under_an_unresolvable_name_fails(pair):
+    src, dst, tensors = pair
+    tensors.pop(_RESOLVABLE)
+    tensors[_UNRESOLVABLE] = torch.full((1,), 0.5, dtype=torch.bfloat16)
+    _rewrite(dst, tensors)
+    # A real scale that the engine will silently discard: the served model would
+    # quantize activations with 1.0 while the checkpoint claims 0.5.
+    assert verify(src, dst, samples=10) == 1
+
+
+def test_resolvable_input_scale_names_pass_without_a_warning(pair, capsys):
+    src, dst, _ = pair
+    assert verify(src, dst, samples=10) == 0
+    out = capsys.readouterr().out
+    assert "cannot resolve" not in out
+    assert "use SGLang shard ids" in out

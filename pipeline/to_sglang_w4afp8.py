@@ -514,14 +514,21 @@ def convert(
         encoding="utf-8",
     )
     print(f"[convert] OK -> {out}", flush=True)
-    # Said out loud rather than left to a docstring: the source checkpoint has no
-    # layer 78, because the recipe ignores it and the BF16 release does not build
-    # an MTP layer. Serving without it silently disables speculative decoding
-    # instead of failing, so this is exactly the kind of omission that survives
-    # every structural check.
+    # Said out loud rather than left to a docstring: serving without the MTP
+    # layer silently disables speculative decoding instead of failing, so this is
+    # exactly the kind of omission that survives every structural check.
+    #
+    # The checkpoint has no layer 78 because AutoModelForCausalLM does not
+    # INSTANTIATE the MTP layer, so it was never loaded and never saved; the
+    # recipe's `re:.*layers[.]78[.].*` ignore was belt-and-braces on top of that.
+    # It is NOT missing from the source: GLM-5.3-BF16 carries all 791 layer-78
+    # tensors in BF16 (shards 270-274 of 282). So the graft comes from the SAME
+    # repo and revision we quantized -- no vendor FP8 download, no
+    # dequantization, and no risk of grafting a draft head from weights that do
+    # not correspond to this target model.
     if 78 not in {_layer_of(m) for m in selected if _layer_of(m) is not None}:
-        print("[convert] NOTE: no layer 78 (MTP). Graft it from the vendor FP8 "
-              "release as a separate step, or the served model has no draft "
+        print("[convert] NOTE: no layer 78 (MTP). Graft it from the BF16 source "
+              "with pipeline.graft_mtp_w4afp8, or the served model has no draft "
               "head and speculative decoding is silently off.", flush=True)
     return 0
 

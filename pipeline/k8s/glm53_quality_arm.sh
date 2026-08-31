@@ -363,13 +363,20 @@ note "step 1b: decode throughput probe (${THROUGHPUT_PROBE_N} concurrent x 256 t
 tp_before=$(curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
   | awk '/^sglang:generation_tokens_total/ {print $2; exit}')
 tp_t0=$(date +%s)
+tp_pids=""
 for _ in $(seq 1 "$THROUGHPUT_PROBE_N"); do
-  curl -sf "http://localhost:$PORT/v1/chat/completions" \
+  # --max-time is mandatory: an unbounded curl here would hang the arm forever.
+  curl -sf --max-time 180 "http://localhost:$PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
-    -d '{"model":"m","messages":[{"role":"user","content":"Count from 1 to 200, one number per line."}],"max_tokens":256,"temperature":0}' \
+    -d '{"model":"m","messages":[{"role":"user","content":"Count from 1 to 300, one number per line."}],"max_tokens":256,"temperature":0}' \
     >/dev/null 2>&1 &
+  tp_pids="$tp_pids $!"
 done
-wait
+# Wait for THESE pids only, never a bare `wait`. The SGLang server is itself a
+# background child of this script, so bare `wait` blocks on a process that never
+# exits -- it hung an arm for 64 minutes with the server idle and healthy.
+# shellcheck disable=SC2086
+wait $tp_pids 2>/dev/null || true
 tp_t1=$(date +%s)
 tp_after=$(curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
   | awk '/^sglang:generation_tokens_total/ {print $2; exit}')

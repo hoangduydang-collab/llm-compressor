@@ -60,9 +60,15 @@ TASKS="${TASKS:-gsm8k ifeval gpqa_diamond_cot_zeroshot mmlu arc_challenge hellas
 # could break someone else's offline run. It is also what makes the ifeval
 # population digest reproduce: a cache built by an older `datasets` keeps its
 # schema, and force_redownload alone is NOT sufficient. Must match the arm's.
-export HF_HOME="${HF_HOME:-/mnt/cephfs/hoangduy/hf-private}"
-export HF_HUB_CACHE="${HF_HUB_CACHE:-$HF_HOME/hub}"
-export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
+# Overridable through EVAL_HF_ROOT, NOT through HF_HOME: writing
+# `HF_HOME="${HF_HOME:-...}"` let a pod that already exported HF_HOME=/mnt/cephfs/
+# .hf-cache keep the SHARED cache, which is exactly how run
+# full7-20260831t045151z came to be scored against a stale Arrow schema. The
+# private root must not be silently overridable by the ambient environment.
+EVAL_HF_ROOT="${EVAL_HF_ROOT:-/mnt/cephfs/hoangduy/hf-private}"
+export HF_HOME="$EVAL_HF_ROOT"
+export HF_HUB_CACHE="$EVAL_HF_ROOT/hub"
+export HF_DATASETS_CACHE="$EVAL_HF_ROOT/datasets"
 
 mkdir -p "$OUT"
 fail=0

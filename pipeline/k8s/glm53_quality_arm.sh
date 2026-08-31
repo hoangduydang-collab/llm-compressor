@@ -99,9 +99,13 @@ gate() { echo "$1=$2" >> "$CLIENT/gates.txt"; note "gate $1=$2"; }
 #
 # MODEL_PATH is an absolute snapshot path, so nothing here needs the shared hub
 # cache to load the weights; the shared tree stays read-only for us.
-export HF_HOME="${HF_HOME:-/mnt/cephfs/hoangduy/hf-private}"
-export HF_HUB_CACHE="${HF_HUB_CACHE:-$HF_HOME/hub}"
-export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
+# Overridable through EVAL_HF_ROOT, NOT through HF_HOME -- an ambient
+# HF_HOME=/mnt/cephfs/.hf-cache must not be able to silently put us back on the
+# shared cache, whose Arrow schema fails the ifeval population digest.
+EVAL_HF_ROOT="${EVAL_HF_ROOT:-/mnt/cephfs/hoangduy/hf-private}"
+export HF_HOME="$EVAL_HF_ROOT"
+export HF_HUB_CACHE="$EVAL_HF_ROOT/hub"
+export HF_DATASETS_CACHE="$EVAL_HF_ROOT/datasets"
 # Offline is not a performance knob, it is the pairing guarantee: neither arm may
 # reach the network mid-eval and silently score a different corpus revision than
 # the other. Datasets are pre-staged by stage-glm53-quality-eval.sh; a cache miss

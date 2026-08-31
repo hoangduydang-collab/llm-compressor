@@ -74,6 +74,15 @@ export HF_DATASETS_CACHE=/mnt/cephfs/.hf-cache/datasets
 # must fail this arm rather than quietly re-download.
 export HF_DATASETS_OFFLINE=1 HF_HUB_OFFLINE=1
 
+# The IFEval scorer's corpora. An operator-staged input, not a pip dependency:
+# `ifeval_runtime.require_declared_source_root` refuses an unset NLTK_DATA, and
+# the scorer's own downloader is a raising stub, so an unstaged corpus is a
+# refusal rather than a quiet download. Staged by stage-glm53-quality-eval.sh.
+# Must name exactly ONE absolute, normalised, non-symlink directory -- a
+# `:`-separated list is refused precisely because it reintroduces the ambiguity
+# the gate exists to remove.
+export NLTK_DATA="${NLTK_DATA:-/mnt/cephfs/hoangduy/nltk_data}"
+
 # DeepGEMM compat (the proven GLM-5.2 combo).
 export FLASHINFER_USE_CUDA_NORM=1
 export SGLANG_ENABLE_JIT_DEEPGEMM=0
@@ -111,13 +120,64 @@ if [ ! -x "$BVENV/bin/python" ]; then
   # local-chat-completions backends this whole arm depends on, and [ifeval]
   # provides the IFEval scorer's own deps.
   "$BVENV/bin/pip" install -q --upgrade pip
-  "$BVENV/bin/pip" install -q "lm-eval[api,ifeval]==0.4.10" "openai>=1.40" jsonschema \
-    2>&1 | tail -5
+  # Install the repository's PINNED CLOSURE rather than a hand-rolled list.
+  # `lm-eval[api,ifeval]==0.4.10` on its own leaves `datasets` and `nltk` to
+  # pip's resolver, and evidence-backed IFEval enforces both EXACTLY at runtime:
+  # `evidence.require_pinned_datasets_version` (datasets==5.0.0, because
+  # OFFICIAL_POPULATION_DOC_DIGEST is a hash over what that library hands
+  # lm-eval per row) and `nltk_resources` (nltk==3.10.0, a DIRECT, coherent,
+  # SOLE install -- an overlay is prohibited). Getting this wrong is silent
+  # until the suite refuses, which on the first full7 attempt was after 45
+  # minutes of weight load.
+  "$BVENV/bin/pip" install -q -r "$BENCH/quality/general/requirements-ifeval.txt" \
+    "openai>=1.40" jsonschema 2>&1 | tail -5
 fi
 "$BVENV/bin/python" - <<'PY' | tee -a "$CLIENT/client.log"
 import json, lm_eval, openai, sys
 print(json.dumps({"lm_eval": lm_eval.__version__, "openai": openai.__version__}))
 PY
+
+# The scoring closure and the corpora, checked BEFORE the GPU is touched. Each of
+# these is a hard refusal inside the general suite; discovering any of them after
+# the weight load costs ~45 minutes of 8xH100 time and produces no measurement.
+# Everything here is verified by the repository's own code, not by inspecting the
+# tree myself -- the point is to run the same checks the suite will run.
+if echo "${GENERAL_TASKS:-ifeval}" | grep -q ifeval; then
+  "$BVENV/bin/python" - "$BENCH" <<'PY' | tee -a "$CLIENT/client.log"
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import datasets, nltk, lm_eval
+from quality.general import nltk_resources as NR
+from quality.general import evidence as EV
+from quality.general import ifeval_runtime as IR
+bad = []
+if datasets.__version__ != EV.REQUIRED_DATASETS_VERSION:
+    bad.append("datasets %s != %s" % (datasets.__version__, EV.REQUIRED_DATASETS_VERSION))
+if nltk.__version__ != NR.REQUIRED_NLTK_VERSION:
+    bad.append("nltk %s != %s" % (nltk.__version__, NR.REQUIRED_NLTK_VERSION))
+try:
+    root = IR.resolve_private_root()
+    print("nltk source root OK:", os.path.basename(root))
+except Exception as e:
+    bad.append("NLTK_DATA: %s" % e)
+try:
+    ident = NR.preflight()
+    print("nltk resources OK:", ", ".join(r["spec"] for r in ident["resources"]))
+except Exception as e:
+    bad.append("nltk corpora: %s" % e)
+if bad:
+    print("IFEVAL PREFLIGHT FAILED:")
+    for b in bad:
+        print("  -", b)
+    sys.exit(1)
+print("ifeval scoring preflight OK")
+PY
+  gate ifeval_preflight "${PIPESTATUS[0]}"
+  grep -q '^ifeval_preflight=0$' "$CLIENT/gates.txt" || {
+    note "FATAL: refusing to load 394 GB of weights for a suite that would refuse"
+    note "  to score ifeval. Fix staging (pipeline/k8s/stage-glm53-quality-eval.sh)"
+    note "  or drop ifeval from GENERAL_TASKS."; exit 1; }
+fi
 
 "$BVENV/bin/python" - <<PY > "$CLIENT/harness_manifest.json"
 import hashlib, json, os, subprocess

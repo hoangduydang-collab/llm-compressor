@@ -87,9 +87,66 @@ if [ ! -x "$BVENV/bin/python" ]; then
   # glm53_quality_arm.sh.
   python -m venv --system-site-packages "$BVENV" || exit 1
   "$BVENV/bin/pip" install -q --upgrade pip
-  "$BVENV/bin/pip" install -q "lm-eval[api,ifeval]==0.4.10" "openai>=1.40" jsonschema 2>&1 | tail -5
+  # Install the PINNED CLOSURE, not a hand-rolled package list. This cost a full
+  # 45-minute GPU load to learn: `lm-eval[api,ifeval]==0.4.10` alone leaves
+  # `datasets` and `nltk` to pip's resolver, and evidence-backed IFEval enforces
+  # BOTH exactly at runtime (`evidence.require_pinned_datasets_version`,
+  # `nltk_resources.REQUIRED_NLTK_VERSION` = 3.10.0, direct/coherent/sole
+  # install). requirements-ifeval.txt is where the repository declares that
+  # closure, so staging and the arm must both install from it — and staging must
+  # resolve the datasets offline under the SAME `datasets` version the arm will
+  # import, or the freeze it proves is not the freeze the arm gets.
+  "$BVENV/bin/pip" install -q -r "$BENCH/quality/general/requirements-ifeval.txt" \
+    "openai>=1.40" jsonschema 2>&1 | tail -5
 fi
 PY="$BVENV/bin/python"
+
+# ---- 0a. NLTK corpora for the IFEval scorer ---------------------------------
+# NOT pip-installable and deliberately not vendored (per-corpus licensing), so
+# they are an operator-staged input. The scorer's downloader is a raising stub at
+# scoring time, and `ifeval_runtime.require_declared_source_root` refuses an unset
+# NLTK_DATA outright -- which is exactly how the first full7 attempt died AFTER
+# paying 45 minutes of weight load, in `run.py`'s pre-flight, before a single
+# request. Staging it here means that failure now costs a CPU pod.
+#
+# The downloader unpacks by default; a resource left inside a .zip is refused
+# because a zip cannot be walked, hashed or snapshotted. --verify proves the
+# unpacked state rather than assuming it.
+export NLTK_DATA="${NLTK_DATA:-/mnt/cephfs/hoangduy/nltk_data}"
+note "step 0a: staging NLTK corpora into $NLTK_DATA"
+mkdir -p "$NLTK_DATA"
+"$PY" -m nltk.downloader -d "$NLTK_DATA" punkt_tab punkt 2>&1 | tail -4
+# The gate is the repository's own verifier, not my inspection of the tree: it
+# resolves both required resources, refuses a zip-resolved path, and prints the
+# tree digests that pin the corpus identity.
+( cd "$BENCH" && NLTK_DATA="$NLTK_DATA" "$PY" -m quality.general.nltk_resources \
+    --verify > "$OUT/nltk-identity.json" 2>"$OUT/nltk-verify.err" )
+gate nltk_corpora $?
+if [ -s "$OUT/nltk-verify.err" ]; then
+  note "nltk verify stderr:"; sed -n '1,20p' "$OUT/nltk-verify.err"
+fi
+grep -aE '"(spec|sha256|files)"' "$OUT/nltk-identity.json" 2>/dev/null | head -n 12 || true
+
+# The exact-version pins the evidence layer enforces at runtime. Checked here so a
+# resolver drift is a staging failure, not a 45-minute GPU failure.
+"$PY" - "$BENCH" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import datasets, nltk, lm_eval
+from quality.general import nltk_resources as NR
+from quality.general import evidence as EV
+bad = []
+if datasets.__version__ != EV.REQUIRED_DATASETS_VERSION:
+    bad.append(f"datasets {datasets.__version__} != {EV.REQUIRED_DATASETS_VERSION}")
+if nltk.__version__ != NR.REQUIRED_NLTK_VERSION:
+    bad.append(f"nltk {nltk.__version__} != {NR.REQUIRED_NLTK_VERSION}")
+if lm_eval.__version__ != "0.4.10":
+    bad.append(f"lm_eval {lm_eval.__version__} != 0.4.10")
+print("PINS", "FAIL: " + "; ".join(bad) if bad else
+      f"OK datasets={datasets.__version__} nltk={nltk.__version__} lm_eval={lm_eval.__version__}")
+sys.exit(1 if bad else 0)
+PY
+gate scoring_pins $?
 
 # ---- 0b. tokenizer-only dirs (the served-templating identity) ---------------
 # The arm profiles point SERVED_TOKENIZER at these, NOT at the checkpoints.

@@ -65,9 +65,31 @@ mkdir -p "$CLIENT"
 note() { echo "[$ARM $(date -u +%H:%M:%S)] $1" | tee -a "$CLIENT/client.log"; }
 gate() { echo "$1=$2" >> "$CLIENT/gates.txt"; note "gate $1=$2"; }
 
-export HF_HOME=/mnt/cephfs/.hf-cache
-export HF_HUB_CACHE=/mnt/cephfs/.hf-cache
-export HF_DATASETS_CACHE=/mnt/cephfs/.hf-cache/datasets
+# A PRIVATE HF cache, deliberately not the shared /mnt/cephfs/.hf-cache.
+#
+# Two reasons, and the first is about other people's work:
+#
+# 1. /mnt/cephfs/.hf-cache is SHARED -- it holds other collaborators' models
+#    (DeepSeek-V4-Flash, Qwen3.6/3.8, GLM-4.7-FP8) and datasets (SPEED-Bench,
+#    ultrachat_200k). ADDING an entry there is additive and harmless; MUTATING
+#    one is not, and the documented fix for a stale Arrow schema requires
+#    removing the dataset's caches outright. Doing that in the shared tree could
+#    break a collaborator's offline run, so our runs get their own tree instead.
+#
+# 2. It is also what makes the ifeval population digest correct.
+#    OFFICIAL_POPULATION_DOC_DIGEST is a hash over what `datasets` hands lm-eval
+#    per row, and a cache built by an older `datasets` keeps its Arrow schema:
+#    the IFEval `kwargs` column comes back as a null-padded fixed struct instead
+#    of List(Json), so the same 541 items hash differently. The provenance record
+#    is explicit that force_redownload alone is NOT sufficient -- only a cache
+#    with nothing pre-existing re-infers the schema. A private root gives us that
+#    without deleting anything anyone else may be using.
+#
+# MODEL_PATH is an absolute snapshot path, so nothing here needs the shared hub
+# cache to load the weights; the shared tree stays read-only for us.
+export HF_HOME="${HF_HOME:-/mnt/cephfs/hoangduy/hf-private}"
+export HF_HUB_CACHE="${HF_HUB_CACHE:-$HF_HOME/hub}"
+export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 # Offline is not a performance knob, it is the pairing guarantee: neither arm may
 # reach the network mid-eval and silently score a different corpus revision than
 # the other. Datasets are pre-staged by stage-glm53-quality-eval.sh; a cache miss
@@ -165,6 +187,26 @@ try:
     print("nltk resources OK:", ", ".join(r["spec"] for r in ident["resources"]))
 except Exception as e:
     bad.append("nltk corpora: %s" % e)
+# The official-population CONTENT identity, the check that killed run
+# full7-20260831t045151z 19 s into the suite. Reuses the SAME two helpers the
+# suite's own preflight calls, so a pass here is the identical comparison rather
+# than a lookalike. eval_docs is the whole unlimited population, so this is
+# limit-independent.
+try:
+    import lm_eval.tasks as _T
+    _td = _T.get_task_dict(["ifeval"], _T.TaskManager())
+    def _leaves(node):
+        if isinstance(node, dict):
+            for v in node.values():
+                yield from _leaves(v)
+        else:
+            yield node
+    _obj = next(iter(_leaves(_td)))
+    _docs = list(_obj.eval_docs)
+    EV.verify_official_population_digest("ifeval", EV.doc_hashes_of(_docs))
+    print("ifeval official population OK: %d docs" % len(_docs))
+except Exception as e:
+    bad.append("ifeval population: %s" % str(e)[:400])
 if bad:
     print("IFEVAL PREFLIGHT FAILED:")
     for b in bad:
@@ -228,6 +270,13 @@ note "step 1: serve on SGLang"
     --context-length "$CTX" \
     --mem-fraction-static "$MEM_FRAC" \
     --chunked-prefill-size "$CHUNKED_PREFILL" \
+    `# DEVIATION from the GLM-5.2 reference serve flags, added deliberately.` \
+    `# Without it SGLang serves no /metrics endpoint at all, so scrape_metrics` \
+    `# recorded "(scrape failed)" and the run had no token-spend column -- one of` \
+    `# the three axes the M3 report actually uses (score, flips, token spend).` \
+    `# It only starts a Prometheus exporter; it does not touch the inference` \
+    `# path, and BOTH arms carry it, so cross-arm parity is unaffected.` \
+    --enable-metrics \
     --trust-remote-code \
     --host 0.0.0.0 --port "$PORT"
 ) > "$CLIENT/serve.log" 2>&1 &

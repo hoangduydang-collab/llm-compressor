@@ -51,9 +51,15 @@ OUT="${OUT:-/mnt/cephfs/hoangduy/results/glm53-quality-paired}"
 #     args (chat_template=None etc. => no override), recorded in the profiles.
 TASKS="${TASKS:-gsm8k ifeval gpqa_diamond_cot_zeroshot mmlu arc_challenge hellaswag truthfulqa_mc2}"
 
-export HF_HOME=/mnt/cephfs/.hf-cache
-export HF_HUB_CACHE=/mnt/cephfs/.hf-cache
-export HF_DATASETS_CACHE=/mnt/cephfs/.hf-cache/datasets
+# A PRIVATE HF cache. /mnt/cephfs/.hf-cache is SHARED with collaborators (it
+# holds their models and datasets), and the documented fix for a stale Arrow
+# schema is to remove a dataset's caches outright -- which in the shared tree
+# could break someone else's offline run. It is also what makes the ifeval
+# population digest reproduce: a cache built by an older `datasets` keeps its
+# schema, and force_redownload alone is NOT sufficient. Must match the arm's.
+export HF_HOME="${HF_HOME:-/mnt/cephfs/hoangduy/hf-private}"
+export HF_HUB_CACHE="${HF_HUB_CACHE:-$HF_HOME/hub}"
+export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 
 mkdir -p "$OUT"
 fail=0
@@ -259,6 +265,37 @@ for t in sys.argv[1].split():
 raise SystemExit(1 if bad else 0)
 PY
 gate datasets_offline $?
+
+# ---- 1c. official IFEval population identity --------------------------------
+# The check that killed run full7-20260831t045151z 19 s into the suite, AFTER a
+# full 394 GB weight load: the resolved 541 docs hashed to d601ffd0... against a
+# pinned 98e306c3.... Same upstream revision (966cd895...), same count -- but a
+# cache built by an older `datasets` keeps its Arrow schema, handing lm-eval a
+# null-padded fixed struct for the `kwargs` column instead of List(Json), so the
+# rows hash differently. Hence the private HF_HOME above: the provenance record
+# states that download_mode='force_redownload' alone is NOT sufficient.
+#
+# Must run AFTER step 1 (the dataset has to exist) and uses the SAME two helpers
+# the suite's own preflight calls, so a pass here is the identical comparison.
+note "step 1c: official IFEval population digest"
+( cd "$BENCH" && "$PY" - "$BENCH" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from quality.general import evidence as EV
+import lm_eval.tasks as T
+td = T.get_task_dict(["ifeval"], T.TaskManager())
+def leaves(node):
+    if isinstance(node, dict):
+        for v in node.values():
+            yield from leaves(v)
+    else:
+        yield node
+docs = list(next(iter(leaves(td))).eval_docs)
+EV.verify_official_population_digest("ifeval", EV.doc_hashes_of(docs))
+print("ifeval official population OK: %d docs" % len(docs))
+PY
+) 2>&1 | tail -6
+gate ifeval_population "${PIPESTATUS[0]}"
 
 # ---- 2. arm parity ---------------------------------------------------------
 # The dry run is the same code path as --execute for everything except sending

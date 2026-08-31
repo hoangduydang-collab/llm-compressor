@@ -22,10 +22,12 @@ ARM=${ARM:?}; PROFILE=${PROFILE:?}; PORT=${PORT:?}; ROOT=${ROOT:?}
 MODEL_PATH="${MODEL_PATH:?MODEL_PATH is required (no cluster-2 default exists)}"
 QUANT_ARGS="${QUANT_ARGS:---quantization w4afp8}"
 TP="${TP:-8}"
-# 65536, not 131072: dropping --kv-cache-dtype fp8_e4m3 (a quality variable the
-# vendor command does not use) doubles per-token KV, and no task here needs
-# more than the 32768-token generation budget plus a 25-shot prompt. Halving
-# the context pays for the larger KV and leaves more room for batching.
+# 65536, not the GLM-5.2 arm's 131072. Nothing in this suite needs more than the
+# 32768-token generation budget plus a 25-shot prompt, and a lower ceiling bounds
+# the worst-case KV a single runaway sequence can reserve. The KV POOL size is set
+# by memory, not by this (measured: max_total_num_tokens=101120 with a BF16 KV
+# cache, ~2x that with fp8_e4m3), so this is a per-sequence cap, not a capacity
+# knob.
 CTX="${CTX:-65536}"
 RUN_ID="${RUN_ID:-glm53full7}"
 # 0.75 + chunked prefill 2048: echo/loglikelihood requests compute logits for
@@ -300,11 +302,21 @@ note "step 1: serve on SGLang"
     $QUANT_ARGS \
     --disable-shared-experts-fusion \
     --tp "$TP" \
-    `# NO --kv-cache-dtype fp8_e4m3: it is absent from the vendor's serving` \
-    `# command for THIS checkpoint, and an FP8 KV cache is a QUALITY variable,` \
-    `# not merely a memory one -- carrying it into a quality comparison quantizes` \
-    `# attention on top of the weights under test. CTX is halved to pay for the` \
-    `# larger KV that costs.` \
+    `# FP8 KV cache: KEPT. It is absent from the vendor's serving command, and it` \
+    `# IS a quality variable (it quantizes attention K/V on top of the INT4 expert` \
+    `# weights under test) -- but an FP8 KV cache is standard practice for` \
+    `# production serving of this model class, so the measurement that matters is` \
+    `# the one taken under it. Operator decision, 2026-08-31. Both arms carry it,` \
+    `# so the ours-vs-peer delta is unaffected either way; what it changes is what` \
+    `# the ABSOLUTE numbers describe, and they should describe the deployed` \
+    `# configuration.` \
+    `#` \
+    `# It also doubles the KV pool: measured without it, SGLang computed` \
+    `# max_total_num_tokens=101120 (16 concurrent reasoning requests sat at` \
+    `# token_usage 0.42, no queue). With it, roughly 200k tokens -- headroom that` \
+    `# matters when several hard items generate 20-30k tokens at once, which is` \
+    `# the regime GPQA-CoT and ifeval enter at GENERAL_MAX_GEN_TOKS=32768.` \
+    --kv-cache-dtype fp8_e4m3 \
     `#` \
     `# NO --speculative-algorithm: the MTP/nextn draft layer ships in BOTH` \
     `# checkpoints and the vendor command does enable EAGLE (accept length ~2.9),` \

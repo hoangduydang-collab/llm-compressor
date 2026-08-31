@@ -22,7 +22,11 @@ ARM=${ARM:?}; PROFILE=${PROFILE:?}; PORT=${PORT:?}; ROOT=${ROOT:?}
 MODEL_PATH="${MODEL_PATH:?MODEL_PATH is required (no cluster-2 default exists)}"
 QUANT_ARGS="${QUANT_ARGS:---quantization w4afp8}"
 TP="${TP:-8}"
-CTX="${CTX:-131072}"
+# 65536, not 131072: dropping --kv-cache-dtype fp8_e4m3 (a quality variable the
+# vendor command does not use) doubles per-token KV, and no task here needs
+# more than the 32768-token generation budget plus a 25-shot prompt. Halving
+# the context pays for the larger KV and leaves more room for batching.
+CTX="${CTX:-65536}"
 RUN_ID="${RUN_ID:-glm53full7}"
 # 0.75 + chunked prefill 2048: echo/loglikelihood requests compute logits for
 # ALL prompt tokens (vocab x batch tokens, TP all-gather) — at 0.85 the GLM-5.2
@@ -44,7 +48,9 @@ TOOL_PARSER="${TOOL_PARSER:-glm47}"
 #    NFS root and its sglang-eval/benchmarks venvs do not exist here; this arm
 #    runs inside the lmsysorg/sglang image and builds its client venv locally.
 # 2. DG_JIT_NVCC_COMPILER is dropped: it pointed at /mnt/nfs/hoangduy/cuda-12.9,
-#    a cluster-1 path. The JIT is disabled outright below, so no nvcc is needed.
+#    a cluster-1 path that does not exist here. DeepGEMM's JIT is now left
+#    ENABLED (see the DeepGEMM note below for why the GLM-5.2 disables were
+#    removed), so if a compile needs a host compiler this is the knob to revisit.
 # 3. TRITON_CACHE_DIR / TORCHINDUCTOR_CACHE_DIR still go to /tmp, which the pod
 #    spec backs with a per-pod emptyDir. On cluster 1 these had to be set to
 #    escape a NODE-SHARED default that other jobs poisoned; here the pod
@@ -121,11 +127,25 @@ export HF_DATASETS_OFFLINE=1 HF_HUB_OFFLINE=1
 # the gate exists to remove.
 export NLTK_DATA="${NLTK_DATA:-/mnt/cephfs/hoangduy/nltk_data}"
 
-# DeepGEMM compat (the proven GLM-5.2 combo).
+# DeepGEMM: LEFT ENABLED, which is a change from the GLM-5.2 arm this was ported
+# from. That arm exported SGLANG_ENABLE_JIT_DEEPGEMM=0 / DG_JIT_USE_NVRTC=0 /
+# SGLANG_DG_USE_NVRTC=0 as a "compat" combo, and those three disables were the
+# prime suspect for the throughput this run actually measured: 454 tok/s
+# aggregate at num_concurrent=16 (~28 tok/s per stream), which is far below what
+# 8xH100 should give a W4AFP8 MoE and slow enough that single hard items crossed
+# lm-eval's 300 s client timeout.
+#
+# The vendor's own serving command for this checkpoint sets NONE of them, and
+# describes the checkpoint as "served by SGLang's native CUTLASS W4A8 grouped
+# GEMM" -- so disabling the JIT path those FP8 layers compile through was ours,
+# not the reference configuration.
+#
+# RISK, stated rather than discovered later: cluster-2 compute nodes have no gcc
+# (see the cluster notes), so an NVCC-backed JIT compile can fail. If the server
+# dies at startup with a compiler error, restore the three disables -- that
+# failure is loud and costs one ~12 min load, whereas the silent 3x slowdown cost
+# a 60-minute invocation.
 export FLASHINFER_USE_CUDA_NORM=1
-export SGLANG_ENABLE_JIT_DEEPGEMM=0
-export DG_JIT_USE_NVRTC=0
-export SGLANG_DG_USE_NVRTC=0
 export TRITON_CACHE_DIR=/tmp/triton-cache-${ARM}
 export TORCHINDUCTOR_CACHE_DIR=/tmp/inductor-cache-${ARM}
 mkdir -p "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
@@ -280,18 +300,30 @@ note "step 1: serve on SGLang"
     $QUANT_ARGS \
     --disable-shared-experts-fusion \
     --tp "$TP" \
-    --kv-cache-dtype fp8_e4m3 \
+    `# NO --kv-cache-dtype fp8_e4m3: it is absent from the vendor's serving` \
+    `# command for THIS checkpoint, and an FP8 KV cache is a QUALITY variable,` \
+    `# not merely a memory one -- carrying it into a quality comparison quantizes` \
+    `# attention on top of the weights under test. CTX is halved to pay for the` \
+    `# larger KV that costs.` \
+    `#` \
+    `# NO --speculative-algorithm: the MTP/nextn draft layer ships in BOTH` \
+    `# checkpoints and the vendor command does enable EAGLE (accept length ~2.9),` \
+    `# but this run measures the quantized model's own decode path, not a serving` \
+    `# optimisation. Speculative decoding stays OFF by decision.` \
     --reasoning-parser "$REASONING_PARSER" \
     --tool-call-parser "$TOOL_PARSER" \
     --context-length "$CTX" \
     --mem-fraction-static "$MEM_FRAC" \
+    `# KEPT, against the vendor command, on evidence: echo/loglikelihood requests` \
+    `# compute logits for every prompt token and GLM-5.2's scheduler OOM'd at 0.85` \
+    `# (job 13136). The vendor's command serves chat only and never exercises that` \
+    `# path, so it cannot speak to this bound.` \
     --chunked-prefill-size "$CHUNKED_PREFILL" \
-    `# DEVIATION from the GLM-5.2 reference serve flags, added deliberately.` \
-    `# Without it SGLang serves no /metrics endpoint at all, so scrape_metrics` \
-    `# recorded "(scrape failed)" and the run had no token-spend column -- one of` \
-    `# the three axes the M3 report actually uses (score, flips, token spend).` \
-    `# It only starts a Prometheus exporter; it does not touch the inference` \
-    `# path, and BOTH arms carry it, so cross-arm parity is unaffected.` \
+    `# --enable-metrics is a DEVIATION from the vendor command, added on purpose:` \
+    `# without it SGLang serves no /metrics endpoint, scrape_metrics records` \
+    `# "(scrape failed)", and the run has no token-spend column -- one of the` \
+    `# three axes the M3 report uses. It only starts a Prometheus exporter, does` \
+    `# not touch the inference path, and both arms carry it.` \
     --enable-metrics \
     --trust-remote-code \
     --host 0.0.0.0 --port "$PORT"
@@ -312,6 +344,57 @@ done
 gate serve_healthy "$healthy"
 [ "$healthy" = 0 ] || { tail -60 "$CLIENT/serve.log"; exit 1; }
 note "server healthy after ~$((i*10))s"
+
+# ---- step 1b: decode throughput floor --------------------------------------
+# Measured BEFORE committing to a multi-hour suite, because throughput is not a
+# cosmetic property here: lm-eval's api backend applies a 300 s TOTAL per-request
+# deadline (`timeout=300`, aiohttp ClientTimeout) and, in 0.4.10, a timeout is
+# NOT survivable -- the handler that should retry reads an unbound `outputs` and
+# raises UnboundLocalError, killing the invocation. Run
+# full7-20260831t054731z died that way at ifeval 519/541 after 60 minutes of
+# completed inference, at ~28 output tok/s per stream.
+#
+# So the arm now measures aggregate decode throughput with a short burst and
+# refuses to start the suite below a floor. One minute here replaces an hour of
+# inference that cannot be scored.
+THROUGHPUT_FLOOR="${THROUGHPUT_FLOOR:-250}"
+THROUGHPUT_PROBE_N="${THROUGHPUT_PROBE_N:-8}"
+note "step 1b: decode throughput probe (${THROUGHPUT_PROBE_N} concurrent x 256 tokens)"
+tp_before=$(curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
+  | awk '/^sglang:generation_tokens_total/ {print $2; exit}')
+tp_t0=$(date +%s)
+for _ in $(seq 1 "$THROUGHPUT_PROBE_N"); do
+  curl -sf "http://localhost:$PORT/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"m","messages":[{"role":"user","content":"Count from 1 to 200, one number per line."}],"max_tokens":256,"temperature":0}' \
+    >/dev/null 2>&1 &
+done
+wait
+tp_t1=$(date +%s)
+tp_after=$(curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
+  | awk '/^sglang:generation_tokens_total/ {print $2; exit}')
+tp_rate=$("$BVENV/bin/python" - "$tp_before" "$tp_after" "$tp_t0" "$tp_t1" <<'PY'
+import sys
+try:
+    b, a, t0, t1 = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
+    dt = max(t1 - t0, 1.0)
+    print("%.0f" % ((a - b) / dt))
+except Exception:
+    print("0")
+PY
+)
+note "decode throughput: ${tp_rate} tok/s aggregate over $((tp_t1 - tp_t0))s (floor ${THROUGHPUT_FLOOR})"
+if [ "${tp_rate:-0}" -lt "$THROUGHPUT_FLOOR" ] 2>/dev/null; then
+  gate throughput 1
+  note "FATAL: ${tp_rate} tok/s is below the ${THROUGHPUT_FLOOR} tok/s floor. At this"
+  note "  rate a 32768-token item needs $((32768 / (${tp_rate:-1} > 0 ? ${tp_rate:-1} : 1) )) s and will trip lm-eval's 300 s"
+  note "  client deadline, which 0.4.10 turns into a fatal UnboundLocalError."
+  note "  Investigate the serve config (DeepGEMM, mem-fraction, batching) rather"
+  note "  than paying for a suite that cannot finish. Override with THROUGHPUT_FLOOR=0."
+  grep -aiE "deepgemm|fallback|not compiled|nvcc|compiler" "$CLIENT/serve.log" | tail -10
+  exit 1
+fi
+gate throughput 0
 
 # ---- step 2: loglikelihood-shape gate --------------------------------------
 note "step 2: loglikelihood-shape gate (the EXACT lm-eval payload: max_tokens=1 echo logprobs)"

@@ -58,7 +58,19 @@ TOOL_PARSER="${TOOL_PARSER:-glm47}"
 
 REPO="${REPO:-/work/repo}"
 BENCH="${BENCH:-/mnt/cephfs/hoangduy/projects/benchmarks}"
-BVENV="${BVENV:-/work/bvenv}"
+# A PERSISTENT client venv on the PVC, built once and reused by every arm --
+# the same pattern cluster 1 used (`source /mnt/nfs/hoangduy/venvs/quant/bin/
+# activate`), which is why the M3 runs never had to think about scoring pins.
+#
+# The point is not saving the ~40 s of pip: it is that the pinned closure
+# (lm_eval 0.4.10 / datasets 5.0.0 / nltk 3.10.0) is resolved and VERIFIED once
+# instead of re-resolved per pod, where a resolver change could silently hand one
+# arm a different scorer than the other. Two arms reading it is read-only.
+#
+# The path names the image tag on purpose: the venv is built with
+# --system-site-packages against THIS image's torch, so it is only valid for
+# pods running the same image. A different sglang image needs its own venv.
+BVENV="${BVENV:-/mnt/cephfs/hoangduy/venvs/eval-sglang-0.5.17}"
 
 CLIENT=$ROOT/client-$ARM
 mkdir -p "$CLIENT"

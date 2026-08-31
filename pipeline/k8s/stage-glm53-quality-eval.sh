@@ -36,7 +36,10 @@
 set -uo pipefail
 
 BENCH="${BENCH:-/mnt/cephfs/hoangduy/projects/benchmarks}"
-BVENV="${BVENV:-/work/bvenv}"
+# The PERSISTENT client venv on the PVC, shared with the arms (see the longer
+# note in glm53_quality_arm.sh). Staging BUILDS it if absent and is the place its
+# pins are gated, so an arm inherits a venv that was already verified.
+BVENV="${BVENV:-/mnt/cephfs/hoangduy/venvs/eval-sglang-0.5.17}"
 OURS="${OURS:-/mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint}"
 PHALA="${PHALA:-/mnt/cephfs/.hf-cache/models--PhalaCloud--GLM-5.3-W4AFP8/snapshots/7e77d7b5592d748778459a0dac802e7fd407e593}"
 OUT="${OUT:-/mnt/cephfs/hoangduy/results/glm53-quality-paired}"

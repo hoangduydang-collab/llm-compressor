@@ -30,5 +30,27 @@ def test_render_arm_persists_aa_gpqa(tmp_path: Path):
            if "value" in e}
     assert env["AA_GPQA"] == "1"
     assert env["AA_GPQA_ONLY"] == "1"
+    assert env.get("HOLD_AFTER") in (None, "")
     assert "@@AA_GPQA@@" not in out.read_text(encoding="utf-8")
+
+
+def test_render_arm_hold_after_persists(tmp_path: Path):
+    out = tmp_path / "hold.yaml"
+    rc = render_arm.main([
+        "--arm", "ours",
+        "--model", "/mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint",
+        "--run-tag", "t",
+        "--ref", "deadbeef",
+        "--out", str(out),
+        "--aa-gpqa", "1",
+        "--aa-gpqa-only", "1",
+        "--hold-after", "1",
+        "--reasoning", "reasoning",
+    ])
+    assert rc == 0
+    doc = yaml.safe_load(out.read_text(encoding="utf-8"))
+    env = {e["name"]: e.get("value") for e in doc["spec"]["containers"][0]["env"]
+           if "value" in e}
+    assert env["HOLD_AFTER"] == "1"
+    assert "sleep infinity" in doc["spec"]["containers"][0]["args"][0]
     assert "@@ARM@@" not in out.read_text(encoding="utf-8")

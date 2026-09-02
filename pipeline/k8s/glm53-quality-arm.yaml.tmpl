@@ -11,6 +11,7 @@
 #   @@AA_GPQA@@        1 to run NVIDIA gpqa_diamond_aa_v3, or "" to skip
 #   @@AA_GPQA_ONLY@@   1 to skip the lm-eval general suite after AA GPQA
 #   @@REASONING@@ reasoning | nonreasoning | "" (send no thinking toggle)
+#   @@HOLD_AFTER@@     1 to keep the 8 GPUs after the arm exits (sleep until deleted)
 #   @@NODESELECTOR@@  rendered nodeSelector block, or "{}" for scheduler choice
 #
 # The server and the eval client share ONE pod: the arm script serves on
@@ -52,6 +53,9 @@ spec:
         # (existing full7 launches). Set to 1 to run after serve gates.
         - {name: AA_GPQA, value: "@@AA_GPQA@@"}
         - {name: AA_GPQA_ONLY, value: "@@AA_GPQA_ONLY@@"}
+        # Keep the 8-GPU allocation after the arm script exits (canary then
+        # formal on the same node). Empty = exit and release GPUs as before.
+        - {name: HOLD_AFTER, value: "@@HOLD_AFTER@@"}
         # Thinking ON is the M3 / GLM-5.2 protocol, and load-bearing: it threads
         # the profile's THINK_ON_EXTRA_BODY into every generative request, and it
         # is what makes a budget-exhausted, answer-less response score zero --
@@ -117,6 +121,11 @@ spec:
             bash pipeline/k8s/glm53_quality_arm.sh
           rc=$?
           echo "==> arm done (rc=$rc)"
+          if [ "${HOLD_AFTER:-}" = "1" ]; then
+            echo "==> HOLD_AFTER=1: keeping 8 GPUs until this pod is deleted"
+            echo "==> node=${NODE_NAME:-unknown} (do not kubectl delete until follow-up is done)"
+            sleep infinity
+          fi
           exit $rc
       volumeMounts:
         - {name: model-cache, mountPath: /mnt/cephfs}

@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="1 = run NVIDIA gpqa_diamond_aa_v3 after serve gates; empty = skip")
     ap.add_argument("--aa-gpqa-only", default="", choices=["", "1"],
                     help="1 = skip lm-eval general suite (AA GPQA canary/formal-only)")
+    ap.add_argument("--hold-after", default="", choices=["", "1"],
+                    help="1 = sleep after the arm so the 8 GPUs are not released")
     ap.add_argument("--node", default="", help="pin to this node; empty = let the scheduler choose")
     a = ap.parse_args(argv)
 
@@ -75,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         "@@TASKS@@": a.tasks,
         "@@AA_GPQA@@": a.aa_gpqa,
         "@@AA_GPQA_ONLY@@": a.aa_gpqa_only,
+        "@@HOLD_AFTER@@": a.hold_after,
         "@@REASONING@@": a.reasoning,
         "@@NODESELECTOR@@": node_block,
     }.items():
@@ -118,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
           f"  limit={env['LIMIT'] or '(full populations)'}"
           f"  reasoning={env['REASONING_MODE'] or '(none)'}"
           f"  aa_gpqa={env.get('AA_GPQA') or '(skip)'}"
-          f"  aa_gpqa_only={env.get('AA_GPQA_ONLY') or '(no)'}")
+          f"  aa_gpqa_only={env.get('AA_GPQA_ONLY') or '(no)'}"
+          f"  hold_after={env.get('HOLD_AFTER') or '(release GPUs)'}")
     return 0
 
 

@@ -8,7 +8,8 @@
 #   @@RUN_TAG@@   run tag, e.g. 20260830t1400z
 #   @@REF@@       llm-compressor commit to pin the code to
 #   @@LIMIT@@     items per general task, or "" for full populations
-#   @@AA_GPQA@@   1 to run NVIDIA gpqa_diamond_aa_v3, or "" to skip
+#   @@AA_GPQA@@        1 to run NVIDIA gpqa_diamond_aa_v3, or "" to skip
+#   @@AA_GPQA_ONLY@@   1 to skip the lm-eval general suite after AA GPQA
 #   @@REASONING@@ reasoning | nonreasoning | "" (send no thinking toggle)
 #   @@NODESELECTOR@@  rendered nodeSelector block, or "{}" for scheduler choice
 #
@@ -50,6 +51,7 @@ spec:
         # NVIDIA gpqa_diamond_aa_v3 (nvidia-simple-evals==26.3). Empty = skip
         # (existing full7 launches). Set to 1 to run after serve gates.
         - {name: AA_GPQA, value: "@@AA_GPQA@@"}
+        - {name: AA_GPQA_ONLY, value: "@@AA_GPQA_ONLY@@"}
         # Thinking ON is the M3 / GLM-5.2 protocol, and load-bearing: it threads
         # the profile's THINK_ON_EXTRA_BODY into every generative request, and it
         # is what makes a budget-exhausted, answer-less response score zero --
@@ -105,11 +107,13 @@ spec:
           [ -n "${LIMIT:-}" ] || unset LIMIT
           [ -n "${REASONING_MODE:-}" ] || unset REASONING_MODE
           [ "${AA_GPQA:-}" = "1" ] && export AA_GPQA=1 || unset AA_GPQA
+          [ "${AA_GPQA_ONLY:-}" = "1" ] && export AA_GPQA_ONLY=1 || unset AA_GPQA_ONLY
 
           ARM="$ARM" PROFILE="$PROFILE" PORT="$PORT" ROOT="$ROOT" \
           MODEL_PATH="$MODEL_PATH" RUN_ID="$RUN_ID" BENCH="$BENCH" \
           REASONING_MODE="${REASONING_MODE:-}" \
           AA_GPQA="${AA_GPQA:-}" \
+          AA_GPQA_ONLY="${AA_GPQA_ONLY:-}" \
             bash pipeline/k8s/glm53_quality_arm.sh
           rc=$?
           echo "==> arm done (rc=$rc)"

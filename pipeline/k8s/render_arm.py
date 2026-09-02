@@ -46,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tasks", default="", help="GENERAL_TASKS override; empty = profile default")
     ap.add_argument("--aa-gpqa", default="", choices=["", "1"],
                     help="1 = run NVIDIA gpqa_diamond_aa_v3 after serve gates; empty = skip")
+    ap.add_argument("--aa-gpqa-only", default="", choices=["", "1"],
+                    help="1 = skip lm-eval general suite (AA GPQA canary/formal-only)")
     ap.add_argument("--node", default="", help="pin to this node; empty = let the scheduler choose")
     a = ap.parse_args(argv)
 
@@ -72,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         "@@LIMIT@@": a.limit,
         "@@TASKS@@": a.tasks,
         "@@AA_GPQA@@": a.aa_gpqa,
+        "@@AA_GPQA_ONLY@@": a.aa_gpqa_only,
         "@@REASONING@@": a.reasoning,
         "@@NODESELECTOR@@": node_block,
     }.items():
@@ -114,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  tasks    {env['GENERAL_TASKS'] or '(profile default)'}"
           f"  limit={env['LIMIT'] or '(full populations)'}"
           f"  reasoning={env['REASONING_MODE'] or '(none)'}"
-          f"  aa_gpqa={env.get('AA_GPQA') or '(skip)'}")
+          f"  aa_gpqa={env.get('AA_GPQA') or '(skip)'}"
+          f"  aa_gpqa_only={env.get('AA_GPQA_ONLY') or '(no)'}")
     return 0
 
 

@@ -4,6 +4,8 @@
 # before an 8xH100 arm is scheduled.
 #
 # It does four things, in this order, each fail-closed:
+#   0c. NVIDIA simple-evals venv — isolated nvidia-simple-evals==26.3 with
+#                  gpqa_diamond_aa_v3 on `nemo-evaluator ls` (not the lm-eval venv).
 #   1. datasets  — pull every corpus the general suite needs into the SHARED HF
 #                  cache, so both arms can run with HF_HUB_OFFLINE=1 and cannot
 #                  score different revisions of the same benchmark.
@@ -115,6 +117,35 @@ if [ ! -x "$BVENV/bin/python" ]; then
     "openai>=1.40" jsonschema 2>&1 | tail -5
 fi
 PY="$BVENV/bin/python"
+STAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+AA_VENV="${AA_VENV:-/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3}"
+
+# Isolated NVIDIA simple-evals client (gpqa_diamond_aa_v3). MUST NOT share BVENV:
+# that venv is pinned to lm-eval 0.4.10 / datasets==5.0.0 for IFEval.
+note "step 0c: NVIDIA simple-evals venv at $AA_VENV"
+if [ ! -x "$AA_VENV/bin/nemo-evaluator" ]; then
+  python -m venv "$AA_VENV" || exit 1
+  "$AA_VENV/bin/pip" install -q --upgrade pip
+  "$AA_VENV/bin/pip" install -q "nvidia-simple-evals==26.3" 2>&1 | tail -8
+fi
+"$AA_VENV/bin/nemo-evaluator" ls > "$OUT/nemo-evaluator-ls.txt" 2>&1 || {
+  note "FATAL: nemo-evaluator ls failed"; cat "$OUT/nemo-evaluator-ls.txt"; exit 1; }
+PYTHONPATH="$STAGE_ROOT" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 \
+  require-task --ls-file "$OUT/nemo-evaluator-ls.txt" || {
+  note "FATAL: $AA_VENV does not list gpqa_diamond_aa_v3"; exit 1; }
+note "nemo-evaluator ls: gpqa_diamond_aa_v3 present"
+
+if [ -n "${HF_TOKEN:-}" ]; then
+  note "staging Idavidrein/gpqa gpqa_diamond into $EVAL_HF_ROOT"
+  HF_HUB_OFFLINE=0 HF_DATASETS_OFFLINE=0 "$AA_VENV/bin/python" - <<'PY' 2>&1 | tee -a "$OUT/datasets.log"
+from datasets import load_dataset
+ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+print("[stage] gpqa_diamond splits:", {k: len(v) for k, v in ds.items()})
+PY
+  gate aa_gpqa_dataset $?
+else
+  note "HF_TOKEN unset: skipped gpqa_diamond snapshot (AA_GPQA=1 arms will fail closed)"
+fi
 
 # ---- 0a. NLTK corpora for the IFEval scorer ---------------------------------
 # NOT pip-installable and deliberately not vendored (per-corpus licensing), so

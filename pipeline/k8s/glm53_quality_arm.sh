@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # One GLM-5.3 quality arm on the Rancher cluster: serve on SGLang (single node)
-# -> capability gates (fail-closed) -> standalone general-suite orchestrator ->
-# shutdown. Sequential-arm design: arms never overlap; A/B deltas vs the peer
-# arm are rebuilt offline with `quality.rebuild_delta`.
+# -> capability gates (fail-closed) -> optional NVIDIA gpqa_diamond_aa_v3
+# (AA_GPQA=1) -> standalone general-suite orchestrator -> shutdown.
+# Sequential-arm design: arms never overlap; A/B deltas vs the peer arm are
+# rebuilt offline with `quality.rebuild_delta`.
 #
 # THIS IS A PORT, NOT A NEW DESIGN. Every serve flag below is copied from
 # pipeline/slurm/glm52_quality_arm.sh, the arm runner that produced
@@ -15,7 +16,8 @@
 #
 # Env (required): ARM PROFILE PORT ROOT
 # Env (optional): MODEL_PATH TP CTX RUN_ID MEM_FRAC CHUNKED_PREFILL LIMIT
-#                 REASONING_PARSER TOOL_PARSER SUITE
+#                 REASONING_PARSER TOOL_PARSER SUITE AA_GPQA AA_GPQA_ONLY
+#                 AA_VENV AA_MODEL_ID
 set -uo pipefail
 
 ARM=${ARM:?}; PROFILE=${PROFILE:?}; PORT=${PORT:?}; ROOT=${ROOT:?}
@@ -471,6 +473,54 @@ PY
 ( cd "$BENCH" && BASE_URL="http://localhost:$PORT" "$BVENV/bin/python" -m quality.probe_endpoint \
     --profile "$PROFILE" --capabilities ) >"$CLIENT/capabilities.txt" 2>&1 || true
 
+# TOKEN SPEND. SGLang Prometheus totals either side of a suite. Defined here so
+# step 3a and step 3 share one scraper.
+scrape_metrics() {
+  curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
+    | grep -aE "^sglang:(prompt_tokens_total|generation_tokens_total|num_requests_total|num_aborted_requests_total|cached_tokens_total)" \
+    > "$CLIENT/metrics-$1.txt" || echo "(scrape failed)" > "$CLIENT/metrics-$1.txt"
+  note "metrics[$1]: $(tr '\n' ' ' < "$CLIENT/metrics-$1.txt" | cut -c1-200)"
+}
+
+# ---- step 3a: NVIDIA gpqa_diamond_aa_v3 (opt-in) ---------------------------
+# Separate from the lm-eval general suite. Artifacts land under
+# $CLIENT/aa-gpqa-v3/, never kind=general. Default off so existing full7
+# launches do not add 990 thinking completions.
+aa_rc=0
+if [ "${AA_GPQA:-}" = "1" ]; then
+  note "step 3a: NVIDIA gpqa_diamond_aa_v3 (nvidia-simple-evals==26.3)"
+  AA_VENV="${AA_VENV:-/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3}"
+  AA_OUT="$CLIENT/aa-gpqa-v3"
+  mkdir -p "$AA_OUT"
+  [ -x "$AA_VENV/bin/nemo-evaluator" ] || {
+    note "FATAL: AA_GPQA=1 but $AA_VENV/bin/nemo-evaluator is missing."
+    note "  Run pipeline/k8s/stage-glm53-quality-eval.sh first."; exit 1; }
+  [ -n "${HF_TOKEN:-}" ] || {
+    note "FATAL: AA_GPQA=1 requires HF_TOKEN (gated Idavidrein/gpqa)."; exit 1; }
+  "$AA_VENV/bin/nemo-evaluator" ls > "$AA_OUT/nemo-evaluator-ls.txt" 2>&1 || {
+    note "FATAL: nemo-evaluator ls failed"; cat "$AA_OUT/nemo-evaluator-ls.txt"; exit 1; }
+  PYTHONPATH="$REPO" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 \
+    require-task --ls-file "$AA_OUT/nemo-evaluator-ls.txt" || exit 1
+  AA_URL="http://127.0.0.1:${PORT}/v1/chat/completions"
+  AA_MODEL_ID="${AA_MODEL_ID:-glm}"
+  PYTHONPATH="$REPO" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 write-config \
+    --out "$AA_OUT/run.yml" --url "$AA_URL" --model-id "$AA_MODEL_ID" \
+    --output-dir "$AA_OUT/results" --limit "${LIMIT:-}"
+  PYTHONPATH="$REPO" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 write-manifest \
+    --out "$AA_OUT/harness_manifest.json" --arm "$ARM" --run-id "$RUN_ID" \
+    --url "$AA_URL" --model-id "$AA_MODEL_ID" --limit "${LIMIT:-}"
+  note "aa-gpqa-v3 config: $AA_OUT/run.yml"
+  scrape_metrics aa_before
+  "$AA_VENV/bin/nemo-evaluator" run_eval --run_config "$AA_OUT/run.yml" \
+    >"$AA_OUT/eval.log" 2>&1
+  aa_rc=$?
+  scrape_metrics aa_after
+  gate aa_gpqa "$aa_rc"
+  tail -40 "$AA_OUT/eval.log" | tee -a "$CLIENT/client.log"
+  [ "$aa_rc" = 0 ] || {
+    note "FATAL: gpqa_diamond_aa_v3 failed (rc=$aa_rc)"; exit "$aa_rc"; }
+fi
+
 # ---- step 3: general suite -------------------------------------------------
 note "step 3: general suite (standalone orchestrator, ${RUN_ID})"
 # BASELINE_REF="" -> standalone mode (no live baseline in the sequential design;
@@ -490,32 +540,24 @@ SUITE_ARGS=""
 REASONING_MODE_ARGS=""
 [ -n "${REASONING_MODE:-}" ] && REASONING_MODE_ARGS="--reasoning-mode $REASONING_MODE"
 
-# TOKEN SPEND. The benchmarks repo at this ref has no usage-proxy capture -- the
-# per-request accounting behind M3's "token spend 2.19x BF16" and the GLM-5.2
-# report's exhaustion rates is not in the pushed tree. SGLang's Prometheus
-# endpoint is a coarse substitute that needs no benchmarks change: scraping it
-# either side of the suite gives per-arm TOTALS (generated tokens, request
-# counts), which is the axis that mattered most. It is aggregate, not
-# per-request, so it cannot attribute spend to a task or an item -- do not
-# report it as if it could.
-scrape_metrics() {
-  curl -sf "http://localhost:$PORT/metrics" 2>/dev/null \
-    | grep -aE "^sglang:(prompt_tokens_total|generation_tokens_total|num_requests_total|num_aborted_requests_total|cached_tokens_total)" \
-    > "$CLIENT/metrics-$1.txt" || echo "(scrape failed)" > "$CLIENT/metrics-$1.txt"
-  note "metrics[$1]: $(tr '\n' ' ' < "$CLIENT/metrics-$1.txt" | cut -c1-200)"
-}
-scrape_metrics before
-
-( cd "$BENCH" && BASE_URL="http://localhost:$PORT" BASELINE_REF="" PATH="$BVENV/bin:$PATH" \
-    "$BVENV/bin/python" -m quality.orchestrator \
-    --profile "$PROFILE" --out-root "$ROOT/results" --run-id "$RUN_ID" \
-    $SUITE_ARGS $LIMIT_ARGS $REASONING_MODE_ARGS --execute ) >"$CLIENT/general.log" 2>&1
-rc=$?; gate general_suite "$rc"
-scrape_metrics after
-tail -30 "$CLIENT/general.log" | tee -a "$CLIENT/client.log"
+rc=0
+if [ "${AA_GPQA_ONLY:-}" = "1" ]; then
+  note "AA_GPQA_ONLY=1: skipping general suite"
+  gate general_suite skip
+else
+  scrape_metrics before
+  ( cd "$BENCH" && BASE_URL="http://localhost:$PORT" BASELINE_REF="" PATH="$BVENV/bin:$PATH" \
+      "$BVENV/bin/python" -m quality.orchestrator \
+      --profile "$PROFILE" --out-root "$ROOT/results" --run-id "$RUN_ID" \
+      $SUITE_ARGS $LIMIT_ARGS $REASONING_MODE_ARGS --execute ) >"$CLIENT/general.log" 2>&1
+  rc=$?; gate general_suite "$rc"
+  scrape_metrics after
+  tail -30 "$CLIENT/general.log" | tee -a "$CLIENT/client.log"
+fi
 
 # ---- step 4: shutdown ------------------------------------------------------
 note "step 4: shutdown"
 kill "$SERVER_PID" 2>/dev/null; sleep 10; kill -9 "$SERVER_PID" 2>/dev/null
-note "arm done rc=$rc"
-exit $rc
+note "arm done general_rc=$rc aa_rc=$aa_rc"
+[ "$rc" = 0 ] && [ "$aa_rc" = 0 ]
+exit $?

@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reasoning", default="", choices=["", "reasoning", "nonreasoning"])
     ap.add_argument("--limit", default="", help="items per general task; empty = full populations")
     ap.add_argument("--tasks", default="", help="GENERAL_TASKS override; empty = profile default")
+    ap.add_argument("--aa-gpqa", default="", choices=["", "1"],
+                    help="1 = run NVIDIA gpqa_diamond_aa_v3 after serve gates; empty = skip")
     ap.add_argument("--node", default="", help="pin to this node; empty = let the scheduler choose")
     a = ap.parse_args(argv)
 
@@ -55,7 +57,12 @@ def main(argv: list[str] | None = None) -> int:
               "an environment variable rather than argv.", file=sys.stderr)
         return 2
 
-    node_block = ("nodeSelector: {kubernetes.io/hostname: %s}" % a.node) if a.node else "{}"
+    # An EMPTY selector must still be a valid mapping entry. Emitting a bare "{}"
+    # here produced `  {}` on its own line, which is a YAML scanner error in a
+    # mapping context -- caught by this module's own safe_load, which is the whole
+    # reason that check exists. `nodeSelector: {}` means "any node".
+    node_block = ("nodeSelector: {kubernetes.io/hostname: %s}" % a.node
+                  if a.node else "nodeSelector: {}")
     text = _TMPL.read_text(encoding="utf-8")
     for key, value in {
         "@@ARM@@": a.arm,
@@ -64,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         "@@REF@@": a.ref,
         "@@LIMIT@@": a.limit,
         "@@TASKS@@": a.tasks,
+        "@@AA_GPQA@@": a.aa_gpqa,
         "@@REASONING@@": a.reasoning,
         "@@NODESELECTOR@@": node_block,
     }.items():
@@ -105,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  profile  {env['PROFILE']}")
     print(f"  tasks    {env['GENERAL_TASKS'] or '(profile default)'}"
           f"  limit={env['LIMIT'] or '(full populations)'}"
-          f"  reasoning={env['REASONING_MODE'] or '(none)'}")
+          f"  reasoning={env['REASONING_MODE'] or '(none)'}"
+          f"  aa_gpqa={env.get('AA_GPQA') or '(skip)'}")
     return 0
 
 

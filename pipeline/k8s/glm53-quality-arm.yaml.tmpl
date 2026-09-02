@@ -8,7 +8,7 @@
 #   @@RUN_TAG@@   run tag, e.g. 20260830t1400z
 #   @@REF@@       llm-compressor commit to pin the code to
 #   @@LIMIT@@     items per general task, or "" for full populations
-#   @@TASKS@@     space-separated GENERAL_TASKS override, or "" for the profile default
+#   @@AA_GPQA@@   1 to run NVIDIA gpqa_diamond_aa_v3, or "" to skip
 #   @@REASONING@@ reasoning | nonreasoning | "" (send no thinking toggle)
 #   @@NODESELECTOR@@  rendered nodeSelector block, or "{}" for scheduler choice
 #
@@ -47,6 +47,9 @@ spec:
         - {name: RUN_TAG, value: "@@RUN_TAG@@"}
         - {name: LIMIT, value: "@@LIMIT@@"}
         - {name: GENERAL_TASKS, value: "@@TASKS@@"}
+        # NVIDIA gpqa_diamond_aa_v3 (nvidia-simple-evals==26.3). Empty = skip
+        # (existing full7 launches). Set to 1 to run after serve gates.
+        - {name: AA_GPQA, value: "@@AA_GPQA@@"}
         # Thinking ON is the M3 / GLM-5.2 protocol, and load-bearing: it threads
         # the profile's THINK_ON_EXTRA_BODY into every generative request, and it
         # is what makes a budget-exhausted, answer-less response score zero --
@@ -60,11 +63,8 @@ spec:
         - name: NODE_NAME
           valueFrom:
             fieldRef: {fieldPath: spec.nodeName}
-        # Only gpqa_diamond_zeroshot needs this: Idavidrein/gpqa is the general
-        # suite's one gated dataset (quality/general/tasks.py GATED_DATASETS).
-        # Every other task in the default set is ungated, so the arms run without
-        # it — hence optional: true, which lets the pod start when the secret is
-        # absent instead of blocking on a credential it does not need.
+        # Idavidrein/gpqa is gated. lm-eval GPQA and NVIDIA gpqa_diamond_aa_v3
+        # both need it. Optional so pods that skip GPQA still start.
         #
         # A SECRET, NOT A FILE ON THE PVC. model-cache-shared is mounted by
         # collaborators' pods, and a plaintext token under /mnt/cephfs would be
@@ -104,10 +104,12 @@ spec:
           [ -n "${GENERAL_TASKS:-}" ] && export GENERAL_TASKS || unset GENERAL_TASKS
           [ -n "${LIMIT:-}" ] || unset LIMIT
           [ -n "${REASONING_MODE:-}" ] || unset REASONING_MODE
+          [ "${AA_GPQA:-}" = "1" ] && export AA_GPQA=1 || unset AA_GPQA
 
           ARM="$ARM" PROFILE="$PROFILE" PORT="$PORT" ROOT="$ROOT" \
           MODEL_PATH="$MODEL_PATH" RUN_ID="$RUN_ID" BENCH="$BENCH" \
           REASONING_MODE="${REASONING_MODE:-}" \
+          AA_GPQA="${AA_GPQA:-}" \
             bash pipeline/k8s/glm53_quality_arm.sh
           rc=$?
           echo "==> arm done (rc=$rc)"

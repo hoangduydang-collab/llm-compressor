@@ -125,9 +125,15 @@ AA_VENV="${AA_VENV:-/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3}"
 note "step 0c: NVIDIA simple-evals venv at $AA_VENV"
 if [ ! -x "$AA_VENV/bin/nemo-evaluator" ]; then
   python -m venv "$AA_VENV" || exit 1
-  "$AA_VENV/bin/pip" install -q --upgrade pip
-  "$AA_VENV/bin/pip" install -q "nvidia-simple-evals==26.3" 2>&1 | tail -8
+  # This script is `set -uo pipefail` without `-e`. Every pip must be
+  # `|| exit 1` or a failed install continues and later looks like a
+  # missing binary. Pin nemo-evaluator below 0.3: that release replaced
+  # the Eval Factory CLI (`nemo-evaluator ls` / `run_eval`) with `nel`.
+  "$AA_VENV/bin/pip" install --upgrade pip || exit 1
+  "$AA_VENV/bin/pip" install "nemo-evaluator>=0.1.51,<0.3" "nvidia-simple-evals==26.3" || exit 1
 fi
+[ -x "$AA_VENV/bin/nemo-evaluator" ] || {
+  note "FATAL: $AA_VENV/bin/nemo-evaluator missing after pip"; exit 1; }
 "$AA_VENV/bin/nemo-evaluator" ls > "$OUT/nemo-evaluator-ls.txt" 2>&1 || {
   note "FATAL: nemo-evaluator ls failed"; cat "$OUT/nemo-evaluator-ls.txt"; exit 1; }
 PYTHONPATH="$STAGE_ROOT" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 \

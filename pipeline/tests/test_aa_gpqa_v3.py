@@ -11,6 +11,7 @@ import yaml
 from pipeline.aa_gpqa_v3 import (
     DEFAULT_VENV,
     MAX_NEW_TOKENS,
+    NEMO_EVALUATOR_PIN,
     PACKAGE_PIN,
     REQUEST_TIMEOUT,
     TASK_NAME,
@@ -26,6 +27,7 @@ from pipeline.aa_gpqa_v3 import (
 
 def test_pin_and_task_are_the_inspected_wheel():
     assert PACKAGE_PIN == "nvidia-simple-evals==26.3"
+    assert NEMO_EVALUATOR_PIN == "nemo-evaluator>=0.1.51,<0.3"
     assert TASK_NAME == "gpqa_diamond_aa_v3"
     assert DEFAULT_VENV == "/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3"
 

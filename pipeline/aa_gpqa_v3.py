@@ -13,6 +13,10 @@ from typing import Any, Optional, Union
 import yaml
 
 PACKAGE_PIN = "nvidia-simple-evals==26.3"
+# nvidia-simple-evals requires nemo-evaluator>=0.1.51. Unpinned, pip
+# resolves 0.3.0 — a different product whose CLI is `nel`, not
+# `nemo-evaluator ls` / `run_eval`. Cap below that rewrite.
+NEMO_EVALUATOR_PIN = "nemo-evaluator>=0.1.51,<0.3"
 TASK_NAME = "gpqa_diamond_aa_v3"
 DEFAULT_VENV = "/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3"
 

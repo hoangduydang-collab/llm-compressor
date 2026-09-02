@@ -1,0 +1,93 @@
+---
+# CPU staging for GLM-5.3 quality eval + NVIDIA gpqa_diamond_aa_v3.
+#
+# Requests NO GPU. Tolerates the GPU taint because model-cache-shared is
+# region-pinned to ca-van3 and every node there is GPU-tainted (same reason as
+# stage-glm52-bf16.yaml). Uses the arm's SGLang image so the PVC venv's
+# interpreter matches the later 8-GPU quality arm.
+#
+#   kubectl apply -f pipeline/k8s/stage-glm53-aa-v3.yaml
+#   kubectl -n evaluation logs -f job/hd-stage-glm53-aa-v3
+#
+# Pin REPO_REF to the commit that added pipeline/aa_gpqa_v3.py.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-stage-glm53-aa-v3
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: quality-eval-staging
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        owner: hoangduy.dang
+        purpose: quality-eval-staging
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: stage
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
+            - {name: REPO_REF, value: "ab5ddc15"}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+          resources:
+            requests: {cpu: "4", memory: "16Gi"}
+            limits: {cpu: "8", memory: "32Gi"}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              mkdir -p /mnt/cephfs/hoangduy/runlogs
+              RUN_LOG=/mnt/cephfs/hoangduy/runlogs/hd-stage-glm53-aa-v3.log
+              exec > >(tee -a "$RUN_LOG") 2>&1
+              echo "==> durable log: $RUN_LOG"
+              echo "==> node=${NODE_NAME:-unknown} ref=$REPO_REF"
+              git clone --quiet --filter=blob:none "$REPO_URL" /work/repo || exit 1
+              cd /work/repo && git checkout --quiet "$REPO_REF" || exit 1
+              echo "==> code at $(git rev-parse --short HEAD)"
+              # Our tree only. Unpinned nemo-evaluator resolves to 0.3.0
+              # (`nel`), not Eval Factory `nemo-evaluator ls`. Recreate our
+              # venv with the <0.3 pin. ab5ddc15's stage script is missing
+              # this pin, so install here before calling it.
+              AA_VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              echo "==> recreating $AA_VENV (ours only)"
+              rm -rf "$AA_VENV"
+              python -m venv "$AA_VENV" || exit 1
+              "$AA_VENV/bin/pip" install --upgrade pip || exit 1
+              "$AA_VENV/bin/pip" install "nemo-evaluator>=0.1.51,<0.3" "nvidia-simple-evals==26.3" || exit 1
+              [ -x "$AA_VENV/bin/nemo-evaluator" ] || {
+                echo "FATAL: nemo-evaluator missing after pip"; exit 1; }
+              echo "==> nemo-evaluator present at $AA_VENV/bin/nemo-evaluator"
+              bash pipeline/k8s/stage-glm53-quality-eval.sh
+              rc=$?
+              echo "==> stage done (rc=$rc)"
+              exit $rc
+          volumeMounts:
+            - {name: model-cache, mountPath: /mnt/cephfs}
+            - {name: work, mountPath: /work}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-shared
+        - name: work
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi

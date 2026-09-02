@@ -69,9 +69,13 @@ Pin:
 
 ```
 nvidia-simple-evals==26.3
+nemo-evaluator>=0.1.51,<0.3
 ```
 
-(`nemo-evaluator` comes in as a dependency.) Install into a **dedicated
+`nvidia-simple-evals` depends on `nemo-evaluator>=0.1.51`. Unpinned, pip
+resolves **0.3.0**, which is a different product (`nel` CLI) and does not
+provide `nemo-evaluator ls` / `run_eval`. Cap below that rewrite (0.2.8 is
+the current Eval Factory line). Install into a **dedicated
 isolated venv**, never into `eval-sglang-0.5.17` (that venv is pinned to
 `lm-eval[api,ifeval]==0.4.10` and `datasets==5.0.0` for IFEval’s population
 digest). Suggested PVC path, following the existing persistent-venv pattern:

@@ -57,27 +57,55 @@ There are two distinct reproduction levels:
 
 1. **Re-aggregate the historical artifacts** to reproduce the reported tables.
    This is the recommended path; it does not reserve GPUs or serve a model.
-2. **Re-run the historical workloads** to collect a fresh comparison. This
-   needs the original model artifacts, patched Humming environment, and
-   exclusive multi-node GPU allocations. A fresh run measures the same design,
-   not bit-for-bit identical throughput.
+2. **Run a new comparable workload** to collect a fresh comparison. The former
+   Polaris cluster is retired, so this requires porting the legacy launchers to
+   the current scheduler, filesystem, and GPU topology. A fresh run measures
+   the same design, not bit-for-bit identical throughput.
+
+#### Current archive location (verified 2026-09-04)
+
+The former `/mnt/nfs/hoangduy` location was migrated to the ai-lab archive.
+Access it through the jump host:
+
+```bash
+ssh hoangduy.dang@ai-lab-jump
+export ARCHIVE_HOME=/data/hoangduy.dang/nfs-hoangduy
+export SPECDEC_ROOT="$ARCHIVE_HOME/results/m3-specdec-eagle3"
+```
+
+The archive contains both comparison windows and their expected primary
+evidence:
+
+```text
+$SPECDEC_ROOT/20260727T061506Z/
+  aggregate.json, actual-commit.txt, arm-k3/{serve.log,spec-metrics.log,
+  aa-sweep.log,backend-attestation.json}
+
+$SPECDEC_ROOT/20260727T064934Z-wave2/
+  aggregate.json, actual-commit.txt, arm-natural-k3/serve.log,
+  arm-natural-k3/metrics/natural-t06-c1-{pre,post}.txt,
+  arm-natural-k3/natural/t06/conc_1/profile_export_aiperf.json
+```
 
 #### Re-aggregate the historical artifacts
 
-The raw windows must first be available on the cluster:
+Run the following on `ai-lab-jump`, where the migrated project and result
+artifacts are available. The aggregators use only the Python standard library,
+so the retired quant/perf virtual environments are not required for this step:
 
 ```bash
-export REPO=/mnt/nfs/hoangduy/projects/llm-compressor
-export WAVE1_ROOT=/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T061506Z
-export WAVE2_ROOT=/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2
-export PY=/mnt/nfs/hoangduy/venvs/quant/bin/python
+export ARCHIVE_HOME=/data/hoangduy.dang/nfs-hoangduy
+export REPO="$ARCHIVE_HOME/projects/llm-compressor"
+export WAVE1_ROOT="$ARCHIVE_HOME/results/m3-specdec-eagle3/20260727T061506Z"
+export WAVE2_ROOT="$ARCHIVE_HOME/results/m3-specdec-eagle3/20260727T064934Z-wave2"
+export PY=python3
 ```
 
-Use a separate, approved writable directory for regenerated JSON; the input
-windows are historical evidence and should be treated as read-only:
+Use a separate writable directory for regenerated JSON; the input windows are
+historical evidence and should be treated as read-only:
 
 ```bash
-export OUT=/mnt/nfs/hoangduy/results/reproductions/m3-specdec-prompt-source
+export OUT="$ARCHIVE_HOME/results/reproductions/m3-specdec-prompt-source"
 mkdir -p "$OUT"
 
 "$PY" "$REPO/pipeline/specdec_aggregate.py" \
@@ -89,47 +117,47 @@ mkdir -p "$OUT"
   --out-json "$OUT/wave2-aggregate.json"
 ```
 
-For Wave 1, verify that `wave1-aggregate.json` reports k=3 mean acceptance
-length near 2.45 and that the associated AA sweep summary reports the 1k,
-conc-1 137.5 → 236.0 tok/s/user cell. For Wave 2, verify that
-`wave2-aggregate.json` reports the `natural` / temp-0.6 / conc-1 k=3
-acceptance length 2.473 and the 137.9 → 249.8 tok/s/user result.
+The archived re-aggregation was verified on 2026-09-04:
 
-#### Re-run the workloads
+- Wave 1 regenerates the k=3 acceptance evidence (2.45; per-position
+  0.70/0.46/0.29) and greedy-equivalence table. It cannot regenerate the AA
+  throughput cells because the `aa_sweep_summary.json` it references remained
+  in the retired external `benchmarks/results/` tree. Use the preserved
+  `$WAVE1_ROOT/aggregate.json` for the original 1k, conc-1 137.5 → 236.0
+  tok/s/user row until that summary is restored.
+- Wave 2 regenerates the complete natural ShareGPT table, including the
+  temp-0.6, conc-1 2.473 accepted length and 137.9 → 249.8 tok/s/user
+  result. Its per-cell metric snapshots and aiperf profile export migrated.
 
-Use a fresh isolated checkout and first record the runtime revision from each
-historical window's `actual-commit.txt`. The report commits (`88d1997e`,
-`bc6344bf`, `15b1aab1`, and `48f2ea96`) identify the implementation and
-documentation milestones, but the recorded `actual-commit.txt` is the
-authoritative revision for a historical re-run.
+#### Run a new comparable workload
 
-The launchers expect these artifacts and environment invariants:
+The legacy controllers are preserved for their experiment contract, but cannot
+run unmodified on `ai-lab-jump`: they hard-code the retired `/mnt/nfs/hoangduy`
+paths and submit exclusive Slurm jobs on the former cluster. Start with a fresh
+isolated checkout and record the runtime revision from each historical window's
+`actual-commit.txt`. The report commits (`88d1997e`, `bc6344bf`, `15b1aab1`,
+and `48f2ea96`) identify implementation and documentation milestones, but the
+recorded `actual-commit.txt` is authoritative for a historically aligned run.
 
-| Requirement | Expected value / check |
-|---|---|
-| Target checkpoint | `$REPO/artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay` |
-| EAGLE3 drafter | `/mnt/nfs/hoangduy/hf_assets/Inferact/MiniMax-M3-EAGLE3`; architecture must be `LlamaForCausalLMEagle3` |
-| Humming side-install | `/mnt/nfs/hoangduy/venvs/humming-0.1.10-site`, with `ct_input_format`, `grouped_expert_bounds`, `tma_store_fence`, and `tma_store_commit` checks passing |
-| Python environments | `/mnt/nfs/hoangduy/venvs/quant` and `/mnt/nfs/hoangduy/venvs/perf`; the latter must provide aiperf 0.8.x |
-| Real-prompt dataset | `$REPO/artifacts/aiperf-datasets/.cache/aiperf/datasets/ShareGPT_V3_unfiltered_cleaned_split.json`, pre-staged because the run is offline |
-| GPU allocation | Wave 1: four exclusive 8×H100 nodes; Wave 2: six exclusive 8×H100 nodes |
+Before scheduling a new run, port the controllers
+[`run_specdec_eagle3_srun.sh`](../pipeline/slurm/run_specdec_eagle3_srun.sh)
+and
+[`run_specdec_wave2_srun.sh`](../pipeline/slurm/run_specdec_wave2_srun.sh) to
+the current environment. Preserve the following invariants:
+
+| Requirement | Historical contract | Migration status verified 2026-09-04 |
+|---|---|---|
+| Target checkpoint | `artifacts/m3-awq-gptq-prepared/gptq-checkpoint-vllm-w123-abi-overlay` | Not found at the equivalent archive path; restore or substitute with a documented, verified equivalent |
+| EAGLE3 drafter | `hf_assets/Inferact/MiniMax-M3-EAGLE3`; architecture must be `LlamaForCausalLMEagle3` | Not found at the equivalent archive path; restore exact revision |
+| Humming side-install | `venvs/humming-0.1.10-site`, with `ct_input_format`, `grouped_expert_bounds`, `tma_store_fence`, and `tma_store_commit` checks passing | Side-install directory is present; patch checks were not re-run |
+| Python environments | `venvs/quant` and `venvs/perf`; the latter must provide aiperf 0.8.x | Neither historical virtual environment was found; rebuild from pinned requirements before a new run |
+| Real-prompt dataset | `artifacts/aiperf-datasets/.cache/aiperf/datasets/ShareGPT_V3_unfiltered_cleaned_split.json`, pre-staged because the run is offline | Not found at the equivalent archive path; re-stage the exact dataset or record its replacement and hash |
+| GPU allocation | Wave 1 used four exclusive 8×H100 nodes; Wave 2 used six | Must be provisioned on the current platform; reserve an equivalent uncontended topology, or document the intentional deviation |
 
 The controllers enforce the drafter architecture, aiperf version, Humming
 patches, backend attestation, and speculation activation. Check GPU occupancy
-and obtain approval for the exclusive Slurm allocations before starting either
+and obtain approval for the exclusive allocation before starting a ported
 controller.
-
-Run the two experiments separately, directing output to new result windows:
-
-```bash
-export REPO=/mnt/nfs/hoangduy/projects/llm-compressor
-export WAVE1_OUT=/mnt/nfs/hoangduy/results/m3-specdec-eagle3/$(date -u +%Y%m%dT%H%M%SZ)
-
-ROOT_OVERRIDE="$WAVE1_OUT" bash "$REPO/pipeline/slurm/run_specdec_eagle3_srun.sh"
-
-export WAVE2_OUT=/mnt/nfs/hoangduy/results/m3-specdec-eagle3/$(date -u +%Y%m%dT%H%M%SZ)-wave2
-ROOT_OVERRIDE="$WAVE2_OUT" bash "$REPO/pipeline/slurm/run_specdec_wave2_srun.sh"
-```
 
 Wave 1 starts four serves: k=0, 1, 3, and 5. Each executes AA-style 1k/10k
 inputs at concurrency 1 and 10. Wave 2 starts six serves: the k=0/k=3 pair
@@ -202,27 +230,21 @@ results, Wave 2 Phase A table, and factor decomposition. The pre-declared
 methodology is in
 [`M3_SPECDEC_EAGLE3_PLAN.md`](../M3_SPECDEC_EAGLE3_PLAN.md).
 
-Raw evidence is retained on cluster NFS rather than in this checkout:
+The former cluster is retired. Raw evidence is retained in the migrated
+ai-lab archive, not in this local checkout:
 
 ```text
-/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T061506Z/
-/mnt/nfs/hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2/
+/data/hoangduy.dang/nfs-hoangduy/results/m3-specdec-eagle3/20260727T061506Z/
+/data/hoangduy.dang/nfs-hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2/
 ```
 
-The associated aggregation commands are:
+Use the re-aggregation commands in
+[Re-aggregate the historical artifacts](#re-aggregate-the-historical-artifacts)
+to write new JSON outside these preserved windows.
 
-```bash
-export OUT=/mnt/nfs/hoangduy/results/reproductions/m3-specdec-prompt-source
-mkdir -p "$OUT"
-"$PY" "$REPO/pipeline/specdec_aggregate.py" \
-  --root "$WAVE1_ROOT" --out-json "$OUT/wave1-aggregate.json"
-"$PY" "$REPO/pipeline/specdec_wave2_aggregate.py" \
-  --root "$WAVE2_ROOT" --out-json "$OUT/wave2-aggregate.json"
-```
-
-This local repository contains the documentation, launchers, and aggregators,
-but not the raw aiperf artifacts or metric-counter snapshots needed to
-independently recompute the acceptance values.
+This local repository contains the documentation, launchers, and aggregators.
+The migrated archive contains the raw aiperf artifacts and metric-counter
+snapshots needed to recompute the acceptance values.
 
 ## Conclusions
 

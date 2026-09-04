@@ -17,7 +17,7 @@ is therefore not a supported explanation for a differing spec-dec result.
 | Arm | Prompt construction | Input length | Output policy |
 |---|---|---:|---|
 | Wave 1 synthetic | AIPerf randomly samples and decodes a fixed-length span from its pre-tokenized Shakespeare corpus | 1k and 10k | Natural stopping |
-| Wave 2 real | aiperf ShareGPT loader sends the first user message from each conversation | Mean ≈227 | Natural stopping |
+| Wave 2 real | aiperf ShareGPT loader sends the first user message from each conversation in [`ShareGPT_Vicuna_unfiltered`](https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered) | Mean ≈227 | Natural stopping |
 
 For Wave 1, `--synthetic-input-tokens-stddev 0` fixed the requested length and
 `--prompt-prefix-pool-size 0` avoided shared-prefix reuse. The runner supplied

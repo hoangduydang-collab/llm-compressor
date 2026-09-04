@@ -43,7 +43,10 @@ The real-prompt support point at concurrency 10 was 2.503 accepted length and
 Before attributing a difference to prompt source, compare these controls:
 
 1. **Output policy.** Forced 8k continuation (`ignore_eos`) raised acceptance
-   from 2.473 to 3.286 (**+33%**); this was the strongest observed effect.
+   from 2.473 to 3.286 (**+33%**) because the model was pushed past its natural
+   stop into repetitive self-continuation, which is easier to predict. Treat
+   this as an inflation bias—not a promising serving direction—and do not
+   transfer its speedup to natural-stopping production traffic.
 2. **Temperature.** Greedy decoding increased acceptance to 2.575 (+4%).
 3. **Draft depth.** The measurements above use k=3; a different k changes both
    accepted length and draft/verify cost.

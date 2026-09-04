@@ -64,16 +64,18 @@ There are two distinct reproduction levels:
 
 #### Current archive location (verified 2026-09-04)
 
-The former `/mnt/nfs/hoangduy` location was migrated to the ai-lab archive.
-Access it through the jump host:
+The former cluster's result artifacts were migrated to a private archive on
+`138.252.188.36`. The archive is under an owner-specific path and is not
+directly accessible to collaborators. Request access or an exported copy from
+the experiment owner; do not assume the former `/mnt/nfs/hoangduy` path, or
+any owner-specific archive path, is available.
 
 ```bash
-ssh hoangduy.dang@ai-lab-jump
-export ARCHIVE_HOME=/data/hoangduy.dang/nfs-hoangduy
-export SPECDEC_ROOT="$ARCHIVE_HOME/results/m3-specdec-eagle3"
+export ARCHIVE_HOST=138.252.188.36
+# Obtain ARCHIVE_HOME from the experiment owner after access is approved.
 ```
 
-The archive contains both comparison windows and their expected primary
+The private archive contains both comparison windows and their expected primary
 evidence:
 
 ```text
@@ -89,12 +91,12 @@ $SPECDEC_ROOT/20260727T064934Z-wave2/
 
 #### Re-aggregate the historical artifacts
 
-Run the following on `ai-lab-jump`, where the migrated project and result
-artifacts are available. The aggregators use only the Python standard library,
-so the retired quant/perf virtual environments are not required for this step:
+After the experiment owner provides a permitted archive mount or copy, set
+`ARCHIVE_HOME` to its root. The aggregators use only the Python standard
+library, so the retired quant/perf virtual environments are not required for
+this step:
 
 ```bash
-export ARCHIVE_HOME=/data/hoangduy.dang/nfs-hoangduy
 export REPO="$ARCHIVE_HOME/projects/llm-compressor"
 export WAVE1_ROOT="$ARCHIVE_HOME/results/m3-specdec-eagle3/20260727T061506Z"
 export WAVE2_ROOT="$ARCHIVE_HOME/results/m3-specdec-eagle3/20260727T064934Z-wave2"
@@ -132,12 +134,13 @@ The archived re-aggregation was verified on 2026-09-04:
 #### Run a new comparable workload
 
 The legacy controllers are preserved for their experiment contract, but cannot
-run unmodified on `ai-lab-jump`: they hard-code the retired `/mnt/nfs/hoangduy`
-paths and submit exclusive Slurm jobs on the former cluster. Start with a fresh
-isolated checkout and record the runtime revision from each historical window's
-`actual-commit.txt`. The report commits (`88d1997e`, `bc6344bf`, `15b1aab1`,
-and `48f2ea96`) identify implementation and documentation milestones, but the
-recorded `actual-commit.txt` is authoritative for a historically aligned run.
+run unchanged on the current private archive host: they hard-code the retired
+`/mnt/nfs/hoangduy` paths and submit exclusive Slurm jobs on the former
+cluster. Start with a fresh isolated checkout and record the runtime revision
+from each historical window's `actual-commit.txt`. The report commits
+(`88d1997e`, `bc6344bf`, `15b1aab1`, and `48f2ea96`) identify implementation
+and documentation milestones, but the recorded `actual-commit.txt` is
+authoritative for a historically aligned run.
 
 Before scheduling a new run, port the controllers
 [`run_specdec_eagle3_srun.sh`](../pipeline/slurm/run_specdec_eagle3_srun.sh)
@@ -230,12 +233,14 @@ results, Wave 2 Phase A table, and factor decomposition. The pre-declared
 methodology is in
 [`M3_SPECDEC_EAGLE3_PLAN.md`](../M3_SPECDEC_EAGLE3_PLAN.md).
 
-The former cluster is retired. Raw evidence is retained in the migrated
-ai-lab archive, not in this local checkout:
+The former cluster is retired. Raw evidence is retained in a private archive
+on `138.252.188.36`, not in this local checkout. Collaborators need an
+owner-provided mount or export; this note intentionally does not publish the
+owner-specific storage path.
 
 ```text
-/data/hoangduy.dang/nfs-hoangduy/results/m3-specdec-eagle3/20260727T061506Z/
-/data/hoangduy.dang/nfs-hoangduy/results/m3-specdec-eagle3/20260727T064934Z-wave2/
+results/m3-specdec-eagle3/20260727T061506Z/
+results/m3-specdec-eagle3/20260727T064934Z-wave2/
 ```
 
 Use the re-aggregation commands in

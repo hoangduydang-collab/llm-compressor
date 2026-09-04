@@ -1,7 +1,8 @@
 # MiniMax-M3 speculative decoding: prompt source did not change acceptance
 
-This note isolates one question: does using real prompts instead of synthetic
-random-token prompts materially change EAGLE3 acceptance on our MiniMax-M3 arm?
+This note isolates one question: does using real prompts instead of synthetic,
+randomly sampled corpus prompts materially change EAGLE3 acceptance on our
+MiniMax-M3 arm?
 
 ## Takeaway
 
@@ -15,8 +16,15 @@ is therefore not a supported explanation for a differing spec-dec result.
 
 | Arm | Prompt construction | Input length | Output policy |
 |---|---|---:|---|
-| Wave 1 synthetic | AA-style generator produces random tokens, not natural-language text | 1k and 10k | Natural stopping |
+| Wave 1 synthetic | AIPerf randomly samples and decodes a fixed-length span from its pre-tokenized Shakespeare corpus | 1k and 10k | Natural stopping |
 | Wave 2 real | aiperf ShareGPT loader sends the first user message from each conversation | Mean ≈227 | Natural stopping |
+
+For Wave 1, `--synthetic-input-tokens-stddev 0` fixed the requested length and
+`--prompt-prefix-pool-size 0` avoided shared-prefix reuse. The runner supplied
+no random seed, so the exact corpus spans were not pinned. This follows
+[AIPerf's synthetic-text generator](https://docs.nvidia.com/aiperf/tutorials/datasets-inputs/synthetic-dataset-generation):
+the randomness is in choosing a corpus span, not in independently sampling
+vocabulary-token IDs.
 
 Both used the in-house MiniMax-M3 GPTQ W4AFP8 target, the
 `Inferact/MiniMax-M3-EAGLE3` drafter, vLLM 0.24.0, Humming indexed 0.1.10,
@@ -27,7 +35,7 @@ Neither arm used `ignore_eos` or forced a minimum output.
 
 | Workload | Accepted length | Per-position acceptance | k=0 → k=3 tok/s/user | Decode speedup |
 |---|---:|---|---:|---:|
-| Synthetic AA-style, 1k input / conc-1 | 2.450* | 0.70 / 0.46 / 0.29 | 137.5 → 236.0 | 1.72× |
+| Synthetic Shakespeare span, 1k input / conc-1 | 2.450* | 0.70 / 0.46 / 0.29 | 137.5 → 236.0 | 1.72× |
 | Natural ShareGPT, conc-1 | 2.473 | 0.690 / 0.459 / 0.324 | 137.9 → 249.8 | 1.81× |
 
 \*Wave 1's 2.450 is an arm-level mean from periodic `SpecDecodingLogging`;

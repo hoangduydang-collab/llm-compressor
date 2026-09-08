@@ -41,7 +41,8 @@ all 10 affected CPU tests pass. All three tiny two-T4 NCCL cases passed in job
 save/reload. These are tiny real-GLM fixtures, not proof that the original OOM is
 resolved. EP remains opt-in: `quantization.gptq_expert_parallel: true`.
 
-The next local H100 job runs this same bounded suite on two full H100s; see the
+Local H100 job **830962** is queued for this same bounded suite on two full H100s
+(last recorded: pending resources; no H100 result yet); see the
 [H100 queue contract](docs/glm53-ep-gptq-h100-queue.md). This does not replace the
 remote depth-truncated, real-width EP4/EP8 experiment retaining all 256 experts.
 Only representative memory/persistence/numerical evidence should unlock a full

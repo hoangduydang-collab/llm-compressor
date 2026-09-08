@@ -40,3 +40,10 @@ before changing objective 1's qualification status.
 Queue status is recorded after submission in the shared result directory. The
 remote Rancher executor should read the shared brief first; this Slurm command is
 not a Rancher execution packet.
+
+## Submission
+
+Slurm job **830962** is queued, with the latest recorded state **PENDING
+(Resources)** and no estimated start time. The detached controller is alive.
+See the [timestamped queue snapshot](../results/glm53-ep-gptq/20260909-h100-nccl/queue-status.txt).
+This records submission only; the worker has not started and no H100 result is claimed.

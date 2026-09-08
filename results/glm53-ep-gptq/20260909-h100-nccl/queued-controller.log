@@ -1,0 +1,29 @@
+srun: defined options
+srun: -------------------- --------------------
+srun: cpu-bind            : cores
+srun: cpus-per-task       : 4
+srun: gres                : gres/gpu:h100-96:2
+srun: job-name            : glm53-ep-h100
+srun: mem                 : 16G
+srun: nodes               : 1
+srun: ntasks              : 1
+srun: partition           : gpu
+srun: time                : 00:15:00
+srun: verbose             : 3
+srun: -------------------- --------------------
+srun: end of defined options
+srun: debug:  propagating RLIMIT_FSIZE=18446744073709551615
+srun: debug:  propagating RLIMIT_STACK=8388608
+srun: debug:  propagating RLIMIT_CORE=0
+srun: debug:  propagating RLIMIT_RSS=17179869184
+srun: debug:  propagating RLIMIT_NOFILE=1024
+srun: debug:  propagating RLIMIT_MEMLOCK=2095357952
+srun: debug:  propagating SLURM_PRIO_PROCESS=0
+srun: debug:  propagating UMASK=0022
+srun: debug2: cpu=4 is not a gres
+srun: debug:  Entering slurm_allocation_msg_thr_create()
+srun: debug:  port from net_stream_listen is 38471
+srun: debug:  Entering _msg_thr_internal
+srun: JobId=830962 returned by the controller
+srun: debug2: Pending job allocation JobId=830962 SLUID=sABHM21149DV00
+srun: job 830962 queued and waiting for resources

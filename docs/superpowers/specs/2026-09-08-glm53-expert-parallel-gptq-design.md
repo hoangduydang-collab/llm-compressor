@@ -1,16 +1,18 @@
 # GLM-5.3 expert-parallel GPTQ with phase timing
 
 Date: 2026-09-08
-Status: Draft; prior-work review expanded; implementation source selection pending; PLANNER_ANALYSIS
+Status: Design direction approved by owner on 2026-09-08; source comparison completed; PLANNER_ANALYSIS
 Repository baseline: 8945c64c3c9e7e01cdccc5c4c2e4c639e56dabac
 Owner: planner; full-scale execution belongs to the remote execution agent.
 
 ## Decision and scope
 
-Working direction: integrate opt-in expert-parallel (EP) GPTQ into the existing
-sequential pipeline. The runtime contract below is provisional until the reuse
-comparison selects the source implementation; it is not a decision to invent
-a new EP dispatcher.
+Integrate opt-in expert-parallel (EP) GPTQ into the existing sequential pipeline.
+The source comparison selects the existing gathered-token GLM adapter for the
+initial all-expert calibration policy, with MoEQuant-style expert-local Hessian
+ownership and the existing llm-compressor quantizer/offload/export path.
+The [implementation plan](../plans/2026-09-08-glm53-ep-gptq.md) records the exact
+reuse boundary, supported observer semantics, tasks and validation sequence.
 Measure its execution phases in the same runs, so later storage work has evidence.
 The initial supported workload is single-node GLM-5.3, decoder-layer sequencing,
 data-parallel calibration with all experts calibrated, and one EP group spanning
@@ -81,11 +83,11 @@ adapter and numerical-comparison requirements, not reasons to disregard the code
 
 ## Reuse and alternatives
 
-1. Working preference: retain llm-compressor's quantizer, sequential pipeline,
-   offload and export; adapt published EP ownership/dispatch where compatible.
-   Compare DeepSeek/MoEQuant's runtime against the existing GLM prototype before
-   choosing which dispatcher to integrate. Implement only the missing GLM,
-   calibration-policy and lifecycle adapters.
+1. Selected: retain llm-compressor's quantizer, sequential pipeline, offload and
+   export, and the fork's gathered-token adapter. It already covers all-expert
+   calibration; DeepSeek's published all-to-all instead sends routed tokens.
+   Adapt MoEQuant's owner-local Hessian split and implement only the missing
+   GLM, numerical-bookkeeping and lifecycle integration.
 2. Adapt the complete MoEQuant runner to GLM. This provides an established EP
    path but requires replacing DeepSeek/checkpoint assumptions and validating
    calibration semantics, quantization math and our export contract. Compare
@@ -95,10 +97,10 @@ adapter and numerical-comparison requirements, not reasons to disregard the code
    layers; recorded CPU transfers were expensive. Keep small controls, but neither
    is currently a demonstrated full-run answer.
 
-Before implementation, make a source-to-change map for dispatch, ownership,
+The implementation plan provides a source-to-change map for dispatch, ownership,
 Hessian collection/normalization, observer synchronization, offload persistence,
-and checkpoint save. For each new change name the existing source reused and
-why an existing implementation cannot satisfy the remaining requirement.
+and checkpoint save. For each new change, retain the source reused and the reason an existing
+implementation cannot satisfy the remaining requirement.
 Do not add custom communication primitives or another loader without this check.
 
 Existing integration points:
@@ -246,11 +248,12 @@ Treat GB as the checkpoint unit, consistent with the prior checkpoint record.
 ## Review checklist
 
 - Context and prior implementation inspected; existing metrics and tests identified.
-- Upstream/fork prior work and three approaches recorded; final implementation
-  source selection still requires the explicit adapter comparison above.
+- Upstream/fork prior work and three approaches compared; gathered-token adapter
+  selected for the current all-expert policy, with source mapping in the plan.
 - User's intended scope and planner/executor roles preserved.
 - Visual companion unnecessary for this technical decision.
 - Draft reviewed for contradictory ownership, unsupported equivalence claims, and
   accidental storage/serving scope expansion.
-- Owner design approval, detailed implementation plan, and execution packet remain
-  subsequent steps. No implementation or GPU validation is claimed here.
+- Owner approved the direction and the implementation plan is written. Code,
+  execution packet and validation remain subsequent work; no GPU validation is
+  claimed here.

@@ -1,0 +1,2 @@
+srun: job 830661 queued and waiting for resources
+srun: error: Unable to allocate resources: Job/step already completing or completed

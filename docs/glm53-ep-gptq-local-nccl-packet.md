@@ -35,10 +35,13 @@ change tolerances, replace a skipped test with a pass, or escalate to a larger
 model. There is no automatic retry. Any repair must retain the same test design
 and be recorded under a fresh attempt and implementation revision.
 
-Evidence root: `results/glm53-ep-gptq/20260909-local-nccl/` (created only at launch).
+Evidence root: `results/glm53-ep-gptq/20260909-local-nccl/` (scripts prepared before launch).
 The controller records revision, raw stdout/stderr, exit status, environment,
 job/node/GPU identity and scheduler state. Code stays protected during the run.
 Actual checkpoint artifacts remain in the job-specific pytest directory on its
 compute node; retain small comparison/manifest records in Git.
 
 This is a bounded local diagnostic, not a ready full-run packet for Rancher.
+
+Result: job 830661 failed before worker startup; all three GPU gates remain
+pending. See the [attempt record](../results/glm53-ep-gptq/20260909-local-nccl/README.md).

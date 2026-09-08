@@ -100,8 +100,9 @@ claim follows from these tiny CPU tests.
 
 Local environment: Python 3.12.3, torch 2.11.0+cu128, Transformers 5.12.1,
 compressed-tensors 0.17.2a20260707, pytest 9.1.1. The development shell has no
-CUDA device. A separate bounded two-A100 Slurm diagnostic is prepared in the
-[local NCCL packet](glm53-ep-gptq-local-nccl-packet.md); its result is pending.
+CUDA device. A bounded two-A100 Slurm diagnostic was attempted using the
+[local NCCL packet](glm53-ep-gptq-local-nccl-packet.md). The allocation failed
+before the worker started; the GPU gate remains pending.
 This CPU environment does not certify the remote executor environment.
 
 The final local regression result is recorded in the validation update below.
@@ -145,4 +146,7 @@ Earlier attempts exposed those two test-harness constraints: one ambient-environ
 assertion and one teardown file-leak assertion caused by retaining files outside
 pytest's recognized temporary directory. Both attempt logs are retained alongside
 the passing log; production code and the existing checks were not weakened.
-No GPU or full-model result is claimed yet.
+The local NCCL allocation, job 830661, failed before worker startup after 10
+seconds. Slurm reports `NonZeroExitCode`; no GPU test ran. See the
+[attempt record](../results/glm53-ep-gptq/20260909-local-nccl/README.md).
+No GPU or full-model result is claimed.

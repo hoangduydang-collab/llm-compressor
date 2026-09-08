@@ -1,0 +1,74 @@
+........................................................................ [ 33%]
+.............................s.......................................... [ 66%]
+.........sss............................................................E [100%]
+==================================== ERRORS ====================================
+_______ ERROR at teardown of test_non_source_rank_only_receives_run_dir ________
+
+    @pytest.fixture(scope="session", autouse=True)
+    def check_for_created_files():
+        local_ignore_dirs = ["__pycache__", "sparse_logs", "test-results", ".pytest_cache"]
+        local_ignore_files = [".coverage"]
+        tmp_ignore_dirs = ["pytest-of", "torchinductor", "torchrun-logs"]
+        start_files_root = _get_files(
+            directory=r".", ignore_dirs=local_ignore_dirs, ignore_files=local_ignore_files
+        )
+        start_files_temp = _get_files(
+            directory=tempfile.gettempdir(), ignore_dirs=tmp_ignore_dirs
+        )
+        yield
+        log_dir = os.environ.get("NM_TEST_LOG_DIR")
+        if os.path.isdir(log_dir):
+            shutil.rmtree(log_dir)
+    
+        # allow creation of __pycache__ directories
+        end_files_root = _get_files(
+            directory=r".", ignore_dirs=local_ignore_dirs, ignore_files=local_ignore_files
+        )
+        # assert no files created in root directory while running
+        # the pytest suite
+        assert len(start_files_root) >= len(end_files_root), (
+            f"{len(end_files_root) - len(start_files_root)} "
+            f"files created in current working "
+            f"directory during pytest run. "
+            f"Created files: {set(end_files_root) - set(start_files_root)}"
+        )
+    
+        max_allowed_sized_temp_files_megabytes = 1
+        # pytest temp files are automatically deleted, exclude from size calculation
+        end_files_temp = _get_files(
+            directory=tempfile.gettempdir(), ignore_dirs=tmp_ignore_dirs
+        )
+        created_temp_files = set(end_files_temp) - set(start_files_temp)
+    
+        # assert no more than 1 megabyte of temp files created in temp directory
+        # while running the pytest suite (excluding files created by pytest)
+        size_of_temp_files_megabytes = _files_size_mb(created_temp_files)
+>       assert max_allowed_sized_temp_files_megabytes >= size_of_temp_files_megabytes, (
+            f"{size_of_temp_files_megabytes} "
+            f"megabytes of temp files created in temp directory during pytest run. "
+            f"Created files: {set(end_files_temp) - set(start_files_temp)}"
+        )
+E       AssertionError: 2.3034067153930664 megabytes of temp files created in temp directory during pytest run. Created files: {'/tmp/glm53-ep-qualified-cpu/test_actual_hessian_coverage_d0/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat3/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_actual_hessian_coverage_d1/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_missing_end_retains_incom0/phases.jsonl', '/tmp/glm53-ep-qualified-cpu/test_actual_hessian_coverage_d2/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_actual_hessian_coverage_d0/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_prewarm_reads_files_and_s0/base-shard.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/ct_disk_cache_0_131481165958672.safetensors', '/tmp/glm53-ep-qualified-cpu/test_capture_survives_llmcompr0/quant_metrics.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/ct_disk_cache_0_131481166232416.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/rank-1-packed-differences.json', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_gptq_broadcast_persists_t0/ct_disk_cache_0_131481166906944.safetensors', '/tmp/glm53-ep-qualified-cpu/test_prewarm_reads_files_and_s0/offload/ct_disk_cache_a.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481167097168.safetensors', '/tmp/glm53-ep-qualified-cpu/test_run_capture_encloses_load0/quant_metrics.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_oneshot_preflight_re0/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_single_process_evidence_o0/smoke_complete.json', '/tmp/glm53-ep-qualified-cpu/test_summarize_quantized_layer0/unexpected.jsonl', '/tmp/glm53-ep-qualified-cpu/test_summarize_quantized_layer0/empty.jsonl', '/tmp/glm53-ep-qualified-cpu/test_failed_load_leaves_raw_pa0/quant_metrics.jsonl', '/tmp/glm53-ep-qualified-cpu/test_distributed_evidence_only0/calibration_partition.rank-3.json', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/ct_disk_cache_0_131481166231856.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/checkpoint/recipe.yaml', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/checkpoint/model.safetensors', '/tmp/glm53-ep-qualified-cpu/test_staggered_ranks_use_whole0/ranks.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/ddp-checkpoint/generation_config.json', '/tmp/glm53-ep-qualified-cpu/test_prewarm_reads_files_and_s0/offload/ct_disk_cache_gone.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/rank-0-packed-differences.json', '/tmp/glm53-ep-qualified-cpu/test_non_language_model_layer_0/vision.jsonl', '/tmp/glm53-ep-qualified-cpu/test_manifest_disagreement_fai0/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/ddp-checkpoint/model.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_gloo_expert_hessians0/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col1/checkpoint/model.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/ddp-checkpoint/recipe.yaml', '/tmp/glm53-ep-qualified-cpu/test_real_oneshot_preflight_re2/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481165959472.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col1/checkpoint/recipe.yaml', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/ct_disk_cache_0_131481166270928.safetensors', '/tmp/glm53-ep-qualified-cpu/test_single_process_manifest_p0/calibration_partition.json', '/tmp/glm53-ep-qualified-cpu/test_real_oneshot_preflight_re1/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_prewarm_reads_files_and_s0/offload/ct_disk_cache_b.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col1/checkpoint/config.json', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat2/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_single_process_evidence_o0/calibration_partition.json', '/tmp/glm53-ep-qualified-cpu/test_glm_decoder_root_is_accep0/glm.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/ddp-checkpoint/config.json', '/tmp/glm53-ep-qualified-cpu/test_prewarm_disabled_by_env0/f.safetensors', '/tmp/glm53-ep-qualified-cpu/test_summarize_awq_quantized_l0/awq.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col1/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_phase_summary_reports_mis0/rank0.jsonl', '/tmp/glm53-ep-qualified-cpu/test_trace_only_evidence_canno0/trace.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481166232416.safetensors', '/tmp/glm53-ep-qualified-cpu/test_phase_summary_separates_r0/phases.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat2/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col1/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_summarize_gptq_quantized_0/gptq.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat0/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/ct_disk_cache_0_131481166232896.safetensors', '/tmp/glm53-ep-qualified-cpu/test_packed_parameter_roundtri1/ct_disk_cache_0_131481166416304.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481165958752.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481165960992.safetensors', '/tmp/glm53-ep-qualified-cpu/test_nested_phases_survive_log0/phases.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/checkpoint/generation_config.json', '/tmp/glm53-ep-qualified-cpu/test_partition_manifest_uses_r0/calibration_partition.rank-3.json', '/tmp/glm53-ep-qualified-cpu/test_elapsed_never_compares_cl0/node0.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/checkpoint/config.json', '/tmp/glm53-ep-qualified-cpu/test_real_oneshot_preflight_re2/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_manifest_disagreement_fai2/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/ct_disk_cache_0_131481166233536.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_actual_hessian_coverage_d2/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_gloo_expert_hessians1/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_prewarm_read_file_counts_0/data.bin', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat1/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/ct_disk_cache_0_131481165957712.safetensors', '/tmp/glm53-ep-qualified-cpu/test_phase_failure_reraises_or0/phases.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col1/checkpoint/generation_config.json', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat0/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_elapsed_never_compares_cl0/node1.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481166233216.safetensors', '/tmp/glm53-ep-qualified-cpu/test_manifest_disagreement_fai1/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/ct_disk_cache_0_131481165958432.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat1/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_single_process_evidence_o0/metadata.json', '/tmp/glm53-ep-qualified-cpu/test_gptq_broadcast_persists_t0/ct_disk_cache_0_131481166906784.safetensors', '/tmp/glm53-ep-qualified-cpu/test_manifest_disagreement_fai0/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_gptq_error_and_time_distr0/gptq.jsonl', '/tmp/glm53-ep-qualified-cpu/test_world_size_exposes_entire0/rank0.jsonl', '/tmp/glm53-ep-qualified-cpu/test_malformed_awq_payload_is_0/bad.jsonl', '/tmp/glm53-ep-qualified-cpu/test_actual_hessian_coverage_d1/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_awq_parses_best_error_and0/awq.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_gloo_expert_hessians0/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat5/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/ct_disk_cache_0_131481165957952.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481165959632.safetensors', '/tmp/glm53-ep-qualified-cpu/test_missing_parent_is_incompl0/phases.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_glm_gloo_oneshot_col0/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_oneshot_preflight_re1/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_snapshot_failure_cannot_r0/phases.jsonl', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat4/ct_disk_cache_0_131481166267568.safetensors', '/tmp/torch-shm-dir-G3sqE7/manager.sock', '/tmp/glm53-ep-qualified-cpu/test_real_gloo_expert_hessians1/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_oneshot_preflight_re0/rank-0-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat6/ct_disk_cache_0_131481165957792.safetensors', '/tmp/glm53-ep-qualified-cpu/test_real_distributed_publicat3/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_manifest_disagreement_fai2/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_manifest_disagreement_fai1/rank-1-phases.txt', '/tmp/glm53-ep-qualified-cpu/test_capture_cleanup_tolerates0/quant_metrics.jsonl'}
+E       assert 1 >= 2.3034067153930664
+
+tests/llmcompressor/conftest.py:87: AssertionError
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+.venv-prequant/lib/python3.12/site-packages/torch/cuda/__init__.py:1061
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/cuda/__init__.py:1061: UserWarning: Can't initialize NVML
+    raw_cnt = _raw_device_count_nvml()
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_plan.py: 4 warnings
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py: 30 warnings
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py: 10 warnings
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=1126094) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/llmcompressor/modifiers/gptq/test_gptq_quantize.py:136: CUDA not available
+SKIPPED [3] tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py:38: requires two CUDA GPUs and NCCL; execute on the GPU executor
+212 passed, 4 skipped, 59 warnings, 1 error in 86.51s (0:01:26)

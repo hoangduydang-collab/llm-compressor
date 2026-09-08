@@ -1,0 +1,23 @@
+........................................................................ [ 33%]
+.............................s.......................................... [ 66%]
+.........sss............................................................ [100%]
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+.venv-prequant/lib/python3.12/site-packages/torch/cuda/__init__.py:1061
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/cuda/__init__.py:1061: UserWarning: Can't initialize NVML
+    raw_cnt = _raw_device_count_nvml()
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_plan.py: 4 warnings
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py: 30 warnings
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py: 10 warnings
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=1127154) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/llmcompressor/modifiers/gptq/test_gptq_quantize.py:136: CUDA not available
+SKIPPED [3] tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py:38: requires two CUDA GPUs and NCCL; execute on the GPU executor
+212 passed, 4 skipped, 59 warnings in 88.04s (0:01:28)

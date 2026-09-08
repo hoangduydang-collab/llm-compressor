@@ -159,7 +159,7 @@ or regex.
 |---|---|---|
 | temperature | `0.6` | AA reasoning convention; `benchmarks/performance/aa/variants.py` `AA_TEMPERATURE_REASONING` |
 | top_p | `1.0` | `AA_TOP_P` |
-| max_new_tokens | `65536` | profile `MAX_OUTPUT_REASONING` |
+| max_new_tokens | `131072` | Z.ai disclosed GLM-5.3 max output (AA reasoning-model rule). Serve `--context-length` default is `164800` (measured FP8 KV pool at mem_frac 0.75); no KV offload. |
 | request timeout | `3600` s | thinking traces; 60 s would truncate and score noise |
 | thinking | ON | profile `THINK_ON_EXTRA_BODY` / chat-completions extra body `chat_template_kwargs.enable_thinking: true` |
 | `limit_samples` | unset on formal run | full 198 |

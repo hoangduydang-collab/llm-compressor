@@ -3256,3 +3256,26 @@ written in it, and I re-derived two wrong explanations without reading it. The
 prior lesson in this file was "check a workaround's justification against the
 algebra"; the one here is to check whether the question has already been asked and
 answered in our own log before theorising about it.
+
+---
+
+## 2026-09-03 — GLM-5.3 AA GPQA: 64k context vs 128k max output
+
+**Symptom:** NVIDIA `gpqa_diamond_aa_v3` canary against the quality-arm SGLang
+returned HTTP 400: requested tokens exceeded `--context-length 65536`
+(prompt + `max_tokens=65536`).
+
+**Root cause:** AA Intelligence Index does not publish a 64k *context* for GPQA.
+For reasoning models it uses the creator-disclosed **maximum output**. Z.ai
+GLM-5.3 is 1M context / 128K max output. Our 64k was a serve-window leftover
+from the full7 lm-eval arm (`GENERAL_MAX_GEN_TOKS=32768`). Setting
+`max_tokens` equal to that window cannot work.
+
+**Fix:** AA path defaults are `max_new_tokens=131072` and serve
+`--context-length 164800` (`pipeline/aa_gpqa_v3.py`,
+`pipeline/k8s/glm53_quality_arm.sh`). That context is the measured FP8 KV
+pool on this 8×H100 arm at `mem_frac=0.75` (`#tokens: 164800`, 9.44 GB).
+There is no KV CPU offload. 256k context does not fit the pool; one 128k
+generation does (concurrency 1). Do not fold this score into `kind=general`.
+
+**Honesty:** still NVIDIA's AA-methodology clone, not AA's private runner.

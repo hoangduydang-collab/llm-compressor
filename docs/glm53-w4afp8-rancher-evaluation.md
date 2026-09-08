@@ -221,6 +221,15 @@ export GENERAL_CHAT_TEMPLATE_ON_LOGLIKELIHOOD=0
   ARC, HellaSwag, and TruthfulQA scores.
 - Keep speculative decoding off when comparing with the results below.
 
+NVIDIA `gpqa_diamond_aa_v3` (AA clone, not the lm-eval suite above) uses a
+different budget: `max_new_tokens=131072` (Z.ai disclosed 128K max output) and
+serve `--context-length 164800` (the measured FP8 KV pool at mem_frac 0.75 on
+this 8×H100 arm; no KV offload). Those are the defaults in
+`pipeline/k8s/glm53_quality_arm.sh` / `pipeline/aa_gpqa_v3.py`. Do not send
+`max_tokens` equal to `--context-length` — SGLang 400s. The completed full7
+numbers below were measured at 65,536 context / 32,768 gen; do not mix the two
+contracts.
+
 ## 5. Measured baseline
 
 Both checkpoints passed preflight, server health, throughput, loglikelihood
@@ -277,7 +286,9 @@ kubectl delete pod glm53-w4afp8-eval -n evaluation
   wait or coordinate; do not assume GPUs from different nodes can be pooled.
 - **Long startup:** CephFS page-in can be silent for tens of minutes.
 - **OOM or scheduler crash:** restore memory fraction `0.75`, context `65536`,
-  and chunked prefill `2048` before changing other variables.
+  and chunked prefill `2048` before changing other variables. AA GPQA defaults
+  to context `164800` (measured FP8 KV pool). Do not raise context above the
+  pool without also raising `MEM_FRAC`; there is no KV CPU offload on this arm.
 - **Missing `reasoning_content`:** confirm `glm45`, thinking request data, and
   SGLang 0.5.17.
 - **Implausibly low multiple-choice scores:** confirm the loglikelihood client is

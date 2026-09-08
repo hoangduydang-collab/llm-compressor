@@ -24,13 +24,13 @@ ARM=${ARM:?}; PROFILE=${PROFILE:?}; PORT=${PORT:?}; ROOT=${ROOT:?}
 MODEL_PATH="${MODEL_PATH:?MODEL_PATH is required (no cluster-2 default exists)}"
 QUANT_ARGS="${QUANT_ARGS:---quantization w4afp8}"
 TP="${TP:-8}"
-# 65536, not the GLM-5.2 arm's 131072. Nothing in this suite needs more than the
-# 32768-token generation budget plus a 25-shot prompt, and a lower ceiling bounds
-# the worst-case KV a single runaway sequence can reserve. The KV POOL size is set
-# by memory, not by this (measured: max_total_num_tokens=101120 with a BF16 KV
-# cache, ~2x that with fp8_e4m3), so this is a per-sequence cap, not a capacity
-# knob.
-CTX="${CTX:-65536}"
+# 164800, the FP8 KV pool measured on this 8xH100 arm at mem_frac 0.75
+# (serve.log: max_total_num_tokens=164800, 9.44 GB). NVIDIA gpqa_diamond_aa_v3
+# for GLM (max) requests 131072 max_new_tokens (Z.ai disclosed max output);
+# prompt + that budget must fit in --context-length or SGLang 400s. There is
+# no KV offload on this launch (GPU-only fp8_e4m3). 256k context does not fit
+# this pool; 164800 does, with room for one 128k generation at concurrency 1.
+CTX="${CTX:-164800}"
 RUN_ID="${RUN_ID:-glm53full7}"
 # 0.75 + chunked prefill 2048: echo/loglikelihood requests compute logits for
 # ALL prompt tokens (vocab x batch tokens, TP all-gather) — at 0.85 the GLM-5.2
@@ -511,6 +511,10 @@ if [ "${AA_GPQA:-}" = "1" ]; then
     --url "$AA_URL" --model-id "$AA_MODEL_ID" --limit "${LIMIT:-}"
   note "aa-gpqa-v3 config: $AA_OUT/run.yml"
   scrape_metrics aa_before
+  # nemo-evaluator renders `simple_evals ...` into a shell. That binary lives
+  # in $AA_VENV/bin; without it on PATH the subprocess exits 127
+  # (`simple_evals: command not found`) and scores nothing.
+  export PATH="$AA_VENV/bin:$PATH"
   "$AA_VENV/bin/nemo-evaluator" run_eval --run_config "$AA_OUT/run.yml" \
     >"$AA_OUT/eval.log" 2>&1
   aa_rc=$?

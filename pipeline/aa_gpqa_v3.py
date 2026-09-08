@@ -20,10 +20,14 @@ NEMO_EVALUATOR_PIN = "nemo-evaluator>=0.1.51,<0.3"
 TASK_NAME = "gpqa_diamond_aa_v3"
 DEFAULT_VENV = "/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3"
 
-# AA reasoning / GLM (max). Not NVIDIA's greedy task defaults.
+# AA reasoning / GLM (max). Not NVIDIA's greedy task defaults (16384).
+# Z.ai discloses 128K max output for GLM-5.3; AA's reasoning-model rule is
+# "maximum output tokens allowed, as disclosed by model creators."
+# Serve --context-length is 164800 (measured FP8 KV pool on this 8xH100
+# arm). Must exceed this plus the prompt (64k ctx + 64k max_tokens 400'd).
 TEMPERATURE = 0.6
 TOP_P = 1.0
-MAX_NEW_TOKENS = 65536
+MAX_NEW_TOKENS = 131072
 REQUEST_TIMEOUT = 3600
 N_SAMPLES = 5
 

@@ -56,7 +56,7 @@ def test_write_run_config_glm_max_overrides_and_thinking(tmp_path: Path):
     params = cfg["config"]["params"]
     assert params["temperature"] == TEMPERATURE == 0.6
     assert params["top_p"] == TOP_P == 1.0
-    assert params["max_new_tokens"] == MAX_NEW_TOKENS == 65536
+    assert params["max_new_tokens"] == MAX_NEW_TOKENS == 131072
     assert params["request_timeout"] == REQUEST_TIMEOUT == 3600
     assert params["limit_samples"] is None
     assert params["extra"]["n_samples"] == 5
@@ -118,7 +118,7 @@ def test_write_manifest_records_pin_and_honesty(tmp_path: Path):
     assert man["n_samples"] == 5
     assert man["temperature"] == 0.6
     assert man["top_p"] == 1.0
-    assert man["max_new_tokens"] == 65536
+    assert man["max_new_tokens"] == 131072
     assert man["request_timeout"] == 3600
     assert man["enable_thinking"] is True
     assert man["score_is_artificial_analysis"] is False

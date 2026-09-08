@@ -25,13 +25,14 @@ distributed calibration paths rather than bespoke parallel code.
 - [x] 1b · Multi-GPU calibration correctness fix (all GPUs had been calibrating on the same data) `wk Jul 27–Aug 02`
 - [x] 1c · Proven beyond MiniMax-M3 and beyond AWQ/GPTQ — a 30B MoE quantized in **1 h 40 m** with a third method `wk Jul 27–Aug 02`
 - [ ] 1d · Distributed save/export
-- [ ] 1e · GLM-5.3 expert-parallel GPTQ — CPU correctness and save/reload checks pass; GPU memory and full-run validation remain open
+- [ ] 1e · GLM-5.3 expert-parallel GPTQ — CPU and two-T4 NCCL correctness/save-reload checks pass; representative H100 memory and full-run validation remain open
 
 ## Result
 
-**8 September 2026:** GLM-5.3 expert-parallel GPTQ passes CPU correctness and
-checkpoint reload checks. Phase timing is implemented. GPU memory, runtime and
-full-model quality remain unverified. [Implementation evidence](../glm53-ep-gptq-implementation.md).
+**9 September 2026:** GLM-5.3 expert-parallel GPTQ passes CPU and all three
+two-T4 NCCL correctness/save-reload checks (job 830817). Phase timing is implemented.
+Representative H100 memory, runtime and full-model quality remain unverified.
+[GPU evidence](../glm53-ep-gptq-gpu-validation.md).
 
 The full-calibration AWQ run finished in **7 h 22 m on one 8×H100 node** —
 inside the target — covering all 57 MoE layers and 21,888 expert weight

@@ -1,6 +1,6 @@
 # GLM-5.3 expert-parallel GPTQ implementation
 
-Status: local implementation and CPU validation; GPU qualification pending.
+Status: CPU and bounded two-T4 NCCL validation passed; representative H100 and full-run qualification pending.
 Owner: planner. The remote execution agent owns representative/full GPU runs.
 
 ## Enablement and supported scope
@@ -100,9 +100,9 @@ claim follows from these tiny CPU tests.
 
 Local environment: Python 3.12.3, torch 2.11.0+cu128, Transformers 5.12.1,
 compressed-tensors 0.17.2a20260707, pytest 9.1.1. The development shell has no
-CUDA device. A bounded two-A100 Slurm diagnostic was attempted using the
-[local NCCL packet](glm53-ep-gptq-local-nccl-packet.md). The allocation failed
-before the worker started; the GPU gate remains pending.
+CUDA device. The initial A100 launch failed; subsequent diagnosis found inherited CPU binding
+and MIG topology problems. After launcher and disk-save fixes, all three NCCL
+cases passed on two full T4s. See [GPU validation](glm53-ep-gptq-gpu-validation.md).
 This CPU environment does not certify the remote executor environment.
 
 The final local regression result is recorded in the validation update below.
@@ -149,4 +149,9 @@ the passing log; production code and the existing checks were not weakened.
 The local NCCL allocation, job 830661, failed before worker startup after 10
 seconds. Slurm reports `NonZeroExitCode`; no GPU test ran. See the
 [attempt record](../results/glm53-ep-gptq/20260909-local-nccl/README.md).
-No GPU or full-model result is claimed.
+This historical attempt did not run a GPU test. Subsequent job **830817** passed
+all three two-T4 NCCL cases in **119.83 seconds** on revision `2b51c7fe`. Both ranks
+completed packed save/reload, including disk offload and mixed FP8-rest. Ten
+affected CPU lifecycle/serialization tests also pass. See the
+[GPU validation and repair record](glm53-ep-gptq-gpu-validation.md).
+Representative H100 memory, performance and full-model quality remain unqualified.

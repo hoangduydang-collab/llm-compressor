@@ -1,0 +1,875 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/e/e1129930/llm-compressor/.venv-prequant/bin/python
+cachedir: .pytest_cache
+rootdir: /home/e/e1129930/llm-compressor
+configfile: pyproject.toml
+plugins: anyio-4.14.2, mock-3.15.1, rerunfailures-16.4
+collecting ... collected 3 items
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity] PASSED [ 33%]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] PASSED [ 66%]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+==================================== PASSES ====================================
+_____ test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity] ______
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:48:37.9615 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:49:00.7985 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:49:00.7987 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:49:00.7990 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.66GiB layers=2
+2026-09-09T00:49:00.7991 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.66GiB layers=2
+2026-09-09T00:49:00.8222 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:49:00.8231 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+xgpf11:37331:37331 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37331:37331 [0] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37331:37331 [0] NCCL INFO cudaDriverVersion 13000
+xgpf11:37331:37331 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37331:37331 [0] NCCL INFO Comm config Blocking set to 1
+xgpf11:37332:37332 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37332:37332 [1] NCCL INFO cudaDriverVersion 13000
+xgpf11:37332:37332 [1] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37332:37332 [1] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37332:37332 [1] NCCL INFO Comm config Blocking set to 1
+xgpf11:37331:37331 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37331:37331 [0] NCCL INFO NET/IB : No device found.
+xgpf11:37331:37331 [0] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37331:37331 [0] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37331:37331 [0] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37331:37331 [0] NCCL INFO Initialized NET plugin Socket
+xgpf11:37331:37331 [0] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37331:37331 [0] NCCL INFO Using network Socket
+xgpf11:37331:37331 [0] NCCL INFO ncclCommInitRankConfig comm 0x3213cd70 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0xfad5133b96805397 - Init START
+xgpf11:37332:37332 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37332:37332 [1] NCCL INFO NET/IB : No device found.
+xgpf11:37332:37332 [1] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37332:37332 [1] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37332:37332 [1] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37332:37332 [1] NCCL INFO Initialized NET plugin Socket
+xgpf11:37332:37332 [1] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37332:37332 [1] NCCL INFO Using network Socket
+xgpf11:37332:37332 [1] NCCL INFO ncclCommInitRankConfig comm 0x22fbae60 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0xfad5133b96805397 - Init START
+xgpf11:37332:37332 [1] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37331:37331 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37331:37331 [0] NCCL INFO Bootstrap timings total 0.019087 (create 0.000062, send 0.000229, recv 0.017312, ring 0.000050, delay 0.000001)
+xgpf11:37332:37332 [1] NCCL INFO Bootstrap timings total 0.007482 (create 0.000050, send 0.003777, recv 0.002425, ring 0.000540, delay 0.000001)
+xgpf11:37332:37332 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37332:37332 [1] NCCL INFO NVLS multicast support is not available on dev 1 (NVLS_NCHANNELS 0)
+xgpf11:37331:37331 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37331:37331 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+xgpf11:37332:37332 [1] NCCL INFO comm 0x22fbae60 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+xgpf11:37331:37331 [0] NCCL INFO comm 0x3213cd70 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+xgpf11:37331:37331 [0] NCCL INFO Channel 00/02 : 0 1
+xgpf11:37332:37332 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0
+xgpf11:37331:37331 [0] NCCL INFO Channel 01/02 : 0 1
+xgpf11:37332:37332 [1] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37331:37331 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
+xgpf11:37331:37331 [0] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37331:37331 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37332:37332 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37331:37331 [0] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37332:37332 [1] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37331:37353 [0] NCCL INFO [Proxy Service] Device 0 CPU core 0
+xgpf11:37332:37352 [0] NCCL INFO [Proxy Service] Device 1 CPU core 0
+xgpf11:37331:37354 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 24
+xgpf11:37332:37355 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 0
+xgpf11:37332:37332 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37331:37331 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37332:37332 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37332:37332 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37331:37331 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37331:37331 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37331:37331 [0] NCCL INFO CC Off, workFifoBytes 1048576
+xgpf11:37332:37332 [1] NCCL INFO ncclCommInitRankConfig comm 0x22fbae60 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0xfad5133b96805397 - Init COMPLETE
+xgpf11:37331:37331 [0] NCCL INFO ncclCommInitRankConfig comm 0x3213cd70 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0xfad5133b96805397 - Init COMPLETE
+xgpf11:37332:37332 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 2 total 0.38 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37331:37331 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 2 total 0.39 (kernels 0.33, alloc 0.00, bootstrap 0.02, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37331:37331 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37332:37332 [1] NCCL INFO Channel 00 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37331:37331 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37332:37332 [1] NCCL INFO Channel 01 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37332:37332 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+xgpf11:37331:37331 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+2026-09-09T00:49:01.9660 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=-0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:01.9665 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:49:02.1478 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:02.1486 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:49:02.5182 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.26GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=+0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:02.5189 | linearize_moe | INFO - linearize_moe done rss=1.26GiB (net=+0.27GiB from start)
+2026-09-09T00:49:02.5269 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+[Rank 1] 2026-09-09T00:49:02.5435 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:49:02.5464 | from_modifiers | INFO - Creating recipe from modifiers
+2026-09-09T00:49:02.5644 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.24GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:02.5652 | linearize_moe | INFO - linearize_moe done rss=1.24GiB (net=+0.25GiB from start)
+2026-09-09T00:49:02.5752 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+[Rank 0] 2026-09-09T00:49:02.5937 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-09-09T00:49:02.5966 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 0] 2026-09-09T00:49:02.7485 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 1] 2026-09-09T00:49:02.7485 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 1] 2026-09-09T00:49:03.5695 | _solve_module | INFO - Quantizing model.layers.0.mlp.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:03.5696 | _solve_module | INFO - Quantizing model.layers.0.mlp.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:03.7972 | GPTQ | METRIC - time 0.23s
+[Rank 1] 2026-09-09T00:49:03.7974 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:49:03.7981 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:03.7986 | _solve_module | INFO - Quantizing model.layers.0.mlp.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:03.8280 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:03.8281 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:49:03.8286 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.8411 | GPTQ | METRIC - time 0.27s
+[Rank 0] 2026-09-09T00:49:03.8413 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:03.8418 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:03.9054 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:03.9059 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:03.9347 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:03.9349 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:03.9353 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.9356 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:03.9357 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:03.9358 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:03.9362 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.9366 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:03.9648 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:03.9649 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:03.9653 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.9655 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:03.9656 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:03.9658 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:03.9661 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.9665 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:03.9949 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:03.9950 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:03.9954 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.9956 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:03.9958 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:03.9959 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:03.9962 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:03.9966 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:04.0128 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:04.0130 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:04.0136 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:04.0137 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:04.0141 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:04.0142 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:04.0146 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.0291 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:49:04.0292 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:04.0301 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:04.0910 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.0913 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:04.1202 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:04.1202 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:04.1203 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:04.1203 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:04.1207 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:04.1207 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:04.1211 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.1211 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.1509 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:04.1509 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:04.1511 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:04.1511 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:04.1515 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:04.1515 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:04.1520 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:04.1520 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.1821 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:04.1821 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:04.1822 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:04.1822 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:04.1826 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:04.1826 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:04.1830 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.1830 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:04.1990 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:04.1990 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:04.1991 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:04.1991 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:04.1995 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:04.1995 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:04.1999 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:04.2139 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:49:04.2140 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:04.2144 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:04.2459 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 0] 2026-09-09T00:49:04.2488 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 1] 2026-09-09T00:49:04.8630 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-09-09T00:49:04.8630 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:49:05.3587 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+[Rank 1] 2026-09-09T00:49:05.3591 | linearize_moe | INFO - linearize_moe start rss=1.91GiB mem_avail=494.98GiB layers=2
+[Rank 0] 2026-09-09T00:49:05.3593 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+[Rank 1] 2026-09-09T00:49:05.3595 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+[Rank 0] 2026-09-09T00:49:05.3596 | linearize_moe | INFO - linearize_moe start rss=1.92GiB mem_avail=494.98GiB layers=2
+[Rank 0] 2026-09-09T00:49:05.3601 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+[Rank 1] 2026-09-09T00:49:05.7246 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=1.91GiB peak=1.91GiB after_gc=1.91GiB (delta_gc=-0.00GiB) mem_avail=494.98GiB
+[Rank 1] 2026-09-09T00:49:05.7252 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+[Rank 0] 2026-09-09T00:49:05.7274 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=1.92GiB peak=1.92GiB after_gc=1.91GiB (delta_gc=-0.00GiB) mem_avail=494.98GiB
+[Rank 0] 2026-09-09T00:49:05.7278 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+[Rank 1] 2026-09-09T00:49:06.0925 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.91GiB peak=1.91GiB after_gc=1.91GiB (delta_gc=+0.00GiB) mem_avail=494.98GiB
+[Rank 1] 2026-09-09T00:49:06.0931 | linearize_moe | INFO - linearize_moe done rss=1.91GiB (net=-0.00GiB from start)
+[Rank 0] 2026-09-09T00:49:06.1069 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.91GiB peak=1.91GiB after_gc=1.91GiB (delta_gc=-0.00GiB) mem_avail=494.98GiB
+[Rank 0] 2026-09-09T00:49:06.1075 | linearize_moe | INFO - linearize_moe done rss=1.91GiB (net=-0.00GiB from start)
+[Rank 1] 2026-09-09T00:49:06.1157 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:49:06.1182 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 0] 2026-09-09T00:49:06.1302 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-09-09T00:49:06.1324 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 1] 2026-09-09T00:49:06.2446 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 0] 2026-09-09T00:49:06.2446 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 1] 2026-09-09T00:49:06.3849 | _solve_module | INFO - Quantizing model.layers.0.mlp.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.3857 | _solve_module | INFO - Quantizing model.layers.0.mlp.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.4146 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:06.4147 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:49:06.4152 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.4358 | GPTQ | METRIC - time 0.05s
+[Rank 0] 2026-09-09T00:49:06.4359 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.4363 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.4506 | _solve_module | INFO - Quantizing model.layers.0.mlp.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.4733 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:06.4734 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:49:06.4738 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.5376 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.5399 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.5533 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:06.5534 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:06.5538 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.5562 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:06.5564 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.5568 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.5739 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.5760 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.6028 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:06.6029 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:06.6033 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.6056 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:06.6057 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.6061 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.6226 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.6246 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.6515 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:06.6516 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:06.6520 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.6537 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:06.6538 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.6542 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.6732 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.6853 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:49:06.6854 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.6858 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.6977 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.7206 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:06.7207 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.7211 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.7331 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.7554 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:06.7555 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.7559 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.8316 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.8345 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.8476 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:06.8478 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:06.8482 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.8501 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:06.8502 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.8506 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.8678 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.8693 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.8971 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:06.8972 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:06.8983 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.8987 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:06.8988 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.8992 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:06.9183 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.9191 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:06.9474 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:06.9475 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:06.9479 | GPTQ | METRIC - Accelerator 1 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.9481 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:06.9483 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.9487 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.9672 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:06.9794 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:49:06.9796 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:06.9805 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:06.9918 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:07.0158 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:07.0159 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:07.0163 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:07.0284 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:07.0506 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:07.0507 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:07.0511 | GPTQ | METRIC - Accelerator 0 | usage: 0.07% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:07.0911 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 0] 2026-09-09T00:49:07.0935 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 1] 2026-09-09T00:49:07.5823 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-09-09T00:49:07.5823 | reset | INFO - Compression lifecycle reset
+xgpf11:37332:37332 [1] NCCL INFO comm 0x22fbae60 rank 1 nranks 2 cudaDev 1 busId 5e000 - Destroy COMPLETE
+xgpf11:37331:37331 [0] NCCL INFO comm 0x3213cd70 rank 0 nranks 2 cudaDev 0 busId 3b000 - Destroy COMPLETE
+xgpf11:37332:37332 [1] NCCL INFO ENV/Plugin: Closing env plugin ncclEnvDefault
+xgpf11:37331:37331 [0] NCCL INFO ENV/Plugin: Closing env plugin ncclEnvDefault
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.17s/it]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.35s/it]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.24it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.16it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.25it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.13it/s]
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:  71%|███████▏  | 15/21 [00:00<00:00, 148.09it/s]Applying quantization config:  95%|█████████▌| 20/21 [00:00<00:00, 191.67it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 150.06it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 189.51it/s]
+
+[rank1]:W0909 00:49:02.825000 37332 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank0]:W0909 00:49:02.826000 37331 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 3892.63it/s]
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 3713.42it/s]
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.26it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.48it/s]
+(1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.18it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 416.74it/s]
+(1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.33it/s]
+(2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 419.37it/s]
+(2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.13it/s](2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.12it/s]
+(2/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.15it/s](2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.16it/s]
+(2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 97.62it/s]
+(2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 195.75it/s]
+(3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 57.18it/s]
+(3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 57.99it/s]
+(3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 120.07it/s]
+(3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 122.09it/s]
+(4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 87.92it/s]
+(4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 88.51it/s]
+(4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 121.90it/s]
+(4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 123.71it/s]
+
+Compressing model:   0%|          | 0/12 [00:00<?, ?it/s]Compressing model:   0%|          | 0/9 [00:00<?, ?it/s][A/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+Compressing model: 100%|██████████| 12/12 [00:00<00:00, 52.14it/s]Compressing model: 100%|██████████| 9/9 [00:00<00:00, 39.11it/s]
+
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/transformers/modeling_utils.py:3486: UserWarning: Attempting to save a model with offloaded modules. Ensure that unallocated cpu memory exceeds the `shard_size` (50GB default)
+  warnings.warn(
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 99.55it/s]
+Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:  78%|███████▊  | 80/102 [00:00<00:00, 791.41it/s]Dispatching model:  79%|███████▉  | 81/102 [00:00<00:00, 753.15it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 626.84it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 622.46it/s]
+
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:  50%|█████     | 1/2 [00:00<00:00,  2.74it/s]Linearizing experts:  50%|█████     | 1/2 [00:00<00:00,  2.72it/s]Linearizing experts: 100%|██████████| 2/2 [00:00<00:00,  2.73it/s]Linearizing experts: 100%|██████████| 2/2 [00:00<00:00,  2.73it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:00<00:00,  2.67it/s]Linearizing experts: 100%|██████████| 2/2 [00:00<00:00,  2.68it/s]
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:  86%|████████▌ | 18/21 [00:00<00:00, 173.55it/s]Applying quantization config:  95%|█████████▌| 20/21 [00:00<00:00, 198.08it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 196.61it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 173.55it/s]
+
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 4843.31it/s]
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 4707.41it/s]
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 490.91it/s]
+(1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 508.83it/s]
+(1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 524.45it/s]
+(1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 542.00it/s]
+(2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 159.55it/s]
+(2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 171.75it/s]
+(2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 196.05it/s]
+(2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 199.28it/s]
+(3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 69.29it/s]
+(3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 83.63it/s]
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+(3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 96.70it/s]
+(3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 98.70it/s]
+(4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 74.14it/s]
+(4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 82.33it/s]
+(4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 95.82it/s]
+(4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 99.05it/s]
+
+Compressing model:   0%|          | 0/9 [00:00<?, ?it/s][ACompressing model:   0%|          | 0/12 [00:00<?, ?it/s]Compressing model: 100%|██████████| 9/9 [00:00<00:00, 50.66it/s]
+Compressing model: 100%|██████████| 12/12 [00:00<00:00, 67.73it/s]
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/transformers/modeling_utils.py:3486: UserWarning: Attempting to save a model with offloaded modules. Ensure that unallocated cpu memory exceeds the `shard_size` (50GB default)
+  warnings.warn(
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 108.35it/s]
+Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:  79%|███████▉  | 81/102 [00:00<00:00, 763.32it/s]Dispatching model:  79%|███████▉  | 81/102 [00:00<00:00, 747.08it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 604.39it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 612.76it/s]
+
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 3699.77it/s]
+Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 3764.44it/s]
+
+Compressing model:   0%|          | 0/9 [00:00<?, ?it/s][ACompressing model:   0%|          | 0/12 [00:00<?, ?it/s]Compressing model: 100%|██████████| 12/12 [00:00<00:00, 325.04it/s]
+Compressing model: 100%|██████████| 9/9 [00:00<00:00, 230.60it/s]
+Loading weights:   0%|          | 0/139 [00:00<?, ?it/s]Loading weights: 100%|██████████| 139/139 [00:00<00:00, 8516.29it/s]
+Loading weights:   0%|          | 0/139 [00:00<?, ?it/s]Decompressing model:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 139/139 [00:00<00:00, 6183.34it/s]
+Decompressing model:   0%|          | 0/21 [00:00<?, ?it/s]Decompressing model: 100%|██████████| 21/21 [00:00<00:00, 481.96it/s]
+Decompressing model: 100%|██████████| 21/21 [00:00<00:00, 491.07it/s]
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:49:15.1157 | reset | INFO - Compression lifecycle reset
+____ test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] ____
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:49:15.1189 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:49:44.4418 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:49:44.4418 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:49:44.4422 | linearize_moe | INFO - linearize_moe start rss=1.00GiB mem_avail=496.65GiB layers=2
+2026-09-09T00:49:44.4422 | linearize_moe | INFO - linearize_moe start rss=1.00GiB mem_avail=496.65GiB layers=2
+2026-09-09T00:49:44.4658 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:49:44.4658 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+xgpf11:37379:37379 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37379:37379 [0] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37379:37379 [0] NCCL INFO cudaDriverVersion 13000
+xgpf11:37379:37379 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37379:37379 [0] NCCL INFO Comm config Blocking set to 1
+xgpf11:37380:37380 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37380:37380 [1] NCCL INFO cudaDriverVersion 13000
+xgpf11:37380:37380 [1] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37380:37380 [1] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37380:37380 [1] NCCL INFO Comm config Blocking set to 1
+xgpf11:37379:37379 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37379:37379 [0] NCCL INFO NET/IB : No device found.
+xgpf11:37379:37379 [0] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37379:37379 [0] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37379:37379 [0] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37379:37379 [0] NCCL INFO Initialized NET plugin Socket
+xgpf11:37379:37379 [0] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37379:37379 [0] NCCL INFO Using network Socket
+xgpf11:37379:37379 [0] NCCL INFO ncclCommInitRankConfig comm 0x1fbaa4a0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0x251433008af1a391 - Init START
+xgpf11:37380:37380 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37380:37380 [1] NCCL INFO NET/IB : No device found.
+xgpf11:37380:37380 [1] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37380:37380 [1] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37380:37380 [1] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37380:37380 [1] NCCL INFO Initialized NET plugin Socket
+xgpf11:37380:37380 [1] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37380:37380 [1] NCCL INFO Using network Socket
+xgpf11:37380:37380 [1] NCCL INFO ncclCommInitRankConfig comm 0x435ca820 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0x251433008af1a391 - Init START
+xgpf11:37380:37380 [1] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37379:37379 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37379:37379 [0] NCCL INFO Bootstrap timings total 0.016875 (create 0.000068, send 0.000248, recv 0.015285, ring 0.000043, delay 0.000001)
+xgpf11:37380:37380 [1] NCCL INFO Bootstrap timings total 0.008779 (create 0.000051, send 0.003356, recv 0.004346, ring 0.000395, delay 0.000001)
+xgpf11:37380:37380 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37379:37379 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37380:37380 [1] NCCL INFO NVLS multicast support is not available on dev 1 (NVLS_NCHANNELS 0)
+xgpf11:37379:37379 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+xgpf11:37380:37380 [1] NCCL INFO comm 0x435ca820 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+xgpf11:37379:37379 [0] NCCL INFO comm 0x1fbaa4a0 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+xgpf11:37379:37379 [0] NCCL INFO Channel 00/02 : 0 1
+xgpf11:37380:37380 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0
+xgpf11:37379:37379 [0] NCCL INFO Channel 01/02 : 0 1
+xgpf11:37380:37380 [1] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37379:37379 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
+xgpf11:37379:37379 [0] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37379:37379 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37380:37380 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37379:37379 [0] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37380:37380 [1] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37380:37406 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 24
+xgpf11:37379:37407 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 24
+xgpf11:37380:37404 [0] NCCL INFO [Proxy Service] Device 1 CPU core 0
+xgpf11:37379:37405 [0] NCCL INFO [Proxy Service] Device 0 CPU core 0
+xgpf11:37380:37380 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37379:37379 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37380:37380 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37380:37380 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37379:37379 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37379:37379 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37379:37379 [0] NCCL INFO CC Off, workFifoBytes 1048576
+xgpf11:37380:37380 [1] NCCL INFO ncclCommInitRankConfig comm 0x435ca820 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0x251433008af1a391 - Init COMPLETE
+xgpf11:37379:37379 [0] NCCL INFO ncclCommInitRankConfig comm 0x1fbaa4a0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0x251433008af1a391 - Init COMPLETE
+xgpf11:37380:37380 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 2 total 0.37 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.02, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37379:37379 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 2 total 0.39 (kernels 0.34, alloc 0.00, bootstrap 0.02, allgathers 0.00, topo 0.02, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37379:37379 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37379:37379 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37380:37380 [1] NCCL INFO Channel 00 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37380:37380 [1] NCCL INFO Channel 01 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37379:37379 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+xgpf11:37380:37380 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+2026-09-09T00:49:45.7875 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=1.00GiB peak=1.27GiB after_gc=1.27GiB (delta_gc=+0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:45.7881 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:49:45.8198 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=1.00GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=+0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:45.8204 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:49:46.1837 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.27GiB peak=1.27GiB after_gc=1.27GiB (delta_gc=+0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:46.1837 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.24GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.17GiB
+2026-09-09T00:49:46.1844 | linearize_moe | INFO - linearize_moe done rss=1.27GiB (net=+0.27GiB from start)
+2026-09-09T00:49:46.1844 | linearize_moe | INFO - linearize_moe done rss=1.24GiB (net=+0.25GiB from start)
+2026-09-09T00:49:46.3345 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+2026-09-09T00:49:46.3345 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+[Rank 0] 2026-09-09T00:49:46.3503 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:49:46.3503 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:49:46.3528 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 0] 2026-09-09T00:49:46.3530 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 1] 2026-09-09T00:49:46.5247 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 0] 2026-09-09T00:49:46.5247 | initialize | INFO - Compression lifecycle initialized for 1 modifiers
+[Rank 1] 2026-09-09T00:49:47.3748 | _solve_module | INFO - Quantizing model.layers.0.mlp.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.3777 | _solve_module | INFO - Quantizing model.layers.0.mlp.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:47.6023 | GPTQ | METRIC - time 0.23s
+[Rank 1] 2026-09-09T00:49:47.6025 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:49:47.6031 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.6395 | GPTQ | METRIC - time 0.26s
+[Rank 0] 2026-09-09T00:49:47.6397 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.6402 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:47.6605 | _solve_module | INFO - Quantizing model.layers.0.mlp.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:47.6830 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:47.6832 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:49:47.6836 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:47.7695 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.7727 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:47.7859 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:47.7860 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:47.7865 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.7889 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:47.7890 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.7894 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:47.8093 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.8102 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:47.8386 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:47.8388 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:47.8392 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.8394 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:47.8395 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.8399 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:47.8591 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.8603 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:47.8884 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:47.8885 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:47.8889 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.8892 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:47.8893 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.8897 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.9102 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.9227 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:49:47.9228 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.9238 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.9359 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.9583 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:47.9584 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.9588 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:47.9713 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:47.9940 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:47.9941 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:47.9945 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:48.0784 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:48.0800 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:48.0942 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:49:48.0943 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:48.0948 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:48.0957 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:48.0958 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:48.0962 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:48.1156 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:48.1179 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:48.1448 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:48.1449 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:48.1453 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:48.1471 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:48.1472 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:48.1475 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:48.1658 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:48.1680 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:49:48.1961 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:49:48.1962 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:49:48.1966 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:48.1979 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:49:48.1980 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:48.1985 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:48.2199 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:48.2325 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:49:48.2326 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:48.2330 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:48.2458 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:48.2684 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:48.2686 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:48.2689 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:49:48.2816 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:49:48.3045 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:49:48.3046 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:49:48.3050 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:49:48.3458 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 0] 2026-09-09T00:49:48.3483 | finalize | INFO - Compression lifecycle finalized for 1 modifiers
+[Rank 0] 2026-09-09T00:49:49.0297 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:49:49.0298 | reset | INFO - Compression lifecycle reset
+xgpf11:37379:37379 [0] NCCL INFO comm 0x1fbaa4a0 rank 0 nranks 2 cudaDev 0 busId 3b000 - Destroy COMPLETE
+xgpf11:37380:37380 [1] NCCL INFO comm 0x435ca820 rank 1 nranks 2 cudaDev 1 busId 5e000 - Destroy COMPLETE
+xgpf11:37380:37380 [1] NCCL INFO ENV/Plugin: Closing env plugin ncclEnvDefault
+xgpf11:37379:37379 [0] NCCL INFO ENV/Plugin: Closing env plugin ncclEnvDefault
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.34s/it]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.38s/it]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.28it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.27it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.15it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.15it/s]
+
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:  86%|████████▌ | 18/21 [00:00<00:00, 174.45it/s]Applying quantization config:  86%|████████▌ | 18/21 [00:00<00:00, 174.46it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 172.97it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 172.97it/s]
+
+[rank1]:W0909 00:49:46.601000 37380 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank0]:W0909 00:49:46.603000 37379 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 4050.51it/s]
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 3940.16it/s]
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.28it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.50it/s]
+(1/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.18it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.32it/s]
+(1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 460.20it/s]
+(1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 457.62it/s]
+(2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  2.99it/s](2/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.02it/s](2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  5.87it/s]
+(2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  5.94it/s]
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+(2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 189.79it/s]
+(2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 186.16it/s]
+(3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 44.84it/s]
+(3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 47.49it/s]
+(3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 90.59it/s]
+(3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 98.01it/s]
+(4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 63.71it/s]
+(4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 68.12it/s]
+(4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 95.47it/s]
+(4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 98.65it/s]
+
+Compressing model:   0%|          | 0/12 [00:00<?, ?it/s]Compressing model:   0%|          | 0/9 [00:00<?, ?it/s][A
+Compressing model: 100%|██████████| 9/9 [00:00<00:00, 88.00it/s]Compressing model:  75%|███████▌  | 9/12 [00:00<00:00, 87.99it/s][ACompressing model: 100%|██████████| 9/9 [00:00<00:00, 38.92it/s]Compressing model: 100%|██████████| 12/12 [00:00<00:00, 51.89it/s]
+
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/transformers/modeling_utils.py:3486: UserWarning: Attempting to save a model with offloaded modules. Ensure that unallocated cpu memory exceeds the `shard_size` (50GB default)
+  warnings.warn(
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 47.75it/s]
+Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:  51%|█████     | 52/102 [00:00<00:00, 518.30it/s]Dispatching model:  52%|█████▏    | 53/102 [00:00<00:00, 505.35it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 538.10it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 534.66it/s]
+
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 3539.92it/s]
+
+Compressing model:   0%|          | 0/9 [00:00<?, ?it/s][AApplying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 3527.59it/s]
+Compressing model:   0%|          | 0/12 [00:00<?, ?it/s]Compressing model: 100%|██████████| 12/12 [00:00<00:00, 391.15it/s]
+Compressing model: 100%|██████████| 9/9 [00:00<00:00, 227.47it/s]
+Loading weights:   0%|          | 0/139 [00:00<?, ?it/s]Loading weights: 100%|██████████| 139/139 [00:00<00:00, 9778.41it/s]
+Decompressing model:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:   0%|          | 0/139 [00:00<?, ?it/s]Loading weights: 100%|██████████| 139/139 [00:00<00:00, 16175.35it/s]
+Decompressing model:   0%|          | 0/21 [00:00<?, ?it/s]Decompressing model: 100%|██████████| 21/21 [00:00<00:00, 497.06it/s]
+Decompressing model: 100%|██████████| 21/21 [00:00<00:00, 484.48it/s]
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:49:56.1920 | reset | INFO - Compression lifecycle reset
+_______ test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] _______
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:49:56.1951 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:50:19.9733 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:50:19.9735 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:50:19.9738 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.64GiB layers=2
+2026-09-09T00:50:19.9739 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.64GiB layers=2
+2026-09-09T00:50:19.9970 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:50:19.9970 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+xgpf11:37423:37423 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37423:37423 [0] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37423:37423 [0] NCCL INFO cudaDriverVersion 13000
+xgpf11:37423:37423 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37423:37423 [0] NCCL INFO Comm config Blocking set to 1
+xgpf11:37424:37424 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37424:37424 [1] NCCL INFO cudaDriverVersion 13000
+xgpf11:37424:37424 [1] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37424:37424 [1] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37424:37424 [1] NCCL INFO Comm config Blocking set to 1
+xgpf11:37423:37423 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37423:37423 [0] NCCL INFO NET/IB : No device found.
+xgpf11:37423:37423 [0] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37423:37423 [0] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37423:37423 [0] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37423:37423 [0] NCCL INFO Initialized NET plugin Socket
+xgpf11:37423:37423 [0] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37423:37423 [0] NCCL INFO Using network Socket
+xgpf11:37423:37423 [0] NCCL INFO ncclCommInitRankConfig comm 0x30f09830 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0x6b10e212aeb94b3a - Init START
+xgpf11:37424:37424 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37424:37424 [1] NCCL INFO NET/IB : No device found.
+xgpf11:37424:37424 [1] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37424:37424 [1] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37424:37424 [1] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37424:37424 [1] NCCL INFO Initialized NET plugin Socket
+xgpf11:37424:37424 [1] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37424:37424 [1] NCCL INFO Using network Socket
+xgpf11:37424:37424 [1] NCCL INFO ncclCommInitRankConfig comm 0x32a7c6b0 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0x6b10e212aeb94b3a - Init START
+xgpf11:37423:37423 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37424:37424 [1] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37423:37423 [0] NCCL INFO Bootstrap timings total 0.012083 (create 0.000082, send 0.000239, recv 0.010915, ring 0.000067, delay 0.000001)
+xgpf11:37424:37424 [1] NCCL INFO Bootstrap timings total 0.007547 (create 0.000051, send 0.003563, recv 0.003298, ring 0.000068, delay 0.000001)
+xgpf11:37424:37424 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37424:37424 [1] NCCL INFO NVLS multicast support is not available on dev 1 (NVLS_NCHANNELS 0)
+xgpf11:37423:37423 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37423:37423 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+xgpf11:37424:37424 [1] NCCL INFO comm 0x32a7c6b0 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+xgpf11:37423:37423 [0] NCCL INFO comm 0x30f09830 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+xgpf11:37424:37424 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0
+xgpf11:37423:37423 [0] NCCL INFO Channel 00/02 : 0 1
+xgpf11:37424:37424 [1] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37423:37423 [0] NCCL INFO Channel 01/02 : 0 1
+xgpf11:37423:37423 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
+xgpf11:37423:37423 [0] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37424:37424 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37423:37423 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37424:37424 [1] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37423:37423 [0] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37423:37450 [0] NCCL INFO [Proxy Service] Device 0 CPU core 0
+xgpf11:37424:37449 [0] NCCL INFO [Proxy Service] Device 1 CPU core 0
+xgpf11:37423:37451 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 24
+xgpf11:37424:37452 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 24
+xgpf11:37424:37424 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37423:37423 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37424:37424 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37424:37424 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37423:37423 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37423:37423 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37423:37423 [0] NCCL INFO CC Off, workFifoBytes 1048576
+xgpf11:37424:37424 [1] NCCL INFO ncclCommInitRankConfig comm 0x32a7c6b0 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0x6b10e212aeb94b3a - Init COMPLETE
+xgpf11:37423:37423 [0] NCCL INFO ncclCommInitRankConfig comm 0x30f09830 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0x6b10e212aeb94b3a - Init COMPLETE
+xgpf11:37424:37424 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 2 total 0.38 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37423:37423 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 2 total 0.39 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.03, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37424:37424 [1] NCCL INFO Channel 00 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37423:37423 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37424:37424 [1] NCCL INFO Channel 01 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37423:37423 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37424:37424 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+xgpf11:37423:37423 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+2026-09-09T00:50:21.2653 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=+0.00GiB) mem_avail=496.16GiB
+2026-09-09T00:50:21.2658 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:50:21.3710 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=+0.00GiB) mem_avail=496.16GiB
+2026-09-09T00:50:21.3716 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:50:21.7218 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.24GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.16GiB
+2026-09-09T00:50:21.7225 | linearize_moe | INFO - linearize_moe done rss=1.24GiB (net=+0.25GiB from start)
+2026-09-09T00:50:21.7258 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.26GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=+0.00GiB) mem_avail=496.16GiB
+2026-09-09T00:50:21.7264 | linearize_moe | INFO - linearize_moe done rss=1.26GiB (net=+0.27GiB from start)
+2026-09-09T00:50:21.8755 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+2026-09-09T00:50:21.8755 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+[Rank 1] 2026-09-09T00:50:21.8907 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-09-09T00:50:21.8908 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:50:21.8933 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 0] 2026-09-09T00:50:21.8936 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 1] 2026-09-09T00:50:22.1666 | initialize | INFO - Compression lifecycle initialized for 2 modifiers
+[Rank 0] 2026-09-09T00:50:22.1668 | initialize | INFO - Compression lifecycle initialized for 2 modifiers
+[Rank 1] 2026-09-09T00:50:23.0148 | _solve_module | INFO - Quantizing model.layers.0.mlp.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.0178 | _solve_module | INFO - Quantizing model.layers.0.mlp.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.2433 | GPTQ | METRIC - time 0.23s
+[Rank 1] 2026-09-09T00:50:23.2435 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:50:23.2441 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.2794 | GPTQ | METRIC - time 0.26s
+[Rank 0] 2026-09-09T00:50:23.2797 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.2802 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.3009 | _solve_module | INFO - Quantizing model.layers.0.mlp.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.3248 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:50:23.3250 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:50:23.3254 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.4349 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.4371 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.4519 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:50:23.4520 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:50:23.4525 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.4534 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:50:23.4536 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.4540 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.4725 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.4745 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.5022 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:50:23.5023 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:50:23.5027 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.5039 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:50:23.5040 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.5044 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.5231 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.5246 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.5539 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:50:23.5540 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:50:23.5545 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.5547 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:50:23.5548 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.5552 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.5753 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.5878 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:50:23.5879 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.5883 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.6009 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.6237 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:50:23.6238 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.6242 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.6374 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.6599 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:50:23.6600 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.6604 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.8071 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.8094 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.8235 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:50:23.8237 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:50:23.8241 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.8253 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:50:23.8254 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.8259 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.8447 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.8462 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.8749 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:50:23.8750 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:50:23.8754 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.8757 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:50:23.8758 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.8768 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:23.8952 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.8972 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:50:23.9249 | GPTQ | METRIC - time 0.03s
+[Rank 1] 2026-09-09T00:50:23.9250 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:50:23.9254 | GPTQ | METRIC - Accelerator 1 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.9264 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:50:23.9265 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.9269 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.9466 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.9588 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:50:23.9589 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.9593 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:23.9718 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:23.9939 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:50:23.9940 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:23.9944 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 0] 2026-09-09T00:50:24.0072 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:50:24.0309 | GPTQ | METRIC - time 0.02s
+[Rank 0] 2026-09-09T00:50:24.0310 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:50:24.0314 | GPTQ | METRIC - Accelerator 0 | usage: 0.06% | total memory: 15.6 Gb
+[Rank 1] 2026-09-09T00:50:24.1220 | finalize | INFO - Compression lifecycle finalized for 2 modifiers
+[Rank 0] 2026-09-09T00:50:24.1256 | finalize | INFO - Compression lifecycle finalized for 2 modifiers
+[Rank 1] 2026-09-09T00:50:25.0902 | reset | INFO - Compression lifecycle reset
+[Rank 0] 2026-09-09T00:50:25.0903 | reset | INFO - Compression lifecycle reset
+xgpf11:37424:37424 [1] NCCL INFO comm 0x32a7c6b0 rank 1 nranks 2 cudaDev 1 busId 5e000 - Destroy COMPLETE
+xgpf11:37423:37423 [0] NCCL INFO comm 0x30f09830 rank 0 nranks 2 cudaDev 0 busId 3b000 - Destroy COMPLETE
+xgpf11:37424:37424 [1] NCCL INFO ENV/Plugin: Closing env plugin ncclEnvDefault
+xgpf11:37423:37423 [0] NCCL INFO ENV/Plugin: Closing env plugin ncclEnvDefault
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.29s/it]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.40s/it]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.28it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.14it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.25it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.14it/s]
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:  86%|████████▌ | 18/21 [00:00<00:00, 164.22it/s]Applying quantization config:  86%|████████▌ | 18/21 [00:00<00:00, 165.23it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 162.35it/s]
+Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 163.38it/s]
+Applying quantization config:   0%|          | 0/30 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/30 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 30/30 [00:00<00:00, 324.02it/s]
+Applying quantization config: 100%|██████████| 30/30 [00:00<00:00, 326.55it/s]
+[rank1]:W0909 00:50:22.246000 37424 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank0]:W0909 00:50:22.249000 37423 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 3849.75it/s]
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 3977.53it/s]
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.30it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.54it/s]
+(1/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.21it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.38it/s]
+(1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 462.59it/s]
+(1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 489.10it/s]
+(2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.10it/s](2/4): Calibrating:  50%|█████     | 1/2 [00:00<00:00,  3.14it/s](2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.08it/s]
+(2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00,  6.16it/s]
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+(2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 180.08it/s]
+(2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 160.98it/s]
+(3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 44.59it/s]
+(3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 46.77it/s]
+(3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 89.06it/s]
+(3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 92.58it/s]
+(4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 63.08it/s]
+(4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 66.75it/s]
+(4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 93.76it/s]
+(4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 92.80it/s]
+
+Compressing model:   0%|          | 0/49 [00:00<?, ?it/s][ACompressing model:   0%|          | 0/2 [00:00<?, ?it/s]
+Compressing model:  37%|███▋      | 18/49 [00:00<00:00, 178.95it/s][ACompressing model:  50%|█████     | 1/2 [00:00<00:00,  9.84it/s]Compressing model: 100%|██████████| 2/2 [00:00<00:00,  5.19it/s]Compressing model: 100%|██████████| 49/49 [00:00<00:00, 127.17it/s]
+
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/transformers/modeling_utils.py:3486: UserWarning: Attempting to save a model with offloaded modules. Ensure that unallocated cpu memory exceeds the `shard_size` (50GB default)
+  warnings.warn(
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 42.31it/s]
+Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:  46%|████▌     | 47/102 [00:00<00:00, 463.30it/s]Dispatching model:  46%|████▌     | 47/102 [00:00<00:00, 468.28it/s]Dispatching model:  92%|█████████▏| 94/102 [00:00<00:00, 407.89it/s]Dispatching model:  92%|█████████▏| 94/102 [00:00<00:00, 409.46it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 435.31it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 433.31it/s]
+
+Could not match `re:.*mlp\.(experts\.\d+\.)?(gate_proj|up_proj|down_proj)$` in instance of GlmMoeDsaForCausalLM
+Applying quantization config:   0%|          | 0/51 [00:00<?, ?it/s]Could not match `re:.*mlp\.(experts\.\d+\.)?(gate_proj|up_proj|down_proj)$` in instance of GlmMoeDsaForCausalLM
+Applying quantization config:   0%|          | 0/51 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 51/51 [00:00<00:00, 3578.76it/s]
+
+Compressing model:   0%|          | 0/49 [00:00<?, ?it/s][AApplying quantization config: 100%|██████████| 51/51 [00:00<00:00, 3733.28it/s]
+Compressing model:   0%|          | 0/2 [00:00<?, ?it/s]Compressing model: 100%|██████████| 49/49 [00:00<00:00, 337.37it/s]
+Compressing model: 100%|██████████| 2/2 [00:00<00:00, 14.70it/s]
+Loading weights:   0%|          | 0/169 [00:00<?, ?it/s]Loading weights: 100%|██████████| 169/169 [00:00<00:00, 15570.29it/s]
+Loading weights:   0%|          | 0/169 [00:00<?, ?it/s]Decompressing model:   0%|          | 0/51 [00:00<?, ?it/s]Loading weights: 100%|██████████| 169/169 [00:00<00:00, 13446.85it/s]
+Decompressing model:   0%|          | 0/51 [00:00<?, ?it/s]Decompressing model: 100%|██████████| 51/51 [00:00<00:00, 880.61it/s]
+Decompressing model:  82%|████████▏ | 42/51 [00:00<00:00, 416.56it/s]Decompressing model: 100%|██████████| 51/51 [00:00<00:00, 447.73it/s]
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:50:32.9421 | reset | INFO - Compression lifecycle reset
+=========================== short test summary info ============================
+PASSED tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity]
+PASSED tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk]
+PASSED tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk]
+================== 3 passed, 14 warnings in 119.83s (0:01:59) ==================

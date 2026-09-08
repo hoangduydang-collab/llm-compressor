@@ -28,7 +28,7 @@ Full quantization run in 4–8 hours, any method.
 - [x] 1b · Multi-GPU calibration correctness fix `wk Jul 27–Aug 02`
 - [x] 1c · Proven on a second model + third method — 30B MoE in **1 h 40 m** `wk Jul 27–Aug 02`
 - [ ] 1d · Distributed save/export
-- [ ] 1e · GLM-5.3 expert-parallel GPTQ — CPU correctness and save/reload checks pass; GPU memory and full-run validation remain open
+- [ ] 1e · GLM-5.3 expert-parallel GPTQ — CPU and two-T4 NCCL correctness/save-reload checks pass; representative H100 memory and full-run validation remain open
 
 ### Goal 2 — Evaluation pipeline · Work in progress · [field note](goals/goal-2-temporary-evaluation-pipeline.md)
 One fail-closed harness: our model vs existing quants vs the unquantized baseline.
@@ -78,7 +78,7 @@ Next up: **4c** (2-bit retry), **2g** (seven-task run for the fixed AWQ model),
 
 ### wk 2026-09-07 – 09-13
 
-- **1e** · GLM-5.3 parallel quantization passes CPU correctness and checkpoint reload checks; GPU validation remains open.
+- **1e** · GLM-5.3 parallel quantization passes CPU and all three two-T4 NCCL correctness/save-reload checks; representative H100 validation remains open.
 
 One line per achievement, newest first. IDs point at the sub-tasks above; the
 durable copy lives in `PROJECT_GOALS.md`.

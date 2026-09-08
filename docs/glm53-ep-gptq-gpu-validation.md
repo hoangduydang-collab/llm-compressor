@@ -1,6 +1,6 @@
 # GLM-5.3 EP GPTQ GPU validation, 9 September 2026
 
-Status: repaired CPU disk lifecycle passes; final two-T4 NCCL attempt pending.
+Status: **all three bounded two-T4 NCCL tests passed**, plus all 10 affected CPU tests.
 This is the active local diagnostic record. Representative H100 and full-model
 execution remain separate, unqualified gates.
 
@@ -14,6 +14,7 @@ execution remain separate, unqualified gates.
 | 830721 | Clean environment, cores binding, immediate placement | Worker started; hardware preflight failed. A100-40 resources were two MIG slices on one physical A100-80. |
 | 830729 | Same small suite on two full T4s | Hardware passed; pytest setup failed because its temporary parent directory was absent. |
 | 830738 | T4 suite after temporary-directory repair | Parity/save/reload passed; two disk cases failed in initial cache setup with NCCL timeouts. |
+| 830817 | T4 suite after CPU-qualified setup/export repairs | **3 passed**, 119.83 seconds in pytest; allocation completed in 3 min 1 s with exit 0. |
 
 Confirmed launcher repairs: start `srun` with a clean environment (reuse the
 repo's `env -i` pattern) and explicit `--cpu-bind=cores`. Immediate placement
@@ -68,4 +69,15 @@ This tests small-model NCCL correctness and persistence on T4. It does not measu
 representative H100 memory, runtime or full-model quantization quality. No full
 H100/H200 pair was available during the resource check; MIG devices were excluded.
 
-Result is updated after the attempt finishes.
+Job **830817**, revision **2b51c7fe**, completed with pytest/worker/controller exit
+codes all zero: **3 passed**, no skips, in 119.83 seconds. Scheduler elapsed time
+was 3 minutes 1 second including startup/preflight. Both ranks reached packed save
+and reload-forward completion in every case. The pure-GPTQ fixture compared 21
+packed tensors per rank and recorded zero differing packed words; this is not a
+bitwise-equivalence guarantee for larger models or other hardware.
+
+The [raw pytest log](../results/glm53-ep-gptq/20260909-local-nccl-retry4/pytest.log),
+[scheduler accounting](../results/glm53-ep-gptq/20260909-local-nccl-retry4/sacct.txt),
+[environment](../results/glm53-ep-gptq/20260909-local-nccl-retry4/environment.json),
+and [per-rank markers](../results/glm53-ep-gptq/20260909-local-nccl-retry4/artifacts/)
+are retained. All task GPU allocations ended; no queued retry remains.

@@ -1,7 +1,9 @@
 import torch
 from compressed_tensors.quantization.utils import is_module_quantized
+from compressed_tensors.utils import match_named_modules
 
 from llmcompressor.core import Event, State
+from llmcompressor.modeling.moe.expert_parallel import is_expert_parallel_enabled
 from llmcompressor.modifiers import Modifier
 from llmcompressor.modifiers.quantization.calibration import (
     observe,
@@ -75,6 +77,16 @@ class QuantizationModifier(Modifier, QuantizationMixin):
     def on_sequential_epoch_end(
         self, state: State, event: Event, modules: list[torch.nn.Module], **kwargs
     ):
+        if is_expert_parallel_enabled():
+            # An additional FP8-rest modifier must not re-observe routed GPTQ
+            # weights: that overwrites solved scales and pins non-owned experts.
+            targets = {
+                module
+                for _, module in match_named_modules(
+                    state.model, self.resolved_targets, self.ignore
+                )
+            }
+            modules = [module for module in modules if module in targets]
         modules = [module for module in modules if is_module_quantized(module)]
         self.sync_obs_act_stats(modules)
         update_qparams(modules, ACTIVATION_OBS)
@@ -99,4 +111,3 @@ class QuantizationModifier(Modifier, QuantizationMixin):
         Finish calibrating by removing observers and calibration hooks
         """
         QuantizationMixin.end_calibration(self, state.model)
-

@@ -231,3 +231,173 @@ def test_non_language_model_layer_stack_does_not_count_as_decoder_work(tmp_path)
 
     assert summary["layers"] == []
     assert summary["unresolved_names"] == [name]
+
+
+def test_glm_decoder_root_is_accepted_without_vision_false_positives(tmp_path):
+    p = tmp_path / "glm.jsonl"
+    names = [
+        "model.layers.7.mlp.down_proj",
+        "vision_tower.model.layers.8.mlp.down_proj",
+        "other.model.layers.9.mlp.down_proj",
+    ]
+    _write_jsonl(p, [("INFO", f"Quantizing {name} using 8 samples") for name in names])
+    summary = summarize_quantized_layers([p], method="gptq")
+    assert summary["layers"] == [7]
+    assert summary["unresolved_names"] == sorted(names[1:])
+
+
+def _write_phases(path, spans, *, world_size=None, node="node"):
+    if world_size is None:
+        world_size = max(span[1] for span in spans) + 1
+    with path.open("w") as fh:
+        for span, rank, phase, start, stop, parent in spans:
+            for event, timestamp in (("phase_start", start), ("phase_end", stop)):
+                if timestamp is None:
+                    continue
+                record = {
+                    "extra": {
+                        "span_id": span,
+                        "rank": rank,
+                        "node": node,
+                        "world_size": world_size,
+                        "phase": phase,
+                        "event": event,
+                        "timestamp_ns": int(timestamp * 1e9),
+                        "parent_span_id": parent,
+                        "status": "ok",
+                    }
+                }
+                fh.write(json.dumps({"record": record}) + "\n")
+
+
+def test_phase_summary_separates_rank_work_from_elapsed_and_nested_work(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    path = tmp_path / "phases.jsonl"
+    _write_phases(
+        path,
+        [
+            ("outer0", 0, "quantize_run", 0, 10, None),
+            ("nested0", 0, "solve", 1, 4, "outer0"),
+            ("overlap0", 0, "prewarm", 2, 7, "outer0"),
+            ("outer1", 1, "quantize_run", 0, 9, None),
+            ("nested1", 1, "solve", 2, 6, "outer1"),
+        ],
+    )
+    summary = summarize_phases([path])
+    assert summary["critical_path_elapsed_s"] == 10
+    assert summary["summed_rank_work_s"] == 19
+    assert summary["phases"]["solve"]["summed_rank_work_s"] == 7
+    assert summary["phases"]["solve"]["max_rank_observed_s"] == 4
+    assert summary["complete"] is True
+
+
+def test_missing_end_retains_incomplete_phase_without_zero_duration(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    path = tmp_path / "phases.jsonl"
+    _write_phases(path, [("killed", 0, "load", 1, None, None)])
+    summary = summarize_phases([path])
+    assert summary["complete"] is False
+    assert summary["unmatched_starts"] == ["killed"]
+    assert summary["critical_path_elapsed_s"] is None
+    assert summary["summed_rank_work_s"] is None
+    assert summary["phases"] == {}
+    assert summarize_phases([tmp_path / "missing"]) == {"available": False}
+
+
+def test_phase_summary_reports_missing_rank_logs(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    rank0 = tmp_path / "rank0.jsonl"
+    rank1 = tmp_path / "rank1.jsonl"
+    _write_phases(rank0, [("run0", 0, "run", 1, 5, None)])
+    summary = summarize_phases([rank0, rank1])
+    assert summary["complete"] is False
+    assert summary["missing_paths"] == [str(rank1)]
+    assert summary["critical_path_elapsed_s"] == 4
+    assert summary["observed_ranks"] == ["node:0"]
+
+
+def test_world_size_exposes_entirely_absent_ranks(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    path = tmp_path / "rank0.jsonl"
+    _write_phases(path, [("run0", 0, "quantize_run", 0, 10, None)], world_size=8)
+    summary = summarize_phases([path])
+    assert summary["paired_complete"] is True
+    assert summary["complete"] is False
+    assert summary["expected_world_size"] == 8
+    assert summary["missing_ranks"] == list(range(1, 8))
+    assert summary["missing_run_ranks"] == list(range(1, 8))
+
+
+def test_trace_only_evidence_cannot_claim_run_completeness(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    path = tmp_path / "trace.jsonl"
+    _write_phases(path, [("trace", 0, "trace", 0, 1, None)])
+    summary = summarize_phases([path])
+    assert summary["paired_complete"] is True
+    assert summary["complete"] is False
+    assert summary["missing_run_ranks"] == [0]
+    assert summary["unenclosed_spans"] == ["trace"]
+
+
+def test_missing_parent_is_incomplete_even_with_a_run_root(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    path = tmp_path / "phases.jsonl"
+    _write_phases(
+        path,
+        [
+            ("run", 0, "quantize_run", 0, 5, None),
+            ("solve", 0, "solve", 1, 2, "missing_calibration"),
+        ],
+    )
+    summary = summarize_phases([path])
+    assert summary["paired_complete"] is True
+    assert summary["complete"] is False
+    assert summary["missing_parent_spans"] == ["missing_calibration"]
+    assert summary["unenclosed_spans"] == ["solve"]
+
+
+def test_staggered_ranks_use_whole_node_envelope(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    path = tmp_path / "ranks.jsonl"
+    _write_phases(
+        path,
+        [
+            ("run0", 0, "quantize_run", 0, 10, None),
+            ("run1", 1, "quantize_run", 5, 15, None),
+        ],
+    )
+    summary = summarize_phases([path])
+    assert summary["complete"] is True
+    assert summary["critical_path_elapsed_s"] == 15
+    assert summary["max_rank_elapsed_s"] == 10
+    assert summary["summed_rank_work_s"] == 20
+
+
+def test_elapsed_never_compares_clocks_across_nodes(tmp_path):
+    from pipeline.metrics import summarize_phases
+
+    node0, node1 = tmp_path / "node0.jsonl", tmp_path / "node1.jsonl"
+    _write_phases(
+        node0,
+        [("run0", 0, "quantize_run", 0, 10, None)],
+        world_size=2,
+        node="node0",
+    )
+    _write_phases(
+        node1,
+        [("run1", 1, "quantize_run", 1000, 1012, None)],
+        world_size=2,
+        node="node1",
+    )
+    summary = summarize_phases([node0, node1])
+    assert summary["complete"] is True
+    assert summary["critical_path_elapsed_s"] == 12
+    assert summary["max_rank_elapsed_s"] == 12
+    assert summary["summed_rank_work_s"] == 22

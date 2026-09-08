@@ -233,7 +233,8 @@ class LinearExperts2D(torch.nn.ModuleList):
         # Carry over plain scalar attributes (e.g. MiniMax-M3's `swiglu_limit` /
         # `swiglu_alpha`) that the reused `_apply_gate` method reads off `self`.
         # `MoEConfig` only captures the generic `limit`/`alpha`; models with a custom
-        # `_apply_gate` may reference other config-derived scalars. Copying them from the
+        # `_apply_gate` may reference other config-derived scalars. Copying them
+        # from the
         # source module keeps the linearized forward numerically identical to the fused
         # experts and avoids an AttributeError during calibration.
         _carry_over_gate_scalars(self, experts)
@@ -313,9 +314,9 @@ class LinearExperts2D(torch.nn.ModuleList):
         top_k_weights: torch.Tensor,
     ) -> torch.Tensor:
         # Expert-parallel calibration: shard the loop below across ranks so each
-        # rank only instantiates Hessians for the experts it owns. Verified
-        # bitwise identical to this path; see moe/expert_parallel.py for why the
-        # activations must be all-gathered first. Only taken when a context is
+        # rank only instantiates Hessians for the experts it owns. Input coverage
+        # is preserved; floating-point parity uses tolerances. See expert_parallel.py
+        # for why activations must be all-gathered first. Taken when a context is
         # active AND world_size > 1, so the default path is untouched.
         if is_expert_parallel_enabled():
             context = get_expert_parallel_context()

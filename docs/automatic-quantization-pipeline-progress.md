@@ -1,6 +1,6 @@
 # MiniMax-M3 Quantization & Evaluation · Program Overview
 
-> **Updated 31 July 2026.** Web version:
+> **Updated 8 September 2026.** Web version:
 > [`automatic-quantization-pipeline-progress.html`](automatic-quantization-pipeline-progress.html).
 
 Automatic quantization is hard because three systems must agree — a new model
@@ -28,6 +28,7 @@ Full quantization run in 4–8 hours, any method.
 - [x] 1b · Multi-GPU calibration correctness fix `wk Jul 27–Aug 02`
 - [x] 1c · Proven on a second model + third method — 30B MoE in **1 h 40 m** `wk Jul 27–Aug 02`
 - [ ] 1d · Distributed save/export
+- [ ] 1e · GLM-5.3 expert-parallel GPTQ — CPU correctness and save/reload checks pass; GPU memory and full-run validation remain open
 
 ### Goal 2 — Evaluation pipeline · Work in progress · [field note](goals/goal-2-temporary-evaluation-pipeline.md)
 One fail-closed harness: our model vs existing quants vs the unquantized baseline.
@@ -74,6 +75,10 @@ Next up: **4c** (2-bit retry), **2g** (seven-task run for the fixed AWQ model),
 2026-07-31) is the front door for collaborators.
 
 ## Weekly log
+
+### wk 2026-09-07 – 09-13
+
+- **1e** · GLM-5.3 parallel quantization passes CPU correctness and checkpoint reload checks; GPU validation remains open.
 
 One line per achievement, newest first. IDs point at the sub-tasks above; the
 durable copy lives in `PROJECT_GOALS.md`.

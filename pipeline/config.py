@@ -74,6 +74,8 @@ class QuantizationConfig:
     # 512 samples (~2.6 h/layer, i.e. not viable for a full run). Treat this as a
     # smoke/debug escape hatch, not the answer for production calibration.
     gptq_offload_hessians: bool = False
+    # Single-node, all-expert sequential GPTQ; disabled unless explicitly requested.
+    gptq_expert_parallel: bool = False
     # r8: additional module-name regexes quantized to FP8_DYNAMIC (W8A8, data-
     # free RTN weights + per-token dynamic activations) on top of the main
     # method/scheme. Must be DISJOINT from the main modifier's targets — list

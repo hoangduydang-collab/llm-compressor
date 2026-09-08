@@ -1,13 +1,18 @@
 import contextlib
+import socket
 from typing import TYPE_CHECKING, Iterator
 
 import torch
 from compressed_tensors.offload import disable_offloading, set_onload_device
+from compressed_tensors.utils import match_named_modules
 from loguru import logger
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 
 from llmcompressor.core import LifecycleCallbacks, active_session
+from llmcompressor.modeling.moe.context import get_calibrate_all_experts_flag
+from llmcompressor.modeling.moe.expert_parallel import expert_parallel_context
+from llmcompressor.modifiers.gptq.distributed import agree_ep_manifest
 from llmcompressor.modifiers.utils.hooks import HooksMixin
 from llmcompressor.pipelines.cache import IntermediatesCache
 from llmcompressor.pipelines.registry import CalibrationPipeline
@@ -18,12 +23,82 @@ from llmcompressor.pipelines.sequential.helpers import (
 from llmcompressor.pipelines.sequential.weight_prefetch import WeightPrefetcher
 from llmcompressor.utils.dev import get_main_device
 from llmcompressor.utils.helpers import DisableQuantization, calibration_forward_context
+from llmcompressor.utils.metric_logging import compression_phase
 from llmcompressor.utils.pytorch.module import infer_sequential_targets
 
 if TYPE_CHECKING:
     from llmcompressor.args.dataset_arguments import DatasetArguments
 
 __all__ = ["SequentialPipeline"]
+
+
+def _prepare_expert_parallel(model, dataloader, dataset_args, modifiers, targets):
+    ep_modifiers = [m for m in modifiers if getattr(m, "expert_parallel", False)]
+    distributed = (
+        torch.distributed.is_available() and torch.distributed.is_initialized()
+    )
+    if distributed:
+        # Even disabled ranks participate: differing flags must fail together,
+        # not leave enabled ranks waiting in the next manifest collective.
+        agree_ep_manifest({"expert_parallel_modifiers": len(ep_modifiers)})
+    if not ep_modifiers:
+        return False
+    if not distributed:
+        raise ValueError("expert_parallel requires an initialized process group")
+    errors = []
+    if len(ep_modifiers) != 1:
+        errors.append("exactly one expert-parallel GPTQ modifier is supported")
+    if not get_calibrate_all_experts_flag():
+        errors.append("expert_parallel requires moe_calibrate_all_experts=True")
+    if any(not str(target).endswith("DecoderLayer") for target in targets):
+        errors.append("expert_parallel requires decoder-layer sequential targets")
+    if dataset_args.sequential_targets_per_subgraph != 1:
+        errors.append("expert_parallel requires one decoder target per subgraph")
+    if any(
+        type(m).__name__ not in ("GPTQModifier", "QuantizationModifier")
+        for m in modifiers
+    ):
+        errors.append("expert_parallel does not support conditioning/pruning modifiers")
+    steps = len(dataloader)
+    if steps < 1:
+        errors.append("expert_parallel requires nonzero calibration steps")
+    agree_ep_manifest(
+        {
+            "errors": errors,
+            "steps": steps,
+            "node": socket.gethostname(),
+            "targets": targets,
+            "propagate_error": dataset_args.propagate_error,
+            "modifiers": [m.model_dump(mode="json") for m in modifiers],
+        }
+    )
+    ep_modifier = ep_modifiers[0]
+    ep_modifier.prepare_expert_parallel(model)
+    errors = []
+    for modifier in modifiers:
+        if modifier is ep_modifier:
+            continue
+        if type(modifier).__name__ == "GPTQModifier":
+            errors.append("additional GPTQ modifiers are not supported with EP")
+        for name, module in match_named_modules(
+            model, modifier.resolved_targets, modifier.ignore
+        ):
+            if module in ep_modifier._ep_owners:
+                errors.append(f"additional modifier targets routed expert {name}")
+    agree_ep_manifest({"errors": errors})
+    return True
+
+
+@contextlib.contextmanager
+def _timed_offloading(subgraph_index):
+    # ExitStack lets us time the existing cache cleanup without implementing it.
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(disable_offloading())
+        try:
+            yield
+        finally:
+            with compression_phase("offload_transition", subgraph=subgraph_index):
+                stack.close()
 
 
 def _invoke_sequential_trace_callback(state, diagnostics: dict) -> None:
@@ -189,19 +264,24 @@ class SequentialPipeline(CalibrationPipeline):
         )
         ignore = dataset_args.tracing_ignore
 
+        use_ep = _prepare_expert_parallel(
+            model, dataloader, dataset_args, modifiers, sequential_targets
+        )
+
         # trace subgraphs
         sample_input = next(iter(dataloader))
         trace_diagnostics = (
             {} if getattr(session.state, "sequential_trace_callback", None) else None
         )
-        subgraphs = trace_subgraphs(
-            model,
-            sample_input,
-            sequential_targets,
-            ignore,
-            dataset_args.sequential_targets_per_subgraph,
-            diagnostics=trace_diagnostics,
-        )
+        with compression_phase("trace"):
+            subgraphs = trace_subgraphs(
+                model,
+                sample_input,
+                sequential_targets,
+                ignore,
+                dataset_args.sequential_targets_per_subgraph,
+                diagnostics=trace_diagnostics,
+            )
         if trace_diagnostics is not None:
             _invoke_sequential_trace_callback(session.state, trace_diagnostics)
         num_subgraphs = len(subgraphs)
@@ -209,6 +289,8 @@ class SequentialPipeline(CalibrationPipeline):
         LifecycleCallbacks.calibration_start()
 
         with contextlib.ExitStack() as stack:
+            if use_ep:
+                stack.enter_context(expert_parallel_context())
             stack.enter_context(calibration_forward_context(model))
             stack.enter_context(DisableQuantization(model))
             # prepare intermediates cache
@@ -282,30 +364,38 @@ class SequentialPipeline(CalibrationPipeline):
 
                 # reduce memory movement by keeping modules onloaded
                 num_batches = len(dataloader)
-                with disable_offloading():
+                with _timed_offloading(subgraph_index):
                     subgraph_modules = subgraph.submodules(model)
                     # do a preliminary pass to trigger modifier hooks
-                    for batch_idx, inputs in _get_batches(
-                        activations,
-                        num_batches,
-                        subgraph.input_names,
-                        calib_desc,
-                        sequential_prefetch,
+                    with compression_phase(
+                        "calibration_forward", subgraph=subgraph_index
                     ):
-                        session.state.current_batch_idx = batch_idx
-                        outputs = subgraph.forward(model, **inputs)
+                        for batch_idx, inputs in _get_batches(
+                            activations,
+                            num_batches,
+                            subgraph.input_names,
+                            calib_desc,
+                            sequential_prefetch,
+                        ):
+                            session.state.current_batch_idx = batch_idx
+                            outputs = subgraph.forward(model, **inputs)
 
-                        if not dataset_args.propagate_error:
-                            if subgraph_index < num_subgraphs - 1:
-                                activations.update(batch_idx, outputs)
-                                activations.delete(batch_idx, subgraph.consumed_names)
+                            if not dataset_args.propagate_error:
+                                if subgraph_index < num_subgraphs - 1:
+                                    activations.update(batch_idx, outputs)
+                                    activations.delete(
+                                        batch_idx, subgraph.consumed_names
+                                    )
 
                     LifecycleCallbacks.sequential_epoch_end(subgraph_modules)
 
                     if dataset_args.propagate_error:
                         # this pass does not trigger modifier hooks
                         # and is only used for capturing outputs of compressed modules
-                        with HooksMixin.disable_hooks():
+                        with (
+                            HooksMixin.disable_hooks(),
+                            compression_phase("propagation", subgraph=subgraph_index),
+                        ):
                             for batch_idx, inputs in _get_batches(
                                 activations,
                                 num_batches,

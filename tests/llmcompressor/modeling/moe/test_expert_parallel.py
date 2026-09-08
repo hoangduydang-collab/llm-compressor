@@ -13,7 +13,9 @@ import torch
 
 from llmcompressor.modeling.moe.expert_parallel import (
     ExpertParallelContext,
+    expert_hessian_contributions,
     expert_parallel_context,
+    get_expert_hessian_contributions,
     get_expert_parallel_context,
     is_expert_parallel_enabled,
     routed_dispatch,
@@ -194,7 +196,9 @@ def test_every_expert_is_reachable_by_dispatch():
     reached = set()
     for i in range(GLM_EXPERTS):
         rank = int(d.dest_rank[i])
-        reached.add(shard_experts(GLM_EXPERTS, rank, world_size)[int(d.local_expert[i])])
+        reached.add(
+            shard_experts(GLM_EXPERTS, rank, world_size)[int(d.local_expert[i])]
+        )
     assert reached == set(range(GLM_EXPERTS))
 
 
@@ -252,3 +256,44 @@ def test_context_without_dist_and_without_explicit_args_raises():
     with pytest.raises(RuntimeError, match="initialized process group"):
         with expert_parallel_context():
             pass
+
+
+@pytest.mark.parametrize("count", [0, -1, True, False, 1.5, "2"])
+def test_hessian_contribution_context_rejects_invalid_count(count):
+    with pytest.raises(ValueError, match="count must be a positive integer"):
+        with expert_hessian_contributions(count):
+            pytest.fail("invalid count entered context")
+    assert get_expert_hessian_contributions() is None
+
+
+def test_hessian_contribution_context_restores_after_exception():
+    assert get_expert_hessian_contributions() is None
+    with expert_hessian_contributions(4):
+        with pytest.raises(RuntimeError, match="expert failed"):
+            with expert_hessian_contributions(8):
+                assert get_expert_hessian_contributions() == 8
+                raise RuntimeError("expert failed")
+        assert get_expert_hessian_contributions() == 4
+    assert get_expert_hessian_contributions() is None
+
+
+def test_replicated_gptq_hook_retains_default_count_in_ep_context():
+    from llmcompressor.modifiers.gptq import GPTQModifier
+
+    module = torch.nn.Linear(5, 3, bias=False)
+    modifier = GPTQModifier()
+    counts = []
+
+    def hook(module, args, output):
+        counts.append(get_expert_hessian_contributions())
+        modifier.calibrate_module(module, args, output)
+
+    handle = module.register_forward_hook(hook)
+    try:
+        with expert_parallel_context(rank=0, world_size=4), torch.no_grad():
+            module(torch.ones(7, 5))
+            module(torch.ones(3, 7, 5))
+    finally:
+        handle.remove()
+    assert counts == [None, None]
+    assert modifier._num_samples[module].item() == 4

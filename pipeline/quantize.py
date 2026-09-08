@@ -10,6 +10,7 @@ import shutil
 import threading
 import time
 from contextlib import contextmanager
+from contextvars import copy_context
 from functools import wraps
 from pathlib import Path
 
@@ -30,15 +31,15 @@ from pipeline.vl_artifacts import ensure_vl_processor_artifacts
 _PACK_QUANTIZED_SCHEMES = {"W4AFP8", "W4A8", "W4A16", "W4A16_ASYM"}
 
 
-def _process_read_bytes() -> int:
-    """Cumulative bytes this process has read (``/proc/self/io``), 0 if unavailable."""
+def _process_read_bytes() -> int | None:
+    """Cumulative process read_bytes from /proc/self/io, or None if unavailable."""
     try:
         for line in Path("/proc/self/io").read_text().splitlines():
             if line.startswith("read_bytes:"):
                 return int(line.split(":", 1)[1])
     except OSError:
         pass
-    return 0
+    return None
 
 
 @contextmanager
@@ -67,12 +68,17 @@ def _save_heartbeat(ckpt: Path, interval: float = 60.0):
                     written += f.stat().st_size
             except OSError:
                 pass  # shard replaced mid-scan; next tick recounts
-            read_gb = (_process_read_bytes() - read0) / 1e9
+            read_now = _process_read_bytes()
+            read_progress = (
+                f"{(read_now - read0) / 1e9:.1f} GB process read_bytes"
+                if read_now is not None and read0 is not None
+                else "process read_bytes unavailable"
+            )
             rate_mb = (written - last_written) / interval / 1e6
             print(
                 f"[pipeline] save-heartbeat +{time.monotonic() - start:.0f}s: "
                 f"{shards} shards / {written / 1e9:.1f} GB written "
-                f"({rate_mb:.0f} MB/s), {read_gb:.1f} GB read back",
+                f"({rate_mb:.0f} MB/s), {read_progress}",
                 flush=True,
             )
             last_written = written
@@ -314,8 +320,16 @@ def prewarm_offload_page_cache(
         return None
 
     def _run() -> None:
+        from llmcompressor.utils.metric_logging import compression_phase
+
         started = time.monotonic()
-        with ThreadPoolExecutor(max_workers=max_threads) as pool:
+        with compression_phase(
+            "save_prewarm",
+            offload_dir=str(offload_dir),
+            files=len(files),
+            threads=max_threads,
+            overlaps_checkpoint_save=True,
+        ), ThreadPoolExecutor(max_workers=max_threads) as pool:
             total = sum(pool.map(_prewarm_read_file, files))
         elapsed = max(time.monotonic() - started, 1e-6)
         print(
@@ -331,7 +345,10 @@ def prewarm_offload_page_cache(
         f"(M3_SAVE_PREWARM=0 disables, M3_SAVE_PREWARM_THREADS sets the count)",
         flush=True,
     )
-    controller = threading.Thread(target=_run, name="save-prewarm", daemon=True)
+    context = copy_context()
+    controller = threading.Thread(
+        target=lambda: context.run(_run), name="save-prewarm", daemon=True
+    )
     controller.start()
     return controller
 
@@ -1240,7 +1257,7 @@ def assert_vma_budget_for_shared_offload(
     )
 
 
-def run_quantize(
+def _run_quantize(
     cfg: PipelineConfig,
     run_dir: Path,
     dist_ctx: DistributedContext | None = None,
@@ -1249,6 +1266,7 @@ def run_quantize(
 ) -> Path:
     """Execute the quantize stage. Returns the checkpoint directory."""
     from llmcompressor import oneshot
+    from llmcompressor.utils.metric_logging import compression_phase
     from pipeline.minimax_m3_config import (
         ensure_minimax_m3_vllm_serve_config,
         patch_minimax_m3_for_text_calibration,
@@ -1265,7 +1283,8 @@ def run_quantize(
             "[pipeline] patched DistributedDiskCache.update_offload "
             "(source-rank write + barrier; see BUGS_AND_FIXES.md)"
         )
-    model, tokenizer = _load_model_and_tokenizer(cfg)
+    with compression_phase("model_load_dispatch", model_id=cfg.model.id):
+        model, tokenizer = _load_model_and_tokenizer(cfg)
 
     # Repair the generation config HERE, immediately after load, not at save
     # time. transformers validates it strictly at the very end of
@@ -1299,7 +1318,11 @@ def run_quantize(
         )
         register_minimax_m3_awq_mappings()
         print("[pipeline] registered MiniMax-M3 AWQ mappings")
-        if os.environ.get("M3_AWQ_GATE_ALPHA_FOLD", "0").lower() in {"1", "true", "yes"}:
+        if os.environ.get("M3_AWQ_GATE_ALPHA_FOLD", "0").lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
             # r7 gate-alpha fold: the gate->down mapping is only function-
             # preserving with per-expert alpha/limit co-scaling attached
             # (pipeline/m3_gate_alpha_fold.py). linearize_moe is idempotent —
@@ -1320,8 +1343,11 @@ def run_quantize(
                 "(per-expert, per-channel scales; alpha/limit co-scaling active)"
             )
 
-    ds, partition = build_calibration_dataset_with_partition(cfg.calibration, tokenizer)
-    _persist_calibration_partition(run_dir, ds, partition, dist_ctx)
+    with compression_phase("dataset_preparation"):
+        ds, partition = build_calibration_dataset_with_partition(
+            cfg.calibration, tokenizer
+        )
+        _persist_calibration_partition(run_dir, ds, partition, dist_ctx)
     recipe = build_recipe(cfg.quantization)
 
     oneshot_kwargs: dict = dict(
@@ -1347,7 +1373,9 @@ def run_quantize(
     if cfg.calibration.pipeline:
         oneshot_kwargs["pipeline"] = cfg.calibration.pipeline
     if getattr(cfg.calibration, "sequential_weight_prefetch", False):
-        depth = int(getattr(cfg.calibration, "sequential_weight_prefetch_depth", 1) or 1)
+        depth = int(
+            getattr(cfg.calibration, "sequential_weight_prefetch_depth", 1) or 1
+        )
         oneshot_kwargs["sequential_weight_prefetch"] = True
         oneshot_kwargs["sequential_weight_prefetch_depth"] = depth
         print(
@@ -1368,10 +1396,7 @@ def run_quantize(
             flush=True,
         )
 
-    # Capture llm-compressor's internal METRIC-level logs (GPTQ error/time, etc.)
-    # to a per-run JSONL alongside the checkpoint.
-    metrics_path = evidence_paths["metrics"]
-    with metrics.capture_quant_metrics(metrics_path):
+    with compression_phase("quantization"):
         oneshot(**oneshot_kwargs)
 
     ckpt = versioning.checkpoint_dir(run_dir)
@@ -1404,6 +1429,7 @@ def run_quantize(
                 flush=True,
             )
             with (
+                compression_phase("checkpoint_save", checkpoint=str(ckpt)),
                 _tied_weights_meta_buffer_compat(model),
                 _deferred_weight_conversion_compat(model) as deferral,
                 _save_heartbeat(ckpt),
@@ -1420,6 +1446,7 @@ def run_quantize(
             # Non-source ranks hold meta tensors and mostly wait in collectives;
             # a heartbeat there would be 8x duplicate noise.
             with (
+                compression_phase("checkpoint_save", checkpoint=str(ckpt)),
                 _tied_weights_meta_buffer_compat(model),
                 _deferred_weight_conversion_compat(model),
             ):
@@ -1455,81 +1482,88 @@ def run_quantize(
         # After the barrier so a gate failure on the source rank cannot strand
         # other ranks in a collective (the r11/r12 zombie choreography).
         if dist_ctx.is_source or not dist_ctx.enabled:
-            # Default to every M3 MoE layer: r4's degenerate folds sat on
-            # layers 8/10-13, which a 3/31/59 spot-check cannot see. Layers
-            # that were not smoothed audit as scale == 1 and pass trivially.
-            gate_layers_env = os.environ.get("M3_DIAGNOSTIC_LAYERS", "")
-            if gate_layers_env.strip():
-                gate_layers = [
-                    int(part) for part in gate_layers_env.split(",") if part.strip()
-                ]
-            else:
-                # Derived from the model, not M3's sparse range. The old
-                # constant range(3, 60) left GLM-5.2/5.3 layers 60-77 (18 of
-                # 75 MoE layers) unaudited, so a fold lost only in that tail --
-                # the r2/r3/r7 failure mode -- would pass silently.
-                depth = getattr(getattr(model, "config", None), "num_hidden_layers", 60)
-                first_dense = getattr(
-                    getattr(model, "config", None), "first_k_dense_replace", 3
-                )
-                gate_layers = list(range(int(first_dense), int(depth)))
-                # Add the DSA indexer layers. Starting at first_k_dense_replace
-                # covers every MoE layer, which is right for the router and shared
-                # experts -- but GLM's indexer_types marks layers 0,1,2 as "full"
-                # (own indexer) and layer 3 as "shared" (no indexer at all), so the
-                # attention-side audit reported `absent=3` and checked no indexer on
-                # a run whose whole point was an indexer change. An audit that
-                # cannot see the component under test is not an audit.
-                indexer_types = getattr(
-                    getattr(model, "config", None), "indexer_types", None
-                ) or []
-                indexer_layers = [
-                    i for i, kind in enumerate(indexer_types) if kind == "full"
-                ]
-                added = sorted(set(indexer_layers) - set(gate_layers))
-                if added:
-                    gate_layers = sorted(set(gate_layers) | set(indexer_layers))
-                    print(
-                        f"[pipeline] smooth-fold gate: added indexer layers {added} "
-                        "so the attention-side audit is not vacuous"
+            with compression_phase("offline_verification", checkpoint=str(ckpt)):
+                # Default to every M3 MoE layer: r4's degenerate folds sat on
+                # layers 8/10-13, which a 3/31/59 spot-check cannot see. Layers
+                # that were not smoothed audit as scale == 1 and pass trivially.
+                gate_layers_env = os.environ.get("M3_DIAGNOSTIC_LAYERS", "")
+                if gate_layers_env.strip():
+                    gate_layers = [
+                        int(part) for part in gate_layers_env.split(",") if part.strip()
+                    ]
+                else:
+                    # Derived from the model, not M3's sparse range. The old
+                    # constant range(3, 60) left GLM-5.2/5.3 layers 60-77 (18 of
+                    # 75 MoE layers) unaudited, so a fold lost only in that tail --
+                    # the r2/r3/r7 failure mode -- would pass silently.
+                    depth = getattr(
+                        getattr(model, "config", None), "num_hidden_layers", 60
                     )
-            norm_gain_offset = resolve_norm_gain_offset(model)
-            print(
-                "[pipeline] norm gain form: "
-                + (
-                    "unresolved"
-                    if norm_gain_offset is None
-                    else f"output * ({norm_gain_offset:g} + weight)"
+                    first_dense = getattr(
+                        getattr(model, "config", None), "first_k_dense_replace", 3
+                    )
+                    gate_layers = list(range(int(first_dense), int(depth)))
+                    # Add the DSA indexer layers. Starting at first_k_dense_replace
+                    # covers every MoE layer, which is right for the router and shared
+                    # experts -- but GLM's indexer_types marks layers 0,1,2 as "full"
+                    # (own indexer) and layer 3 as "shared" (no indexer at all), so the
+                    # attention-side audit reported `absent=3` and checked no indexer on
+                    # a run whose whole point was an indexer change. An audit that
+                    # cannot see the component under test is not an audit.
+                    indexer_types = (
+                        getattr(getattr(model, "config", None), "indexer_types", None)
+                        or []
+                    )
+                    indexer_layers = [
+                        i for i, kind in enumerate(indexer_types) if kind == "full"
+                    ]
+                    added = sorted(set(indexer_layers) - set(gate_layers))
+                    if added:
+                        gate_layers = sorted(set(gate_layers) | set(indexer_layers))
+                        print(
+                            "[pipeline] smooth-fold gate: added indexer layers "
+                            f"{added} "
+                            "so the attention-side audit is not vacuous"
+                        )
+                norm_gain_offset = resolve_norm_gain_offset(model)
+                print(
+                    "[pipeline] norm gain form: "
+                    + (
+                        "unresolved"
+                        if norm_gain_offset is None
+                        else f"output * ({norm_gain_offset:g} + weight)"
+                    )
                 )
-            )
-            assert_smooth_fold_consistency(
-                ckpt,
-                Path(cfg.model.id),
-                gate_layers,
-                norm_gain_offset=norm_gain_offset,
-            )
-            assert_quant_checkpoint_verified(
-                ckpt,
-                Path(cfg.model.id),
-                fp8_dynamic_targets=list(cfg.quantization.fp8_dynamic_targets or []),
-            )
-            # Storage-vs-scheme consistency: no ignore entry may hide a module
-            # that IS quantized. Loaders check ignore before targets, so a
-            # shadowed module serves as unquantized -- its quantized bytes cast
-            # into unscaled parameters, garbage output, exit code 0 (M3 r8 ABI
-            # smoke, 2026-07-24). Runs LAST because it reads the final config,
-            # after _persist_ignore_to_config and any serve-config patching.
-            # Enforced unconditionally, including on partial-scope smokes. An
-            # earlier revision exempted them, reasoning that their
-            # layer-restriction pattern covers too many unquantized modules to
-            # enumerate. That exemption was unnecessary AND weakening: when
-            # resolution overflows, _persist_ignore_to_config DROPS the pattern
-            # and warns, so no shadowing survives and this gate passes anyway.
-            # The only way it fires is a pattern that genuinely hides a quantized
-            # module -- which is never acceptable, smoke or not.
-            from pipeline.serve_ignore import assert_no_ignore_shadowing
+                assert_smooth_fold_consistency(
+                    ckpt,
+                    Path(cfg.model.id),
+                    gate_layers,
+                    norm_gain_offset=norm_gain_offset,
+                )
+                assert_quant_checkpoint_verified(
+                    ckpt,
+                    Path(cfg.model.id),
+                    fp8_dynamic_targets=list(
+                        cfg.quantization.fp8_dynamic_targets or []
+                    ),
+                )
+                # Storage-vs-scheme consistency: no ignore entry may hide a module
+                # that IS quantized. Loaders check ignore before targets, so a
+                # shadowed module serves as unquantized -- its quantized bytes cast
+                # into unscaled parameters, garbage output, exit code 0 (M3 r8 ABI
+                # smoke, 2026-07-24). Runs LAST because it reads the final config,
+                # after _persist_ignore_to_config and any serve-config patching.
+                # Enforced unconditionally, including on partial-scope smokes. An
+                # earlier revision exempted them, reasoning that their
+                # layer-restriction pattern covers too many unquantized modules to
+                # enumerate. That exemption was unnecessary AND weakening: when
+                # resolution overflows, _persist_ignore_to_config DROPS the pattern
+                # and warns, so no shadowing survives and this gate passes anyway.
+                # The only way it fires is a pattern that genuinely hides a quantized
+                # module -- which is never acceptable, smoke or not.
+                from pipeline.serve_ignore import assert_no_ignore_shadowing
 
-            assert_no_ignore_shadowing(ckpt)
+                assert_no_ignore_shadowing(ckpt)
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.
@@ -1561,10 +1595,31 @@ def run_quantize(
             print(f"[warn] sample generation failed: {exc}")
         print("=======================================\n")
 
-    # Summarize the captured internal metrics into metadata.json.
+    return ckpt
+
+
+def run_quantize(
+    cfg: PipelineConfig,
+    run_dir: Path,
+    dist_ctx: DistributedContext | None = None,
+    *,
+    save_checkpoint: bool = True,
+) -> Path:
+    """Capture phase evidence from model loading through checkpoint verification."""
+    from llmcompressor.utils.metric_logging import compression_phase
+
+    dist_ctx = dist_ctx or DistributedContext()
+    metrics_path = _evidence_paths(run_dir, dist_ctx)["metrics"]
+    with metrics.capture_quant_metrics(metrics_path):
+        with compression_phase("quantize_run", model_id=cfg.model.id):
+            ckpt = _run_quantize(
+                cfg, run_dir, dist_ctx, save_checkpoint=save_checkpoint
+            )
+    # Close the capture before summarizing so the enclosing end is present.
+    # Failed work still leaves paired failure records and any incomplete spans
+    # in the raw JSONL for postmortem inspection.
     summary = metrics.summarize_quant_metrics(metrics_path)
     if dist_ctx.is_source:
         versioning.update_metadata(run_dir, {"quant_metrics": summary})
     print(f"[pipeline] quant metrics: {summary}")
-
     return ckpt

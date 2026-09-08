@@ -52,6 +52,11 @@ Last reviewed: 2026-07-31.
      *(done 2026-07-30, wk 07-27–08-02)*
    - [ ] **1d — Distributed save/export**: improve the save/export portion of
      distributed quantization.
+   - [ ] **1e — GLM-5.3 expert-parallel GPTQ**: existing EP adapter integrated
+     with owner-local GPTQ and phase timing; CPU/Gloo numerical, persistence and
+     save/reload tests pass. NCCL, real-width OOM and full-run quality gates remain
+     open. [Implementation evidence](docs/glm53-ep-gptq-implementation.md).
+     *(implementation progress, wk 09-07–09-13)*
 
 2. **Complete the evaluation pipeline** — a pipeline to compare our **in-house
    quantized model** against **other existing quantized models** and the
@@ -176,6 +181,11 @@ Last reviewed: 2026-07-31.
      the serve-ready `gptq-base` arm. *(done 2026-07-26, wk 07-20–07-26)*
 
 ## Weekly log
+
+### wk 2026-09-07 – 09-13
+
+- **1e** — GLM-5.3 EP GPTQ integration passes CPU/Gloo correctness and packed
+  save/reload checks; phase evidence added. GPU/full-run qualification pending.
 
 One line per achievement, newest week first. Details, numbers, and evidence live
 in the referenced sub-tasks above (and the per-goal field notes under

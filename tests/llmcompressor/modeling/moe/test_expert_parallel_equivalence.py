@@ -1,5 +1,4 @@
-"""Expert-parallel calibration must be numerically exact, and must not starve
-any expert of data.
+"""Expert-parallel calibration preserves exact coverage and tolerant numerical parity.
 
 Two properties, and the second is the one that bites. Sharding experts across
 ranks is easy to get subtly wrong: calibration is ALREADY data-parallel, so a
@@ -13,11 +12,9 @@ The reference is the REAL ``LinearExperts2D.forward`` on a real linearized GLM
 MoE layer, not a transcription of it, so the comparison cannot drift away from
 the implementation it is supposed to match.
 
-The world is simulated with threads in lockstep rather than a real process
-group: the completeness property requires holding every rank's per-expert input
-records at once and diffing them against the single-rank reference, which
-separate processes cannot do without shipping the very state this design avoids
-shipping.
+Thread simulations allow direct inspection of every rank's input records.
+They complement the real multiprocess integration tests; collective ordering,
+offload persistence and save/reload require separate distributed validation.
 """
 
 import threading
@@ -33,10 +30,12 @@ from llmcompressor.modeling.moe.expert_parallel import (
     Collectives,
     ExpertParallelContext,
     expert_parallel_forward,
+    get_expert_hessian_contributions,
     shard_experts,
 )
 from llmcompressor.modeling.moe.linear_experts import LinearExperts2D
 from llmcompressor.modeling.moe.linearize import linearize_moe
+from llmcompressor.modifiers.gptq import GPTQModifier
 
 N_EXPERTS = 8
 TOP_K = 2
@@ -87,8 +86,10 @@ class ThreadCollectives(Collectives):
 # --------------------------------------------------------------------------
 
 
-def build_experts():
-    """A real linearized LinearExperts2D, taken from a tiny GLM MoE layer."""
+def build_model(num_hidden_layers=4, first_k_dense_replace=3, n_experts=None):
+    """Build the shared real GLM fixture, retaining its complete model lifecycle."""
+    if n_experts is None:
+        n_experts = N_EXPERTS
     from transformers.models.glm_moe_dsa.configuration_glm_moe_dsa import (
         GlmMoeDsaConfig,
     )
@@ -97,9 +98,11 @@ def build_experts():
     )
 
     cfg = GlmMoeDsaConfig(
-        hidden_size=HIDDEN, num_hidden_layers=4, n_routed_experts=N_EXPERTS,
+        hidden_size=HIDDEN, num_hidden_layers=num_hidden_layers,
+        n_routed_experts=n_experts,
         num_experts_per_tok=TOP_K, moe_intermediate_size=16,
-        first_k_dense_replace=3, n_shared_experts=1, num_attention_heads=4,
+        first_k_dense_replace=first_k_dense_replace, n_shared_experts=1,
+        num_attention_heads=4,
         num_key_value_heads=4, intermediate_size=64, vocab_size=128,
         kv_lora_rank=16, q_lora_rank=16, qk_rope_head_dim=8, v_head_dim=8,
         qk_nope_head_dim=8, index_topk=8, max_position_embeddings=32,
@@ -110,6 +113,12 @@ def build_experts():
     model.eval()
     with moe_calibration_context():
         linearize_moe(model)
+    return model
+
+
+def build_experts():
+    """A real linearized LinearExperts2D, taken from a tiny GLM MoE layer."""
+    model = build_model()
     experts = model.model.layers[3].mlp.experts
     assert isinstance(experts, LinearExperts2D), type(experts)
     assert experts.num_experts == N_EXPERTS
@@ -178,6 +187,7 @@ def run_expert_parallel(experts, hidden, index, weights, world_size,
                 ThreadCollectives(world, rank),
                 calibrate_all_experts,
             )
+            assert get_expert_hessian_contributions() is None
         except Exception as exc:  # surfaced by the caller, not swallowed
             errors[rank] = exc
             world.barrier.abort()
@@ -345,3 +355,71 @@ def test_no_rank_evaluates_an_expert_it_does_not_own(world_size):
                 assert thread_of[a] == thread_of[b]
             else:
                 assert thread_of[a] != thread_of[b]
+
+
+@pytest.mark.parametrize("world_size", [2, 4, 8])
+@torch.no_grad()
+def test_gptq_hooks_preserve_gathered_hessians_and_counts(world_size):
+    """Real GPTQ hooks see all gate/up/down inputs and rank contributions."""
+    experts = build_experts()
+    hidden, index, weights = routing(tokens=31)
+    modules = {
+        name: module for name, module in experts.named_modules()
+        if isinstance(module, torch.nn.Linear)
+    }
+    assert len(modules) == N_EXPERTS * 3
+
+    def collect(run):
+        modifier = GPTQModifier()
+        inputs = {name: [] for name in modules}
+        contributions = {name: [] for name in modules}
+        handles = []
+
+        def record(name):
+            def hook(module, args, output):
+                inputs[name].append(args[0].detach().clone())
+                contributions[name].append(get_expert_hessian_contributions())
+                modifier.calibrate_module(module, args, output)
+            return hook
+
+        for name, module in modules.items():
+            handles.append(module.register_forward_hook(record(name)))
+        try:
+            run()
+        finally:
+            for handle in handles:
+                handle.remove()
+        return modifier, inputs, contributions
+
+    def reference_forward():
+        for h, i, w in zip(
+            torch.chunk(hidden, world_size),
+            torch.chunk(index, world_size),
+            torch.chunk(weights, world_size),
+        ):
+            experts(h, i, w)
+
+    with moe_calibration_context():
+        reference, reference_inputs, reference_counts = collect(reference_forward)
+        gathered, gathered_inputs, gathered_counts = collect(
+            lambda: run_expert_parallel(experts, hidden, index, weights, world_size)
+        )
+
+    for name, module in modules.items():
+        assert reference_counts[name] == [None] * world_size
+        assert gathered_counts[name] == [world_size]
+        # Gate/up receive exact original rows; down receives computed activations.
+        tolerance = dict(rtol=1e-5, atol=1e-6) if "down_proj" in name else dict(
+            rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            torch.cat(gathered_inputs[name]), torch.cat(reference_inputs[name]),
+            **tolerance,
+        )
+        ref_n = reference._num_samples[module]
+        ep_n = gathered._num_samples[module]
+        assert ref_n.item() == ep_n.item() == world_size
+        ref_h = reference._hessians[module]
+        ep_h = gathered._hessians[module]
+        torch.testing.assert_close(ep_h, ref_h, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(ep_h / ep_n, ref_h / ref_n, rtol=1e-5, atol=1e-6)

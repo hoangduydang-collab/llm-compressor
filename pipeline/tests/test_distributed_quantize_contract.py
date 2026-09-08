@@ -151,6 +151,11 @@ def test_single_process_evidence_only_preserves_legacy_sampler_kwargs(
     fake_llmcompressor = types.ModuleType("llmcompressor")
     fake_llmcompressor.oneshot = lambda **kwargs: calls.append(kwargs)
     monkeypatch.setitem(sys.modules, "llmcompressor", fake_llmcompressor)
+    fake_phase_logging = types.ModuleType("llmcompressor.utils.metric_logging")
+    fake_phase_logging.compression_phase = lambda *a, **k: nullcontext()
+    monkeypatch.setitem(
+        sys.modules, "llmcompressor.utils.metric_logging", fake_phase_logging
+    )
 
     fake_m3 = types.ModuleType("pipeline.minimax_m3_config")
     fake_m3.patch_minimax_m3_for_text_calibration = lambda model: False
@@ -201,6 +206,11 @@ def test_distributed_evidence_only_uses_rank_local_sampler_kwargs(
     fake_llmcompressor = types.ModuleType("llmcompressor")
     fake_llmcompressor.oneshot = lambda **kwargs: calls.append(kwargs)
     monkeypatch.setitem(sys.modules, "llmcompressor", fake_llmcompressor)
+    fake_phase_logging = types.ModuleType("llmcompressor.utils.metric_logging")
+    fake_phase_logging.compression_phase = lambda *a, **k: nullcontext()
+    monkeypatch.setitem(
+        sys.modules, "llmcompressor.utils.metric_logging", fake_phase_logging
+    )
     fake_m3 = types.ModuleType("pipeline.minimax_m3_config")
     fake_m3.patch_minimax_m3_for_text_calibration = lambda model: False
     fake_m3.register_minimax_m3_awq_mappings = lambda: None

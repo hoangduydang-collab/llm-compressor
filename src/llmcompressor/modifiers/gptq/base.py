@@ -2,6 +2,7 @@ import contextlib
 
 import torch
 from compressed_tensors.distributed import greedy_bin_packing, wait_for_comms
+from compressed_tensors.offload.cache.dist_disk import DistributedDiskCache
 from compressed_tensors.offload.dist_utils import as_broadcastable, is_distributed
 from compressed_tensors.offload.dist_utils import is_source_process as is_src
 from compressed_tensors.quantization import (
@@ -23,7 +24,20 @@ from pydantic import PrivateAttr
 from torch import distributed as dist
 
 from llmcompressor.core import Event, State
+from llmcompressor.modeling.moe.expert_parallel import (
+    get_expert_hessian_contributions,
+    is_expert_parallel_enabled,
+)
 from llmcompressor.modifiers import Modifier
+from llmcompressor.modifiers.gptq.distributed import (
+    agree_ep_manifest,
+    gather_ep_records,
+    parameter_storage,
+    publish_gptq_result,
+    routed_expert_owners,
+    solve_rounds,
+    validate_hessian_coverage,
+)
 from llmcompressor.modifiers.gptq.gptq_quantize import (
     accumulate_hessian,
     make_empty_hessian,
@@ -36,7 +50,7 @@ from llmcompressor.modifiers.quantization.calibration import (
 from llmcompressor.modifiers.quantization.quantization import QuantizationMixin
 from llmcompressor.observers import ACTIVATION_OBS
 from llmcompressor.sentinel import Sentinel
-from llmcompressor.utils.metric_logging import CompressionLogger
+from llmcompressor.utils.metric_logging import CompressionLogger, compression_phase
 
 __all__ = ["GPTQModifier"]
 
@@ -159,6 +173,9 @@ class GPTQModifier(Modifier, QuantizationMixin):
     dampening_frac: float | None = 0.01
     actorder: ActivationOrdering | Sentinel | None = Sentinel("static")
     offload_hessians: bool = False
+    expert_parallel: bool = False
+    _ep_owners: dict = PrivateAttr(default_factory=dict)
+    _ep_prepared: bool = PrivateAttr(default=False)
 
     # private variables
     _module_names: dict[torch.nn.Module, str] = PrivateAttr(default_factory=dict)
@@ -240,7 +257,64 @@ class GPTQModifier(Modifier, QuantizationMixin):
 
         return True
 
+    def prepare_expert_parallel(self, model):
+        """Validate the common model before the sequential pipeline enables EP."""
+        if not (dist.is_available() and dist.is_initialized()):
+            raise ValueError("expert_parallel requires an initialized process group")
+        errors, manifest = [], []
+        try:
+            owners = routed_expert_owners(model, dist.get_world_size())
+        except (ValueError, TypeError, AttributeError) as exc:
+            owners = {}
+            errors.append(f"ownership: {type(exc).__name__}: {exc}")
+        if not owners:
+            errors.append("expert_parallel requires linearized routed experts")
+        for module, name in sorted(
+            self._module_names.items(), key=lambda item: item[1]
+        ):
+            scheme = getattr(module, "quantization_scheme", None)
+            if scheme is None or scheme.weights is None:
+                continue
+            cache, weight = parameter_storage(module, "weight")
+            if not isinstance(weight, torch.Tensor):
+                errors.append(f"{name}: missing tensor weight metadata")
+                continue
+            if isinstance(cache, DistributedDiskCache) and "update_offload" not in vars(
+                type(cache)
+            ):
+                errors.append(f"{name}: distributed-safe disk update patch is required")
+            if module in owners:
+                if not isinstance(module, torch.nn.Linear):
+                    errors.append(f"{name}: EP requires Linear expert targets")
+                for base in ("input_activations", "output_activations"):
+                    args = getattr(scheme, base, None)
+                    if args is not None and (
+                        not args.dynamic or args.observer is not None
+                    ):
+                        errors.append(
+                            f"{name}: EP requires observer-free dynamic {base}"
+                        )
+                if scheme.weights.strategy == QuantizationStrategy.TENSOR_GROUP:
+                    errors.append(
+                        f"{name}: EP does not support fused global weight statistics"
+                    )
+            manifest.append(
+                (
+                    name,
+                    owners.get(module),
+                    tuple(weight.shape),
+                    str(weight.dtype),
+                    scheme.model_dump(mode="json"),
+                    type(cache).__name__,
+                )
+            )
+        agree_ep_manifest({"modules": manifest, "errors": errors})
+        self._ep_owners = owners
+        self._ep_prepared = True
+
     def on_calibration_start(self, state: State, event: Event, **kwargs):
+        if self.expert_parallel and not self._ep_prepared:
+            raise ValueError("expert_parallel GPTQ requires the sequential pipeline")
         # register quantization calibration hooks
         # assume quantization has been initialized by this modifier or one before it
         QuantizationMixin.start_calibration(self, state.model)
@@ -268,6 +342,31 @@ class GPTQModifier(Modifier, QuantizationMixin):
         self, state: State, event: Event, modules: list[torch.nn.Module], **kwargs
     ):
         modules = [module for module in modules if is_module_quantized(module)]
+        if self.expert_parallel and is_expert_parallel_enabled():
+            targets = sorted(
+                (
+                    m
+                    for m in modules
+                    if m in self._module_names
+                    and getattr_chain(m, "quantization_scheme.weights", None)
+                    is not None
+                ),
+                key=self._module_names.__getitem__,
+            )
+            validate_hessian_coverage(
+                targets,
+                self._module_names,
+                self._ep_owners,
+                self._hessians,
+                self._num_samples,
+            )
+            replicated = [m for m in targets if m not in self._ep_owners]
+            local = [m for m in targets if self._ep_owners.get(m) == dist.get_rank()]
+            observe(replicated + local, base_name="weight")
+            self.sync_obs_act_stats(replicated)
+            update_qparams(replicated, ACTIVATION_OBS, only_update_onload=not is_src())
+            self._compress_expert_parallel(targets)
+            return
         observe(modules, base_name="weight")
         self.sync_obs_act_stats(modules)
         update_qparams(modules, ACTIVATION_OBS, only_update_onload=not is_src())
@@ -314,6 +413,7 @@ class GPTQModifier(Modifier, QuantizationMixin):
                 module,
                 self._hessians[module],
                 self._num_samples[module],
+                num_added=get_expert_hessian_contributions(),
             )
 
     def compress_modules(self):
@@ -346,28 +446,72 @@ class GPTQModifier(Modifier, QuantizationMixin):
 
     def compress_module_list(self, module_list):
         for module in module_list:
-            name = self._module_names[module]
-            num_samples = self._num_samples[module]
-            quant_args = getattr_chain(module, "quantization_scheme.weights")
-
-            logger.info(f"Quantizing {name} using {int(num_samples)} samples")
-            with (
-                torch.no_grad(),
-                align_module_device(module),
-                self._maybe_onload_hessian(module),
-                CompressionLogger(module) as comp_logger,
-            ):
-                loss, q_param_dict = quantize_weight(
-                    module=module,
-                    quant_args=quant_args,
-                    hessian=self._hessians.pop(module) / self._num_samples.pop(module),
-                    blocksize=self.block_size,
-                    percdamp=self.dampening_frac,
-                )
-                comp_logger.set_results(name="GPTQ", loss=loss)
-
-            for attr, val in q_param_dict.items():
+            for attr, val in self._solve_module(module).items():
                 update_offload_parameter(module, attr, val)
+
+    def _solve_module(self, module):
+        name = self._module_names[module]
+        num_samples = self._num_samples[module]
+        quant_args = getattr_chain(module, "quantization_scheme.weights")
+
+        logger.info(f"Quantizing {name} using {int(num_samples)} samples")
+        with (
+            torch.no_grad(),
+            align_module_device(module),
+            self._maybe_onload_hessian(module),
+            CompressionLogger(module) as comp_logger,
+        ):
+            loss, q_param_dict = quantize_weight(
+                module=module,
+                quant_args=quant_args,
+                hessian=self._hessians.pop(module) / self._num_samples.pop(module),
+                blocksize=self.block_size,
+                percdamp=self.dampening_frac,
+            )
+            comp_logger.set_results(name="GPTQ", loss=loss)
+
+        return q_param_dict
+
+    def _compress_expert_parallel(self, modules):
+        validate_hessian_coverage(
+            modules,
+            self._module_names,
+            self._ep_owners,
+            self._hessians,
+            self._num_samples,
+        )
+        world_size, rank = dist.get_world_size(), dist.get_rank()
+        replicated = [m for m in modules if m not in self._ep_owners]
+        module_list, queues, owners = greedy_bin_packing(
+            replicated, world_size, item_weight_fn=lambda m: self._hessians[m].shape[0]
+        )
+        with compression_phase("replicated_hessian_reduction"):
+            self._reduce_hessian_to_target_rank(module_list, owners)
+        for module in modules:
+            if module in self._ep_owners:
+                queues[self._ep_owners[module]].append(module)
+        for round_modules in solve_rounds(queues):
+            result, failure = None, None
+            try:
+                for owner, module in round_modules:
+                    if owner == rank:
+                        with compression_phase(
+                            "local_solve", module=self._module_names[module]
+                        ):
+                            result = self._solve_module(module)
+            except Exception as exc:
+                failure = f"rank {rank}: {type(exc).__name__}: {exc}"
+            failures = gather_ep_records(failure)
+            if any(failures):
+                raise RuntimeError(f"EP solve failed before publication: {failures}")
+            for owner, module in round_modules:
+                with compression_phase(
+                    "result_publication", module=self._module_names[module]
+                ):
+                    publish_gptq_result(
+                        module, owner, result if owner == rank else None
+                    )
+            del result
 
     def _reduce_hessian_to_target_rank(self, module_list, module_to_rank):
         rank = dist.get_rank()

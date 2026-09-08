@@ -80,6 +80,11 @@ def modify_save_pretrained(model: PreTrainedModel):
             # tied-parameter bookkeeping consistent.
             _retie_offloaded_weights(model)
 
+            # Packed entries in OffloadCache may be plain tensors. Accelerate's
+            # restoration uses these as templates, but nn.Module requires its
+            # parameter slots to contain Parameters. Normalize via the existing
+            # CT helper in place, preserving storage and disk-index identities.
+            _normalize_offloaded_parameter_types(model)
             # convert to accelerate offloaded for optimal saving with transformers
             to_accelerate(model)
 
@@ -111,6 +116,23 @@ def modify_save_pretrained(model: PreTrainedModel):
     # wrap save_pretrained if not already
     if not getattr(model.save_pretrained, "_overridden", False):
         model.save_pretrained = save_pretrained_compressed(model.save_pretrained)
+
+
+def _normalize_offloaded_parameter_types(model):
+    from compressed_tensors.offload import disable_onloading
+    from compressed_tensors.offload.cache.base import OffloadCache
+    from compressed_tensors.offload.utils import to_tensor
+
+    with disable_onloading():
+        for module in model.modules():
+            if not isinstance(module._parameters, OffloadCache):
+                continue
+            for value in module._parameters.values():
+                if value is not None and not isinstance(value, torch.nn.Parameter):
+                    to_tensor(
+                        value,
+                        torch.nn.Parameter(value, requires_grad=value.requires_grad),
+                    )
 
 
 def _retie_offloaded_weights(model: PreTrainedModel):

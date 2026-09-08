@@ -49,6 +49,8 @@ __all__ = [
     "Collectives",
     "DistCollectives",
     "ExpertParallelContext",
+    "expert_hessian_contributions",
+    "get_expert_hessian_contributions",
     "expert_parallel_context",
     "expert_parallel_forward",
     "get_expert_parallel_context",
@@ -90,6 +92,24 @@ class ExpertParallelContext:
 # threads without their contexts clobbering each other, and it prevents an
 # unrelated worker thread from inheriting a calibration context it never entered.
 _STATE = threading.local()
+
+
+def get_expert_hessian_contributions() -> int | None:
+    """Rank contributions represented by the current owned expert call, if any."""
+    return getattr(_STATE, "hessian_contributions", None)
+
+
+@contextlib.contextmanager
+def expert_hessian_contributions(count: int):
+    """Preserve gathered-input contribution counts only within an expert call."""
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise ValueError("count must be a positive integer")
+    previous = get_expert_hessian_contributions()
+    _STATE.hessian_contributions = count
+    try:
+        yield
+    finally:
+        _STATE.hessian_contributions = previous
 
 
 def get_expert_parallel_context() -> ExpertParallelContext | None:
@@ -256,13 +276,9 @@ def routed_dispatch(
 class Collectives:
     """The two collectives the sharded forward needs.
 
-    Injectable so the equivalence tests can simulate a whole world inside one
-    CPU process. That is not a convenience: the property under test is that
-    every expert's Hessian covers ALL ranks' data, and checking it requires
-    holding every rank's state at once and comparing against a single-rank
-    reference. A real multi-process gloo test cannot make that comparison
-    without shipping Hessians between processes, which is the very thing this
-    design removes.
+    Injectable so CPU tests can inspect every rank's input coverage together.
+    These simulations complement real multiprocess tests of collective ordering
+    and persistence; they do not establish those distributed guarantees.
     """
 
     def all_gather(self, tensor: torch.Tensor) -> torch.Tensor:
@@ -320,10 +336,9 @@ def expert_parallel_forward(
 ) -> torch.Tensor:
     """``LinearExperts2D.forward``, with the expert loop sharded across ranks.
 
-    Mirrors the unsharded forward's arithmetic exactly -- one-hot mask,
-    ``torch.where`` token selection, router weighting, ``index_add_``
-    accumulation -- so the only difference is WHICH experts this rank evaluates
-    and over WHOSE tokens.
+    Reuses the unsharded forward's one-hot mask, ``torch.where`` token selection,
+    router weighting and ``index_add_`` accumulation. Gathering and reducing can
+    change floating-point operation order, so numerical comparisons use tolerances.
 
     Order of operations, and why:
 
@@ -382,10 +397,14 @@ def expert_parallel_forward(
         top_k_pos, token_indices = torch.where(expert_mask[expert_index])
 
         expert = experts[expert_index]
-        if calibrate_all_experts:
-            expert_output = expert(gathered_states)[token_indices]
-        else:
-            expert_output = expert(gathered_states[token_indices])
+        # The existing forward calls every expert once per rank per step,
+        # including empty routed inputs. Gathering combines those contributions;
+        # a future dispatcher that skips empty calls needs a different count.
+        with expert_hessian_contributions(context.world_size):
+            if calibrate_all_experts:
+                expert_output = expert(gathered_states)[token_indices]
+            else:
+                expert_output = expert(gathered_states[token_indices])
 
         expert_weights = gathered_weights[token_indices, top_k_pos, None]
         weighted_output = expert_output * expert_weights

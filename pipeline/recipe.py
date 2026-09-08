@@ -75,6 +75,8 @@ def build_recipe(quant: QuantizationConfig) -> list:
     from llmcompressor.modifiers.transform.smoothquant import SmoothQuantModifier
 
     method = quant.method
+    if quant.gptq_expert_parallel and method != "gptq":
+        raise ValueError("gptq_expert_parallel currently requires method=gptq")
     scheme = quant.scheme
     ignore = list(quant.ignore)
 
@@ -101,6 +103,8 @@ def build_recipe(quant: QuantizationConfig) -> list:
             kwargs["dampening_frac"] = quant.gptq_dampening_frac
         if quant.gptq_offload_hessians:
             kwargs["offload_hessians"] = True
+        if quant.gptq_expert_parallel:
+            kwargs["expert_parallel"] = True
         return GPTQModifier(**kwargs)
 
     def awq_then_quant() -> list:

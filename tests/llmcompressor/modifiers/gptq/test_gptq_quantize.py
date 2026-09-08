@@ -8,6 +8,7 @@ from compressed_tensors.quantization import (
 
 from llmcompressor.modifiers.gptq import GPTQModifier
 from llmcompressor.modifiers.gptq.gptq_quantize import (
+    accumulate_hessian,
     make_empty_hessian,
     quantize_weight,
 )
@@ -214,3 +215,50 @@ def test_gptq_nvfp4_saves_fused_global_scale(tmp_path):
 
     # Verify QKV and gate/up are NOT fused together
     assert abs(q_gs - gate_gs) > 1e-6, f"QKV and gate/up incorrectly fused: {q_gs}"
+
+
+@torch.no_grad()
+def test_gathered_hessian_preserves_rank_contributions():
+    module = torch.nn.Linear(5, 3, bias=False)
+    generator = torch.Generator().manual_seed(23)
+    shards = [torch.randn(n, 5, generator=generator) for n in (2, 5, 3)]
+    reference_h = make_empty_hessian(module)
+    reference_n = torch.zeros(())
+    for shard in shards:
+        reference_h, reference_n = accumulate_hessian(
+            shard, module, reference_h, reference_n
+        )
+    gathered_h, gathered_n = accumulate_hessian(
+        torch.cat(shards), module, make_empty_hessian(module), torch.zeros(()),
+        num_added=len(shards),
+    )
+    assert gathered_n.item() == reference_n.item() == 3
+    torch.testing.assert_close(gathered_h, reference_h, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(
+        gathered_h / gathered_n, reference_h / reference_n, rtol=1e-5, atol=1e-6
+    )
+
+
+@pytest.mark.parametrize("shape, expected_count", [((7, 5), 1), ((3, 7, 5), 3)])
+@torch.no_grad()
+def test_accumulate_hessian_retains_default_contribution_count(shape, expected_count):
+    module = torch.nn.Linear(5, 3, bias=False)
+    inp = torch.randn(shape, generator=torch.Generator().manual_seed(23))
+    hessian, count = accumulate_hessian(
+        inp, module, make_empty_hessian(module), torch.zeros(())
+    )
+    assert count.item() == expected_count
+    rows = inp.reshape(-1, 5)
+    torch.testing.assert_close(hessian, 2 * rows.t().matmul(rows))
+
+
+@pytest.mark.parametrize("num_added", [0, -1, True, False, 1.5, "2"])
+def test_accumulate_hessian_rejects_invalid_contribution_count(num_added):
+    module = torch.nn.Linear(5, 3, bias=False)
+    hessian, count = make_empty_hessian(module), torch.zeros(())
+    with pytest.raises(ValueError, match="num_added must be a positive integer"):
+        accumulate_hessian(
+            torch.ones(2, 5), module, hessian, count, num_added=num_added
+        )
+    assert not hessian.any()
+    assert count.item() == 0

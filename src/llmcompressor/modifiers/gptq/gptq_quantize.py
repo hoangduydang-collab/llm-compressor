@@ -30,12 +30,17 @@ def accumulate_hessian(
     module: torch.nn.Module,
     H: torch.Tensor | None,
     num_samples: torch.Tensor,
+    *,
+    num_added: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     inp = inp.to(device=H.device)
     if len(inp.shape) == 2:
         inp = inp.unsqueeze(0)
 
-    num_added = inp.shape[0]
+    if num_added is None:
+        num_added = inp.shape[0]
+    elif isinstance(num_added, bool) or not isinstance(num_added, int) or num_added < 1:
+        raise ValueError("num_added must be a positive integer")
 
     match module:
         case torch.nn.Linear() | transformers.Conv1D():

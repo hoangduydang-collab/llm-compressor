@@ -30,6 +30,8 @@ or a finished sub-task — evidence pointers stay.
 
 Last reviewed: 2026-07-31.
 
+Current GLM-5.3 planner/executor brief: [three quantization objectives](GLM53_QUANTIZATION_OBJECTIVES.md).
+
 ## Long-term goals
 
 1. **Fast parallel quantization** — speed up quantization with parallelization for

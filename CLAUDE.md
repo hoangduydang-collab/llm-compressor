@@ -8,6 +8,12 @@ the north star). In short: (1) fast parallel AWQ/GPTQ quantization (4–8h targe
 unquantized baseline; (3) a working AWQ model; (4) generalize to any quant method;
 (5) generalize the ABI / pre-quant static gates to any model family.
 
+## GLM-5.3 planner/executor starting point
+
+For GLM-5.3 work, read [GLM53_QUANTIZATION_OBJECTIVES.md](GLM53_QUANTIZATION_OBJECTIVES.md)
+first. It is the shared brief for EP GPTQ, serving-compatible W4AFP8 output,
+and shared-storage phase costs; it links the current implementation and evidence.
+
 ## Prime directive (applies to everything)
 
 **Never waste effort on something likely already done by others. Always prioritize

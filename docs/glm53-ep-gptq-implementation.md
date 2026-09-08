@@ -1,6 +1,7 @@
 # GLM-5.3 expert-parallel GPTQ implementation
 
 Status: CPU and bounded two-T4 NCCL validation passed; representative H100 and full-run qualification pending.
+Shared context: [three objectives and executor brief](../GLM53_QUANTIZATION_OBJECTIVES.md).
 Owner: planner. The remote execution agent owns representative/full GPU runs.
 
 ## Enablement and supported scope

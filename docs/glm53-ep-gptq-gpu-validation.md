@@ -81,3 +81,9 @@ The [raw pytest log](../results/glm53-ep-gptq/20260909-local-nccl-retry4/pytest.
 [environment](../results/glm53-ep-gptq/20260909-local-nccl-retry4/environment.json),
 and [per-rank markers](../results/glm53-ep-gptq/20260909-local-nccl-retry4/artifacts/)
 are retained. All task GPU allocations ended; no queued retry remains.
+
+## Next local gate
+
+The owner authorized queuing the same tiny suite on two full H100s. See the
+[H100 queue contract](glm53-ep-gptq-h100-queue.md) and the
+[shared three-objective brief](../GLM53_QUANTIZATION_OBJECTIVES.md).

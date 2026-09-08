@@ -1,0 +1,295 @@
+...F..........                                                           [100%]
+=================================== FAILURES ===================================
+_______ test_real_glm_gloo_disk_oneshot_collective_save_reload[fp8-rest] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-e1129930/pytest-12/test_real_glm_gloo_disk_onesho0')
+dynamic = True
+
+    @pytest.mark.parametrize("dynamic", [False, True], ids=["weight-only", "fp8-rest"])
+    def test_real_glm_gloo_disk_oneshot_collective_save_reload(tmp_path, dynamic):
+        # Exercise the same disk setup as the GPU gate even on CPU-only hosts.
+>       _launch(_disk_lifecycle_worker, tmp_path, dynamic)
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py:372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:52: in _launch
+    if context.join(timeout=1):
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <torch.multiprocessing.spawn.ProcessContext object at 0x7b0272328170>
+timeout = 1, grace_period = None
+
+    def join(self, timeout: float | None = None, grace_period: float | None = None):
+        r"""Join one or more processes within spawn context.
+    
+        Attempt to join one or more processes in this spawn context.
+        If one of them exited with a non-zero exit status, this function
+        kills the remaining processes (optionally with a grace period)
+        and raises an exception with the cause of the first process exiting.
+    
+        Returns ``True`` if all processes have been joined successfully,
+        ``False`` if there are more processes that need to be joined.
+    
+        Args:
+            timeout (float): Wait this long (in seconds) before giving up on waiting.
+            grace_period (float): When any processes fail, wait this long (in seconds)
+                for others to shutdown gracefully before terminating them. If they
+                still don't exit, wait another grace period before killing them.
+        """
+        # Ensure this function can be called even when we're done.
+        if len(self.sentinels) == 0:
+            return True
+    
+        # Wait for any process to fail or all of them to succeed.
+        ready = multiprocessing.connection.wait(
+            self.sentinels.keys(),
+            timeout=timeout,
+        )
+    
+        error_index = None
+        for sentinel in ready:
+            index = self.sentinels.pop(sentinel)
+            process = self.processes[index]
+            process.join()
+            if process.exitcode != 0:
+                error_index = index
+                break
+    
+        # Return if there was no error.
+        if error_index is None:
+            # Return whether or not all processes have been joined.
+            return len(self.sentinels) == 0
+        # An error occurred. Clean-up all processes before returning.
+        # First, allow a grace period for processes to shutdown themselves.
+        if grace_period is not None:
+            self._join_procs_with_timeout(grace_period)
+        # Then, terminate processes that are still alive. Try SIGTERM first.
+        for process in self.processes:
+            if process.is_alive():
+                log.warning("Terminating process %s via signal SIGTERM", process.pid)
+                process.terminate()
+    
+        # Try SIGKILL if the process isn't going down after another grace_period.
+        # The reason is related to python signal handling is limited
+        # to main thread and if that is in c/c++ land and stuck it won't
+        # to handle it. We have seen processes getting stuck not handling
+        # SIGTERM for the above reason.
+        self._join_procs_with_timeout(30 if grace_period is None else grace_period)
+        for process in self.processes:
+            if process.is_alive():
+                log.warning(
+                    "Unable to shutdown process %s via SIGTERM , forcefully exiting via SIGKILL",
+                    process.pid,
+                )
+                process.kill()
+            process.join()
+    
+        # The file will only be created if the process crashed.
+        failed_process = self.processes[error_index]
+        if not os.access(self.error_files[error_index], os.R_OK):
+            exitcode = self.processes[error_index].exitcode
+            if exitcode < 0:
+                try:
+                    name = signal.Signals(-exitcode).name
+                except ValueError:
+                    name = f"<Unknown signal {-exitcode}>"
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with signal {name}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                    signal_name=name,
+                )
+            else:
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with exit code {exitcode:d}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                )
+    
+        with open(self.error_files[error_index], "rb") as fh:
+            original_trace = pickle.load(fh)
+        msg = f"\n\n-- Process {error_index:d} terminated with the following error:\n"
+        msg += original_trace
+>       raise ProcessRaisedException(msg, error_index, failed_process.pid)
+E       torch.multiprocessing.spawn.ProcessRaisedException: 
+E       
+E       -- Process 0 terminated with the following error:
+E       Traceback (most recent call last):
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py", line 87, in _wrap
+E           fn(i, *args)
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py", line 84, in _worker_entry
+E           worker(rank, Path(workdir), *args)
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py", line 364, in _disk_lifecycle_worker
+E           _lifecycle_worker(
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py", line 352, in _lifecycle_worker
+E           torch.testing.assert_close(output, expected_quantized_output, rtol=2e-3, atol=2e-4)
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/testing/_comparison.py", line 1600, in assert_close
+E           raise error_metas[0].to_error(msg)
+E       AssertionError: Tensor-likes are not close!
+E       
+E       Mismatched elements: 568 / 640 (88.8%)
+E       Greatest absolute difference: 0.01097014732658863 at index (0, 1, 68) (up to 0.0002 allowed)
+E       Greatest relative difference: 12.980039596557617 at index (0, 2, 107) (up to 0.002 allowed)
+
+.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:211: ProcessRaisedException
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:41:26.2993 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:41:26.4703 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:41:26.4710 | linearize_moe | INFO - linearize_moe start rss=0.59GiB mem_avail=58.40GiB layers=2
+2026-09-09T00:41:26.4723 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:41:26.4728 | linearize_moe | INFO - linearize_moe start rss=0.59GiB mem_avail=58.40GiB layers=2
+2026-09-09T00:41:26.4850 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:41:26.4867 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:41:27.3004 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.59GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.05GiB
+2026-09-09T00:41:27.3006 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.59GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.05GiB
+2026-09-09T00:41:27.3009 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:41:27.3011 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:41:27.7012 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.06GiB
+2026-09-09T00:41:27.7018 | linearize_moe | INFO - linearize_moe done rss=0.60GiB (net=+0.01GiB from start)
+2026-09-09T00:41:27.7026 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.06GiB
+2026-09-09T00:41:27.7031 | linearize_moe | INFO - linearize_moe done rss=0.60GiB (net=+0.01GiB from start)
+2026-09-09T00:41:27.8165 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+2026-09-09T00:41:27.8165 | __init__ | WARNING - Disabling tokenizer parallelism due to threading conflict between FastTokenizer and Datasets. Set TOKENIZERS_PARALLELISM=false to suppress this warning.
+[Rank 0] 2026-09-09T00:41:27.8264 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:41:27.8265 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:41:27.8282 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 0] 2026-09-09T00:41:27.8283 | from_modifiers | INFO - Creating recipe from modifiers
+[Rank 0] 2026-09-09T00:41:27.8318 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+[Rank 1] 2026-09-09T00:41:27.8319 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+[Rank 0] 2026-09-09T00:41:27.8572 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+[Rank 1] 2026-09-09T00:41:27.8577 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+[Rank 1] 2026-09-09T00:41:28.0423 | initialize | INFO - Compression lifecycle initialized for 2 modifiers
+[Rank 0] 2026-09-09T00:41:28.0423 | initialize | INFO - Compression lifecycle initialized for 2 modifiers
+[Rank 0] 2026-09-09T00:41:28.0425 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+[Rank 1] 2026-09-09T00:41:28.0425 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+[Rank 1] 2026-09-09T00:41:28.1906 | _solve_module | INFO - Quantizing model.layers.0.mlp.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.1927 | _solve_module | INFO - Quantizing model.layers.0.mlp.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.2085 | GPTQ | METRIC - time 0.02s
+[Rank 1] 2026-09-09T00:41:28.2086 | GPTQ | METRIC - error 0.01
+[Rank 0] 2026-09-09T00:41:28.2184 | GPTQ | METRIC - time 0.03s
+[Rank 0] 2026-09-09T00:41:28.2185 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.2300 | _solve_module | INFO - Quantizing model.layers.0.mlp.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.2396 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.2397 | GPTQ | METRIC - error 0.01
+[Rank 1] 2026-09-09T00:41:28.4266 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.4291 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.4323 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.4325 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.4349 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.4350 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.4468 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.4479 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.4568 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.4569 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.4579 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.4580 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.4694 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.4707 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.0.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.4811 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.4811 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.4812 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.4812 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.4936 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.4988 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.4989 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.5064 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.5175 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.5176 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.5253 | _solve_module | INFO - Quantizing model.layers.1.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.5352 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.5353 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.6460 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.6490 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.down_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.6551 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.6552 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.6572 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.6573 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.6700 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.6711 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.gate_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.6799 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.6800 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.6811 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.6812 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.6923 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.2.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.6934 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.0.up_proj using 4 samples
+[Rank 1] 2026-09-09T00:41:28.7022 | GPTQ | METRIC - time 0.01s
+[Rank 1] 2026-09-09T00:41:28.7023 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.7048 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.7049 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.7181 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.down_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.7234 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.7235 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.7324 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.gate_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.7422 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.7423 | GPTQ | METRIC - error 0.00
+[Rank 0] 2026-09-09T00:41:28.7514 | _solve_module | INFO - Quantizing model.layers.2.mlp.experts.1.up_proj using 4 samples
+[Rank 0] 2026-09-09T00:41:28.7608 | GPTQ | METRIC - time 0.01s
+[Rank 0] 2026-09-09T00:41:28.7608 | GPTQ | METRIC - error 0.00
+[Rank 1] 2026-09-09T00:41:28.8297 | finalize | INFO - Compression lifecycle finalized for 2 modifiers
+[Rank 0] 2026-09-09T00:41:28.8316 | finalize | INFO - Compression lifecycle finalized for 2 modifiers
+[Rank 0] 2026-09-09T00:41:29.5335 | reset | INFO - Compression lifecycle reset
+[Rank 1] 2026-09-09T00:41:29.5336 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:  50%|█████     | 1/2 [00:00<00:00,  1.21it/s]Linearizing experts:  50%|█████     | 1/2 [00:00<00:00,  1.21it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.73it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.63it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.73it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.63it/s]
+Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/21 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 244.88it/s]Applying quantization config: 100%|██████████| 21/21 [00:00<00:00, 245.29it/s]
+
+Applying quantization config:   0%|          | 0/30 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/30 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 30/30 [00:00<00:00, 387.28it/s]Applying quantization config: 100%|██████████| 30/30 [00:00<00:00, 387.77it/s]
+
+[rank0]:W0909 00:41:28.120000 1134901 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+[rank1]:W0909 00:41:28.120000 1134903 .venv-prequant/lib/python3.12/site-packages/torch/fx/_symbolic_trace.py:53] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache:   0%|          | 0/2 [00:00<?, ?it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 4110.05it/s]Preparing cache: 100%|██████████| 2/2 [00:00<00:00, 4258.18it/s]
+
+(1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 829.73it/s]
+(1/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 875.18it/s]
+(1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 1397.40it/s]
+(1/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](1/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 1484.97it/s]
+(2/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 211.23it/s]
+(2/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 193.45it/s]
+(2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 211.55it/s]
+(2/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 222.50it/s]
+(3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 59.68it/s](3/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 70.69it/s]
+
+(3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 95.65it/s](3/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 91.39it/s]
+
+(4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 61.47it/s](4/4): Calibrating: 100%|██████████| 2/2 [00:00<00:00, 70.89it/s]
+
+(4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating:   0%|          | 0/2 [00:00<?, ?it/s](4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 105.44it/s](4/4): Propagating: 100%|██████████| 2/2 [00:00<00:00, 111.21it/s]
+
+
+Compressing model:   0%|          | 0/49 [00:00<?, ?it/s][ACompressing model:   0%|          | 0/2 [00:00<?, ?it/s]Compressing model: 100%|██████████| 2/2 [00:00<00:00,  8.48it/s]Compressing model: 100%|██████████| 49/49 [00:00<00:00, 206.07it/s]
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 34.59it/s]
+Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/102 [00:00<?, ?it/s]Dispatching model:  51%|█████     | 52/102 [00:00<00:00, 493.97it/s]Dispatching model:  51%|█████     | 52/102 [00:00<00:00, 497.75it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 499.21it/s]Dispatching model: 100%|██████████| 102/102 [00:00<00:00, 497.26it/s]
+
+Applying quantization config:   0%|          | 0/51 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 51/51 [00:00<00:00, 3541.96it/s]
+Compressing model:   0%|          | 0/2 [00:00<?, ?it/s]Applying quantization config:   0%|          | 0/51 [00:00<?, ?it/s]Applying quantization config: 100%|██████████| 51/51 [00:00<00:00, 5398.62it/s]
+
+Compressing model:   0%|          | 0/49 [00:00<?, ?it/s][ACompressing model: 100%|██████████| 49/49 [00:00<00:00, 391.99it/s]
+Compressing model: 100%|██████████| 2/2 [00:00<00:00, 11.35it/s]
+Loading weights:   0%|          | 0/169 [00:00<?, ?it/s]Loading weights:   0%|          | 0/169 [00:00<?, ?it/s]Loading weights: 100%|██████████| 169/169 [00:00<00:00, 4779.62it/s]
+Decompressing model:   0%|          | 0/51 [00:00<?, ?it/s]Loading weights: 100%|██████████| 169/169 [00:00<00:00, 3773.16it/s]
+Decompressing model: 100%|██████████| 51/51 [00:00<00:00, 1490.91it/s]
+Decompressing model:   0%|          | 0/51 [00:00<?, ?it/s]Decompressing model: 100%|██████████| 51/51 [00:00<00:00, 1356.93it/s]
+W0909 00:41:32.300000 1134768 .venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:165] Terminating process 1134903 via signal SIGTERM
+------------------------------ Captured log call -------------------------------
+WARNING  torch.multiprocessing.spawn:spawn.py:165 Terminating process 1134903 via signal SIGTERM
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:41:32.5119 | reset | INFO - Compression lifecycle reset
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py: 14 warnings
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=1134768) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[fp8-rest]
+1 failed, 13 passed, 28 warnings in 80.06s (0:01:20)

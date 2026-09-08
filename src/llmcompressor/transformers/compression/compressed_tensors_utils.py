@@ -71,7 +71,8 @@ def modify_save_pretrained(model: PreTrainedModel):
                 model, quantization_format=quantization_format
             )
             if save_compressed:
-                compressor.compress_model(model)
+                with _contiguous_disk_serialization():
+                    compressor.compress_model(model)
 
             # Re-tie weights before offload conversion. Offloading splits tied
             # weights (e.g. lm_head and embed_tokens) into separate parameters,
@@ -116,6 +117,31 @@ def modify_save_pretrained(model: PreTrainedModel):
     # wrap save_pretrained if not already
     if not getattr(model.save_pretrained, "_overridden", False):
         model.save_pretrained = save_pretrained_compressed(model.save_pretrained)
+
+
+@contextmanager
+def _contiguous_disk_serialization():
+    """Make CT's per-tensor disk writes satisfy safetensors' layout contract.
+
+    Packing can return a sliced/non-contiguous view (e.g. a width of 16).
+    CT writes it through DiskCache before Transformers' final save can make
+    tensors contiguous. Reuse the writer, copying only its current tensor;
+    neither packing arithmetic nor the installed dependency is changed.
+    """
+    from compressed_tensors.offload.cache import disk
+    from compressed_tensors.utils.helpers import patch_attr
+
+    save_file = disk.save_file
+
+    def save_contiguous(tensors, *args, **kwargs):
+        return save_file(
+            {name: tensor.contiguous() for name, tensor in tensors.items()},
+            *args,
+            **kwargs,
+        )
+
+    with patch_attr(disk, "save_file", save_contiguous):
+        yield
 
 
 def _normalize_offloaded_parameter_types(model):

@@ -1,5 +1,7 @@
 # Local two-A100 NCCL diagnostic contract
 
+**HISTORICAL:** superseded by [GPU validation and active diagnostic](glm53-ep-gptq-gpu-validation.md). The original resource names did not identify full physical GPUs.
+
 Scope: the approved small two-GPU integration gate, executed locally by the
 implementing agent under `FULL_STACK_AGENT_PROTOCOL.md`. The separate remote
 executor retains the real-width and full-run work.

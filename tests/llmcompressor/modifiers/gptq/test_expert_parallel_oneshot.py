@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 import torch
 import torch.distributed as dist
+from compressed_tensors.offload import disable_offloading
 from safetensors import safe_open
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
@@ -121,15 +122,25 @@ def _lifecycle_worker(
         model.to(device)
         if disk_offload:
             from compressed_tensors.offload import offload_module
+            from compressed_tensors.offload.module import remove_module_offload
 
             from pipeline.quantize import install_distributed_disk_update_offload_patch
 
             install_distributed_disk_update_offload_patch()
+            # The low-level cache API writes into an existing directory; unlike
+            # the model loader it does not prepare the offload folder itself.
+            offload_dir = workdir / "offload"
+            offload_dir.mkdir(parents=True, exist_ok=True)
+            _phase(workdir, rank, "disk:offload-start")
             for module in model.modules():
                 if isinstance(module, torch.nn.Linear):
+                    # Linearization already gives experts CPU offload caches.
+                    # Reuse CT's transition helper before installing disk caches.
+                    remove_module_offload(module, onload_tensors=True)
                     offload_module(
-                        module, device, "disk", offload_dir=str(workdir / "offload")
+                        module, device, "disk", offload_dir=str(offload_dir)
                     )
+            _phase(workdir, rank, "disk:offload-complete")
         model.config.use_cache = False
         model.config._attn_implementation = "eager"
         records, propagation = {}, []
@@ -209,7 +220,9 @@ def _lifecycle_worker(
         assert combined
         assert all(count == 4 for _, count in combined.values())
         assert propagation
-        with torch.no_grad():
+        # Match the calibration cache lifetime: CT's QDQ temporarily patches
+        # weight.data, so disk-backed weight reads must reuse that same onload.
+        with torch.no_grad(), disable_offloading():
             output = model(**inputs).logits
         assert torch.isfinite(output).all()
         if not ep:
@@ -348,6 +361,18 @@ def _lifecycle_worker(
 )
 def test_real_glm_gloo_oneshot_collective_save_reload(tmp_path, dynamic):
     _launch(_lifecycle_worker, tmp_path, dynamic)
+
+
+def _disk_lifecycle_worker(rank, workdir, dynamic):
+    _lifecycle_worker(
+        rank, workdir, dynamic, compare_baseline=False, disk_offload=True
+    )
+
+
+@pytest.mark.parametrize("dynamic", [False, True], ids=["weight-only", "fp8-rest"])
+def test_real_glm_gloo_disk_oneshot_collective_save_reload(tmp_path, dynamic):
+    # Exercise the same disk setup as the GPU gate even on CPU-only hosts.
+    _launch(_disk_lifecycle_worker, tmp_path, dynamic)
 
 
 def _preflight_worker(rank, workdir, defect):

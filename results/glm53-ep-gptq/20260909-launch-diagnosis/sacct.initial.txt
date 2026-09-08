@@ -1,0 +1,6 @@
+JobID|JobName|State|Reason|ExitCode|Elapsed|NodeList
+830714|ep-launch-inherited|FAILED|None|0:64|00:00:00|xgph12
+830714.extern|extern|COMPLETED||0:0|00:00:00|xgph12
+830714.0|ep-launch-inherited|CANCELLED||0:64|00:00:00|xgph12
+830715|ep-launch-clean|FAILED|None|1:0|00:00:10|xgph12
+830715.extern|extern|COMPLETED||0:0|00:00:10|xgph12

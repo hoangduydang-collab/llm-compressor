@@ -1,0 +1,72 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/e/e1129930/llm-compressor/.venv-prequant/bin/python
+cachedir: .pytest_cache
+rootdir: /home/e/e1129930/llm-compressor
+configfile: pyproject.toml
+plugins: anyio-4.14.2, mock-3.15.1, rerunfailures-16.4
+collecting ... collected 3 items
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity] ERROR [ 33%]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] ERROR [ 66%]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] ERROR [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity] _
+
+self = PosixPath('/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'), mode = 448
+parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'
+
+/usr/lib/python3.12/pathlib.py:1313: FileNotFoundError
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:24:30.6241 | reset | INFO - Compression lifecycle reset
+_ ERROR at setup of test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] _
+
+self = PosixPath('/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'), mode = 448
+parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'
+
+/usr/lib/python3.12/pathlib.py:1313: FileNotFoundError
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:24:30.6789 | reset | INFO - Compression lifecycle reset
+_ ERROR at setup of test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] _
+
+self = PosixPath('/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'), mode = 448
+parents = False, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'
+
+/usr/lib/python3.12/pathlib.py:1313: FileNotFoundError
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:24:30.7117 | reset | INFO - Compression lifecycle reset
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity] - FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'
+ERROR tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] - FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'
+ERROR tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] - FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-e1129930/glm53-ep-nccl-830729'
+======================== 14 warnings, 3 errors in 6.96s ========================

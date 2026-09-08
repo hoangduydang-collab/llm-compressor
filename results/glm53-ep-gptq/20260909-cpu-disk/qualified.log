@@ -1,0 +1,12 @@
+..........                                                               [100%]
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py: 14 warnings
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=1135615) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+10 passed, 28 warnings in 33.67s

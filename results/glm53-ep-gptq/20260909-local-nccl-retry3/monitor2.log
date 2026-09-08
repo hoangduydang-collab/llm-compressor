@@ -1,0 +1,71 @@
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs           252G   12K  252G   1% /dev/shm
+/dev/sdb        3.5T  6.6M  3.5T   1% /tmp
+total 0
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 0 -> /dev/null
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 1 -> /tmp/#13995703 (deleted)
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 10 -> pipe:[225225]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 11 -> pipe:[225225]
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 12 -> pipe:[225226]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 13 -> pipe:[225226]
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 14 -> /dev/nvidiactl
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 15 -> /dev/nvidia-uvm
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 16 -> /dev/nvidia0
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 17 -> /dev/nvidia1
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 18 -> /dev/nvidia0
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 19 -> /dev/nvidia0
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 2 -> /tmp/#13995704 (deleted)
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 20 -> /dev/nvidia1
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 21 -> /dev/nvidia1
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 22 -> socket:[225235]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 23 -> /home/e/e1129930/llm-compressor/results/glm53-ep-gptq/20260909-local-nccl-retry3/pytest.log
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 24 -> /dev/null
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 25 -> anon_inode:[eventfd]
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 26 -> /dev/nvidiactl
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 27 -> /dev/nvidia0
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 28 -> /dev/nvidia1
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 29 -> /dev/nvidia-uvm
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 3 -> pipe:[260325]
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 30 -> /dev/nvidia0
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 31 -> /dev/nvidia0
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 32 -> /dev/nvidia1
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 33 -> /dev/nvidia1
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 34 -> pipe:[287989]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 35 -> pipe:[225236]
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 36 -> pipe:[287992]
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 37 -> pipe:[293939]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 38 -> pipe:[287990]
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 39 -> pipe:[293942]
+lr-x------ 1 e1129930 soc 64 Sep  9 00:32 4 -> /dev/null
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 40 -> pipe:[287993]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 42 -> pipe:[293940]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 44 -> pipe:[293943]
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 5 -> /home/e/e1129930/llm-compressor/results/glm53-ep-gptq/20260909-local-nccl-retry3/pytest.log
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 6 -> /tmp/#13995703 (deleted)
+l-wx------ 1 e1129930 soc 64 Sep  9 00:32 7 -> /home/e/e1129930/llm-compressor/results/glm53-ep-gptq/20260909-local-nccl-retry3/pytest.log
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 8 -> /tmp/#13995704 (deleted)
+lrwx------ 1 e1129930 soc 64 Sep  9 00:32 9 -> anon_inode:[eventfd]
+/tmp/pytest-of-e1129930/glm53-ep-nccl-830738/test_two_gpu_nccl_expert_gptq_0/rank-0-phases.txt
+ddp:initialize
+ddp:quantized
+ep:initialize
+ep:quantized
+ep:save-start
+ep:save-complete
+ep:reload-forward-complete
+/tmp/pytest-of-e1129930/glm53-ep-nccl-830738/test_two_gpu_nccl_expert_gptq_0/rank-1-phases.txt
+ddp:initialize
+ddp:quantized
+ep:initialize
+ep:quantized
+ep:save-start
+ep:save-complete
+ep:reload-forward-complete
+    PID    PPID STAT     ELAPSED %CPU COMMAND
+  36805   36795 S          06:39  0.0 bash
+  36872   36805 Sl         06:03  6.6 python
+  36900   36872 S          05:30  0.0 python
+  37037   36872 Sl         01:09 35.5 python
+  37038   36872 Rl         01:09 88.0 python
+  37055   37037 Ss         00:37  0.6 torch_shm_manag
+  37075   37065 R          00:00  100 ps

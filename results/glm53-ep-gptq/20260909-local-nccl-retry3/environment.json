@@ -1,0 +1,20 @@
+{
+  "python": "3.12.3 (main, Jul 15 2026, 23:46:41) [GCC 13.3.0]",
+  "torch": "2.11.0+cu128",
+  "transformers": "5.12.1",
+  "compressed_tensors": "0.17.2.a20260707",
+  "gpus": [
+    "Tesla T4",
+    "Tesla T4"
+  ],
+  "cuda_available": true,
+  "cuda_device_count": 2,
+  "compiled_arches": [
+    "sm_75",
+    "sm_80",
+    "sm_86",
+    "sm_90",
+    "sm_100",
+    "sm_120"
+  ]
+}

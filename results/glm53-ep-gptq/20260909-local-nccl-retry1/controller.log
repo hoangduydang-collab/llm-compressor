@@ -1,0 +1,91 @@
+srun: defined options
+srun: -------------------- --------------------
+srun: cpu-bind            : cores
+srun: cpus-per-task       : 4
+srun: gres                : gres/gpu:a100-40:2
+srun: immediate           : 1
+srun: job-name            : glm53-ep-nccl-r1
+srun: mem                 : 16G
+srun: nodelist            : xgph12
+srun: nodes               : 1
+srun: ntasks              : 1
+srun: partition           : gpu
+srun: time                : 00:15:00
+srun: verbose             : 3
+srun: -------------------- --------------------
+srun: end of defined options
+srun: debug:  propagating RLIMIT_FSIZE=18446744073709551615
+srun: debug:  propagating RLIMIT_STACK=8388608
+srun: debug:  propagating RLIMIT_CORE=0
+srun: debug:  propagating RLIMIT_RSS=17179869184
+srun: debug:  propagating RLIMIT_NOFILE=1024
+srun: debug:  propagating RLIMIT_MEMLOCK=2095353856
+srun: debug:  propagating SLURM_PRIO_PROCESS=0
+srun: debug:  propagating UMASK=0022
+srun: debug2: cpu=4 is not a gres
+srun: debug:  Entering slurm_allocation_msg_thr_create()
+srun: debug:  port from net_stream_listen is 33041
+srun: debug:  Entering _msg_thr_internal
+srun: JobId=830721 returned by the controller
+srun: Waiting for resource configuration
+srun: Nodes xgph12 are ready for job
+srun: jobid 830721: nodes(1):`xgph12', cpu counts: 4(x1)
+srun: debug2: creating job with 1 tasks
+srun: Implicitly setting --exact, because -c/--cpus-per-task given.
+srun: debug2: cpu:4 is not a gres
+srun: debug2: cpu=4,cpu:4 is not a gres
+srun: debug:  requesting job 830721, user 99, nodes 1 including (xgph12)
+srun: debug:  cpus 4, tasks 1, name glm53-ep-nccl-r1, relative 65534
+srun: CpuBindType=cores
+srun: debug:  Entering slurm_step_launch
+srun: debug:  initialized stdio listening socket, port 39501
+srun: debug:  Started IO server thread
+srun: debug:  Entering _launch_tasks
+srun: launching StepId=830721.0 on host xgph12, 1 tasks: 0
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: Tree head got back 0 looking for 1
+srun: debug2: Tree head got back 1
+srun: debug:  launch returned msg_rc=0 err=0 type=8001
+srun: debug2: Activity on IO listening socket 18
+srun: debug2: Entering io_init_msg_read_from_fd
+srun: debug2: Leaving io_init_msg_read_from_fd
+srun: debug2: Entering io_init_msg_validate
+srun: debug2: Leaving io_init_msg_validate
+srun: debug2: Validated IO connection from 192.168.51.130:49928, node rank 0, sd=19
+srun: debug2: received task launch
+srun: Node xgph12, 1 tasks started
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: Entering _file_write
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+AssertionError
+srun: debug2: Leaving  _file_write
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: received task exit
+srun: Received task exit notification for 1 task of StepId=830721.0 (status=0x0100).
+srun: error: xgph12: task 0: Exited with exit code 1
+srun: debug:  task 0 done
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2:   false, shutdown
+srun: debug:  IO thread exiting
+srun: debug2: slurm_allocation_msg_thr_destroy: clearing up message thread
+srun: debug2:   false, shutdown
+srun: debug:  Leaving _msg_thr_internal
+srun: debug:  unloaded

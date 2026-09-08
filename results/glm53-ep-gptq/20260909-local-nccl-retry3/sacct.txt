@@ -1,0 +1,7 @@
+JobID|JobName|State|Elapsed|AllocTRES|ExitCode
+830738|glm53-ep-nccl-r3|FAILED|00:08:12|billing=10,cpu=4,gres/gpu:nv=2,gres/gpu=2,mem=16G,node=1|1:0
+830738.extern|extern|COMPLETED|00:08:12|billing=10,cpu=4,gres/gpu:nv=2,gres/gpu=2,mem=16G,node=1|0:0
+830738.0|glm53-ep-nccl-r3|FAILED|00:08:12|cpu=4,gres/gpu:nv=2,gres/gpu=2,mem=16G,node=1|1:0
+830738.1|bash|COMPLETED|00:00:00|cpu=1,mem=16G,node=1|0:0
+830738.2|bash|COMPLETED|00:00:00|cpu=1,mem=16G,node=1|0:0
+830738.3|bash|COMPLETED|00:00:00|cpu=1,mem=16G,node=1|0:0

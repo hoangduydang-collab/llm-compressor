@@ -1,0 +1,69 @@
+srun: Updating SLURM_TRES_PER_TASK to cpu=4 as --cpus-per-task takes precedence over the environment variables.
+srun: defined options
+srun: -------------------- --------------------
+srun: (null)              : xcnc31
+srun: cpu-bind            : 006006
+srun: cpus-per-task       : 4
+srun: distribution        : block
+srun: gres                : gres/gpu:a100-40:2
+srun: immediate           : 30
+srun: job-name            : ep-launch-inherited
+srun: mem                 : 16G
+srun: nodelist            : xgph12
+srun: nodes               : 1
+srun: ntasks              : 1
+srun: oom-kill-step       : 0
+srun: partition           : gpu
+srun: slurmd-debug        : error
+srun: time                : 00:01:00
+srun: tres-per-task       : cpu=4
+srun: verbose             : 3
+srun: -------------------- --------------------
+srun: end of defined options
+srun: debug:  propagating RLIMIT_FSIZE=18446744073709551615
+srun: debug:  propagating RLIMIT_STACK=8388608
+srun: debug:  propagating RLIMIT_CORE=0
+srun: debug:  propagating RLIMIT_RSS=17179869184
+srun: debug:  propagating RLIMIT_NOFILE=1024
+srun: debug:  propagating RLIMIT_MEMLOCK=2095353856
+srun: debug:  propagating SLURM_PRIO_PROCESS=0
+srun: debug2: cpu=4 is not a gres
+srun: debug:  Entering slurm_allocation_msg_thr_create()
+srun: debug:  port from net_stream_listen is 42479
+srun: debug:  Entering _msg_thr_internal
+srun: JobId=830714 returned by the controller
+srun: Waiting for resource configuration
+srun: Nodes xgph12 are ready for job
+srun: jobid 830714: nodes(1):`xgph12', cpu counts: 4(x1)
+srun: debug2: creating job with 1 tasks
+srun: Implicitly setting --exact, because -c/--cpus-per-task given.
+srun: debug2: cpu:4 is not a gres
+srun: debug2: cpu=4,cpu:4 is not a gres
+srun: debug:  requesting job 830714, user 99, nodes 1 including (xgph12)
+srun: debug:  cpus 4, tasks 1, name ep-launch-inherited, relative 65534
+srun: CpuBindType=mask_cpu
+srun: debug:  Entering slurm_step_launch
+srun: debug:  initialized stdio listening socket, port 36871
+srun: debug:  Started IO server thread
+srun: debug:  Entering _launch_tasks
+srun: launching StepId=830714.0 on host xgph12, 1 tasks: 0
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2: Tree head got back 0 looking for 1
+srun: error: CPU binding outside of job step allocation, allocated CPUs are: 0x0001000100010001.
+srun: debug2: Tree head got back 1
+srun: debug:  launch returned msg_rc=4032 err=0 type=8001
+srun: debug2: marking task 0 done on failed node 0
+srun: error: Task launch for StepId=830714.0 failed on node xgph12: Unable to satisfy cpu bind request
+srun: error: Application launch failed: Unable to satisfy cpu bind request
+srun: Job step aborted
+srun: debug2: Called _file_readable
+srun: debug2: Called _file_writable
+srun: debug2: Called _file_writable
+srun: debug2:   false, shutdown
+srun: debug:  IO thread exiting
+srun: debug2: slurm_allocation_msg_thr_destroy: clearing up message thread
+srun: debug2:   false, shutdown
+srun: debug:  Leaving _msg_thr_internal
+srun: debug:  unloaded

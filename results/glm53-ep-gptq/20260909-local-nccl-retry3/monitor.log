@@ -1,0 +1,25 @@
+/tmp/pytest-of-e1129930/glm53-ep-nccl-830738/test_two_gpu_nccl_expert_gptq_0/rank-0-phases.txt
+ddp:initialize
+ddp:quantized
+ep:initialize
+ep:quantized
+ep:save-start
+ep:save-complete
+ep:reload-forward-complete
+/tmp/pytest-of-e1129930/glm53-ep-nccl-830738/test_two_gpu_nccl_expert_gptq_0/rank-1-phases.txt
+ddp:initialize
+ddp:quantized
+ep:initialize
+ep:quantized
+ep:save-start
+ep:save-complete
+ep:reload-forward-complete
+    PID    PPID STAT     ELAPSED %CPU COMMAND
+  36805   36795 S          04:32  0.0 bash
+  36872   36805 Sl         03:56 10.0 python
+  36900   36872 S          03:23  0.0 python
+  36959   36872 Sl         02:41 13.0 python
+  36960   36872 Il         02:41 88.2 python
+  36975   36959 Ss         02:18  0.2 torch_shm_manag
+  37001       2 R          00:16 98.1 apport
+  37028   37018 R          00:00 80.0 ps

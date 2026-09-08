@@ -1,0 +1,531 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/e/e1129930/llm-compressor/.venv-prequant/bin/python
+cachedir: .pytest_cache
+rootdir: /home/e/e1129930/llm-compressor
+configfile: pyproject.toml
+plugins: anyio-4.14.2, mock-3.15.1, rerunfailures-16.4
+collecting ... collected 3 items
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[ddp-ep-parity] PASSED [ 33%]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] FAILED [ 66%]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] FAILED [100%]
+
+=================================== FAILURES ===================================
+____ test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-e1129930/glm53-ep-nccl-830738/test_two_gpu_nccl_expert_gptq_1')
+case = 'weight-only-disk'
+
+    @pytest.mark.parametrize("case", ["ddp-ep-parity", "weight-only-disk", "mixed-disk"])
+    def test_two_gpu_nccl_expert_gptq_collective_save_reload(tmp_path, case):
+>       _launch(_nccl_worker, tmp_path, case, backend="nccl")
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:52: in _launch
+    if context.join(timeout=1):
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <torch.multiprocessing.spawn.ProcessContext object at 0x72805185cf50>
+timeout = 1, grace_period = None
+
+    def join(self, timeout: float | None = None, grace_period: float | None = None):
+        r"""Join one or more processes within spawn context.
+    
+        Attempt to join one or more processes in this spawn context.
+        If one of them exited with a non-zero exit status, this function
+        kills the remaining processes (optionally with a grace period)
+        and raises an exception with the cause of the first process exiting.
+    
+        Returns ``True`` if all processes have been joined successfully,
+        ``False`` if there are more processes that need to be joined.
+    
+        Args:
+            timeout (float): Wait this long (in seconds) before giving up on waiting.
+            grace_period (float): When any processes fail, wait this long (in seconds)
+                for others to shutdown gracefully before terminating them. If they
+                still don't exit, wait another grace period before killing them.
+        """
+        # Ensure this function can be called even when we're done.
+        if len(self.sentinels) == 0:
+            return True
+    
+        # Wait for any process to fail or all of them to succeed.
+        ready = multiprocessing.connection.wait(
+            self.sentinels.keys(),
+            timeout=timeout,
+        )
+    
+        error_index = None
+        for sentinel in ready:
+            index = self.sentinels.pop(sentinel)
+            process = self.processes[index]
+            process.join()
+            if process.exitcode != 0:
+                error_index = index
+                break
+    
+        # Return if there was no error.
+        if error_index is None:
+            # Return whether or not all processes have been joined.
+            return len(self.sentinels) == 0
+        # An error occurred. Clean-up all processes before returning.
+        # First, allow a grace period for processes to shutdown themselves.
+        if grace_period is not None:
+            self._join_procs_with_timeout(grace_period)
+        # Then, terminate processes that are still alive. Try SIGTERM first.
+        for process in self.processes:
+            if process.is_alive():
+                log.warning("Terminating process %s via signal SIGTERM", process.pid)
+                process.terminate()
+    
+        # Try SIGKILL if the process isn't going down after another grace_period.
+        # The reason is related to python signal handling is limited
+        # to main thread and if that is in c/c++ land and stuck it won't
+        # to handle it. We have seen processes getting stuck not handling
+        # SIGTERM for the above reason.
+        self._join_procs_with_timeout(30 if grace_period is None else grace_period)
+        for process in self.processes:
+            if process.is_alive():
+                log.warning(
+                    "Unable to shutdown process %s via SIGTERM , forcefully exiting via SIGKILL",
+                    process.pid,
+                )
+                process.kill()
+            process.join()
+    
+        # The file will only be created if the process crashed.
+        failed_process = self.processes[error_index]
+        if not os.access(self.error_files[error_index], os.R_OK):
+            exitcode = self.processes[error_index].exitcode
+            if exitcode < 0:
+                try:
+                    name = signal.Signals(-exitcode).name
+                except ValueError:
+                    name = f"<Unknown signal {-exitcode}>"
+>               raise ProcessExitedException(
+                    f"process {error_index:d} terminated with signal {name}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                    signal_name=name,
+                )
+E               torch.multiprocessing.spawn.ProcessExitedException: process 1 terminated with signal SIGABRT
+
+.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:192: ProcessExitedException
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:27:22.7393 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:27:46.1624 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:27:46.1624 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:27:46.1628 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.63GiB layers=2
+2026-09-09T00:27:46.1628 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.63GiB layers=2
+2026-09-09T00:27:46.1858 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:27:46.1858 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+xgpf11:36959:36959 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:36959:36959 [0] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:36959:36959 [0] NCCL INFO cudaDriverVersion 13000
+xgpf11:36959:36959 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:36959:36959 [0] NCCL INFO Comm config Blocking set to 1
+xgpf11:36960:36960 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:36960:36960 [1] NCCL INFO cudaDriverVersion 13000
+xgpf11:36960:36960 [1] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:36960:36960 [1] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:36960:36960 [1] NCCL INFO Comm config Blocking set to 1
+xgpf11:36959:36959 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:36959:36959 [0] NCCL INFO NET/IB : No device found.
+xgpf11:36959:36959 [0] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:36959:36959 [0] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:36959:36959 [0] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:36959:36959 [0] NCCL INFO Initialized NET plugin Socket
+xgpf11:36959:36959 [0] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:36959:36959 [0] NCCL INFO Using network Socket
+xgpf11:36959:36959 [0] NCCL INFO ncclCommInitRankConfig comm 0x1d5d5df0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0xf867b14dfb34f7b - Init START
+xgpf11:36960:36960 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:36960:36960 [1] NCCL INFO NET/IB : No device found.
+xgpf11:36960:36960 [1] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:36960:36960 [1] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:36960:36960 [1] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:36960:36960 [1] NCCL INFO Initialized NET plugin Socket
+xgpf11:36960:36960 [1] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:36960:36960 [1] NCCL INFO Using network Socket
+xgpf11:36960:36960 [1] NCCL INFO ncclCommInitRankConfig comm 0x30152f30 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0xf867b14dfb34f7b - Init START
+xgpf11:36960:36960 [1] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:36959:36959 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:36960:36960 [1] NCCL INFO Bootstrap timings total 0.006253 (create 0.000048, send 0.000151, recv 0.005298, ring 0.000037, delay 0.000001)
+xgpf11:36959:36959 [0] NCCL INFO Bootstrap timings total 0.010568 (create 0.000064, send 0.003434, recv 0.006466, ring 0.000047, delay 0.000001)
+xgpf11:36960:36960 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:36960:36960 [1] NCCL INFO NVLS multicast support is not available on dev 1 (NVLS_NCHANNELS 0)
+xgpf11:36959:36959 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:36959:36959 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+xgpf11:36959:36959 [0] NCCL INFO comm 0x1d5d5df0 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+xgpf11:36960:36960 [1] NCCL INFO comm 0x30152f30 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+xgpf11:36959:36959 [0] NCCL INFO Channel 00/02 : 0 1
+xgpf11:36960:36960 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0
+xgpf11:36959:36959 [0] NCCL INFO Channel 01/02 : 0 1
+xgpf11:36960:36960 [1] NCCL INFO P2P Chunksize set to 131072
+xgpf11:36959:36959 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
+xgpf11:36959:36959 [0] NCCL INFO P2P Chunksize set to 131072
+xgpf11:36959:36959 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:36960:36960 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:36959:36959 [0] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:36960:36960 [1] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:36960:36982 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 24
+xgpf11:36959:36981 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 24
+xgpf11:36959:36980 [0] NCCL INFO [Proxy Service] Device 0 CPU core 0
+xgpf11:36960:36979 [0] NCCL INFO [Proxy Service] Device 1 CPU core 0
+xgpf11:36960:36960 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:36959:36959 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:36960:36960 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:36960:36960 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:36959:36959 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:36959:36959 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:36959:36959 [0] NCCL INFO CC Off, workFifoBytes 1048576
+xgpf11:36960:36960 [1] NCCL INFO ncclCommInitRankConfig comm 0x30152f30 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0xf867b14dfb34f7b - Init COMPLETE
+xgpf11:36959:36959 [0] NCCL INFO ncclCommInitRankConfig comm 0x1d5d5df0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0xf867b14dfb34f7b - Init COMPLETE
+xgpf11:36960:36960 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 2 total 0.37 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.02, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:36959:36959 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 2 total 0.38 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.02, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:36959:36959 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:36959:36959 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:36960:36960 [1] NCCL INFO Channel 00 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:36960:36960 [1] NCCL INFO Channel 01 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:36960:36960 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+xgpf11:36959:36959 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+2026-09-09T00:27:47.4100 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=+0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:27:47.4106 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:27:47.4683 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:27:47.4688 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:27:47.8330 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.24GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:27:47.8337 | linearize_moe | INFO - linearize_moe done rss=1.24GiB (net=+0.25GiB from start)
+2026-09-09T00:27:47.8373 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.26GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=+0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:27:47.8379 | linearize_moe | INFO - linearize_moe done rss=1.26GiB (net=+0.27GiB from start)
+xgpf11:36959:36980 [0] NCCL INFO [Service thread] Connection closed by localRank 1
+xgpf11:36959:36959 [0] NCCL INFO comm 0x1d5d5df0 rank 0 nranks 2 cudaDev 0 busId 3b000 - Destroy COMPLETE
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.25s/it]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.30s/it]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.33it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.20it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.31it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.19it/s]
+[rank1]:[E909 00:28:47.426499845 ProcessGroupNCCL.cpp:689] [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=55, OpType=BROADCAST, NumelIn=3, NumelOut=3, Timeout(ms)=60000) ran for 60076 milliseconds before timing out.
+[rank1]:[E909 00:28:47.435446715 ProcessGroupNCCL.cpp:2303] [PG ID 0 PG GUID 0(default_pg) Rank 1]  failure detected by watchdog at work sequence id: 55 PG status: last enqueued work: 55, last completed work: 54
+[rank1]:[E909 00:28:47.437455191 ProcessGroupNCCL.cpp:733] Stack trace of the failed collective: 
+#0 broadcast from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:2968
+#1 wrapper from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83
+#2 broadcast_object_list from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:3825
+#3 wrapper from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83
+#4 offload from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/cache/dist_disk.py:39
+#5 from_mapping from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/cache/base.py:121
+#6 offload_module from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/module.py:39
+#7 _lifecycle_worker from /home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py:130
+#8 _nccl_worker from /home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py:29
+#9 _worker_entry from /home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:84
+#10 _wrap from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:87
+#11 run from /usr/lib/python3.12/multiprocessing/process.py:108
+#12 _bootstrap from /usr/lib/python3.12/multiprocessing/process.py:314
+#13 _main from /usr/lib/python3.12/multiprocessing/spawn.py:135
+#14 spawn_main from /usr/lib/python3.12/multiprocessing/spawn.py:122
+#15 <module> from <string>:1
+
+[rank1]:[E909 00:28:47.437538295 ProcessGroupNCCL.cpp:2636] [PG ID 0 PG GUID 0(default_pg) Rank 1] First PG on this rank to signal dumping.
+[rank1]:[E909 00:28:48.484280514 ProcessGroupNCCL.cpp:1914] [PG ID 0 PG GUID 0(default_pg) Rank 1] Received a dump signal due to a collective timeout from this local rank and we will try our best to dump the debug info. Last enqueued NCCL work: 55, last completed NCCL work: 54.This is most likely caused by incorrect usages of collectives, e.g., wrong sizes used across ranks, the order of collectives is not same for all ranks or the scheduled collective, for some reason, didn't run. Additionally, this can be caused by GIL deadlock or other reasons such as network errors or bugs in the communications library (e.g. NCCL), etc. 
+[rank1]:[E909 00:28:48.484396161 ProcessGroupNCCL.cpp:1628] [PG ID 0 PG GUID 0(default_pg) Rank 1] ProcessGroupNCCL preparing to dump debug info. Include stack trace: 1, only active collectives: 0
+[rank1]:[E909 00:29:47.437636812 ProcessGroupNCCL.cpp:750] [Rank 1] Some NCCL operations have failed or timed out. Due to the asynchronous nature of CUDA kernels, subsequent GPU operations might run on corrupted/incomplete data.
+[rank1]:[E909 00:29:47.437685469 ProcessGroupNCCL.cpp:764] [Rank 1] To avoid data inconsistency, we are taking the entire process down.
+[rank1]:[E909 00:29:47.443295748 ProcessGroupNCCL.cpp:2119] [PG ID 0 PG GUID 0(default_pg) Rank 1] Process group watchdog thread terminated with exception: [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=55, OpType=BROADCAST, NumelIn=3, NumelOut=3, Timeout(ms)=60000) ran for 60076 milliseconds before timing out.
+Exception raised from checkTimeout at /pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x781d53b7205d in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x2a7 (0x781c3fb3fd87 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x17b1 (0x781c3fb451a1 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0x157 (0x781c3fb46597 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xecdb4 (0x781d13cecdb4 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x9cb84 (0x781d54c9cb84 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x129d6c (0x781d54d29d6c in /lib/x86_64-linux-gnu/libc.so.6)
+
+terminate called after throwing an instance of 'c10::DistBackendError'
+  what():  [PG ID 0 PG GUID 0(default_pg) Rank 1] Process group watchdog thread terminated with exception: [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=55, OpType=BROADCAST, NumelIn=3, NumelOut=3, Timeout(ms)=60000) ran for 60076 milliseconds before timing out.
+Exception raised from checkTimeout at /pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x781d53b7205d in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x2a7 (0x781c3fb3fd87 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x17b1 (0x781c3fb451a1 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0x157 (0x781c3fb46597 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xecdb4 (0x781d13cecdb4 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x9cb84 (0x781d54c9cb84 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x129d6c (0x781d54d29d6c in /lib/x86_64-linux-gnu/libc.so.6)
+
+Exception raised from run at /pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:2125 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x781d53b7205d in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x9b5d75 (0x781c3f3a6d75 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #2: <unknown function> + 0xecdb4 (0x781d13cecdb4 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #3: <unknown function> + 0x9cb84 (0x781d54c9cb84 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #4: <unknown function> + 0x129d6c (0x781d54d29d6c in /lib/x86_64-linux-gnu/libc.so.6)
+
+W0909 00:30:58.660000 36872 .venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:165] Terminating process 36959 via signal SIGTERM
+------------------------------ Captured log call -------------------------------
+WARNING  torch.multiprocessing.spawn:spawn.py:165 Terminating process 36959 via signal SIGTERM
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:31:01.5806 | reset | INFO - Compression lifecycle reset
+_______ test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-e1129930/glm53-ep-nccl-830738/test_two_gpu_nccl_expert_gptq_2')
+case = 'mixed-disk'
+
+    @pytest.mark.parametrize("case", ["ddp-ep-parity", "weight-only-disk", "mixed-disk"])
+    def test_two_gpu_nccl_expert_gptq_collective_save_reload(tmp_path, case):
+>       _launch(_nccl_worker, tmp_path, case, backend="nccl")
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:52: in _launch
+    if context.join(timeout=1):
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <torch.multiprocessing.spawn.ProcessContext object at 0x72805185e660>
+timeout = 1, grace_period = None
+
+    def join(self, timeout: float | None = None, grace_period: float | None = None):
+        r"""Join one or more processes within spawn context.
+    
+        Attempt to join one or more processes in this spawn context.
+        If one of them exited with a non-zero exit status, this function
+        kills the remaining processes (optionally with a grace period)
+        and raises an exception with the cause of the first process exiting.
+    
+        Returns ``True`` if all processes have been joined successfully,
+        ``False`` if there are more processes that need to be joined.
+    
+        Args:
+            timeout (float): Wait this long (in seconds) before giving up on waiting.
+            grace_period (float): When any processes fail, wait this long (in seconds)
+                for others to shutdown gracefully before terminating them. If they
+                still don't exit, wait another grace period before killing them.
+        """
+        # Ensure this function can be called even when we're done.
+        if len(self.sentinels) == 0:
+            return True
+    
+        # Wait for any process to fail or all of them to succeed.
+        ready = multiprocessing.connection.wait(
+            self.sentinels.keys(),
+            timeout=timeout,
+        )
+    
+        error_index = None
+        for sentinel in ready:
+            index = self.sentinels.pop(sentinel)
+            process = self.processes[index]
+            process.join()
+            if process.exitcode != 0:
+                error_index = index
+                break
+    
+        # Return if there was no error.
+        if error_index is None:
+            # Return whether or not all processes have been joined.
+            return len(self.sentinels) == 0
+        # An error occurred. Clean-up all processes before returning.
+        # First, allow a grace period for processes to shutdown themselves.
+        if grace_period is not None:
+            self._join_procs_with_timeout(grace_period)
+        # Then, terminate processes that are still alive. Try SIGTERM first.
+        for process in self.processes:
+            if process.is_alive():
+                log.warning("Terminating process %s via signal SIGTERM", process.pid)
+                process.terminate()
+    
+        # Try SIGKILL if the process isn't going down after another grace_period.
+        # The reason is related to python signal handling is limited
+        # to main thread and if that is in c/c++ land and stuck it won't
+        # to handle it. We have seen processes getting stuck not handling
+        # SIGTERM for the above reason.
+        self._join_procs_with_timeout(30 if grace_period is None else grace_period)
+        for process in self.processes:
+            if process.is_alive():
+                log.warning(
+                    "Unable to shutdown process %s via SIGTERM , forcefully exiting via SIGKILL",
+                    process.pid,
+                )
+                process.kill()
+            process.join()
+    
+        # The file will only be created if the process crashed.
+        failed_process = self.processes[error_index]
+        if not os.access(self.error_files[error_index], os.R_OK):
+            exitcode = self.processes[error_index].exitcode
+            if exitcode < 0:
+                try:
+                    name = signal.Signals(-exitcode).name
+                except ValueError:
+                    name = f"<Unknown signal {-exitcode}>"
+>               raise ProcessExitedException(
+                    f"process {error_index:d} terminated with signal {name}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                    signal_name=name,
+                )
+E               torch.multiprocessing.spawn.ProcessExitedException: process 1 terminated with signal SIGABRT
+
+.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:192: ProcessExitedException
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:31:01.5831 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:31:32.7784 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:31:32.7789 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.61GiB layers=2
+2026-09-09T00:31:32.7819 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:31:32.7823 | linearize_moe | INFO - linearize_moe start rss=0.99GiB mem_avail=496.61GiB layers=2
+2026-09-09T00:31:32.8021 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:31:32.8054 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+xgpf11:37037:37037 [0] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37037:37037 [0] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37037:37037 [0] NCCL INFO cudaDriverVersion 13000
+xgpf11:37037:37037 [0] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37037:37037 [0] NCCL INFO Comm config Blocking set to 1
+xgpf11:37038:37038 [1] NCCL INFO ENV/Plugin: Could not find: libnccl-env.so
+xgpf11:37038:37038 [1] NCCL INFO cudaDriverVersion 13000
+xgpf11:37038:37038 [1] NCCL INFO Bootstrap: Using enp24s0f0:192.168.51.75<0>
+xgpf11:37038:37038 [1] NCCL INFO NCCL version 2.28.9+cuda12.9
+xgpf11:37038:37038 [1] NCCL INFO Comm config Blocking set to 1
+xgpf11:37037:37037 [0] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37037:37037 [0] NCCL INFO NET/IB : No device found.
+xgpf11:37037:37037 [0] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37037:37037 [0] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37037:37037 [0] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37037:37037 [0] NCCL INFO Initialized NET plugin Socket
+xgpf11:37037:37037 [0] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37037:37037 [0] NCCL INFO Using network Socket
+xgpf11:37037:37037 [0] NCCL INFO ncclCommInitRankConfig comm 0x125c1fe0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0xd0a250cc1b637a06 - Init START
+xgpf11:37038:37038 [1] NCCL INFO NET/Plugin: Could not find: libnccl-net.so
+xgpf11:37038:37038 [1] NCCL INFO NET/IB : No device found.
+xgpf11:37038:37038 [1] NCCL INFO NET/IB : Using [RO]; OOB enp24s0f0:192.168.51.75<0>
+xgpf11:37038:37038 [1] NCCL INFO Failed to initialize NET plugin IB
+xgpf11:37038:37038 [1] NCCL INFO NET/Socket : Using [0]enp24s0f0:192.168.51.75<0> [1]enp24s0f1:192.168.57.95<0>
+xgpf11:37038:37038 [1] NCCL INFO Initialized NET plugin Socket
+xgpf11:37038:37038 [1] NCCL INFO Assigned NET plugin Socket to comm
+xgpf11:37038:37038 [1] NCCL INFO Using network Socket
+xgpf11:37038:37038 [1] NCCL INFO ncclCommInitRankConfig comm 0x3ddbc510 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0xd0a250cc1b637a06 - Init START
+xgpf11:37038:37038 [1] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37037:37037 [0] NCCL INFO RAS client listening socket at 127.0.0.1<28028>
+xgpf11:37038:37038 [1] NCCL INFO Bootstrap timings total 0.005210 (create 0.000051, send 0.003207, recv 0.001304, ring 0.000069, delay 0.000001)
+xgpf11:37037:37037 [0] NCCL INFO Bootstrap timings total 0.016893 (create 0.000064, send 0.000238, recv 0.014860, ring 0.000947, delay 0.000001)
+xgpf11:37037:37037 [0] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 0 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37038:37038 [1] NCCL INFO ncclTopoGetCpuAffinity: Affinity for GPU 1 is 0,24. (GPU affinity = 0-11,24-35 ; CPU affinity = 0,12,24,36).
+xgpf11:37037:37037 [0] NCCL INFO NVLS multicast support is not available on dev 0 (NVLS_NCHANNELS 0)
+xgpf11:37038:37038 [1] NCCL INFO NVLS multicast support is not available on dev 1 (NVLS_NCHANNELS 0)
+xgpf11:37038:37038 [1] NCCL INFO comm 0x3ddbc510 rank 1 nRanks 2 nNodes 1 localRanks 2 localRank 1 MNNVL 0
+xgpf11:37037:37037 [0] NCCL INFO comm 0x125c1fe0 rank 0 nRanks 2 nNodes 1 localRanks 2 localRank 0 MNNVL 0
+xgpf11:37037:37037 [0] NCCL INFO Channel 00/02 : 0 1
+xgpf11:37038:37038 [1] NCCL INFO Trees [0] -1/-1/-1->1->0 [1] -1/-1/-1->1->0
+xgpf11:37037:37037 [0] NCCL INFO Channel 01/02 : 0 1
+xgpf11:37038:37038 [1] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37037:37037 [0] NCCL INFO Trees [0] 1/-1/-1->0->-1 [1] 1/-1/-1->0->-1
+xgpf11:37037:37037 [0] NCCL INFO P2P Chunksize set to 131072
+xgpf11:37037:37037 [0] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37038:37038 [1] NCCL INFO PROFILER/Plugin: Could not find: libnccl-profiler.so
+xgpf11:37037:37037 [0] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37038:37038 [1] NCCL INFO Check P2P Type isAllDirectP2p 0 directMode 0 isAllCudaP2p 1
+xgpf11:37037:37060 [0] NCCL INFO [Proxy Service] Device 0 CPU core 0
+xgpf11:37038:37059 [0] NCCL INFO [Proxy Service] Device 1 CPU core 24
+xgpf11:37037:37061 [0] NCCL INFO [Proxy Service UDS] Device 0 CPU core 24
+xgpf11:37038:37062 [0] NCCL INFO [Proxy Service UDS] Device 1 CPU core 24
+xgpf11:37037:37037 [0] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37037:37037 [0] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37037:37037 [0] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37038:37038 [1] NCCL INFO TUNER/Plugin: Could not find: libnccl-tuner.so
+xgpf11:37038:37038 [1] NCCL INFO threadThresholds 8/8/64 | 16/8/64 | 512 | 512
+xgpf11:37038:37038 [1] NCCL INFO 2 coll channels, 2 collnet channels, 0 nvls channels, 2 p2p channels, 2 p2p channels per peer
+xgpf11:37037:37037 [0] NCCL INFO CC Off, workFifoBytes 1048576
+xgpf11:37038:37038 [1] NCCL INFO ncclCommInitRankConfig comm 0x3ddbc510 rank 1 nranks 2 cudaDev 1 nvmlDev 1 busId 5e000 commId 0xd0a250cc1b637a06 - Init COMPLETE
+xgpf11:37037:37037 [0] NCCL INFO ncclCommInitRankConfig comm 0x125c1fe0 rank 0 nranks 2 cudaDev 0 nvmlDev 0 busId 3b000 commId 0xd0a250cc1b637a06 - Init COMPLETE
+xgpf11:37038:37038 [1] NCCL INFO Init timings - ncclCommInitRankConfig: rank 1 nranks 2 total 0.37 (kernels 0.33, alloc 0.00, bootstrap 0.01, allgathers 0.00, topo 0.02, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37037:37037 [0] NCCL INFO Init timings - ncclCommInitRankConfig: rank 0 nranks 2 total 0.38 (kernels 0.33, alloc 0.00, bootstrap 0.02, allgathers 0.00, topo 0.02, graphs 0.00, connections 0.00, rest 0.00)
+xgpf11:37037:37037 [0] NCCL INFO Channel 00 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37038:37038 [1] NCCL INFO Channel 00 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37037:37037 [0] NCCL INFO Channel 01 : 0[0] -> 1[1] via SHM/direct/direct
+xgpf11:37038:37038 [1] NCCL INFO Channel 01 : 1[1] -> 0[0] via SHM/direct/direct
+xgpf11:37038:37038 [1] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+xgpf11:37037:37037 [0] NCCL INFO Connected all rings, use ring PXN 0 GDR 1
+2026-09-09T00:31:34.0268 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=-0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:31:34.0273 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:31:34.0860 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.99GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:31:34.0866 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:31:34.4515 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.24GiB peak=1.24GiB after_gc=1.24GiB (delta_gc=-0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:31:34.4522 | linearize_moe | INFO - linearize_moe done rss=1.24GiB (net=+0.25GiB from start)
+2026-09-09T00:31:34.4539 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=1.26GiB peak=1.26GiB after_gc=1.26GiB (delta_gc=+0.00GiB) mem_avail=496.14GiB
+2026-09-09T00:31:34.4545 | linearize_moe | INFO - linearize_moe done rss=1.26GiB (net=+0.27GiB from start)
+xgpf11:37037:37060 [0] NCCL INFO [Service thread] Connection closed by localRank 1
+xgpf11:37037:37037 [0] NCCL INFO comm 0x125c1fe0 rank 0 nranks 2 cudaDev 0 busId 3b000 - Destroy COMPLETE
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.25s/it]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.30s/it]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.33it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.20it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.31it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.19it/s]
+[rank1]:[E909 00:32:34.959982194 ProcessGroupNCCL.cpp:689] [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=55, OpType=BROADCAST, NumelIn=3, NumelOut=3, Timeout(ms)=60000) ran for 60000 milliseconds before timing out.
+[rank1]:[E909 00:32:34.960980898 ProcessGroupNCCL.cpp:2303] [PG ID 0 PG GUID 0(default_pg) Rank 1]  failure detected by watchdog at work sequence id: 55 PG status: last enqueued work: 55, last completed work: 54
+[rank1]:[E909 00:32:34.961867216 ProcessGroupNCCL.cpp:733] Stack trace of the failed collective: 
+#0 broadcast from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:2968
+#1 wrapper from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83
+#2 broadcast_object_list from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/distributed_c10d.py:3825
+#3 wrapper from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83
+#4 offload from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/cache/dist_disk.py:39
+#5 from_mapping from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/cache/base.py:121
+#6 offload_module from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/module.py:39
+#7 _lifecycle_worker from /home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py:130
+#8 _nccl_worker from /home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py:29
+#9 _worker_entry from /home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:84
+#10 _wrap from /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:87
+#11 run from /usr/lib/python3.12/multiprocessing/process.py:108
+#12 _bootstrap from /usr/lib/python3.12/multiprocessing/process.py:314
+#13 _main from /usr/lib/python3.12/multiprocessing/spawn.py:135
+#14 spawn_main from /usr/lib/python3.12/multiprocessing/spawn.py:122
+#15 <module> from <string>:1
+
+[rank1]:[E909 00:32:34.961941034 ProcessGroupNCCL.cpp:2636] [PG ID 0 PG GUID 0(default_pg) Rank 1] First PG on this rank to signal dumping.
+[rank1]:[E909 00:32:34.110271828 ProcessGroupNCCL.cpp:1914] [PG ID 0 PG GUID 0(default_pg) Rank 1] Received a dump signal due to a collective timeout from this local rank and we will try our best to dump the debug info. Last enqueued NCCL work: 55, last completed NCCL work: 54.This is most likely caused by incorrect usages of collectives, e.g., wrong sizes used across ranks, the order of collectives is not same for all ranks or the scheduled collective, for some reason, didn't run. Additionally, this can be caused by GIL deadlock or other reasons such as network errors or bugs in the communications library (e.g. NCCL), etc. 
+[rank1]:[E909 00:32:34.110411243 ProcessGroupNCCL.cpp:1628] [PG ID 0 PG GUID 0(default_pg) Rank 1] ProcessGroupNCCL preparing to dump debug info. Include stack trace: 1, only active collectives: 0
+[rank1]:[E909 00:33:34.962037029 ProcessGroupNCCL.cpp:750] [Rank 1] Some NCCL operations have failed or timed out. Due to the asynchronous nature of CUDA kernels, subsequent GPU operations might run on corrupted/incomplete data.
+[rank1]:[E909 00:33:34.962086468 ProcessGroupNCCL.cpp:764] [Rank 1] To avoid data inconsistency, we are taking the entire process down.
+[rank1]:[E909 00:33:34.963574162 ProcessGroupNCCL.cpp:2119] [PG ID 0 PG GUID 0(default_pg) Rank 1] Process group watchdog thread terminated with exception: [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=55, OpType=BROADCAST, NumelIn=3, NumelOut=3, Timeout(ms)=60000) ran for 60000 milliseconds before timing out.
+Exception raised from checkTimeout at /pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x705358b7205d in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x2a7 (0x70527733fd87 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x17b1 (0x7052773451a1 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0x157 (0x705277346597 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xecdb4 (0x70534b4ecdb4 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x9cb84 (0x70538c29cb84 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x129d6c (0x70538c329d6c in /lib/x86_64-linux-gnu/libc.so.6)
+
+terminate called after throwing an instance of 'c10::DistBackendError'
+  what():  [PG ID 0 PG GUID 0(default_pg) Rank 1] Process group watchdog thread terminated with exception: [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=55, OpType=BROADCAST, NumelIn=3, NumelOut=3, Timeout(ms)=60000) ran for 60000 milliseconds before timing out.
+Exception raised from checkTimeout at /pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:692 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x705358b7205d in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: c10d::ProcessGroupNCCL::WorkNCCL::checkTimeout(std::optional<std::chrono::duration<long, std::ratio<1l, 1000l> > >) + 0x2a7 (0x70527733fd87 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #2: c10d::ProcessGroupNCCL::Watchdog::runLoop() + 0x17b1 (0x7052773451a1 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #3: c10d::ProcessGroupNCCL::Watchdog::run() + 0x157 (0x705277346597 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #4: <unknown function> + 0xecdb4 (0x70534b4ecdb4 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #5: <unknown function> + 0x9cb84 (0x70538c29cb84 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #6: <unknown function> + 0x129d6c (0x70538c329d6c in /lib/x86_64-linux-gnu/libc.so.6)
+
+Exception raised from run at /pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:2125 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x9d (0x705358b7205d in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libc10.so)
+frame #1: <unknown function> + 0x9b5d75 (0x705276ba6d75 in /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so)
+frame #2: <unknown function> + 0xecdb4 (0x70534b4ecdb4 in /lib/x86_64-linux-gnu/libstdc++.so.6)
+frame #3: <unknown function> + 0x9cb84 (0x70538c29cb84 in /lib/x86_64-linux-gnu/libc.so.6)
+frame #4: <unknown function> + 0x129d6c (0x70538c329d6c in /lib/x86_64-linux-gnu/libc.so.6)
+
+W0909 00:33:34.838000 36872 .venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:165] Terminating process 37037 via signal SIGTERM
+------------------------------ Captured log call -------------------------------
+WARNING  torch.multiprocessing.spawn:spawn.py:165 Terminating process 37037 via signal SIGTERM
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:33:37.0541 | reset | INFO - Compression lifecycle reset
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[weight-only-disk] - torch.multiprocessing.spawn.ProcessExitedException: process 1 terminated with signal SIGABRT
+FAILED tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py::test_two_gpu_nccl_expert_gptq_collective_save_reload[mixed-disk] - torch.multiprocessing.spawn.ProcessExitedException: process 1 terminated with signal SIGABRT
+============= 2 failed, 1 passed, 14 warnings in 421.90s (0:07:01) =============

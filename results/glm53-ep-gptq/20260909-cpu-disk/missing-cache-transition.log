@@ -1,0 +1,331 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_real_glm_gloo_disk_oneshot_collective_save_reload[weight-only] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-e1129930/pytest-9/test_real_glm_gloo_disk_onesho0')
+dynamic = False
+
+    @pytest.mark.parametrize("dynamic", [False, True], ids=["weight-only", "fp8-rest"])
+    def test_real_glm_gloo_disk_oneshot_collective_save_reload(tmp_path, dynamic):
+        # Exercise the same disk setup as the GPU gate even on CPU-only hosts.
+>       _launch(_disk_lifecycle_worker, tmp_path, dynamic)
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py:368: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:52: in _launch
+    if context.join(timeout=1):
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <torch.multiprocessing.spawn.ProcessContext object at 0x7404a09a84a0>
+timeout = 1, grace_period = None
+
+    def join(self, timeout: float | None = None, grace_period: float | None = None):
+        r"""Join one or more processes within spawn context.
+    
+        Attempt to join one or more processes in this spawn context.
+        If one of them exited with a non-zero exit status, this function
+        kills the remaining processes (optionally with a grace period)
+        and raises an exception with the cause of the first process exiting.
+    
+        Returns ``True`` if all processes have been joined successfully,
+        ``False`` if there are more processes that need to be joined.
+    
+        Args:
+            timeout (float): Wait this long (in seconds) before giving up on waiting.
+            grace_period (float): When any processes fail, wait this long (in seconds)
+                for others to shutdown gracefully before terminating them. If they
+                still don't exit, wait another grace period before killing them.
+        """
+        # Ensure this function can be called even when we're done.
+        if len(self.sentinels) == 0:
+            return True
+    
+        # Wait for any process to fail or all of them to succeed.
+        ready = multiprocessing.connection.wait(
+            self.sentinels.keys(),
+            timeout=timeout,
+        )
+    
+        error_index = None
+        for sentinel in ready:
+            index = self.sentinels.pop(sentinel)
+            process = self.processes[index]
+            process.join()
+            if process.exitcode != 0:
+                error_index = index
+                break
+    
+        # Return if there was no error.
+        if error_index is None:
+            # Return whether or not all processes have been joined.
+            return len(self.sentinels) == 0
+        # An error occurred. Clean-up all processes before returning.
+        # First, allow a grace period for processes to shutdown themselves.
+        if grace_period is not None:
+            self._join_procs_with_timeout(grace_period)
+        # Then, terminate processes that are still alive. Try SIGTERM first.
+        for process in self.processes:
+            if process.is_alive():
+                log.warning("Terminating process %s via signal SIGTERM", process.pid)
+                process.terminate()
+    
+        # Try SIGKILL if the process isn't going down after another grace_period.
+        # The reason is related to python signal handling is limited
+        # to main thread and if that is in c/c++ land and stuck it won't
+        # to handle it. We have seen processes getting stuck not handling
+        # SIGTERM for the above reason.
+        self._join_procs_with_timeout(30 if grace_period is None else grace_period)
+        for process in self.processes:
+            if process.is_alive():
+                log.warning(
+                    "Unable to shutdown process %s via SIGTERM , forcefully exiting via SIGKILL",
+                    process.pid,
+                )
+                process.kill()
+            process.join()
+    
+        # The file will only be created if the process crashed.
+        failed_process = self.processes[error_index]
+        if not os.access(self.error_files[error_index], os.R_OK):
+            exitcode = self.processes[error_index].exitcode
+            if exitcode < 0:
+                try:
+                    name = signal.Signals(-exitcode).name
+                except ValueError:
+                    name = f"<Unknown signal {-exitcode}>"
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with signal {name}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                    signal_name=name,
+                )
+            else:
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with exit code {exitcode:d}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                )
+    
+        with open(self.error_files[error_index], "rb") as fh:
+            original_trace = pickle.load(fh)
+        msg = f"\n\n-- Process {error_index:d} terminated with the following error:\n"
+        msg += original_trace
+>       raise ProcessRaisedException(msg, error_index, failed_process.pid)
+E       torch.multiprocessing.spawn.ProcessRaisedException: 
+E       
+E       -- Process 0 terminated with the following error:
+E       Traceback (most recent call last):
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py", line 87, in _wrap
+E           fn(i, *args)
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py", line 84, in _worker_entry
+E           worker(rank, Path(workdir), *args)
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py", line 360, in _disk_lifecycle_worker
+E           _lifecycle_worker(
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py", line 135, in _lifecycle_worker
+E           offload_module(
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/module.py", line 33, in offload_module
+E           raise ValueError(
+E       ValueError: Attempted to offload a module twice. Please call `remove_module_offload` first.
+
+.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:211: ProcessRaisedException
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:35:22.5551 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:35:22.7322 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:35:22.7329 | linearize_moe | INFO - linearize_moe start rss=0.59GiB mem_avail=58.52GiB layers=2
+2026-09-09T00:35:22.7465 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:35:22.7467 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:35:22.7473 | linearize_moe | INFO - linearize_moe start rss=0.59GiB mem_avail=58.52GiB layers=2
+2026-09-09T00:35:22.7658 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:35:23.6651 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.59GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.17GiB
+2026-09-09T00:35:23.6656 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:35:23.6956 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.59GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.17GiB
+2026-09-09T00:35:23.6961 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:35:24.0931 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.17GiB
+2026-09-09T00:35:24.0934 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.17GiB
+2026-09-09T00:35:24.0937 | linearize_moe | INFO - linearize_moe done rss=0.60GiB (net=+0.01GiB from start)
+2026-09-09T00:35:24.0939 | linearize_moe | INFO - linearize_moe done rss=0.60GiB (net=+0.01GiB from start)
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:  50%|█████     | 1/2 [00:00<00:00,  1.07it/s]Linearizing experts:  50%|█████     | 1/2 [00:00<00:00,  1.06it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.60it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.49it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.57it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.47it/s]
+W0909 00:35:24.199000 1133454 .venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:165] Terminating process 1133505 via signal SIGTERM
+------------------------------ Captured log call -------------------------------
+WARNING  torch.multiprocessing.spawn:spawn.py:165 Terminating process 1133505 via signal SIGTERM
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:35:24.3819 | reset | INFO - Compression lifecycle reset
+_______ test_real_glm_gloo_disk_oneshot_collective_save_reload[fp8-rest] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-e1129930/pytest-9/test_real_glm_gloo_disk_onesho1')
+dynamic = True
+
+    @pytest.mark.parametrize("dynamic", [False, True], ids=["weight-only", "fp8-rest"])
+    def test_real_glm_gloo_disk_oneshot_collective_save_reload(tmp_path, dynamic):
+        # Exercise the same disk setup as the GPU gate even on CPU-only hosts.
+>       _launch(_disk_lifecycle_worker, tmp_path, dynamic)
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py:368: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py:52: in _launch
+    if context.join(timeout=1):
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <torch.multiprocessing.spawn.ProcessContext object at 0x7404a09f3110>
+timeout = 1, grace_period = None
+
+    def join(self, timeout: float | None = None, grace_period: float | None = None):
+        r"""Join one or more processes within spawn context.
+    
+        Attempt to join one or more processes in this spawn context.
+        If one of them exited with a non-zero exit status, this function
+        kills the remaining processes (optionally with a grace period)
+        and raises an exception with the cause of the first process exiting.
+    
+        Returns ``True`` if all processes have been joined successfully,
+        ``False`` if there are more processes that need to be joined.
+    
+        Args:
+            timeout (float): Wait this long (in seconds) before giving up on waiting.
+            grace_period (float): When any processes fail, wait this long (in seconds)
+                for others to shutdown gracefully before terminating them. If they
+                still don't exit, wait another grace period before killing them.
+        """
+        # Ensure this function can be called even when we're done.
+        if len(self.sentinels) == 0:
+            return True
+    
+        # Wait for any process to fail or all of them to succeed.
+        ready = multiprocessing.connection.wait(
+            self.sentinels.keys(),
+            timeout=timeout,
+        )
+    
+        error_index = None
+        for sentinel in ready:
+            index = self.sentinels.pop(sentinel)
+            process = self.processes[index]
+            process.join()
+            if process.exitcode != 0:
+                error_index = index
+                break
+    
+        # Return if there was no error.
+        if error_index is None:
+            # Return whether or not all processes have been joined.
+            return len(self.sentinels) == 0
+        # An error occurred. Clean-up all processes before returning.
+        # First, allow a grace period for processes to shutdown themselves.
+        if grace_period is not None:
+            self._join_procs_with_timeout(grace_period)
+        # Then, terminate processes that are still alive. Try SIGTERM first.
+        for process in self.processes:
+            if process.is_alive():
+                log.warning("Terminating process %s via signal SIGTERM", process.pid)
+                process.terminate()
+    
+        # Try SIGKILL if the process isn't going down after another grace_period.
+        # The reason is related to python signal handling is limited
+        # to main thread and if that is in c/c++ land and stuck it won't
+        # to handle it. We have seen processes getting stuck not handling
+        # SIGTERM for the above reason.
+        self._join_procs_with_timeout(30 if grace_period is None else grace_period)
+        for process in self.processes:
+            if process.is_alive():
+                log.warning(
+                    "Unable to shutdown process %s via SIGTERM , forcefully exiting via SIGKILL",
+                    process.pid,
+                )
+                process.kill()
+            process.join()
+    
+        # The file will only be created if the process crashed.
+        failed_process = self.processes[error_index]
+        if not os.access(self.error_files[error_index], os.R_OK):
+            exitcode = self.processes[error_index].exitcode
+            if exitcode < 0:
+                try:
+                    name = signal.Signals(-exitcode).name
+                except ValueError:
+                    name = f"<Unknown signal {-exitcode}>"
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with signal {name}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                    signal_name=name,
+                )
+            else:
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with exit code {exitcode:d}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                )
+    
+        with open(self.error_files[error_index], "rb") as fh:
+            original_trace = pickle.load(fh)
+        msg = f"\n\n-- Process {error_index:d} terminated with the following error:\n"
+        msg += original_trace
+>       raise ProcessRaisedException(msg, error_index, failed_process.pid)
+E       torch.multiprocessing.spawn.ProcessRaisedException: 
+E       
+E       -- Process 0 terminated with the following error:
+E       Traceback (most recent call last):
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py", line 87, in _wrap
+E           fn(i, *args)
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_distributed.py", line 84, in _worker_entry
+E           worker(rank, Path(workdir), *args)
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py", line 360, in _disk_lifecycle_worker
+E           _lifecycle_worker(
+E         File "/home/e/e1129930/llm-compressor/tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py", line 135, in _lifecycle_worker
+E           offload_module(
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/module.py", line 33, in offload_module
+E           raise ValueError(
+E       ValueError: Attempted to offload a module twice. Please call `remove_module_offload` first.
+
+.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:211: ProcessRaisedException
+---------------------------- Captured stdout setup -----------------------------
+2026-09-09T00:35:24.3833 | reset | INFO - Compression lifecycle reset
+----------------------------- Captured stdout call -----------------------------
+2026-09-09T00:35:24.5472 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:35:24.5478 | linearize_moe | INFO - linearize_moe start rss=0.59GiB mem_avail=58.45GiB layers=2
+2026-09-09T00:35:24.5539 | linearize_moe | WARNING - MoE is being linearized after loading in order to support efficient calibration of experts. However, this may be inefficient if the model checkpoint is already linearized (2D -> 3D -> 2D). Consider registering a load converter for faster load times. See https://docs.vllm.ai/projects/llm-compressor/en/latest/developer-tutorials/add-moe-support
+2026-09-09T00:35:24.5544 | linearize_moe | INFO - linearize_moe start rss=0.59GiB mem_avail=58.45GiB layers=2
+2026-09-09T00:35:25.1076 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:35:25.1161 | linearize_moe | INFO - Linearizing experts at `model.layers.1.mlp.experts` (1/2)
+2026-09-09T00:35:25.7748 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=-0.00GiB) mem_avail=58.11GiB
+2026-09-09T00:35:25.7753 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:35:25.8108 | linearize_moe | INFO - linearize_moe `model.layers.1.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=-0.00GiB) mem_avail=58.11GiB
+2026-09-09T00:35:25.8112 | linearize_moe | INFO - Linearizing experts at `model.layers.2.mlp.experts` (2/2)
+2026-09-09T00:35:26.2136 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.11GiB
+2026-09-09T00:35:26.2142 | linearize_moe | INFO - linearize_moe done rss=0.60GiB (net=+0.01GiB from start)
+2026-09-09T00:35:26.2148 | linearize_moe | INFO - linearize_moe `model.layers.2.mlp.experts` rss before=0.60GiB peak=0.60GiB after_gc=0.60GiB (delta_gc=+0.00GiB) mem_avail=58.11GiB
+2026-09-09T00:35:26.2157 | linearize_moe | INFO - linearize_moe done rss=0.60GiB (net=+0.01GiB from start)
+----------------------------- Captured stderr call -----------------------------
+Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:   0%|          | 0/2 [00:00<?, ?it/s]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.22s/it]Linearizing experts:  50%|█████     | 1/2 [00:01<00:01,  1.26s/it]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.32it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.21it/s]
+Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.32it/s]Linearizing experts: 100%|██████████| 2/2 [00:01<00:00,  1.20it/s]
+W0909 00:35:26.351000 1133454 .venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:165] Terminating process 1133518 via signal SIGTERM
+------------------------------ Captured log call -------------------------------
+WARNING  torch.multiprocessing.spawn:spawn.py:165 Terminating process 1133518 via signal SIGTERM
+--------------------------- Captured stdout teardown ---------------------------
+2026-09-09T00:35:26.3811 | reset | INFO - Compression lifecycle reset
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[weight-only]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[weight-only]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[fp8-rest]
+tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[fp8-rest]
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=1133454) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[weight-only]
+FAILED tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py::test_real_glm_gloo_disk_oneshot_collective_save_reload[fp8-rest]
+2 failed, 5 deselected, 18 warnings in 7.34s

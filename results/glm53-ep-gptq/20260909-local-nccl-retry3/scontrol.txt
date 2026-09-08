@@ -1,0 +1,27 @@
+JobId=830738 JobName=glm53-ep-nccl-r3
+   UserId=e1129930(52572) GroupId=soc(140) MCS_label=N/A
+   Priority=4693 Nice=-200 Account=allusers QOS=normal
+   JobState=COMPLETING Reason=NonZeroExitCode Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=0 Reboot=0 ExitCode=1:0
+   RunTime=00:08:12 TimeLimit=00:15:00 TimeMin=N/A
+   SubmitTime=2026-09-09T00:25:31 EligibleTime=2026-09-09T00:25:31
+   AccrueTime=Unknown
+   StartTime=2026-09-09T00:25:31 EndTime=2026-09-09T00:33:43 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-09-09T00:25:31 Scheduler=Main
+   Partition=gpu AllocNode:Sid=xcnc31.comp.nus.edu.sg:1131814
+   ReqNodeList=xgpf11 ExcNodeList=(null)
+   NodeList=xgpf11
+   BatchHost=xgpf11
+   NumNodes=1 NumCPUs=4 NumTasks=1 CPUs/Task=4 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=4,mem=16G,node=1,billing=10,gres/gpu=2,gres/gpu:nv=2
+   AllocTRES=cpu=4,mem=16G,node=1,billing=10,gres/gpu=2,gres/gpu:nv=2
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=4 MinMemoryNode=16G MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=NO Exclusive=NO Contiguous=0 Licenses=(null) LicensesAlloc=(null) Network=(null)
+   Command=bash
+   SubmitLine=srun -vvv --partition=gpu --nodelist=xgpf11 --nodes=1 --ntasks=1 --cpus-per-task=4 --cpu-bind=cores --mem=16G --gres=gpu:nv:2 --time=00:15:00 --immediate=1 --job-name=glm53-ep-nccl-r3 bash /home/e/e1129930/llm-compressor/results/glm53-ep-gptq/20260909-local-nccl-retry3/worker.sh
+   WorkDir=/home/e/e1129930/llm-compressor
+   TresPerNode=gres/gpu:nv:2
+   TresPerTask=cpu=4
+

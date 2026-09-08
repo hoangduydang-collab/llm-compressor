@@ -1,0 +1,28 @@
+JobId=830714 JobName=ep-launch-inherited
+   UserId=e1129930(52572) GroupId=soc(140) MCS_label=N/A
+   Priority=4693 Nice=-200 Account=allusers QOS=normal
+   JobState=FAILED Reason=RaisedSignal:64(Real-time_signal_30) Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=0 Reboot=0 ExitCode=0:64
+   RunTime=00:00:00 TimeLimit=00:01:00 TimeMin=N/A
+   SubmitTime=2026-09-09T00:16:53 EligibleTime=2026-09-09T00:16:53
+   AccrueTime=Unknown
+   StartTime=2026-09-09T00:16:53 EndTime=2026-09-09T00:16:53 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-09-09T00:16:53 Scheduler=Main
+   Partition=gpu AllocNode:Sid=xcnc31.comp.nus.edu.sg:1129669
+   ReqNodeList=xgph12 ExcNodeList=(null)
+   NodeList=xgph12
+   BatchHost=xgph12
+   NumNodes=1 NumCPUs=4 NumTasks=1 CPUs/Task=4 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=4,mem=16G,node=1,billing=22,gres/gpu=2,gres/gpu:a100-40=2
+   AllocTRES=cpu=4,mem=16G,node=1,billing=22,gres/gpu=2,gres/gpu:a100-40=2
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=4 MinMemoryNode=16G MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=NO Exclusive=NO Contiguous=0 Licenses=(null) LicensesAlloc=(null) Network=(null)
+   Command=/bin/hostname
+   SubmitLine=srun -vvv --partition=gpu --nodelist=xgph12 --nodes=1 --ntasks=1 --cpus-per-task=4 --mem=16G --gres=gpu:a100-40:2 --time=00:01:00 --immediate=30 --job-name=ep-launch-inherited /bin/hostname
+   WorkDir=/home/e/e1129930/llm-compressor
+   OOMKillStep=0
+   TresPerNode=gres/gpu:a100-40:2
+   TresPerTask=cpu=4
+

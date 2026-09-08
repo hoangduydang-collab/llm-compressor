@@ -1,0 +1,31 @@
+srun: defined options
+srun: -------------------- --------------------
+srun: cpus-per-task       : 4
+srun: gres                : gres/gpu:a100-40:2
+srun: immediate           : 30
+srun: job-name            : ep-launch-clean
+srun: mem                 : 16G
+srun: nodelist            : xgph12
+srun: nodes               : 1
+srun: ntasks              : 1
+srun: partition           : gpu
+srun: time                : 00:01:00
+srun: verbose             : 3
+srun: -------------------- --------------------
+srun: end of defined options
+srun: debug:  propagating RLIMIT_FSIZE=18446744073709551615
+srun: debug:  propagating RLIMIT_STACK=8388608
+srun: debug:  propagating RLIMIT_CORE=0
+srun: debug:  propagating RLIMIT_RSS=17179869184
+srun: debug:  propagating RLIMIT_NOFILE=1024
+srun: debug:  propagating RLIMIT_MEMLOCK=2095353856
+srun: debug:  propagating SLURM_PRIO_PROCESS=0
+srun: debug:  propagating UMASK=0022
+srun: debug2: cpu=4 is not a gres
+srun: debug:  Entering slurm_allocation_msg_thr_create()
+srun: debug:  port from net_stream_listen is 43855
+srun: debug:  Entering _msg_thr_internal
+srun: JobId=830715 returned by the controller
+srun: debug2: Pending job allocation JobId=830715 SLUID=sABHM20WXR7F00
+srun: job 830715 queued and waiting for resources
+srun: error: Unable to allocate resources: Job/step already completing or completed

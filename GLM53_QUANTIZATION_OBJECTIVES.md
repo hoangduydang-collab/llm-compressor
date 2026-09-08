@@ -83,8 +83,12 @@ modules, including scales/layout/metadata. Validate the produced checkpoint with
 the pinned serving runtime and paired quality checks. Do not claim that the EP
 work or the current dynamic W4AFP8 preset already satisfies this objective.
 
-Status: open; intentionally follows objective 1. No full AWQ rerun is authorized
-by this brief alone.
+Status: open. The owner authorized a quick implementation alongside objective 1
+on 2026-09-09. [Early SGLang alignment](docs/glm53-sglang-w4afp8-early-alignment.md)
+adds indexer wk/wq_b to the GLM-5.3 AWQ FP8_BLOCK recipe and preserves native block
+FP8 in the existing converter, with exact verification. Direct native export,
+expert activation-scale alignment, MTP assembly and runtime/quality qualification
+remain open. No full AWQ rerun is authorized by this brief alone.
 
 ## 3. Diagnose shared-storage overhead across the entire run
 

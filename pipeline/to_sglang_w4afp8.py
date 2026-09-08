@@ -21,7 +21,15 @@ WHAT CHANGES, TENSOR BY TENSOR
     registered fp32 by the loader, but ``copy_`` casts on load and PhalaCloud
     ships bf16, so bf16 is both reference-matching and lossless here.
 
-  non-expert FP8 (attention, shared experts, dense MLP 0-2):
+  non-expert FP8 (attention, shared experts, dense MLP 0-2, indexer wk/wq_b):
+      FP8_BLOCK weight              -> copied byte-for-byte
+      weight_scale [ceil(out/128), ceil(in/128)] -> weight_scale_inv F32
+    The FP8_BLOCK path preserves the saved, already-folded numbers. BF16/FP16
+    scales widen exactly to FP32; no base weights or fold reconstruction needed.
+    The saved config must declare symmetric 128x128 block FP8; shape alone is
+    insufficient to identify a quantization scheme.
+
+  LEGACY per-channel FP8:
       weight       F8_E4M3 [out, in] ->  weight           F8_E4M3 [out, in]
       weight_scale BF16 [out, 1]     ->  weight_scale_inv F32 [out/128, in/128]
     REBUILT FROM THE BF16 SOURCE, not transcoded from the fp8 on disk.
@@ -33,7 +41,8 @@ WHAT CHANGES, TENSOR BY TENSOR
     comes with a built-in cross-check: the rebuilt weight must agree with the
     on-disk per-channel dequant to within those two roundings.
 
-  router, norms, indexer, embeddings, lm_head: copied unchanged.
+  router, norms, indexer weights_proj, embeddings, lm_head: copied unchanged.
+  Legacy BF16 indexer wk/wq_b: quantized using the existing block FP8 kernel.
 
 THE FOLD. AWQ's compensation fold multiplies the balance layers of the
 post_attention_layernorm mapping by a per-input-channel scale s and divides the
@@ -180,9 +189,8 @@ class Plan:
     def is_engine_fp8(self, module: str) -> bool:
         """FP8 because the engine cannot skip it, not because the recipe said so.
 
-        Kept separate from is_fp8_rest so the counts stay honest about
-        provenance: fp8_targets records what the AWQ recipe quantized, and these
-        modules are not in it. See ENGINE_FP8_SUFFIXES.
+        Independent of is_fp8_rest: legacy recipes omitted these modules;
+        aligned recipes quantize them already. See ENGINE_FP8_SUFFIXES.
         """
         return module.endswith(ENGINE_FP8_SUFFIXES)
 
@@ -223,8 +231,9 @@ def build_config(
     W4AFp8Config.from_config hardcodes group_size 128, weight_block_size
     [128,128], linear_activation_scheme "dynamic" and moe_activation_scheme
     "static" regardless of what the file says. The extra keys are therefore
-    documentation for humans, not inputs to the loader; ignored_layers is the one
-    field the loader genuinely reads.
+    documentation for humans, not inputs to the v0.5.17 loader. That loader also
+    ignores ignored_layers; we retain concrete, shadow-free entries for tools
+    that inspect the artifact and potential runtime fixes.
 
     ``re:`` PATTERNS ARE EXPANDED, NOT DROPPED. The loader's is_layer_skipped
     does prefix matching, not regex, so a pattern copied through verbatim would
@@ -288,9 +297,57 @@ def default_unpacker(packed, shape):
     return unpack_from_int32(packed, 4, shape)
 
 
+def source_fp8_layout(module: str, weight, scale, config: dict) -> str:
+    """Validate CT FP8 metadata/geometry before interpreting its scale grid.
+
+    Legacy artifacts lacking group metadata are accepted only with the original
+    per-channel geometry. A block fast path requires an explicit scheme, since
+    e.g. a [1, 128] matrix has identical channel and block scale shapes.
+    """
+    import torch
+
+    from pipeline.serve_ignore import match_name
+
+    groups = (config.get("quantization_config") or {}).get("config_groups") or {}
+    specs = []
+    for group in groups.values():
+        weights = group.get("weights") or {}
+        targets = group.get("targets") or []
+        if isinstance(targets, str):
+            targets = [targets]
+        if weights.get("type") == "float" and weights.get("num_bits") == 8:
+            if any(t == "Linear" or match_name(module, t) for t in targets):
+                specs.append(weights)
+    if specs and any(s != specs[0] for s in specs[1:]):
+        raise ValueError(f"{module}: conflicting FP8 weight schemes")
+    spec = specs[0] if specs else {}
+    strategy = spec.get("strategy", "channel")
+    if (weight.dtype != torch.float8_e4m3fn or weight.ndim != 2
+            or not all(weight.shape)):
+        raise ValueError(f"{module}: expected a 2-D E4M3 weight")
+    if not spec.get("symmetric", True) or spec.get("dynamic", False):
+        raise ValueError(f"{module}: expected symmetric static FP8 weights")
+    if strategy == "block":
+        if spec.get("block_structure") != list(DEFAULT_BLOCK):
+            raise ValueError(f"{module}: SGLang requires 128x128 FP8 blocks")
+        expected = tuple((n + b - 1) // b for n, b in zip(weight.shape, DEFAULT_BLOCK))
+    elif strategy == "channel":
+        expected = (weight.shape[0], 1)
+    else:
+        raise ValueError(f"{module}: unsupported source FP8 strategy {strategy!r}")
+    if tuple(scale.shape) != expected:
+        raise ValueError(
+            f"{module}: {strategy} FP8 scale shape {tuple(scale.shape)} != {expected}"
+        )
+    if (scale.dtype not in (torch.bfloat16, torch.float16, torch.float32)
+            or not torch.isfinite(scale).all() or not (scale > 0).all()):
+        raise ValueError(f"{module}: FP8 scales must be finite positive BF16/FP16/FP32")
+    return strategy
+
+
 def convert(
     ckpt: Path,
-    base: Path,
+    base: Path | None,
     out: Path,
     layers: list[int] | None = None,
     shard_bytes: int = 10_000_000_000,
@@ -305,7 +362,9 @@ def convert(
     from pipeline.serve_ignore import weight_map_of
 
     ckpt_map = weight_map_of(ckpt)
-    base_map = weight_map_of(base)
+    # Only legacy per-channel/BF16 tensors need the base. A fully block-FP8
+    # checkpoint can be repacked without opening the BF16 snapshot at all.
+    base_map = None
     src_config = json.loads((ckpt / "config.json").read_text(encoding="utf-8"))
 
     recipe_path = ckpt.parent / "recipe.json"
@@ -423,6 +482,7 @@ def convert(
     total_bytes = 0
     weight_map: dict[str, str] = {}
     stats = {"expert": 0, "fp8": 0, "engine_fp8": 0, "copy": 0}
+    fp8_paths = {"preserved_block": 0, "rebuilt_from_base": 0}
     crosscheck: list[float] = []
 
     def flush() -> None:
@@ -514,13 +574,34 @@ def convert(
 
         if plan.needs_fp8(module):
             base_key = f"{module}.weight"
+            old_scale_key = f"{module}.weight_scale"
+            if old_scale_key in ckpt_map:
+                saved_weight = _get(ckpt, ckpt_map, base_key)
+                saved_scale = _get(ckpt, ckpt_map, old_scale_key)
+                try:
+                    layout = source_fp8_layout(
+                        module, saved_weight, saved_scale, src_config
+                    )
+                except ValueError as exc:
+                    print(f"[convert] error: {exc}", flush=True)
+                    return 2
+                if layout == "block":
+                    emit(base_key, saved_weight.contiguous())
+                    emit(f"{module}.weight_scale_inv", saved_scale.float().contiguous())
+                    stats["engine_fp8" if plan.is_engine_fp8(module) else "fp8"] += 1
+                    fp8_paths["preserved_block"] += 1
+                    continue
+
+            if base_map is None:
+                if base is None:
+                    print(f"[convert] error: {module} needs legacy FP8 conversion; "
+                          "supply --base with the original BF16 snapshot", flush=True)
+                    return 2
+                base_map = weight_map_of(base)
             if base_key not in base_map:
-                print(f"[convert] WARNING: no base weight for {module}; copying "
-                      f"the per-channel fp8 unchanged (will NOT load)", flush=True)
-                for key in keys:
-                    emit(key, _get(ckpt, ckpt_map, key))
-                stats["copy"] += 1
-                continue
+                print(f"[convert] error: no base weight for {module}; "
+                      "cannot produce the required block FP8 tensor", flush=True)
+                return 2
 
             weight = _get(base, base_map, base_key).float()
             # gate_proj / up_proj of the shared experts are balance layers of the
@@ -560,6 +641,7 @@ def convert(
                         ((rebuilt - on_disk).norm() / denom).item()
                     )
             stats["engine_fp8" if engine_forced else "fp8"] += 1
+            fp8_paths["rebuilt_from_base"] += 1
             continue
 
         for key in keys:
@@ -619,6 +701,7 @@ def convert(
 
     # ---- report -----------------------------------------------------------
     print(f"\n[convert] modules converted: {stats}", flush=True)
+    print(f"[convert] FP8 paths: {fp8_paths}", flush=True)
     if crosscheck:
         from statistics import median
 
@@ -643,8 +726,9 @@ def convert(
         json.dumps(
             {
                 "source_checkpoint": str(ckpt),
-                "base_model": str(base),
+                "base_model": str(base) if base is not None else None,
                 "modules": stats,
+                "fp8_paths": fp8_paths,
                 "block": list(DEFAULT_BLOCK),
                 "expert_activation_scheme_change": (
                     "source specifies dynamic per-token fp8 expert activations; "
@@ -744,7 +828,9 @@ def conformance_check(ckpt: Path, samples: int = 6) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", required=True, type=Path)
-    parser.add_argument("--base", required=True, type=Path)
+    parser.add_argument("--base", type=Path,
+                        help="original BF16 snapshot; required only for legacy "
+                             "per-channel FP8 or BF16 indexer conversion")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--layers", default=None,
                         help="comma-separated layer subset, for testing")

@@ -1,12 +1,14 @@
-# GLM-5.3 W4AFP8, AWQ arm, FULL scope. Identical quantization scope to
-# glm52_distributed_w4afp8_awq_full.yaml, because the architecture is identical:
+# GLM-5.3 W4AFP8, AWQ arm, FULL scope. Based on the GLM-5.2 architecture.
+# Updated 2026-09-09: indexer wk/wq_b join FP8_BLOCK during quantization;
+# the older GLM-5.2 recipe leaves them BF16. See
+# docs/glm53-sglang-w4afp8-early-alignment.md for scope and remaining work.
+# The original architecture comparison:
 # zai-org/GLM-5.3's config.json is BYTE-IDENTICAL to zai-org/GLM-5.2-FP8's apart
 # from `transformers_version` (5.15.0 vs 5.12.0) -- same GlmMoeDsaForCausalLM,
 # 78 layers, hidden 6144, 256 routed experts at top-8, first_k_dense_replace 3,
 # one MTP layer, the same 78-entry indexer_types list, and the same 541-entry
-# modules_to_not_convert. So every pattern below is the GLM-5.2 pattern
-# unchanged, and the scope gate reports the same result against either release's
-# weight index.
+# modules_to_not_convert. The patterns share that architecture; serving scope
+# additionally requires indexer FP8.
 #
 # THE SOURCE MUST BE THE BF16 RELEASE, and this is not a preference.
 #   zai-org/GLM-5.3      756 GB, 141 shards, quantization_config
@@ -34,7 +36,7 @@
 # artifact (16 shards in flight, none complete) and is not the rate.
 #
 # Everything else -- why the router is in `ignore` but must still be an AWQ
-# balance layer, why the whole DSA indexer stays BF16, why layer 78 is defensive,
+# balance layer, why layer 78 is defensive,
 # why max_memory.cpu is 32e9, why 256 samples, why prefetch's DONTNEED half is
 # mandatory -- is documented in glm52_distributed_w4afp8_awq_full.yaml and
 # applies unchanged.
@@ -62,6 +64,9 @@ quantization:
     - "re:.*layers[.]78[.].*"
   fp8_dynamic_targets:
     - "re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$"
+    # SGLang v0.5.17 builds these with quant_config even when config ignores
+    # indexer. weights_proj and k_norm remain BF16. Reuse the existing FP8 pass.
+    - "re:.*model[.]layers[.][0-9]+[.]self_attn[.]indexer[.](wk|wq_b)$"
     - "re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$"
     - "re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$"
   # BLOCK, not per-channel (changed 2026-08-29; the killed run used the

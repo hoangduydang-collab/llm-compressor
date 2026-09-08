@@ -498,3 +498,22 @@ def test_no_mtp_layer_means_num_nextn_predict_layers_is_zero(synthetic):
     keys = json.loads(
         (out / "model.safetensors.index.json").read_text())["weight_map"]
     assert not any(".layers.78." in k for k in keys)
+
+
+def test_legacy_fp8_without_base_fails_instead_of_emitting_unloadable_weights(
+    synthetic,
+):
+    _, ckpt, out = synthetic
+    assert convert(ckpt, None, out, unpacker=_unpack_int32) == 2
+    assert not (out / "conversion_manifest.json").exists()
+
+
+def test_legacy_fp8_missing_base_weight_fails(synthetic):
+    from safetensors.torch import load_file
+
+    base, ckpt, out = synthetic
+    tensors = load_file(base / "model.safetensors")
+    tensors.pop("model.layers.0.self_attn.o_proj.weight")
+    save_file(tensors, base / "model.safetensors")
+    assert convert(ckpt, base, out, unpacker=_unpack_int32) == 2
+    assert not (out / "conversion_manifest.json").exists()

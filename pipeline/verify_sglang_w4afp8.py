@@ -17,7 +17,9 @@ WHAT IS CHECKED, AND WHAT THE EXPECTED RESULT IS
                  identical too. Any tolerance here would be a bug -- there is
                  no arithmetic in this path to lose precision to.
 
-  fp8-rest       Agrees with the SOURCE's per-channel dequant to within two
+  fp8-rest       Native 128x128 block FP8: exact weight bytes and scale values
+                 (BF16/FP16 scales may widen exactly to FP32). Legacy per-channel
+                 FP8 agrees with the SOURCE's per-channel dequant to within two
                  independent e4m3 roundings (~0.037; bound 0.06). Not exact,
                  because the converted weight is re-derived from BF16 as a
                  block quantization while the source is per-channel. A dropped
@@ -50,10 +52,15 @@ from pipeline.sglang_w4afp8_kernels import (
     dequantize_block_fp8,
     unpack_nibbles_int8,
 )
+
 # Imported, not restated. A second copy of this list is what let the MTP graft
 # ship a BF16 layer-78 indexer while the converter handled layers 0-77
 # correctly.
-from pipeline.to_sglang_w4afp8 import ENGINE_FP8_SUFFIXES, _layer_of
+from pipeline.to_sglang_w4afp8 import (
+    ENGINE_FP8_SUFFIXES,
+    _layer_of,
+    source_fp8_layout,
+)
 
 # Two independent e4m3 roundings give sqrt(2) * 0.0265 = 0.037. 0.06 leaves
 # headroom for the fold reconstruction's BF16 rounding while still catching a
@@ -85,6 +92,7 @@ def verify(
     warnings: list[str] = []
 
     src_map = weight_map_of(src)
+    src_config = json.loads((src / "config.json").read_text(encoding="utf-8"))
     dst_index = json.loads(
         (dst / "model.safetensors.index.json").read_text(encoding="utf-8")
     )
@@ -230,11 +238,32 @@ def verify(
     else:
         picks = fp8_modules[:: max(1, len(fp8_modules) // samples)][:samples]
         resids: list[tuple[float, str]] = []
+        exact_blocks = 0
         for module in picks:
-            on_disk = (
-                get(src, src_map, f"{module}.weight").float()
-                * get(src, src_map, f"{module}.weight_scale").float()
-            )
+            source_weight = get(src, src_map, f"{module}.weight")
+            source_scale = get(src, src_map, f"{module}.weight_scale")
+            try:
+                layout = source_fp8_layout(
+                    module, source_weight, source_scale, src_config
+                )
+            except ValueError as exc:
+                _fail(str(exc), errors)
+                continue
+            if layout == "block":
+                target_weight = get(dst, dst_map, f"{module}.weight")
+                target_scale = get(dst, dst_map, f"{module}.weight_scale_inv")
+                # No tolerance: this path only renames and widens scales.
+                if (target_weight.dtype != source_weight.dtype
+                        or target_weight.shape != source_weight.shape
+                        or not torch.equal(target_weight.view(torch.uint8),
+                                           source_weight.view(torch.uint8))):
+                    _fail(f"block FP8 weight bytes changed in {module}", errors)
+                if (target_scale.dtype != torch.float32
+                        or not torch.equal(target_scale, source_scale.float())):
+                    _fail(f"block FP8 scale values changed in {module}", errors)
+                exact_blocks += 1
+                continue
+            on_disk = source_weight.float() * source_scale.float()
             converted = dequantize_block_fp8(
                 get(dst, dst_map, f"{module}.weight"),
                 get(dst, dst_map, f"{module}.weight_scale_inv"),
@@ -244,6 +273,9 @@ def verify(
             if denom > 0:
                 resids.append((((converted - on_disk).norm() / denom).item(),
                                module))
+        if exact_blocks:
+            print(f"  checked {exact_blocks} native block FP8 module(s) for exact "
+                  "weight bytes and scale values", flush=True)
         if resids:
             from statistics import median
 

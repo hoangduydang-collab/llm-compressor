@@ -1,0 +1,27 @@
+{
+  "python": "3.12.3",
+  "device": "cpu",
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "transformers": null,
+    "compressed-tensors": "0.17.2a20260707",
+    "safetensors": "0.8.0",
+    "pytest": "9.1.1"
+  },
+  "sha256": {
+    "pipeline/to_sglang_w4afp8.py": "87ad669490257e3ad72bf0e37ec48f9a16df988f081697ee5da6dfaa35e17014",
+    "pipeline/verify_sglang_w4afp8.py": "6152e78a901184a8053d710cdda1b587a1d48931793e8cd43da43febacdd16a0",
+    "pipeline/configs/glm53_distributed_w4afp8_awq_full.yaml": "be234267d6c44c75710ae1c709215653d5b48a7475a7862d47f8b997b3c4f865",
+    "pipeline/tests/test_sglang_native_fp8.py": "4b6c67ea79f14ee071f1f15964ebd93174717ecc492b4b62783632752d9ccad2",
+    "pipeline/tests/test_to_sglang_w4afp8.py": "d54994360cc5dd359cddb5c3269515c28bb915ca172cc9c2e1bc68f10102b5b9",
+    "pipeline/tests/test_verify_sglang_w4afp8.py": "ac6605c8d2a6074926766457804b7ce1eebd66591b3dfc0400ead53b01915a77",
+    "pipeline/tests/test_patch_indexer_fp8.py": "92bfda77a7af14ceeff123620eebdca589af4f02a0a4ff619645738bd733befc",
+    "pipeline/tests/test_graft_mtp_w4afp8.py": "0271cc6861e4eb248e9003790aa58121acc61f010b377fd88513a1f967d28dc7",
+    "pipeline/tests/test_sglang_w4afp8_kernels.py": "9ec9c17edf1f382f254052d1181bb98adcc96f7c2ec2270ec172b27e69048d4c"
+  },
+  "result": {
+    "passed": 116,
+    "seconds": 32.94,
+    "exit_code": 0
+  }
+}

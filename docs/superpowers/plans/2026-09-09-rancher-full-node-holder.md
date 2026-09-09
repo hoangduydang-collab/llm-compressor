@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Queue a non-preempting Pod that can bind only when one current eight-GPU Rancher node is completely free, then hold all eight GPUs until manual deletion.
+**Goal:** Queue a priority-zero Pod that can bind only when one current eight-GPU Rancher node is completely free, then hold all eight GPUs under a renewable 48-hour lease.
 
-**Architecture:** Use Kubernetes' atomic resource scheduler instead of polling. A bare Pod requests all eight GPUs, targets GPU workers, tolerates their taint, and disables preemption; while every eligible node has capacity eight, the request cannot fit on a partially free node.
+**Architecture:** Use Kubernetes' atomic resource scheduler instead of polling. A bare Pod requests all eight GPUs, targets GPU workers, and tolerates their taint; while every eligible node has capacity eight, the request cannot fit on a partially free node. A timestamp file inside the container implements a renewable 48-hour lease.
 
 **Tech Stack:** Kubernetes v1.34, Rancher `infermesh-test-my`, PowerShell, Git Bash, `scripts/gpu-free.sh`
 
@@ -12,11 +12,15 @@
 
 - Namespace: `evaluation`; Pod name: `hoangduy-full-node-hold`.
 - Reserve exactly eight GPUs and no deliberate CPU, RAM, RDMA, host-path, or privileged resources.
-- Use `preemptionPolicy: Never`, `restartPolicy: Never`, and no active deadline.
+- Use `restartPolicy: Never` and the admitted priority-zero policy. Rancher rejects
+  Pod-specified `preemptionPolicy: Never`; all current GPU pods are priority zero,
+  so this holder cannot preempt them.
+- Expire 48 hours after container start or the latest lease renewal, with a
+  five-minute maximum expiry-check delay.
 - Revalidate that every eligible GPU node has capacity exactly eight immediately before creation.
 - Run `scripts/gpu-free.sh --verify`; abort if namespace accounting and Rancher accounting disagree.
 - Do not delete or replace an existing resource with the same name.
-- The owner approved this GPU claim after reviewing the exact manifest on 2026-09-09.
+- The owner approved the revised renewable GPU claim after reviewing the exact manifest on 2026-09-09.
 
 ---
 
@@ -36,14 +40,25 @@
 Run:
 
 ```powershell
-$caps = kubectl get nodes -l node-role.kubernetes.io/remote-worker `
-  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.capacity.nvidia\.com/gpu}{"\n"}{end}'
-$caps
-if (($caps -split "`n" | Where-Object { $_ -and $_ -notmatch ' 8$' }).Count -ne 0) {
+$raw = kubectl get nodes -l 'node-role.kubernetes.io/remote-worker' -o json
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read eligible GPU nodes.' }
+$nodes = ($raw | ConvertFrom-Json).items
+if ($nodes.Count -eq 0) { throw 'No eligible GPU nodes found.' }
+$caps = $nodes | ForEach-Object {
+  [pscustomobject]@{
+    Name = $_.metadata.name
+    Capacity = [int]$_.status.capacity.'nvidia.com/gpu'
+  }
+}
+$caps | Format-Table -AutoSize
+if (($caps | Where-Object Capacity -ne 8).Count -ne 0) {
   throw 'Eligible GPU nodes are not uniformly eight-GPU nodes; refusing to queue.'
 }
 & 'C:\Program Files\Git\bin\bash.exe' scripts/gpu-free.sh --verify
-kubectl get pod -n evaluation hoangduy-full-node-hold --ignore-not-found
+if ($LASTEXITCODE -ne 0) { throw 'Authoritative GPU check failed.' }
+$existing = kubectl get pod -n evaluation hoangduy-full-node-hold --ignore-not-found -o name
+if ($LASTEXITCODE -ne 0) { throw 'Existing holder check failed.' }
+if ($existing) { throw "Holder already exists: $existing" }
 ```
 
 Expected: all nine eligible nodes report capacity `8`; both occupancy reports agree; no existing holder Pod is returned. If any condition fails, stop without creating anything.
@@ -64,7 +79,6 @@ metadata:
     owner: hoangduy
 spec:
   restartPolicy: Never
-  preemptionPolicy: Never
   nodeSelector:
     node-role.kubernetes.io/remote-worker: ""
   tolerations:
@@ -74,7 +88,17 @@ spec:
   containers:
     - name: hold
       image: busybox:1.36
-      command: ["sh", "-c", "echo node-acquired; sleep 2147483647"]
+      command:
+        - sh
+        - -c
+        - |
+          touch /tmp/lease-renewed
+          while true; do
+            now=$(date +%s)
+            renewed=$(stat -c %Y /tmp/lease-renewed)
+            [ $((now-renewed)) -ge 172800 ] && exit 0
+            sleep 300
+          done
       resources:
         requests:
           nvidia.com/gpu: "8"
@@ -101,7 +125,6 @@ metadata:
     owner: hoangduy
 spec:
   restartPolicy: Never
-  preemptionPolicy: Never
   nodeSelector:
     node-role.kubernetes.io/remote-worker: ""
   tolerations:
@@ -111,7 +134,17 @@ spec:
   containers:
     - name: hold
       image: busybox:1.36
-      command: ["sh", "-c", "echo node-acquired; sleep 2147483647"]
+      command:
+        - sh
+        - -c
+        - |
+          touch /tmp/lease-renewed
+          while true; do
+            now=$(date +%s)
+            renewed=$(stat -c %Y /tmp/lease-renewed)
+            [ $((now-renewed)) -ge 172800 ] && exit 0
+            sleep 300
+          done
       resources:
         requests:
           nvidia.com/gpu: "8"
@@ -128,16 +161,25 @@ Run:
 
 ```powershell
 kubectl get pod -n evaluation hoangduy-full-node-hold `
-  -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,NODE:.spec.nodeName,GPU:.spec.containers[*].resources.requests.nvidia\.com/gpu,PREEMPTION:.spec.preemptionPolicy'
+  -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,NODE:.spec.nodeName,GPU:.spec.containers[*].resources.requests.nvidia\.com/gpu,PRIORITY:.spec.priority'
 kubectl describe pod -n evaluation hoangduy-full-node-hold
 & 'C:\Program Files\Git\bin\bash.exe' scripts/gpu-free.sh --verify
 ```
 
-Expected while the cluster remains full: `PHASE=Pending`, `NODE=<none>`, `GPU=8`, and `PREEMPTION=Never`. If it binds during creation, the assigned node must show this Pod holding `8/8` GPUs in the verified report. A scheduled Pod in image startup or pull backoff still holds the requested GPUs and must be reported as acquired, not free.
+Expected while the cluster remains full: `PHASE=Pending`, `NODE=<none>`, `GPU=8`, and `PRIORITY=0`. If it binds during creation, the assigned node must show this Pod holding `8/8` GPUs in the verified report. A scheduled Pod in image startup or pull backoff still holds the requested GPUs and must be reported as acquired, not free.
 
-- [ ] **Step 5: Record the manual release operation**
+- [ ] **Step 5: Record renewal and manual release operations**
 
-Do not run during creation. When the owner asks to release the node, first confirm intent and then run:
+To reset a Running holder's lease to another 48 hours, run:
+
+```powershell
+kubectl exec -n evaluation hoangduy-full-node-hold -- touch /tmp/lease-renewed
+```
+
+Expected: command exits zero. Verify the timestamp with
+`kubectl exec -n evaluation hoangduy-full-node-hold -- stat -c %y /tmp/lease-renewed`.
+
+Do not release during creation. When the owner asks to release the node, first confirm intent and then run:
 
 ```powershell
 kubectl delete pod -n evaluation hoangduy-full-node-hold

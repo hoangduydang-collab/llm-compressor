@@ -9,6 +9,7 @@ RUN_TAG=""
 REPO_REF=""
 NODE=""
 DRY_RUN=0
+QUEUE=0
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -17,6 +18,7 @@ while [[ $# -gt 0 ]]; do
     --run-tag) RUN_TAG="${2:-}"; shift 2 ;;
     --ref) REPO_REF="${2:-}"; shift 2 ;;
     --node) NODE="${2:-}"; shift 2 ;;
+    --queue) QUEUE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -60,7 +62,22 @@ echo "$REPORT"
 LARGEST="$(printf '%s\n' "$REPORT" |
   sed -n 's/.*largest single node *: *\([0-9]\+\).*/\1/p' | head -1)"
 [[ -n "$LARGEST" ]] || die "could not parse largest schedulable pod size"
-(( LARGEST >= 8 )) || die "no completely free eight-GPU node; largest is $LARGEST"
+if ! python - "$HERE" "$LARGEST" "$QUEUE" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from render_glm53_ep_gptq_chain import capacity_allows_launch
+raise SystemExit(
+    0 if capacity_allows_launch(
+        largest_free=int(sys.argv[2]), queue=bool(int(sys.argv[3]))
+    ) else 1
+)
+PY
+then
+  die "no completely free eight-GPU node; largest is $LARGEST (use --queue to wait)"
+fi
+if (( LARGEST < 8 )); then
+  echo "==> queue mode: Job will remain Pending until one node has all 8 GPUs free"
+fi
 
 echo "==> job: glm53-ep-gptq-$RUN_TAG"
 echo "==> ref: $REPO_REF"

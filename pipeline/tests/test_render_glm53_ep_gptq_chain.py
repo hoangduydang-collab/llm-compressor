@@ -78,3 +78,9 @@ def test_renderer_persists_optional_node_pin(tmp_path: Path):
     assert doc["spec"]["template"]["spec"]["nodeSelector"] == {
         "kubernetes.io/hostname": "gpu06"
     }
+
+
+def test_capacity_policy_only_allows_waiting_when_queue_is_explicit():
+    assert render.capacity_allows_launch(largest_free=8, queue=False) is True
+    assert render.capacity_allows_launch(largest_free=2, queue=True) is True
+    assert render.capacity_allows_launch(largest_free=2, queue=False) is False

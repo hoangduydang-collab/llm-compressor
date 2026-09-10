@@ -15,6 +15,11 @@ DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
+def capacity_allows_launch(*, largest_free: int, queue: bool) -> bool:
+    """An immediate run needs eight free GPUs; an explicit queue may wait."""
+    return largest_free >= 8 or queue
+
+
 def _dns_label(value: str, field: str) -> str:
     if len(value) > 63 or not DNS_LABEL.fullmatch(value):
         raise ValueError(f"{field} must be a Kubernetes DNS label: {value!r}")

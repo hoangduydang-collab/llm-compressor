@@ -22,7 +22,7 @@ spec:
         - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
       containers:
         - name: quantize
-          image: lmsysorg/sglang:v0.5.17
+          image: docker.io/lmsysorg/sglang@sha256:16aba8925507e631e1dc1e23d95d026533602591775f6a8db68b74ee99746155
           imagePullPolicy: IfNotPresent
           env:
             - {name: RUN_TAG, value: "@@RUN_TAG@@"}

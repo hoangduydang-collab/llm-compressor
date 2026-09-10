@@ -64,7 +64,7 @@ LARGEST="$(printf '%s\n' "$REPORT" |
 
 echo "==> job: glm53-ep-gptq-$RUN_TAG"
 echo "==> ref: $REPO_REF"
-echo "==> image: lmsysorg/sglang:v0.5.17"
+echo "==> image: docker.io/lmsysorg/sglang@sha256:16aba8925507e631e1dc1e23d95d026533602591775f6a8db68b74ee99746155"
 echo "==> request: 8 GPUs, 16 CPU, 700Gi RAM, 220Gi ephemeral"
 echo "==> failure: hold 24h; success: release immediately"
 echo "==> manifest: $RENDERED"

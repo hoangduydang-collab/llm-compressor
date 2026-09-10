@@ -33,6 +33,10 @@ def test_rendered_chain_is_fail_closed_and_releases_on_success(tmp_path: Path):
     assert "nodeSelector" not in doc["spec"]["template"]["spec"]
 
     container = doc["spec"]["template"]["spec"]["containers"][0]
+    assert container["image"] == (
+        "docker.io/lmsysorg/sglang@"
+        "sha256:16aba8925507e631e1dc1e23d95d026533602591775f6a8db68b74ee99746155"
+    )
     resources = container["resources"]
     assert resources["requests"]["nvidia.com/gpu"] == 8
     assert resources["limits"]["nvidia.com/gpu"] == 8

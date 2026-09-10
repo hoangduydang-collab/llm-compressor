@@ -1,0 +1,8 @@
+{"text":"Explain why a deterministic calibration manifest matters for quantizing a mixture-of-experts model."}
+{"text":"Write a Python function that merges two sorted integer lists without calling sort, and state its time complexity."}
+{"text":"A distributed program has eight ranks. Describe one invariant that prevents collective-order deadlocks."}
+{"text":"Summarize the difference between weight-only INT4 quantization and INT4 weights with FP8 activations in two paragraphs, including one quality risk and one serving-kernel consideration."}
+{"text":"Given a 6144 by 6144 floating-point Hessian stored with four bytes per element, calculate its approximate size in GiB and show the arithmetic."}
+{"text":"Design a concise test plan for verifying that every routed expert projection in a checkpoint has a packed weight, a finite positive scale, and the expected original shape."}
+{"text":"Explain how a dense-to-MoE layer boundary differs from a consecutive-MoE boundary during sequential calibration, and why a depth-truncated representative model should contain both."}
+{"text":"You are reviewing a long-running GPU job. List the evidence needed to distinguish model loading, calibration, local GPTQ solving, collective publication, checkpoint saving, and post-save verification failures. For each phase, name at least one durable artifact or measurement, and explain why a successful process exit alone is insufficient."}

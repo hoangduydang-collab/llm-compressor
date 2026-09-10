@@ -77,12 +77,19 @@ def calibration_partition_manifest(dataset, partition: CalibrationPartition) -> 
     }
 
 
-def build_calibration_dataset_with_partition(cal: CalibrationConfig, tokenizer):
-    """Load/tokenize calibration data and return its rank-local partition."""
+def _load_raw_dataset(cal: CalibrationConfig):
+    """Load the globally configured rows before deterministic shuffling."""
     from datasets import load_dataset
 
-    split = f"{cal.dataset_split}[:{cal.num_samples}]"
-    ds = load_dataset(cal.dataset_id, split=split)
+    kwargs = {"split": f"{cal.dataset_split}[:{cal.num_samples}]"}
+    if cal.dataset_data_files is not None:
+        kwargs["data_files"] = cal.dataset_data_files
+    return load_dataset(cal.dataset_id, **kwargs)
+
+
+def build_calibration_dataset_with_partition(cal: CalibrationConfig, tokenizer):
+    """Load/tokenize calibration data and return its rank-local partition."""
+    ds = _load_raw_dataset(cal)
     ds = ds.shuffle(seed=cal.seed)
 
     global_num_samples = len(ds)

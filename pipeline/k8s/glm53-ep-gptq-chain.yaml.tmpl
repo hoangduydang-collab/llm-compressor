@@ -1,0 +1,318 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: glm53-ep-gptq-@@RUN_TAG@@
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: glm53-ep-gptq-chain
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 604800
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        owner: hoangduy.dang
+        purpose: glm53-ep-gptq-chain
+    spec:
+      restartPolicy: Never
+@@NODESELECTOR@@
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: quantize
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: RUN_TAG, value: "@@RUN_TAG@@"}
+            - {name: REPO_REF, value: "@@REPO_REF@@"}
+            - {name: REPO_URL, value: "https://github.com/hoangduydang-collab/llm-compressor.git"}
+            - {name: HF_HOME, value: "/mnt/cephfs/.hf-cache"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/.hf-cache"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/.hf-cache/datasets"}
+            - {name: TOKENIZERS_PARALLELISM, value: "false"}
+            - {name: PYTHONFAULTHANDLER, value: "1"}
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              RUN_ROOT="/mnt/cephfs/hoangduy/results/glm53-ep-gptq/@@RUN_TAG@@"
+              SOURCE="/mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639"
+              SUBSET="/scratch/glm53-bf16-layers-0-4"
+              STATUS="$RUN_ROOT/chain-status.json"
+              mkdir -p "$RUN_ROOT"/{logs,reports,lanes,offload}
+
+              write_status() {
+                python - "$STATUS" "$1" "$2" "${3:-0}" <<'PY'
+              import json, pathlib, socket, sys
+              from datetime import datetime, timezone
+              path, state, stage, code = sys.argv[1:]
+              payload = {
+                  "schema_version": 1,
+                  "state": state,
+                  "stage": stage,
+                  "exit_code": int(code),
+                  "node": socket.gethostname(),
+                  "updated_utc": datetime.now(timezone.utc).isoformat(),
+              }
+              pathlib.Path(path).write_text(json.dumps(payload, indent=2))
+              PY
+              }
+
+              fail_and_hold() {
+                stage="$1"
+                code="$2"
+                write_status failure-hold "$stage" "$code"
+                echo "FAILED stage=$stage rc=$code; holding eight GPUs for 24h"
+                sleep 86400
+                exit "$code"
+              }
+
+              run_checked() {
+                stage="$1"
+                shift
+                write_status running "$stage" 0
+                set +e
+                "$@" 2>&1 | tee -a "$RUN_ROOT/logs/$stage.log"
+                code=${PIPESTATUS[0]}
+                set -e
+                [ "$code" -eq 0 ] || fail_and_hold "$stage" "$code"
+              }
+
+              checkpoint_for() {
+                python - "$1" <<'PY'
+              import pathlib, sys
+              candidates = sorted(
+                  pathlib.Path(sys.argv[1]).glob("*/checkpoint"),
+                  key=lambda path: path.stat().st_mtime,
+                  reverse=True,
+              )
+              if not candidates:
+                  raise SystemExit(f"no checkpoint under {sys.argv[1]}")
+              print(candidates[0])
+              PY
+              }
+
+              run_lane() {
+                name="$1"
+                ranks="$2"
+                expert_parallel="$3"
+                offload_hessians="$4"
+                config="$5"
+                output="$RUN_ROOT/lanes/$name"
+                mkdir -p "$output"
+                write_status running "$name" 0
+                set +e
+                torchrun --nproc_per_node="$ranks" -m pipeline.run \
+                  --config "$config" --stage quantize \
+                  --set "quantization.gptq_expert_parallel=$expert_parallel" \
+                  --set "quantization.gptq_offload_hessians=$offload_hessians" \
+                  --set "model.offload_folder=$RUN_ROOT/offload/$name" \
+                  --set "output_dir=$output" \
+                  2>&1 | tee -a "$RUN_ROOT/logs/$name.log"
+                code=${PIPESTATUS[0]}
+                set -e
+                [ "$code" -eq 0 ] || fail_and_hold "$name" "$code"
+              }
+
+              exec > >(tee -a "$RUN_ROOT/logs/chain.log") 2>&1
+              echo "node=${NODE_NAME:-unknown} ref=$REPO_REF run=$RUN_TAG"
+              nvidia-smi --query-gpu=index,name,uuid,memory.total --format=csv,noheader
+              [ "$(nvidia-smi -L | wc -l)" -eq 8 ] \
+                || fail_and_hold gpu-visibility 1
+
+              run_checked source-clone \
+                git clone --quiet --filter=blob:none "$REPO_URL" /work/repo
+              run_checked source-checkout git -C /work/repo checkout --quiet "$REPO_REF"
+              cd /work/repo
+              [ "$(git rev-parse HEAD)" = "$REPO_REF" ] \
+                || fail_and_hold source-revision 1
+
+              run_checked venv-create \
+                python -m venv --system-site-packages /work/venv
+              [ -f /work/venv/bin/activate ] || fail_and_hold venv-create 1
+              source /work/venv/bin/activate
+              python - envs/m3-quant-freeze.txt <<'PY' > /tmp/quant-pins.txt
+              import re, sys
+              keep = re.compile(
+                  r"^(transformers|compressed-tensors|accelerate|tokenizers|"
+                  r"safetensors|datasets|huggingface_hub|numpy|pydantic|"
+                  r"loguru|pyyaml|tqdm|regex|sentencepiece)==",
+                  re.IGNORECASE,
+              )
+              for line in open(sys.argv[1], encoding="utf-8"):
+                  line = line.strip()
+                  if line and not line.startswith("#") and keep.match(line):
+                      print(line)
+              PY
+              run_checked dependency-install pip install --quiet -r /tmp/quant-pins.txt
+              run_checked source-install pip install --quiet --no-deps -e .
+              run_checked transformers-save-hotfix \
+                python envs/hotfix-transformers-sharded-save.py --no-backup
+              run_checked environment-preflight python - <<'PY'
+              import importlib.metadata as md
+              import torch, transformers
+              expected = {
+                  "compressed-tensors": "0.17.2a20260707",
+                  "transformers": "5.14.1",
+                  "torch": "2.11.0",
+              }
+              actual = {
+                  "compressed-tensors": md.version("compressed-tensors"),
+                  "transformers": transformers.__version__,
+                  "torch": torch.__version__.split("+", 1)[0],
+              }
+              print(actual)
+              assert actual == expected, (actual, expected)
+              assert torch.cuda.device_count() == 8
+              PY
+
+              run_checked source-preflight python -m pipeline.verify_source_snapshot \
+                "$SOURCE" --require-unquantized --expect-layers 78 \
+                --expect-arch GlmMoeDsaForCausalLM
+              run_checked recipe-scope python -m pipeline.prequant_compatibility \
+                --config pipeline/configs/glm53_ep_gptq_full.yaml \
+                --output "$RUN_ROOT/reports/full-prequant.json"
+
+              write_status running tiny-nccl 0
+              set +e
+              CUDA_VISIBLE_DEVICES=0,1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+                python -m pytest -q -rs \
+                tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py \
+                2>&1 | tee -a "$RUN_ROOT/logs/tiny-nccl.log"
+              code=${PIPESTATUS[0]}
+              set -e
+              [ "$code" -eq 0 ] || fail_and_hold tiny-nccl "$code"
+
+              run_checked build-representative-subset \
+                python -m pipeline.build_subset_checkpoint \
+                  --snapshot "$SOURCE" --out "$SUBSET" --layers 5
+              run_checked recipe-scope-representative \
+                python -m pipeline.prequant_compatibility \
+                  --config pipeline/configs/glm53_ep_gptq_representative.yaml \
+                  --output "$RUN_ROOT/reports/representative-prequant.json"
+
+              run_lane "representative-ep4" 4 true false \
+                pipeline/configs/glm53_ep_gptq_representative.yaml
+              set +e
+              EP4_CKPT="$(checkpoint_for "$RUN_ROOT/lanes/representative-ep4")"
+              code=$?
+              set -e
+              [ "$code" -eq 0 ] || fail_and_hold locate-representative-ep4 "$code"
+              run_checked validate-representative-ep4 \
+                python -m pipeline.validate_glm53_ep_gptq \
+                  --checkpoint "$EP4_CKPT" --layers 3,4 --experts 256 \
+                  --run-dir "$(dirname "$EP4_CKPT")" --world-size 4 \
+                  --output "$RUN_ROOT/reports/representative-ep4.json"
+
+              run_lane "representative-ep8" 8 true false \
+                pipeline/configs/glm53_ep_gptq_representative.yaml
+              set +e
+              EP8_CKPT="$(checkpoint_for "$RUN_ROOT/lanes/representative-ep8")"
+              code=$?
+              set -e
+              [ "$code" -eq 0 ] || fail_and_hold locate-representative-ep8 "$code"
+              run_checked validate-representative-ep8 \
+                python -m pipeline.validate_glm53_ep_gptq \
+                  --checkpoint "$EP8_CKPT" --layers 3,4 --experts 256 \
+                  --run-dir "$(dirname "$EP8_CKPT")" --world-size 8 \
+                  --output "$RUN_ROOT/reports/representative-ep8.json"
+
+              run_lane "representative-ddp4" 4 false true \
+                pipeline/configs/glm53_ep_gptq_representative.yaml
+              set +e
+              DDP4_CKPT="$(checkpoint_for "$RUN_ROOT/lanes/representative-ddp4")"
+              code=$?
+              set -e
+              [ "$code" -eq 0 ] || fail_and_hold locate-representative-ddp4 "$code"
+              run_checked validate-representative-ddp4 \
+                python -m pipeline.validate_glm53_ep_gptq \
+                  --checkpoint "$DDP4_CKPT" --layers 3,4 --experts 256 \
+                  --run-dir "$(dirname "$DDP4_CKPT")" --world-size 4 \
+                  --output "$RUN_ROOT/reports/representative-ddp4.json"
+
+              run_checked validate-memory-scaling python - <<'PY'
+              import json
+              from pathlib import Path
+              from pipeline.validate_glm53_ep_gptq import validate_memory_scaling
+              root = Path("/mnt/cephfs/hoangduy/results/glm53-ep-gptq/@@RUN_TAG@@")
+              ep4 = json.loads((root / "reports/representative-ep4.json").read_text())
+              ep8 = json.loads((root / "reports/representative-ep8.json").read_text())
+              errors = validate_memory_scaling(
+                  ep4_peak_bytes=ep4["peak_cuda_bytes"],
+                  ep8_peak_bytes=ep8["peak_cuda_bytes"],
+              )
+              report = {"ok": not errors, "errors": errors}
+              (root / "reports/memory-scaling.json").write_text(
+                  json.dumps(report, indent=2)
+              )
+              if errors:
+                  raise SystemExit("\n".join(errors))
+              PY
+
+              run_checked compare-representative-logits \
+                python -m pipeline.compare_glm53_ep_gptq \
+                  --reference "$DDP4_CKPT" \
+                  --candidate "ep4=$EP4_CKPT" \
+                  --candidate "ep8=$EP8_CKPT" \
+                  --tokenizer "$SOURCE" \
+                  --output "$RUN_ROOT/reports/representative-logits.json"
+
+              run_lane "full-ep8" 8 true false \
+                pipeline/configs/glm53_ep_gptq_full.yaml
+              set +e
+              FULL_CKPT="$(checkpoint_for "$RUN_ROOT/lanes/full-ep8")"
+              code=$?
+              set -e
+              [ "$code" -eq 0 ] || fail_and_hold locate-full-ep8 "$code"
+              FULL_LAYERS="$(python - <<'PY'
+              print(",".join(str(i) for i in range(3, 78)))
+              PY
+              )"
+              run_checked validate-full-ep8 \
+                python -m pipeline.validate_glm53_ep_gptq \
+                  --checkpoint "$FULL_CKPT" --layers "$FULL_LAYERS" --experts 256 \
+                  --run-dir "$(dirname "$FULL_CKPT")" --world-size 8 \
+                  --output "$RUN_ROOT/reports/full-ep8.json"
+
+              CHAIN_STATUS=success
+              write_status "$CHAIN_STATUS" full-ep8 0
+              echo "SUCCESS full checkpoint=$FULL_CKPT; releasing node immediately"
+          resources:
+            requests:
+              nvidia.com/gpu: 8
+              cpu: "16"
+              memory: "700Gi"
+              ephemeral-storage: "220Gi"
+            limits:
+              nvidia.com/gpu: 8
+              cpu: "48"
+              memory: "1700Gi"
+              ephemeral-storage: "260Gi"
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          volumeMounts:
+            - {name: model-cache, mountPath: /mnt/cephfs}
+            - {name: dshm, mountPath: /dev/shm}
+            - {name: work, mountPath: /work}
+            - {name: scratch, mountPath: /scratch}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-shared
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 900Gi
+        - name: work
+          emptyDir:
+            sizeLimit: 30Gi
+        - name: scratch
+          emptyDir:
+            sizeLimit: 220Gi

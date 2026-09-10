@@ -1,0 +1,61 @@
+# Full GLM-5.3 expert-only W4A16 GPTQ with single-node EP8.
+#
+# Module-precision baseline:
+#   https://huggingface.co/JANGQ-AI/GLM-5.3-W4A16
+#   https://huggingface.co/canada-quant/glm-5.3-w4a16-mtp
+# Both keep attention/indexer, router, shared experts, dense prefix, embeddings,
+# norms and lm_head high precision. This calibrated run follows that weight
+# contract. It retains the repository's existing 256x2048 UltraChat calibration
+# instead of Canada Quant's 256x4096 private glm53_mix; this is an explicit data
+# deviation, not an assertion that the corpora are equivalent.
+name: glm53_ep_gptq_full
+
+model:
+  id: /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm53-ep-gptq-full
+
+quantization:
+  method: gptq
+  scheme: W4A16
+  ignore:
+    - "lm_head"
+    # Router parameter and correction bias must remain high precision.
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    # Includes every MLA projection and the discrete DSA indexer.
+    - "re:.*self_attn[.].*"
+    # first_k_dense_replace=3.
+    - "re:.*layers[.][0-2][.].*"
+    # Defensive MTP exclusion; Transformers builds only layers 0-77.
+    - "re:.*layers[.]78[.].*"
+  gptq_dampening_frac: 0.01
+  gptq_offload_hessians: false
+  gptq_expert_parallel: true
+  fp8_dynamic_targets: []
+  sample_generation: false
+
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 256
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+  sequential_weight_prefetch: true
+  sequential_weight_prefetch_depth: 1
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm53-ep-gptq/full

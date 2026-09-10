@@ -113,6 +113,10 @@ class QuantizationConfig:
 class CalibrationConfig:
     dataset_id: str = "HuggingFaceH4/ultrachat_200k"
     dataset_split: str = "train_sft"
+    # Optional local/remote file passed to datasets.load_dataset(data_files=...).
+    # This lets execution packets commit an immutable calibration fixture while
+    # preserving the existing Hub-dataset behavior when unset.
+    dataset_data_files: str | None = None
     num_samples: int = 256
     max_seq_length: int = 2048
     seed: int = 42

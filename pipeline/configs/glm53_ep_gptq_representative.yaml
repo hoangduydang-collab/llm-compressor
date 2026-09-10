@@ -1,0 +1,53 @@
+# Real-width GLM-5.3 EP GPTQ representative gate.
+# Baseline: https://huggingface.co/JANGQ-AI/GLM-5.3-W4A16 and
+# https://huggingface.co/canada-quant/glm-5.3-w4a16-mtp
+# Only routed expert projections are INT4. Attention/indexer, router, shared
+# experts, dense prefix, embeddings, norms and lm_head remain BF16.
+name: glm53_ep_gptq_representative
+
+model:
+  id: /scratch/glm53-bf16-layers-0-4
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /scratch/offload/glm53-ep-gptq-representative
+
+quantization:
+  method: gptq
+  scheme: W4A16
+  ignore:
+    - "lm_head"
+    - "re:.*mlp[.]gate$"
+    - "re:.*mlp[.]shared_experts[.].*"
+    - "re:.*self_attn[.].*"
+    - "re:.*layers[.][0-2][.].*"
+    - "re:.*layers[.]78[.].*"
+  gptq_dampening_frac: 0.01
+  gptq_offload_hessians: false
+  gptq_expert_parallel: true
+  fp8_dynamic_targets: []
+  sample_generation: false
+
+calibration:
+  dataset_id: json
+  dataset_split: train
+  dataset_data_files: pipeline/fixtures/glm53_ep_gptq_representative.jsonl
+  num_samples: 8
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets: ["GlmMoeDsaDecoderLayer"]
+  pipeline: sequential
+  sequential_weight_prefetch: true
+  sequential_weight_prefetch_depth: 1
+
+serve:
+  enabled: false
+
+eval:
+  enabled: false
+
+output_dir: /mnt/cephfs/hoangduy/results/glm53-ep-gptq/representative

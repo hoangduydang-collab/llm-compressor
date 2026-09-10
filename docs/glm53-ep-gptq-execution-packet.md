@@ -5,7 +5,7 @@
 - Packet revision: 2026-09-10-r1
 - Planner owner: Cursor planning session
 - Intended executor: Cursor Rancher executor
-- Base Git commit: `f21427e99dda507e4aec6bef3f2a8d5660ba3b66`
+- Base Git commit: `072a750211ee5477507797204fcd0c4c51bd6f23`
 - Decision question: Can the expert-local GPTQ implementation pass tiny and
   real-width EP4/EP8 correctness and memory gates, then produce a complete
   full-model W4A16 EP8 checkpoint?
@@ -33,7 +33,7 @@ may start the full run.
 
 - Local repository: `C:\Users\hoangduy.dang\AI lab\llm-compressor`
 - Branch: `duy-branch`
-- Executable revision: `f21427e99dda507e4aec6bef3f2a8d5660ba3b66`
+- Executable revision: `072a750211ee5477507797204fcd0c4c51bd6f23`
 - Kubernetes namespace: `evaluation`
 - Image:
   `docker.io/lmsysorg/sglang@sha256:16aba8925507e631e1dc1e23d95d026533602591775f6a8db68b74ee99746155`
@@ -41,8 +41,9 @@ may start the full run.
   `compressed-tensors==0.17.2a20260707`, `torch==2.11.0`; the Job asserts these
   exact versions before testing.
 - The base commit must be visible on a remote branch before launch.
-- The authoritative Rancher report must show a largest schedulable pod of eight
-  GPUs and at least one fully free node.
+- The authoritative Rancher report's namespace and Rancher accounting must
+  agree. `--queue` permits submission when no full node is currently free; the
+  atomic eight-GPU request then remains Pending until one node has all eight.
 
 ## Required inputs
 
@@ -121,14 +122,15 @@ From the workspace root, render and inspect without applying:
 & 'C:\Program Files\Git\bin\bash.exe' `
   llm-compressor/pipeline/k8s/launch-glm53-ep-gptq-chain.sh `
   --run-tag 20260910t120700z `
-  --ref f21427e99dda507e4aec6bef3f2a8d5660ba3b66 `
+  --ref 072a750211ee5477507797204fcd0c4c51bd6f23 `
+  --queue `
   --dry-run
 ```
 
 The launcher must report:
 
 - an authoritative `scripts/gpu-free.sh --verify` agreement;
-- largest schedulable pod size of eight;
+- the current largest schedulable pod and explicit queue-mode behavior;
 - valid rendered YAML and Bash;
 - exact image digest, commit and eight-GPU request;
 - no `kubectl apply` in dry-run mode.
@@ -139,7 +141,8 @@ After the user approves the shown claim, apply with:
 & 'C:\Program Files\Git\bin\bash.exe' `
   llm-compressor/pipeline/k8s/launch-glm53-ep-gptq-chain.sh `
   --run-tag 20260910t120700z `
-  --ref f21427e99dda507e4aec6bef3f2a8d5660ba3b66
+  --ref 072a750211ee5477507797204fcd0c4c51bd6f23 `
+  --queue
 ```
 
 The immutable container then runs:

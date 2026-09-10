@@ -1,0 +1,190 @@
+# Starting configuration for an agent to implement.
+# This is a specification, not an existing package's configuration schema.
+# See predictive_residual_ptq_plan.md for exact equations and acceptance gates.
+experiment:
+  name: anchor_predictive_residual_ptq_qwen3_moe_v1
+  design_date: '2026-09-10'
+  require_correctness_gate: true
+  resume: true
+  no_global_reordering: true
+  no_finetuning: true
+  no_learned_rotation: true
+  no_multiple_anchors: true
+  no_cross_expert_prediction: true
+
+models:
+  primary_name: Qwen3-30B-A3B
+  require_local_checkpoint: true
+  allow_network_model_download: false
+  local_checkpoint_path: null  # agent must discover and resolve this
+  require_original_precision_checkpoint: true
+  reject_already_quantized_as_ptq_baseline: true
+  resolve_and_pin_local_identity_before_execution: true
+  baseline_dtype: bfloat16
+  preferred_initial_gpu_count: 1
+  allow_minimum_multigpu_if_needed: true
+  architecture_expectations:
+    model_type: qwen3_moe
+    num_hidden_layers: 48
+    hidden_size: 2048
+    moe_intermediate_size: 768
+    num_experts: 128
+    num_experts_per_tok: 8
+    verify_against_local_config: true
+
+selection:
+  primary_scope: moe_experts
+  pilot_layer_positions: [first, middle, last]
+  pilot_expert_ids: [0, 16, 32, 48, 64, 80, 96, 112]
+  logical_expert_projections: [gate_proj, up_proj, down_proj]
+  split_fused_gate_up_for_analysis: true
+  attention_control_projections: [q_proj, o_proj]
+  first_full_model_scope: moe_experts_only
+  second_full_model_scope: moe_experts_plus_attention
+  exclude_roles: [embeddings, normalization, lm_head, router, bias]
+  preserve_router_precision_and_behavior: true
+  heldout_confirmation:
+    min_layer_count: 4
+    prefer_expert_ids_disjoint_from_pilot: true
+  routing_stratified_diagnostic:
+    enabled: true
+    use_development_data_only: true
+    strata: [high_traffic, median_traffic, low_nonzero_traffic]
+  fail_on_unexpected_missing_modules: true
+
+codec:
+  residual_bits: [2, 3, 4]
+  predictor_group_size: 64
+  anchor_bits: 4
+  anchor_selection: decoded_projection_sse
+  coefficient_dtype: float16
+  coefficient_signed: true
+  residual_against_stored_predictor: true
+  omit_anchor_coefficients_and_residuals: true
+  compute_dtype: float32
+  residual_compaction: original_nonanchor_column_order
+  residual_scale_group_size: 128
+  residual_scale_axis: compact_input_columns_per_output_row
+  anchor_scale_group_size: 128
+  anchor_scale_axis: output_elements_per_anchor_column
+  scale_dtype: float16
+  quantizer: signed_full_integer_range
+  rounding: nearest_ties_to_even
+  clipping:
+    objective: decoded_weight_mse
+    multiplier_min: 0.20
+    multiplier_max: 1.00
+    num_candidates: 41
+    round_scale_to_storage_dtype_before_scoring: true
+  alternate_codebook_check:
+    enabled_for_promoted_2bit_pair: true
+    codebook: balanced_full_four_level_uniform
+  invalid_stored_scale: fail_and_report
+  packing:
+    storage_dtype: uint8
+    bit_order: little_endian
+    logical_order: row_major
+    signed_to_unsigned: subtract_qmin
+    count_alignment_and_headers_separately: true
+
+rotation:
+  kind: block_hadamard_after_random_signs
+  axis: output_rows
+  block_size: 128
+  normalization: inverse_sqrt_block_size
+  remainder_policy: descending_power_of_two_blocks
+  same_rotation_for_all_groups: true
+  paired_between_methods: true
+  forward_order: [signs, normalized_hadamard]
+  inverse_order: [normalized_hadamard, signs]
+  store_actual_packed_signs: true
+  pilot_seeds: [0]
+  confirmation_seeds: [0, 1, 2]
+
+baselines:
+  methods: [BF16, RAW, ROT, ANCHOR_RAW, ANCHOR_ROT, PRED, PRED_ROT]
+  primary_control: ANCHOR_ROT
+  identical_scalar_quantizer_and_search_budget: true
+  identical_anchor_selection_for_anchor_controls: true
+  external_gptq_after_internal_signal: true
+
+sweep:
+  strategy: staged_not_cartesian
+  predictor_group_sizes_after_default: [32, 64, 128]
+  hadamard_sizes_after_group_selection: [64, 128, 256]
+  scale_sizes_for_rate_distortion_only: [64, 128, 256]
+  max_group_choices_for_rotation_sweep: 2
+  max_configs_promoted_to_end_to_end: 2
+
+data:
+  dataset_id: Salesforce/wikitext
+  dataset_config: wikitext-2-raw-v1
+  resolve_and_pin_revision_before_execution: true
+  calibration_split: train
+  calibration_windows: 128
+  development_split: validation
+  development_windows: 32
+  test_split: test
+  token_window_length: 2048
+  sampling_seed: 0
+  insufficient_windows_policy: use_available_and_report
+  save_token_ids_offsets_and_hashes: true
+  forbid_test_based_configuration_selection: true
+
+activation_metrics:
+  source_model: original_precision
+  split: development
+  max_valid_tokens_per_expert_projection: 4096
+  sampling: deterministic_reservoir
+  capture_router_counts_and_weights: true
+  actual_expert_inputs: true
+  capture_down_proj_post_gating_input: true
+  compute_full_matrix_output_error: true
+  report_unweighted_and_routing_weighted_summaries: true
+  disable_tf32_for_reference_metrics: true
+  exclude_padding_tokens: true
+  stream_by_module_or_block: true
+
+quality_evaluation:
+  initial_execution_mode: decoded_weight_accuracy_emulation
+  first_scope: moe_experts_only
+  keep_router_original_precision: true
+  context_length: 2048
+  stride: 512
+  score_each_target_once: true
+  report_total_nll_and_token_count: true
+  downstream_tasks: [hellaswag, piqa, arc_easy]
+  num_fewshot: 0
+  freeze_config_before_test: true
+
+screening_gates:
+  matched_payload_relative_tolerance: 0.01
+  target_median_output_error_ratio: 0.90
+  minimum_matrix_win_fraction: 0.6666666667
+  max_projection_family_median_error_ratio: 1.10
+  near_noise_relative_gain: 0.02
+  confirm_with_all_rotation_seeds: true
+  require_heldout_expert_layer_confirmation: true
+  thresholds_are_engineering_heuristics: true
+
+runtime:
+  audit_vllm_integration_early: true
+  build_custom_kernel_only_after_quality_gate: true
+  token_counts: [1, 8, 32, 128, 512, 2048]
+  distinguish_emulation_from_packed_execution: true
+  count_workspace_and_transform_overhead: true
+  isolate_gpu_during_benchmarks: true
+  account_for_expert_parallel_layout: true
+
+outputs:
+  root: results
+  required:
+    - manifest.json
+    - integration_audit.md
+    - resolved_config.yaml
+    - metrics.jsonl
+    - failures.jsonl
+    - payloads
+    - plots
+    - report.md
+  conclusion_values: [go, revise, stop_for_this_version]

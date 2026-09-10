@@ -48,10 +48,10 @@ spec:
               mkdir -p "$RUN_ROOT"/{logs,reports,lanes,offload}
 
               write_status() {
-                python - "$STATUS" "$1" "$2" "${3:-0}" <<'PY'
+                python - "$STATUS" "$1" "$2" "${3:-0}" "${4:-}" <<'PY'
               import json, pathlib, socket, sys
               from datetime import datetime, timezone
-              path, state, stage, code = sys.argv[1:]
+              path, state, stage, code, artifact = sys.argv[1:]
               payload = {
                   "schema_version": 1,
                   "state": state,
@@ -60,6 +60,8 @@ spec:
                   "node": socket.gethostname(),
                   "updated_utc": datetime.now(timezone.utc).isoformat(),
               }
+              if artifact:
+                  payload["checkpoint"] = artifact
               pathlib.Path(path).write_text(json.dumps(payload, indent=2))
               PY
               }
@@ -281,7 +283,7 @@ spec:
                   --output "$RUN_ROOT/reports/full-ep8.json"
 
               CHAIN_STATUS=success
-              write_status "$CHAIN_STATUS" full-ep8 0
+              write_status "$CHAIN_STATUS" full-ep8 0 "$FULL_CKPT"
               echo "SUCCESS full checkpoint=$FULL_CKPT; releasing node immediately"
           resources:
             requests:

@@ -56,6 +56,7 @@ def test_rendered_chain_is_fail_closed_and_releases_on_success(tmp_path: Path):
     assert "CHAIN_STATUS=success" in script
     success_tail = script[script.index("CHAIN_STATUS=success"):]
     assert "sleep 86400" not in success_tail
+    assert 'write_status "$CHAIN_STATUS" full-ep8 0 "$FULL_CKPT"' in success_tail
     assert (
         "models--zai-org--GLM-5.3-BF16/snapshots/"
         "304b8051cfb2b260b61ce0cbe330e02a98e73639"

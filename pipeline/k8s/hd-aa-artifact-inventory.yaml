@@ -1,0 +1,208 @@
+---
+# Packet A (adapted): Sep-11 AA GPQA artifact inventory + sqlite join recompute.
+#
+# Adaptation vs GLM53_AA_QUALITY_RERUN_HANDOFF.md Packet A, authorized by the
+# user on 2026-09-11 after verifying the handoff's provenance claims were wrong:
+# the packet's join test walked only *.json/*.jsonl and would have MISSED the
+# nemo-evaluator response caches (gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db),
+# which hold BOTH per-item score AND per-request usage.completion_tokens in the
+# same record. Section [5b] below recomputes the cap-hit counts and joined
+# accuracies directly from those caches, turning the Sep-4 session's in-chat
+# analysis into durable evidence. Read-only on the results tree; log output to
+# /mnt/cephfs/hoangduy/runlogs only. CPU-only, no GPU request.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-artifact-inventory
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: artifact-inventory}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: artifact-inventory}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: inventory
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              ROOT=/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z
+              VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              mkdir -p /mnt/cephfs/hoangduy/runlogs
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-artifact-inventory.log
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> durable log: $LOG"
+              echo "==> node=${NODE_NAME:-unknown} date=$(date -u +%FT%TZ)"
+
+              echo "=== [1] artifact root ==="
+              test -d "$ROOT" || { echo "FATAL: missing $ROOT"; exit 10; }
+              for ARM in ours phala; do
+                D="$ROOT/client-$ARM/aa-gpqa-v3"
+                echo "--- arm=$ARM dir=$D ---"
+                test -d "$D" || { echo "  ABSENT"; continue; }
+                find "$D" -type f -printf '%10s  %p\n' | sort -k2
+              done
+
+              echo "=== [2] per-sample candidates (packet A patterns) ==="
+              find "$ROOT" -type f \( -name '*.jsonl' -o -name '*sample*' \
+                -o -name '*allresults*' -o -name '*.html' -o -name '*result*' \
+                -o -name '*.db' \) -printf '%10s  %p\n' | sort -k2
+
+              echo "=== [3] scrape_metrics snapshots (five-scalar files) ==="
+              find "$ROOT" -type f -name 'metrics-*.txt' | sort | while read -r F; do
+                echo "--- $F ---"; cat "$F"
+              done
+
+              echo "=== [4] first record of every jsonl ==="
+              find "$ROOT" -type f -name '*.jsonl' -print0 | while IFS= read -r -d '' F; do
+                echo "--- $F lines=$(wc -l < "$F") ---"
+                head -c 2000 "$F"; echo
+              done
+
+              echo "=== [5] JOIN TEST on json/jsonl (original packet logic) ==="
+              python3 - "$ROOT" <<'PY'
+              import json, os, sys
+              root = sys.argv[1]
+              CORRECT = {"correct","score","is_correct","passed","acc","exact_match","grade"}
+              LENGTH  = {"finish_reason","completion_tokens","stop_reason",
+                         "num_generated_tokens","usage","output_tokens"}
+              hits = []
+              for dp, _, fns in os.walk(root):
+                  for fn in fns:
+                      if not fn.endswith((".json", ".jsonl")):
+                          continue
+                      p = os.path.join(dp, fn)
+                      try:
+                          if fn.endswith(".jsonl"):
+                              with open(p) as fh:
+                                  recs = [json.loads(l) for l in fh if l.strip()][:5]
+                          else:
+                              d = json.load(open(p))
+                              recs = d if isinstance(d, list) else [d]
+                              recs = [r for r in recs if isinstance(r, dict)][:5]
+                      except Exception:
+                          continue
+                      keys = set()
+                      for r in recs:
+                          keys |= set(r)
+                          for v in r.values():
+                              if isinstance(v, dict):
+                                  keys |= set(v)
+                      c, l = keys & CORRECT, keys & LENGTH
+                      if c or l:
+                          hits.append((p, sorted(c), sorted(l)))
+              if not hits:
+                  print("json/jsonl scan: no correctness/length fields found")
+              for p, c, l in hits:
+                  print(f"  {p}\n    correctness={c} length={l}")
+              PY
+
+              echo "=== [5b] SQLITE JOIN RECOMPUTE (cap hits + joined accuracy) ==="
+              python3 - "$ROOT" <<'PY'
+              import glob, hashlib, json, os, sqlite3, sys
+              from collections import Counter
+              root, CAP = sys.argv[1], 131072
+              paths = sorted(glob.glob(os.path.join(root, "client-*", "aa-gpqa-v3", "**", "cache.db"),
+                                       recursive=True))
+              if not paths:
+                  print("VERDICT: no cache.db found under", root)
+              for p in paths:
+                  print("--- %s (%d bytes)" % (p, os.path.getsize(p)))
+                  try:
+                      con = sqlite3.connect("file:%s?mode=ro" % p, uri=True)
+                      tables = [r[0] for r in con.execute(
+                          "select name from sqlite_master where type='table'")]
+                      print("  tables:", tables)
+                      if "Cache" not in tables:
+                          con.close(); continue
+                      ds, bad = [], 0
+                      for (v,) in con.execute("select value from Cache"):
+                          try:
+                              ds.append(json.loads(v))
+                          except Exception:
+                              bad += 1
+                      con.close()
+                  except Exception as e:
+                      print("  UNREADABLE:", type(e).__name__, e); continue
+                  recs = [d for d in ds if isinstance(d, dict)
+                          and "convo" in d and "score" in d]
+                  print("  rows_parsed=%d convo+score=%d bad=%d" % (len(ds), len(recs), bad))
+                  if not recs:
+                      if ds and isinstance(ds[0], dict):
+                          print("  sample keys:", sorted(ds[0])[:20])
+                      continue
+                  rows = []
+                  for d in recs:
+                      try:
+                          u = d["convo"][1].get("usage") or {}
+                          ct = int(u.get("completion_tokens", -1))
+                          qk = hashlib.sha256(
+                              str(d["convo"][0].get("content", "")).encode()).hexdigest()[:12]
+                          rows.append((ct, float(d["score"]), qk))
+                      except Exception:
+                          pass
+                  n = len(rows)
+                  cap  = [(c, s, q) for c, s, q in rows if c >= CAP]
+                  free = [(c, s, q) for c, s, q in rows if 0 <= c < CAP]
+                  corr = sum(s for _, s, _ in rows)
+                  print("  n=%d overall_correct=%.1f overall_acc=%.4f" % (n, corr, corr / n))
+                  print("  CAP_HITS(ct>=%d)=%d (%.2f%%)  capped_correct=%.1f" % (
+                      CAP, len(cap), 100.0 * len(cap) / n, sum(s for _, s, _ in cap)))
+                  if free:
+                      fa = sum(s for _, s, _ in free) / len(free)
+                      print("  uncapped_n=%d uncapped_acc=%.4f" % (len(free), fa))
+                  cts = sorted(c for c, _, _ in rows)
+                  q = lambda x: cts[min(n - 1, int((n - 1) * x))]
+                  print("  completion_tokens p50=%d p90=%d p95=%d max=%d mean=%.0f" % (
+                      q(.5), q(.9), q(.95), max(cts), sum(cts) / n))
+                  qc = Counter(qk for _, _, qk in cap)
+                  print("  capped unique_questions=%d caps_per_question=%s" % (
+                      len(qc), sorted(Counter(qc.values()).items())))
+              PY
+
+              echo "=== [6] SHA-256 + size of small artifacts (<50MB) ==="
+              find "$ROOT" -type f -size -50M -print0 | xargs -0 -r sha256sum
+              echo "--- large files (>=50MB): size+path only ---"
+              find "$ROOT" -type f -size +50M -printf '%10s  %p\n' | sort -k2
+
+              echo "=== [7] what simple-evals CAN write (rerun feasibility) ==="
+              if [ -x "$VENV/bin/python" ]; then
+                "$VENV/bin/python" -c "
+              import importlib.util as u, os
+              for m in ('simple_evals','core_evals.simple_evals'):
+                  s = u.find_spec(m)
+                  print(m, '->', s.origin if s else 'NOT FOUND')
+              "
+                echo "--- framework.yml (gpqa_diamond_aa_v3 block) ---"
+                find "$VENV" -name framework.yml -print -exec \
+                  grep -n -A 40 "gpqa_diamond_aa_v3" {} \;
+                echo "--- per-sample / output writers in the package ---"
+                SE=$(find "$VENV" -type d -name simple_evals | head -1)
+                [ -n "$SE" ] && grep -rn \
+                  "allresults\|htmls\|jsonl\|single_eval_result\|convo\|to_json\|output_path\|metadata" \
+                  "$SE" --include=*.py | head -60
+              else
+                echo "WARN: $VENV/bin/python absent - rerun feasibility UNDETERMINED"
+              fi
+              echo "==> inventory complete rc=0"

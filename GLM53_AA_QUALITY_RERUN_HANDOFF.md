@@ -1,5 +1,67 @@
 # GLM-5.3 AA quality rerun — handoff
 
+> ## ⚠ CORRECTION — Packet A executed and RETURNED_FOR_ANALYSIS (2026-09-11)
+>
+> The user requested independent verification of this handoff's token-cap
+> claims before execution. Verification **refuted §1.7's provenance story**
+> and answered Packet A's decision question. Evidence:
+> `docs/evidence/2026-09-11-aa-artifact-inventory.log` (CPU-only job
+> `hd-aa-artifact-inventory`, node ca-gpu04, 2026-09-11T08:24Z, executed at
+> Git `410b8d09`; adapted manifest at
+> `pipeline/k8s/hd-aa-artifact-inventory.yaml`).
+>
+> **Packet A decision question — answered: YES.** Per-item correctness and
+> per-request completion length live in the *same record* of the harness's
+> own response cache,
+> `client-{ours,phala}/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db`
+> (each record: `score` + `convo[1].usage.completion_tokens` + full prompt
+> for question identity). `report.json` carries per-sample `usage` too.
+> There is **no missing join key**. Recomputed from the caches:
+>
+> | Arm | n | overall acc | cap hits (ct≥131072) | capped correct | uncapped acc | mean compl. tokens |
+> |---|---:|---:|---:|---:|---:|---:|
+> | ours | 990 | 0.8182 | **120** (12.12%) | 0 | **0.9310** | 26,463 |
+> | phala | 990 | 0.7939 | **155** (15.66%) | 0 | **0.9413** | 30,745 |
+>
+> Superseded claims in this handoff (all in §1.7, repeated in §5 and the
+> Packet B rationale):
+>
+> 1. *"The cap count is NOT derivable [from retained artifacts]; the only
+>    available source is `sglang:generation_tokens_histogram_bucket`; that is
+>    the 120; 120 is a slight over-count."* — **False.** The counts are exact
+>    counts of `completion_tokens >= 131072` from the sqlite caches. They
+>    could not have come from the histogram: `scrape_metrics` retained only
+>    scalar series, and the retained `metrics-aa_before.txt` /
+>    `metrics-aa_after.txt` are byte-identical probe leftovers (13 requests,
+>    2,157 gen tokens) — the formal run was launched outside the arm's
+>    scrape window, so the Prometheus deltas describe nothing.
+> 2. *"Avg completion tokens 26,463 = `generation_tokens_total` delta ÷
+>    990"* and *"990/990 = `num_requests_total` / aborted deltas"* —
+>    **False** for the same reason (deltas are zero). The 26,463 mean is
+>    reproduced exactly from the cache usage records.
+> 3. *"Per-item scores were genuinely absent … the missing join key is what
+>    makes the truncation hypothesis untestable."* — **False.** The Sep-4
+>    session (transcript 33ed25a8) already did the join: every cap-hit
+>    scored zero, uncapped accuracies are 93.10% / 94.13%, per-question cap
+>    distribution ours = 108×1 + 6×2, phala = 147×1 + 4×2.
+> 4. §1.9's premise ("existing artifacts do not say which items truncated")
+>    is false; a targeted probe **is** executable from existing data. A
+>    160K-cap diagnostic (`results-diag-allcap-q008-160k`, max completion
+>    160,000, n=986) already exists in the tree.
+>
+> Also: Packet A's own JOIN TEST script scanned only `.json`/`.jsonl` and
+> would have missed the sqlite caches (false "NO per-item records" verdict),
+> and its manifest mounted no PVC, so as written it would have failed at the
+> first `test -d`. Both fixed in the adapted manifest.
+>
+> **Consequence for Packet B:** its "mandatory addition 1" (per-item
+> capture) is already satisfied by the harness's default caches; the
+> truncation-hypothesis rationale for a rerun needs planner rework before
+> any GPU spend. Truncation arithmetic from the join: cap-hits (all zero)
+> bound ours at 870/990 = 87.9% < AA's 91.7% reference, while uncapped-item
+> accuracy is 93.1% — truncation is sufficient to explain the entire gap,
+> with the standard selection-bias caveat (harder items truncate more).
+
 - Protocol version: 1
 - Task: rerun AA GPQA Diamond on the two-node GLM-5.3 serve, and make the
   truncation hypothesis testable

@@ -131,19 +131,16 @@ def peak_cuda_bytes(paths: Iterable[Path]) -> int | None:
     return max(peaks) if peaks else None
 
 
-def _checkpoint_index(checkpoint: Path) -> dict:
-    path = checkpoint / "model.safetensors.index.json"
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _scale_values(checkpoint: Path, keys: Iterable[str]) -> Iterable[float]:
+def _scale_values(
+    checkpoint: Path,
+    weight_map: Mapping[str, str],
+) -> Iterable[float]:
     from safetensors import safe_open
 
-    wanted = {key for key in keys if key.endswith(".weight_scale")}
-    index = _checkpoint_index(checkpoint)["weight_map"]
+    wanted = {key for key in weight_map if key.endswith(".weight_scale")}
     by_shard: dict[str, list[str]] = {}
     for key in wanted:
-        by_shard.setdefault(index[key], []).append(key)
+        by_shard.setdefault(weight_map[key], []).append(key)
     for shard, shard_keys in sorted(by_shard.items()):
         with safe_open(str(checkpoint / shard), framework="pt", device="cpu") as src:
             for key in sorted(shard_keys):
@@ -154,11 +151,12 @@ def _scale_values(checkpoint: Path, keys: Iterable[str]) -> Iterable[float]:
 def validate_checkpoint(
     checkpoint: Path, *, layers: Iterable[int], experts: int = 256
 ) -> list[str]:
-    index = _checkpoint_index(checkpoint)
-    keys = set(index["weight_map"])
-    errors = validate_checkpoint_keys(keys, layers=layers, experts=experts)
+    from pipeline.serve_ignore import weight_map_of
+
+    weight_map = weight_map_of(checkpoint)
+    errors = validate_checkpoint_keys(weight_map, layers=layers, experts=experts)
     if not errors:
-        errors.extend(validate_scale_values(_scale_values(checkpoint, keys)))
+        errors.extend(validate_scale_values(_scale_values(checkpoint, weight_map)))
     return errors
 
 

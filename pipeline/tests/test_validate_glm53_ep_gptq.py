@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
+
+import torch
+from safetensors.torch import save_file
 
 try:
     from pipeline import validate_glm53_ep_gptq as validator
@@ -21,6 +26,58 @@ def _complete_keys(layers=(3, 4), experts=2):
                 for suffix in ("weight_packed", "weight_scale", "weight_shape"):
                     keys.add(f"{stem}.{projection}.{suffix}")
     return keys
+
+
+def _complete_tensors(layers=(3,), experts=1):
+    tensors = {}
+    for key in _complete_keys(layers=layers, experts=experts):
+        if key.endswith(".weight_packed"):
+            tensors[key] = torch.zeros((1, 1), dtype=torch.int32)
+        elif key.endswith(".weight_scale"):
+            tensors[key] = torch.ones((1,), dtype=torch.float32)
+        else:
+            tensors[key] = torch.tensor([1, 1], dtype=torch.int64)
+    return tensors
+
+
+def test_validate_checkpoint_accepts_single_file_emitted_layout(tmp_path: Path):
+    save_file(_complete_tensors(), tmp_path / "model.safetensors")
+
+    assert validator.validate_checkpoint(tmp_path, layers=(3,), experts=1) == []
+
+
+def test_validate_checkpoint_accepts_sharded_emitted_layout(tmp_path: Path):
+    tensors = _complete_tensors()
+    keys = sorted(tensors)
+    first = {key: tensors[key] for key in keys[::2]}
+    second = {key: tensors[key] for key in keys[1::2]}
+    save_file(first, tmp_path / "model-00001-of-00002.safetensors")
+    save_file(second, tmp_path / "model-00002-of-00002.safetensors")
+    weight_map = {
+        key: (
+            "model-00001-of-00002.safetensors"
+            if key in first
+            else "model-00002-of-00002.safetensors"
+        )
+        for key in keys
+    }
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps({"metadata": {}, "weight_map": weight_map}),
+        encoding="utf-8",
+    )
+
+    assert validator.validate_checkpoint(tmp_path, layers=(3,), experts=1) == []
+
+
+def test_validate_checkpoint_reads_bad_scale_from_single_file(tmp_path: Path):
+    tensors = _complete_tensors()
+    scale = next(key for key in tensors if key.endswith(".weight_scale"))
+    tensors[scale] = torch.tensor([0.0], dtype=torch.float32)
+    save_file(tensors, tmp_path / "model.safetensors")
+
+    assert validator.validate_checkpoint(tmp_path, layers=(3,), experts=1) == [
+        "weight scales contain 1 non-finite-or-non-positive value(s)"
+    ]
 
 
 def test_complete_expert_only_key_set_passes():

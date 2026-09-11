@@ -90,7 +90,11 @@ spec:
                 python - "$1" <<'PY'
               import pathlib, sys
               candidates = sorted(
-                  pathlib.Path(sys.argv[1]).glob("*/checkpoint"),
+                  (
+                      path
+                      for path in pathlib.Path(sys.argv[1]).rglob("checkpoint")
+                      if path.is_dir()
+                  ),
                   key=lambda path: path.stat().st_mtime,
                   reverse=True,
               )

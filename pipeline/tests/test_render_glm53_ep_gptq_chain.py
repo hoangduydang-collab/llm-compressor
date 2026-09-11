@@ -44,6 +44,8 @@ def test_rendered_chain_is_fail_closed_and_releases_on_success(tmp_path: Path):
     assert "/work/venv/bin/python -m torch.distributed.run" in script
     assert "\n                torchrun " not in script
     assert "import llmcompressor" in script
+    assert '.rglob("checkpoint")' in script
+    assert '.glob("*/checkpoint")' not in script
     markers = [
         "test_expert_parallel_nccl.py",
         'run_lane "representative-ep4"',

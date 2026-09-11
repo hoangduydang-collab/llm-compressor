@@ -61,6 +61,50 @@
 > bound ours at 870/990 = 87.9% < AA's 91.7% reference, while uncapped-item
 > accuracy is 93.1% — truncation is sufficient to explain the entire gap,
 > with the standard selection-bias caveat (harder items truncate more).
+>
+> ### Post-verification plan for the raised-cap rerun (user goal, 2026-09-11)
+>
+> User goal: rerun GPQA on the tp=16 two-node endpoint with a raised token
+> cap, choosing the cap/concurrency pair that finishes fastest. Live serve
+> config re-verified 2026-09-11 via `/get_server_info` through a fresh
+> port-forward: `max_total_num_tokens` = **598,848**, `max_running_requests`
+> 16, tp 16, EAGLE on, SGLang 0.5.17 — §1.3's numbers are confirmed.
+>
+> Retraction-free frontier against the 598,848-token pool (per-request
+> worst-case footprint = cap + ~1.2K prompt):
+>
+> | `max_new_tokens` | Max safe concurrency | Worst-case KV | Notes |
+> |---:|---:|---:|---|
+> | 131,072 (AA recipe) | **4** | 4×132.3K = 529K | only AA-comparable cap |
+> | 262,144 | **2** | 2×263.3K = 527K | AA-LCR parity number (plan doc line 159) |
+> | 524,288 | **1** | 1×525.5K = 526K | conc 2 = 1.05M ≈ 1.75× pool |
+>
+> **512K at concurrency 2 or 4 is rejected**: capped traces dominate slot
+> time (measured 60% of token-steps at the 131K cap, more at higher caps),
+> so ≥2 near-cap requests co-resident is the common state, and 2×525K
+> overcommits the pool — recurrent retraction with 300–500K-token
+> re-prefills, degrading to effective concurrency 1 plus thrash. Worst-case
+> volume if the ~120 cap-hitters run to 512K: ~72M tokens ≈ 9+ days even at
+> the short-context single-stream rate. The fastest *safe* raised-cap
+> full-set run is **256K at concurrency 2** (worst case ~41M tokens,
+> roughly 3–4.5 days; §1.4 caveat applies — decode slows at long context).
+>
+> **Cheaper sequencing (recommended before any GPU spend):**
+>
+> 1. **Zero-GPU loop screen.** The full response texts of all 120 capped
+>    attempts are in the formal cache.db. Run an n-gram/periodicity check
+>    (CPU, minutes) to classify each as degenerate loop vs genuine
+>    unfinished reasoning. The 160K diagnostic already in the tree
+>    (`results-diag-allcap-q008-160k`, reruns still capping at 160,000)
+>    suggests many are loops; M3 precedent had 87–93% loops among cap-hits.
+> 2. **Targeted rerun only.** Rerun only the capped questions (114 unique
+>    for ours) — or only the non-loop subset from step 1 — at 256K,
+>    concurrency 2. The 870 uncapped completions and their per-item scores
+>    are already in hand; rerunning them buys nothing.
+> 3. **Keep the headline number at 131,072.** That cap is part of
+>    `gpqa_diamond_aa_v3` (creator-disclosed max output); any raised-cap
+>    result is a diagnostic, not an AA-comparable score, and must be
+>    reported as such (handoff §1.8 stands on this point).
 
 - Protocol version: 1
 - Task: rerun AA GPQA Diamond on the two-node GLM-5.3 serve, and make the
@@ -316,12 +360,14 @@ targeted probe, not a parallel nice-to-have. This is why Packet A comes first.
 
 ---
 
-## 2. Packet A (ACTIVE) — artifact inventory, CPU-only
+## 2. Packet A (EXECUTED 2026-09-11 — RETURNED_FOR_ANALYSIS; see CORRECTION at top) — artifact inventory, CPU-only
 
 # Execution packet: Sep-11 AA GPQA artifact inventory
 
 - Protocol version: 1
-- State: READY_FOR_EXECUTOR
+- State: RETURNED_FOR_ANALYSIS (executed in adapted form; original manifest
+  had two defects — json/jsonl-only join test, missing PVC mount — see
+  `pipeline/k8s/hd-aa-artifact-inventory.yaml` and the CORRECTION block)
 - Packet revision: 2026-09-11-r1
 - Planner owner: planner session 2026-09-11
 - Intended executor: any executor with `evaluation` namespace access
@@ -665,9 +711,12 @@ and stop. Do not launch Packet B.
 
 ---
 
-## 3. Packet B (DRAFTED, NOT AUTHORIZED) — AA GPQA rerun
+## 3. Packet B (DRAFTED, NOT AUTHORIZED — rationale SUPERSEDED by CORRECTION) — AA GPQA rerun
 
-State: `PLANNER_ANALYSIS`. Blocked on Packet A. Do not run.
+State: `PLANNER_ANALYSIS`. Do not run. Its premise (per-item capture missing)
+is false — the harness caches already provide it. The rerun design must be
+reworked per the "Post-verification plan" in the CORRECTION block: loop
+screen first, then a targeted capped-questions-only rerun at 256K / conc 2.
 
 Decision question it would answer: *what does GLM-5.3 W4AFP8 score on
 `gpqa_diamond_aa_v3` on the tp=16 two-node serve, with per-item records

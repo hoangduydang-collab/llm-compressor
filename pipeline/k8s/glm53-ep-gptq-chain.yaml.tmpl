@@ -110,7 +110,8 @@ spec:
                 mkdir -p "$output"
                 write_status running "$name" 0
                 set +e
-                torchrun --nproc_per_node="$ranks" -m pipeline.run \
+                /work/venv/bin/python -m torch.distributed.run \
+                  --nproc_per_node="$ranks" -m pipeline.run \
                   --config "$config" --stage quantize \
                   --set "quantization.gptq_expert_parallel=$expert_parallel" \
                   --set "quantization.gptq_offload_hessians=$offload_hessians" \
@@ -158,6 +159,7 @@ spec:
                 python envs/hotfix-transformers-sharded-save.py --no-backup
               run_checked environment-preflight python - <<'PY'
               import importlib.metadata as md
+              import llmcompressor
               import torch, transformers
               expected = {
                   "compressed-tensors": "0.17.2a20260707",

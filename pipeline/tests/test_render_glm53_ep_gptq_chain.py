@@ -41,6 +41,9 @@ def test_rendered_chain_is_fail_closed_and_releases_on_success(tmp_path: Path):
     assert resources["requests"]["nvidia.com/gpu"] == 8
     assert resources["limits"]["nvidia.com/gpu"] == 8
     script = container["args"][0]
+    assert "/work/venv/bin/python -m torch.distributed.run" in script
+    assert "\n                torchrun " not in script
+    assert "import llmcompressor" in script
     markers = [
         "test_expert_parallel_nccl.py",
         'run_lane "representative-ep4"',

@@ -1,0 +1,182 @@
+---
+# Overthinking rate: keep format rehearsal + unhedged commits; drop hedge-only.
+# Reuses configmap hd-aa-overthinking-windows.
+#
+#   kubectl apply -f pipeline/k8s/hd-aa-overthinking-keep-ratio.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-overthinking-keep-ratio
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: overthinking-keep-ratio}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: overthinking-keep-ratio}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: scripts
+          configMap: {name: hd-aa-overthinking-windows}
+      containers:
+        - name: classify
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
+            - {name: HF_HOME, value: "/mnt/cephfs/hoangduy/hf-private"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/hub"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/datasets"}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: scripts, mountPath: /cm}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              mkdir -p /mnt/cephfs/hoangduy/runlogs /work/pipeline/evalsuite
+              cp /cm/aa_overthinking.py /cm/aa_cap_loop_screen.py /cm/sample_output_check.py /work/pipeline/
+              cp /cm/health.py /work/pipeline/evalsuite/
+              : > /work/pipeline/__init__.py
+              : > /work/pipeline/evalsuite/__init__.py
+              export PYTHONPATH=/work
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-keep-ratio.log
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> $(date -u +%FT%TZ)"
+              "$VENV/bin/python" - <<'PY'
+              import os, re
+              from collections import Counter
+              from datasets import load_dataset
+              from pipeline.aa_overthinking import (
+                  CAP_AA, _COMMITTED, _gold_letter, categorize_failure,
+                  index_gpqa_diamond, lookup_official_gold, records_from_cache,
+              )
+
+              fields = (
+                  "Question", "Correct Answer",
+                  "Incorrect Answer 1", "Incorrect Answer 2", "Incorrect Answer 3",
+              )
+              try:
+                  os.environ["HF_HUB_OFFLINE"] = "1"
+                  os.environ["HF_DATASETS_OFFLINE"] = "1"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              except Exception as exc:
+                  print("offline fail", type(exc).__name__, exc)
+                  os.environ["HF_HUB_OFFLINE"] = "0"
+                  os.environ["HF_DATASETS_OFFLINE"] = "0"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              by_stem, by_choices = index_gpqa_diamond(
+                  [{k: row[k] for k in fields} for row in ds["train"]]
+              )
+
+              HEDGE = re.compile(
+                  r"(?i)\b(maybe|perhaps|possibly|probably|might|could|"
+                  r"what if|if we|if the|if i|suppose|assuming|"
+                  r"expected|hypothetic|consider(?:ing)?|"
+                  r"or is it|not (?:sure|certain)|unsure)\b"
+              )
+              FORMAT = re.compile(
+                  r"(?i)(last line|final line|format:|e\.g\.|must (?:be|one)|oververbosity|"
+                  r"need (?:produce|ensure|provide|craft|decide)|response should|final response)"
+              )
+              KEEP = {"format_rehearsal", "decision_form", "unhedged_answer_is"}
+
+              def gold_hits(text, gold):
+                  hits, seen = [], set()
+                  for i, pat in enumerate(_COMMITTED):
+                      for match in pat.finditer(text or ""):
+                          if match.group(1).upper() != gold:
+                              continue
+                          if match.start() in seen:
+                              continue
+                          seen.add(match.start())
+                          hits.append((match.start(), match.end(), i, match.group(0)))
+                  hits.sort()
+                  return hits
+
+              def bucket(text, start, pat_i, surface):
+                  pre = text[max(0, start - 80):start]
+                  local = pre + " " + surface
+                  kind = {0: "answer_colon", 1: "boxed", 2: "answer_is_paren",
+                          3: "answer_is", 4: "letter_is_correct"}[pat_i]
+                  if FORMAT.search(local):
+                      return "format_rehearsal"
+                  if HEDGE.search(pre) or HEDGE.search(surface):
+                      return "hedged_consideration"
+                  if kind in {"answer_colon", "boxed"}:
+                      return "decision_form"
+                  return "unhedged_answer_is"
+
+              def frac(n, d):
+                  return None if not d else round(n / d, 4)
+
+              root = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              dbs = {
+                  "ours": root + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                  "phala": root + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+
+              for arm, path in dbs.items():
+                  recs = records_from_cache(path)
+                  n_fail = n_over = n_keep = n_hedge_only = 0
+                  fail_cap = keep_cap = fail_fin = keep_fin = 0
+                  why = Counter()
+                  for rec in recs:
+                      gold_text, _ = lookup_official_gold(
+                          rec["stem"], rec["choices"], by_stem, by_choices
+                      )
+                      letter = _gold_letter(rec["choices"], gold_text)
+                      capped = rec["completion_tokens"] >= CAP_AA
+                      cat = categorize_failure(
+                          text=rec["text"], score=rec["score"],
+                          gold_letter=letter, capped=capped,
+                      )
+                      if rec["score"] >= 1.0:
+                          continue
+                      n_fail += 1
+                      if capped:
+                          fail_cap += 1
+                      else:
+                          fail_fin += 1
+                      if cat["category"] != "overthinking":
+                          continue
+                      n_over += 1
+                      labels = [
+                          bucket(rec["text"], s, i, surf)
+                          for s, e, i, surf in gold_hits(rec["text"], letter)
+                      ]
+                      keep = any(b in KEEP for b in labels)
+                      if keep:
+                          n_keep += 1
+                          why.update(set(labels) & KEEP)
+                          if capped:
+                              keep_cap += 1
+                          else:
+                              keep_fin += 1
+                      else:
+                          n_hedge_only += 1
+                  print("=" * 72)
+                  print(f"ARM {arm}")
+                  print(f"  fails={n_fail} raw_overthinking={n_over} "
+                        f"raw_rate={frac(n_over, n_fail)}")
+                  print(f"  KEEP format+unhedged={n_keep} hedge_only_dropped={n_hedge_only}")
+                  print(f"  rate among fails: {n_keep}/{n_fail} = {frac(n_keep, n_fail)}")
+                  print(f"  among cap-hit fails: {keep_cap}/{fail_cap} = {frac(keep_cap, fail_cap)}")
+                  print(f"  among finished fails: {keep_fin}/{fail_fin} = {frac(keep_fin, fail_fin)}")
+                  print(f"  keep attempts with at least one of:", dict(why))
+              PY
+              echo "==> $(date -u +%FT%TZ)"

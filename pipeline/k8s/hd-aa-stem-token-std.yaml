@@ -1,0 +1,114 @@
+---
+# Per-stem std of completion_tokens across the 5 attempts. CPU-only.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-stem-token-std
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: stem-token-std}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: stem-token-std}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: stats
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "4Gi"}
+            limits: {cpu: "2", memory: "8Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hashlib, json, math, re, sqlite3
+              from collections import defaultdict
+
+              CAP = 131072
+              ROOT = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              DBS = {
+                "ours": ROOT + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                "phala": ROOT + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+              STEM = re.compile(
+                  r"Answer the following multiple choice question\..*?\n\n(.+?)\n\nA\)",
+                  re.S,
+              )
+
+              def stem_key(prompt):
+                  m = STEM.search(prompt)
+                  body = m.group(1).strip() if m else prompt
+                  return hashlib.sha256(body.encode("utf-8","ignore")).hexdigest()[:12]
+
+              def stdev(xs):
+                  if len(xs) < 2:
+                      return None
+                  mu = sum(xs) / len(xs)
+                  var = sum((x-mu)**2 for x in xs) / (len(xs)-1)  # sample std
+                  return math.sqrt(var)
+
+              def summarize(vals):
+                  vals = sorted(v for v in vals if v is not None)
+                  if not vals:
+                      return None
+                  n = len(vals)
+                  q = lambda f: vals[min(n-1, int((n-1)*f))]
+                  return {"n": n, "min": round(vals[0],1), "p50": round(q(.5),1),
+                          "p90": round(q(.9),1), "max": round(vals[-1],1),
+                          "mean": round(sum(vals)/n,1)}
+
+              def load(db):
+                  con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+                  rows = []
+                  for (v,) in con.execute("select value from Cache"):
+                      d = json.loads(v)
+                      if not isinstance(d, dict) or "convo" not in d:
+                          continue
+                      prompt = str(d["convo"][0].get("content",""))
+                      ct = int((d["convo"][1].get("usage") or {}).get("completion_tokens", -1))
+                      rows.append((stem_key(prompt), ct))
+                  con.close()
+                  return rows
+
+              for arm, db in DBS.items():
+                  by = defaultdict(list)
+                  for sk, ct in load(db):
+                      by[sk].append(ct)
+                  cap_stems = {sk for sk, xs in by.items() if any(x>=CAP for x in xs)}
+                  never = {sk for sk, xs in by.items() if all(x<CAP for x in xs)}
+
+                  def pack(stems, use_all=True):
+                      stds, means, cvs = [], [], []
+                      for sk in stems:
+                          xs = by[sk] if use_all else [x for x in by[sk] if x < CAP]
+                          s = stdev(xs)
+                          if s is None:
+                              continue
+                          mu = sum(xs)/len(xs)
+                          stds.append(s)
+                          means.append(mu)
+                          cvs.append(s/mu if mu else None)
+                      return stds, means, cvs
+
+                  print("=" * 72)
+                  print("ARM", arm, "stems", len(by), "cap_stems", len(cap_stems), "never", len(never))
+                  print("sample std (n-1) of completion_tokens among attempts of the same stem")
+                  print("\n  ALL 5 attempts (cap-hits counted as 131072):")
+                  print("   all stems     std", summarize(pack(by, True)[0]), "mean_len", summarize(pack(by, True)[1]), "cv", summarize(pack(by, True)[2]))
+                  print("   never-cap     std", summarize(pack(never, True)[0]), "mean_len", summarize(pack(never, True)[1]), "cv", summarize(pack(never, True)[2]))
+                  print("   has-cap-hit   std", summarize(pack(cap_stems, True)[0]), "mean_len", summarize(pack(cap_stems, True)[1]), "cv", summarize(pack(cap_stems, True)[2]))
+                  print("\n  FINISHED only (drop ct>=131k; stem needs >=2 finished):")
+                  print("   all stems     std", summarize(pack(by, False)[0]), "mean_len", summarize(pack(by, False)[1]), "cv", summarize(pack(by, False)[2]))
+                  print("   never-cap     std", summarize(pack(never, False)[0]), "mean_len", summarize(pack(never, False)[1]), "cv", summarize(pack(never, False)[2]))
+                  print("   has-cap-hit   std", summarize(pack(cap_stems, False)[0]), "mean_len", summarize(pack(cap_stems, False)[1]), "cv", summarize(pack(cap_stems, False)[2]))

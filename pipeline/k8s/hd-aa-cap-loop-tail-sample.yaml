@@ -1,0 +1,73 @@
+---
+# Print the lowest-zlib ours cap-hit tail for human inspection. CPU-only, read-only.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-cap-loop-tail-sample
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: cap-loop-tail-sample}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: cap-loop-tail-sample}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: sample
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "4Gi"}
+            limits: {cpu: "2", memory: "8Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hashlib, json, sqlite3
+              js = json.load(open("/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.json"))
+              ours = next(a for a in js["arms"] if a["name"] == "ours")
+              tight = sorted(
+                  (r for r in ours["capped_rows"] if (r.get("zlib_tail_8k") or 9) <= 0.08),
+                  key=lambda r: r["zlib_tail_8k"],
+              )
+              print("n_tight", len(tight))
+              for r in tight:
+                  print(f"  q={r['question_key']} zlib={r['zlib_tail_8k']} chars={r.get('n_chars')} d4_tail={r.get('tail_distinct_4gram'):.4f}")
+              target = tight[0]["question_key"]
+              print("\n==> showing lowest-zlib q=%s zlib=%s" % (target, tight[0]["zlib_tail_8k"]))
+              db = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db"
+              con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+              text = None
+              for (v,) in con.execute("select value from Cache"):
+                  d = json.loads(v)
+                  if not isinstance(d, dict) or "convo" not in d:
+                      continue
+                  prompt = str(d["convo"][0].get("content", ""))
+                  qk = hashlib.sha256(prompt.encode("utf-8", "ignore")).hexdigest()[:12]
+                  if qk != target:
+                      continue
+                  msg = d["convo"][1]
+                  reasoning = str(msg.get("reasoning_content") or "")
+                  content = str(msg.get("content") or "")
+                  text = reasoning if (reasoning and content in reasoning) else (
+                      content if (content and reasoning in content) else (reasoning + "\n" + content)
+                  )
+                  print("score", d.get("score"), "completion_tokens", (msg.get("usage") or {}).get("completion_tokens"))
+                  print("prompt_head:", prompt[:240].replace("\n", " | "))
+                  break
+              con.close()
+              if not text:
+                  raise SystemExit("target not found")
+              tail = text[-1800:]
+              print("\n----- last ~1800 chars -----\n")
+              print(tail)
+              print("\n----- end -----")

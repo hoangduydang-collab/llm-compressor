@@ -1,0 +1,97 @@
+---
+# Last-500-char tails of every zlib<=0.08 cap-hit, ours and phala. CPU-only.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-cap-loop-all-tight-tails
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: cap-loop-all-tight-tails}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: cap-loop-all-tight-tails}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: tails
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hashlib, json, sqlite3, textwrap
+
+              ROOT = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              DBS = {
+                "ours": ROOT + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                "phala": ROOT + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+              js = json.load(open("/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.json"))
+
+              def assistant_text(convo):
+                  msg = convo[1]
+                  reasoning = str(msg.get("reasoning_content") or "")
+                  content = str(msg.get("content") or "")
+                  if reasoning and content:
+                      if content in reasoning: return reasoning
+                      if reasoning in content: return content
+                      return reasoning + "\n" + content
+                  return reasoning or content
+
+              def prompt_key(convo):
+                  return hashlib.sha256(str(convo[0].get("content","")).encode("utf-8","ignore")).hexdigest()[:12]
+
+              def longest_suffix_period(s, max_p=800):
+                  s = s[-8000:]
+                  n = len(s)
+                  best = (0, 0)  # repeats, period
+                  for p in range(20, min(max_p, n // 2) + 1):
+                      pat = s[-p:]
+                      reps = 1
+                      i = n - p
+                      while i >= p and s[i-p:i] == pat:
+                          reps += 1
+                          i -= p
+                      if reps > best[0]:
+                          best = (reps, p)
+                  return best
+
+              for arm_name, db in DBS.items():
+                  arm = next(a for a in js["arms"] if a["name"] == arm_name)
+                  want = {r["question_key"]: r["zlib_tail_8k"] for r in arm["capped_rows"]
+                          if (r.get("zlib_tail_8k") or 9) <= 0.08}
+                  print("\n" + "=" * 72)
+                  print("ARM", arm_name, "n_tight", len(want))
+                  con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+                  found = {}
+                  for (v,) in con.execute("select value from Cache"):
+                      d = json.loads(v)
+                      if not isinstance(d, dict) or "convo" not in d:
+                          continue
+                      qk = prompt_key(d["convo"])
+                      if qk in want and qk not in found:
+                          found[qk] = assistant_text(d["convo"])
+                  con.close()
+                  missing = sorted(set(want) - set(found))
+                  print("loaded", len(found), "missing", missing)
+                  for qk, zlib in sorted(want.items(), key=lambda kv: kv[1]):
+                      text = found.get(qk, "")
+                      reps, period = longest_suffix_period(text) if text else (0, 0)
+                      kind = "PARAGRAPH_LOOP" if reps >= 3 else "NOT_OBVIOUS_PERIOD"
+                      print("-" * 72)
+                      print(f"{arm_name} q={qk} zlib={zlib} chars={len(text)} suffix_reps={reps} period_chars={period} {kind}")
+                      tail = text[-500:].replace("\n", " ")
+                      print(tail)

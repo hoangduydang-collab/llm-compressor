@@ -1,0 +1,102 @@
+---
+# Relabel Sep-11 AA GPQA failures with official Idavidrein/gpqa gold.
+# CPU-only. Dumps gpqa_diamond via the AA venv, then screens sqlite caches.
+#
+#   kubectl -n evaluation create configmap hd-aa-overthinking-gpqa-gold \
+#     --from-file=aa_overthinking.py=pipeline/aa_overthinking.py \
+#     --from-file=aa_cap_loop_screen.py=pipeline/aa_cap_loop_screen.py \
+#     --from-file=sample_output_check.py=pipeline/sample_output_check.py \
+#     --from-file=health.py=pipeline/evalsuite/health.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-aa-overthinking-gpqa-gold.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-overthinking-gpqa-gold
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: overthinking-gpqa-gold}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: overthinking-gpqa-gold}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: scripts
+          configMap: {name: hd-aa-overthinking-gpqa-gold}
+      containers:
+        - name: screen
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
+            - {name: HF_HOME, value: "/mnt/cephfs/hoangduy/hf-private"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/hub"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/datasets"}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: scripts, mountPath: /cm}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              ROOT=/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z
+              OURS=$ROOT/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
+              PHALA=$ROOT/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
+              VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              GOLD=/tmp/gpqa_diamond_gold.json
+              mkdir -p /mnt/cephfs/hoangduy/runlogs /work/pipeline/evalsuite
+              cp /cm/aa_overthinking.py /cm/aa_cap_loop_screen.py /cm/sample_output_check.py /work/pipeline/
+              cp /cm/health.py /work/pipeline/evalsuite/
+              : > /work/pipeline/__init__.py
+              : > /work/pipeline/evalsuite/__init__.py
+              export PYTHONPATH=/work
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-gpqa-gold.log
+              JSON=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-gpqa-gold.json
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> $(date -u +%FT%TZ)"
+              [ -x "$VENV/bin/python" ] || { echo "FATAL: missing $VENV"; exit 1; }
+              "$VENV/bin/python" - <<'PY'
+              import json, os
+              from datasets import load_dataset
+              fields = (
+                  "Question",
+                  "Correct Answer",
+                  "Incorrect Answer 1",
+                  "Incorrect Answer 2",
+                  "Incorrect Answer 3",
+              )
+              kwargs = {"path": "Idavidrein/gpqa", "name": "gpqa_diamond"}
+              try:
+                  os.environ["HF_HUB_OFFLINE"] = "1"
+                  os.environ["HF_DATASETS_OFFLINE"] = "1"
+                  ds = load_dataset(**kwargs)
+              except Exception as exc:
+                  print(f"offline load failed ({type(exc).__name__}: {exc}); retry online")
+                  os.environ["HF_HUB_OFFLINE"] = "0"
+                  os.environ["HF_DATASETS_OFFLINE"] = "0"
+                  ds = load_dataset(**kwargs)
+              split = ds["train"] if "train" in ds else next(iter(ds.values()))
+              rows = [{k: row[k] for k in fields} for row in split]
+              path = "/tmp/gpqa_diamond_gold.json"
+              with open(path, "w", encoding="utf-8") as fh:
+                  json.dump(rows, fh, ensure_ascii=False)
+              print(f"dumped {len(rows)} gpqa_diamond rows -> {path}")
+              print("splits", {k: len(v) for k, v in ds.items()})
+              PY
+              python3 -m pipeline.aa_overthinking --gpqa-gold "$GOLD" --json-out "$JSON" \
+                --arm ours:"$OURS" --arm phala:"$PHALA"
+              echo "==> done $(date -u +%FT%TZ)"

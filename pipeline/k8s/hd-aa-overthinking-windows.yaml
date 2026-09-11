@@ -1,0 +1,207 @@
+---
+# Print short CoT windows around the first gold commit on overthinking attempts.
+# CPU-only. Does not persist GPQA gold.
+#
+#   kubectl -n evaluation create configmap hd-aa-overthinking-windows \
+#     --from-file=aa_overthinking.py=pipeline/aa_overthinking.py \
+#     --from-file=aa_cap_loop_screen.py=pipeline/aa_cap_loop_screen.py \
+#     --from-file=sample_output_check.py=pipeline/sample_output_check.py \
+#     --from-file=health.py=pipeline/evalsuite/health.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-aa-overthinking-windows.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-overthinking-windows
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: overthinking-windows}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: overthinking-windows}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: scripts
+          configMap: {name: hd-aa-overthinking-windows}
+      containers:
+        - name: sample
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
+            - {name: HF_HOME, value: "/mnt/cephfs/hoangduy/hf-private"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/hub"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/datasets"}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: scripts, mountPath: /cm}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              mkdir -p /mnt/cephfs/hoangduy/runlogs /work/pipeline/evalsuite
+              cp /cm/aa_overthinking.py /cm/aa_cap_loop_screen.py /cm/sample_output_check.py /work/pipeline/
+              cp /cm/health.py /work/pipeline/evalsuite/
+              : > /work/pipeline/__init__.py
+              : > /work/pipeline/evalsuite/__init__.py
+              export PYTHONPATH=/work
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-windows.log
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> $(date -u +%FT%TZ)"
+              "$VENV/bin/python" - <<'PY'
+              import json, os, re
+              from datasets import load_dataset
+              from pipeline.aa_overthinking import (
+                  CAP_AA,
+                  _COMMITTED,
+                  _gold_letter,
+                  categorize_failure,
+                  index_gpqa_diamond,
+                  lookup_official_gold,
+                  records_from_cache,
+              )
+
+              fields = (
+                  "Question",
+                  "Correct Answer",
+                  "Incorrect Answer 1",
+                  "Incorrect Answer 2",
+                  "Incorrect Answer 3",
+              )
+              try:
+                  os.environ["HF_HUB_OFFLINE"] = "1"
+                  os.environ["HF_DATASETS_OFFLINE"] = "1"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              except Exception as exc:
+                  print(f"offline load failed ({type(exc).__name__}: {exc}); retry online")
+                  os.environ["HF_HUB_OFFLINE"] = "0"
+                  os.environ["HF_DATASETS_OFFLINE"] = "0"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              split = ds["train"]
+              gpqa_rows = [{k: row[k] for k in fields} for row in split]
+              by_stem, by_choices = index_gpqa_diamond(gpqa_rows)
+              print(f"gpqa_diamond rows={len(gpqa_rows)}")
+
+              def first_gold_match(text, gold):
+                  hits = []
+                  for pat in _COMMITTED:
+                      for match in pat.finditer(text or ""):
+                          if match.group(1).upper() == gold:
+                              hits.append(match)
+                  hits.sort(key=lambda m: m.start())
+                  return hits[0] if hits else None
+
+              def window(text, match, before=320, after=240):
+                  start, end = match.start(), match.end()
+                  a = max(0, start - before)
+                  b = min(len(text), end + after)
+                  chunk = text[a:b]
+                  marked = (
+                      chunk[: start - a]
+                      + "[["
+                      + chunk[start - a : end - a]
+                      + "]]"
+                      + chunk[end - a :]
+                  )
+                  marked = re.sub(r"[ \t]+\n", "\n", marked)
+                  marked = re.sub(r"\n{3,}", "\n\n", marked)
+                  prefix = "…" if a else ""
+                  suffix = "…" if b < len(text) else ""
+                  return prefix + marked + suffix, a, b, len(text)
+
+              root = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              dbs = {
+                  "ours": root + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                  "phala": root + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+
+              def collect(arm, path):
+                  recs = records_from_cache(path)
+                  over = []
+                  for rec in recs:
+                      gold_text, _src = lookup_official_gold(
+                          rec["stem"], rec["choices"], by_stem, by_choices
+                      )
+                      letter = _gold_letter(rec["choices"], gold_text)
+                      capped = rec["completion_tokens"] >= CAP_AA
+                      cat = categorize_failure(
+                          text=rec["text"],
+                          score=rec["score"],
+                          gold_letter=letter,
+                          capped=capped,
+                      )
+                      if cat["category"] != "overthinking" or not letter:
+                          continue
+                      match = first_gold_match(rec["text"], letter)
+                      if match is None:
+                          continue
+                      over.append(
+                          {
+                              "arm": arm,
+                              "stem_key": rec["stem_key"],
+                              "ct": rec["completion_tokens"],
+                              "capped": capped,
+                              "gold": letter,
+                              "final": cat["final_letter"],
+                              "n_committed": len(cat["committed"]),
+                              "gold_first_index": cat.get("gold_first_index"),
+                              "match": match,
+                              "text": rec["text"],
+                          }
+                      )
+                  return over
+
+              def take(rows, pred, n):
+                  picked = [r for r in rows if pred(r)]
+                  picked.sort(key=lambda r: (r["ct"], r["match"].start()))
+                  return picked[:n]
+
+              for arm, path in dbs.items():
+                  over = collect(arm, path)
+                  print(f"\n=== {arm} overthinking_with_span={len(over)} ===")
+                  picks = []
+                  picks += take(over, lambda r: (not r["capped"]) and r["final"] != r["gold"], 2)
+                  picks += take(over, lambda r: r["capped"] and r["final"] and r["final"] != r["gold"], 1)
+                  picks += take(over, lambda r: r["capped"] and r["final"] == r["gold"], 1)
+                  seen = set()
+                  unique = []
+                  for row in picks:
+                      key = (row["stem_key"], row["ct"], row["match"].start())
+                      if key in seen:
+                          continue
+                      seen.add(key)
+                      unique.append(row)
+                  for i, row in enumerate(unique, 1):
+                      snippet, a, b, nchars = window(row["text"], row["match"])
+                      kind = (
+                          "capped-stated-gold-then-ran-on"
+                          if row["capped"] and row["final"] == row["gold"]
+                          else ("capped-abandoned-gold" if row["capped"] else "finished-abandoned-gold")
+                      )
+                      print("-" * 72)
+                      print(
+                          f"[{arm} {i}/{len(unique)}] stem={row['stem_key']} kind={kind} "
+                          f"ct={row['ct']} gold={row['gold']} final={row['final']} "
+                          f"n_committed={row['n_committed']} gold_at_commit#{row['gold_first_index']} "
+                          f"match={row['match'].group(0)!r} char={row['match'].start()}/{nchars} "
+                          f"window=[{a}:{b}]"
+                      )
+                      print(snippet)
+              print("\n==> done")
+              PY
+              echo "==> $(date -u +%FT%TZ)"

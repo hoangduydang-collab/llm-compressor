@@ -105,6 +105,47 @@
 >    `gpqa_diamond_aa_v3` (creator-disclosed max output); any raised-cap
 >    result is a diagnostic, not an AA-comparable score, and must be
 >    reported as such (handoff §1.8 stands on this point).
+>
+> ### Loop-screen result (task 1, 2026-09-11) — M3 87–93% loop prior does NOT hold
+>
+> CPU job `hd-aa-cap-loop-screen` on ca-gpu04, 22 s, read-only on the
+> formal sqlite caches. Detectors: `sample_output_check.judge` (distinct-4gram
+> < 0.30, calibrated on ~100-char M3 collapses), `health._periodic_suffix`,
+> and `sampling_probe` zlib of the last 8k chars (loops ~0.004). Evidence:
+> `docs/evidence/2026-09-11-aa-cap-loop-screen.log` plus `-report.log` /
+> `-diag.log`.
+>
+> **The 0.30 4-gram gate over-fires at 131k scale** (400–600k chars of
+> technical CoT reuse notation). It labeled 120/120 and 155/155 as loops.
+> That is not the collapse signature:
+>
+> | Signal | ours (120 cap-hits) | phala (155) |
+> |---|---|---|
+> | `periodic_suffix` (period ≤16) | **0** | **0** |
+> | zlib ≤ 0.08 (tight loop) | **15 (12.5%)** | **17 (11.0%)** |
+> | zlib 0.08–0.20 | 17 | 19 |
+> | zlib > 0.20 (English-like) | **88 (73%)** | **119 (77%)** |
+> | zlib p50 | 0.306 | 0.337 |
+> | tail previews | on-topic unfinished CoT | same |
+>
+> Tight-loop fraction is ~12%, not 87–93%. The remaining ~105/138 cap-hits
+> are long rumination that still looks like GPQA reasoning at the tail.
+> Classifier in `pipeline/aa_cap_loop_screen.py` was updated to use zlib +
+> periodic_suffix as the hard gate; 4-gram is reported, not the label.
+>
+> **160k diagnostic does not test extra budget.** `results-diag-allcap-q008-160k`
+> is a near-full rerun (`max_new_tokens: 160000`, n=986, acc 0.8215) but
+> 115/116 traces that reached 131k still have `completion_tokens == 131072`
+> exactly (acc 0); only 1 hit 160000. Those 115 were not actually generated
+> past the AA cap — likely a leftover 131k clamp or reused responses. It
+> cannot be cited as “loops still consume 160k”. Short traces in that run
+> match the formal uncapped accuracy (855 < 64k at 93.68%).
+>
+> **Consequence for task 2:** a targeted 256k rerun of the non-tight-loop
+> cap-hits (105/120 ours traces; unique-question count not yet joined to the
+> zlib flag) is still the experiment that tests the truncation hypothesis.
+> Do not skip it on a 100% loop reading of the 4-gram gate. Dropping the 15
+> tight-loop traces is the only GPU save from this screen.
 
 - Protocol version: 1
 - Task: rerun AA GPQA Diamond on the two-node GLM-5.3 serve, and make the

@@ -1,0 +1,231 @@
+---
+# Classify overthinking gold-hits as decision vs hedged consideration vs format rehearsal.
+# Reuses configmap hd-aa-overthinking-windows (pipeline scripts unchanged).
+#
+#   kubectl apply -f pipeline/k8s/hd-aa-overthinking-hedge.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-overthinking-hedge
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: overthinking-hedge}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: overthinking-hedge}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: scripts
+          configMap: {name: hd-aa-overthinking-windows}
+      containers:
+        - name: classify
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
+            - {name: HF_HOME, value: "/mnt/cephfs/hoangduy/hf-private"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/hub"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/datasets"}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: scripts, mountPath: /cm}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              mkdir -p /mnt/cephfs/hoangduy/runlogs /work/pipeline/evalsuite
+              cp /cm/aa_overthinking.py /cm/aa_cap_loop_screen.py /cm/sample_output_check.py /work/pipeline/
+              cp /cm/health.py /work/pipeline/evalsuite/
+              : > /work/pipeline/__init__.py
+              : > /work/pipeline/evalsuite/__init__.py
+              export PYTHONPATH=/work
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-hedge.log
+              JSON=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-hedge.json
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> $(date -u +%FT%TZ)"
+              "$VENV/bin/python" - <<'PY'
+              import json, os, re
+              from collections import Counter
+              from datasets import load_dataset
+              from pipeline.aa_overthinking import (
+                  CAP_AA,
+                  _COMMITTED,
+                  _gold_letter,
+                  categorize_failure,
+                  index_gpqa_diamond,
+                  lookup_official_gold,
+                  records_from_cache,
+              )
+
+              fields = (
+                  "Question", "Correct Answer",
+                  "Incorrect Answer 1", "Incorrect Answer 2", "Incorrect Answer 3",
+              )
+              try:
+                  os.environ["HF_HUB_OFFLINE"] = "1"
+                  os.environ["HF_DATASETS_OFFLINE"] = "1"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              except Exception as exc:
+                  print(f"offline load failed ({type(exc).__name__}: {exc}); retry online")
+                  os.environ["HF_HUB_OFFLINE"] = "0"
+                  os.environ["HF_DATASETS_OFFLINE"] = "0"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              by_stem, by_choices = index_gpqa_diamond(
+                  [{k: row[k] for k in fields} for row in ds["train"]]
+              )
+
+              HEDGE = re.compile(
+                  r"(?i)\b("
+                  r"maybe|perhaps|possibly|probably|might|could|"
+                  r"what if|if we|if the|if i|suppose|assuming|"
+                  r"expected|hypothetic|consider(?:ing)?|"
+                  r"or is it|not (?:sure|certain)|unsure"
+                  r")\b"
+              )
+              FORMAT = re.compile(
+                  r"(?i)("
+                  r"last line|final line|format:|e\.g\.|"
+                  r"must (?:be|one)|oververbosity|"
+                  r"need (?:produce|ensure|provide|craft|decide)|"
+                  r"response should|final response"
+                  r")"
+              )
+
+              def gold_hits(text, gold):
+                  hits = []
+                  for i, pat in enumerate(_COMMITTED):
+                      for match in pat.finditer(text or ""):
+                          if match.group(1).upper() == gold:
+                              hits.append((match.start(), match.end(), i, match.group(0)))
+                  hits.sort()
+                  # same span can match multiple regexes; keep earliest unique start
+                  uniq, seen = [], set()
+                  for h in hits:
+                      if h[0] in seen:
+                          continue
+                      seen.add(h[0])
+                      uniq.append(h)
+                  return uniq
+
+              def classify_hit(text, start, end, pat_i, surface):
+                  pre = text[max(0, start - 80):start]
+                  local = pre + " " + surface
+                  kind = {
+                      0: "answer_colon",
+                      1: "boxed",
+                      2: "answer_is_paren",
+                      3: "answer_is",
+                      4: "letter_is_correct",
+                  }[pat_i]
+                  if FORMAT.search(local):
+                      bucket = "format_rehearsal"
+                  elif HEDGE.search(pre) or HEDGE.search(surface):
+                      bucket = "hedged_consideration"
+                  elif kind in {"answer_colon", "boxed"}:
+                      bucket = "decision_form"
+                  else:
+                      bucket = "unhedged_answer_is"
+                  return bucket, kind, pre[-60:].replace("\n", " ")
+
+              root = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              dbs = {
+                  "ours": root + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                  "phala": root + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+              report = {"arms": []}
+              for arm, path in dbs.items():
+                  recs = records_from_cache(path)
+                  first_bucket = Counter()
+                  attempt_bucket = Counter()
+                  n_over = 0
+                  n_fail = 0
+                  examples = {"hedged_consideration": [], "format_rehearsal": [], "decision_form": []}
+                  for rec in recs:
+                      gold_text, _ = lookup_official_gold(
+                          rec["stem"], rec["choices"], by_stem, by_choices
+                      )
+                      letter = _gold_letter(rec["choices"], gold_text)
+                      capped = rec["completion_tokens"] >= CAP_AA
+                      cat = categorize_failure(
+                          text=rec["text"], score=rec["score"],
+                          gold_letter=letter, capped=capped,
+                      )
+                      if rec["score"] < 1.0:
+                          n_fail += 1
+                      if cat["category"] != "overthinking":
+                          continue
+                      n_over += 1
+                      hits = gold_hits(rec["text"], letter)
+                      labels = []
+                      for start, end, pat_i, surface in hits:
+                          bucket, kind, pre = classify_hit(rec["text"], start, end, pat_i, surface)
+                          labels.append(bucket)
+                      if not labels:
+                          attempt_bucket["no_span"] += 1
+                          continue
+                      first_bucket[labels[0]] += 1
+                      has_decision = any(b in {"decision_form", "unhedged_answer_is"} for b in labels)
+                      has_weak = any(b in {"hedged_consideration", "format_rehearsal"} for b in labels)
+                      if has_decision:
+                          attempt_bucket["has_unhedged_decision"] += 1
+                      elif has_weak:
+                          attempt_bucket["consideration_or_format_only"] += 1
+                      fb = labels[0]
+                      if fb in examples and len(examples[fb]) < 2:
+                          examples[fb].append({
+                              "stem_key": rec["stem_key"],
+                              "ct": rec["completion_tokens"],
+                              "gold": letter,
+                              "final": cat["final_letter"],
+                              "first_bucket": fb,
+                              "pre": pre,
+                              "match": hits[0][3],
+                          })
+                  compact = {
+                      "name": arm,
+                      "n_fail": n_fail,
+                      "n_overthinking_current": n_over,
+                      "first_gold_hit_bucket": dict(first_bucket),
+                      "attempt_if_require_unhedged": dict(attempt_bucket),
+                      "rate_current": round(n_over / n_fail, 4) if n_fail else None,
+                      "rate_unhedged_only": round(
+                          attempt_bucket["has_unhedged_decision"] / n_fail, 4
+                      ) if n_fail else None,
+                      "examples": examples,
+                  }
+                  report["arms"].append(compact)
+                  print("=" * 72)
+                  print(f"ARM {arm} fails={n_fail} overthinking_current={n_over} "
+                        f"rate={compact['rate_current']}")
+                  print("  first gold-hit bucket:", dict(first_bucket))
+                  print("  attempts with any unhedged decision-form gold:",
+                        attempt_bucket["has_unhedged_decision"])
+                  print("  consideration/format only (no unhedged gold commit):",
+                        attempt_bucket["consideration_or_format_only"])
+                  print("  rate if we require unhedged decision:", compact["rate_unhedged_only"])
+                  for bucket, rows in examples.items():
+                      for row in rows:
+                          print(f"  ex[{bucket}] stem={row['stem_key']} ct={row['ct']} "
+                                f"gold={row['gold']} final={row['final']}")
+                          print(f"      …{row['pre']}[[{row['match']}]]")
+              open("/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-hedge.json", "w", encoding="utf-8").write(
+                  json.dumps(report, indent=2) + "\n"
+              )
+              print("==> wrote", "/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-hedge.json")
+              PY
+              echo "==> $(date -u +%FT%TZ)"

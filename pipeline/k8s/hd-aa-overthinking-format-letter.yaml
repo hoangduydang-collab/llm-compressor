@@ -1,0 +1,158 @@
+---
+# Letter used in format-rehearsal "Answer: X" vs gold / prompt example A.
+# Reuses configmap hd-aa-overthinking-windows.
+#
+#   kubectl apply -f pipeline/k8s/hd-aa-overthinking-format-letter.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-overthinking-format-letter
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: overthinking-format-letter}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: overthinking-format-letter}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: scripts
+          configMap: {name: hd-aa-overthinking-windows}
+      containers:
+        - name: classify
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hd-hf-token, key: HF_TOKEN, optional: true}
+            - {name: HF_HOME, value: "/mnt/cephfs/hoangduy/hf-private"}
+            - {name: HF_HUB_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/hub"}
+            - {name: HF_DATASETS_CACHE, value: "/mnt/cephfs/hoangduy/hf-private/datasets"}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: scripts, mountPath: /cm}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              VENV=/mnt/cephfs/hoangduy/venvs/nvidia-simple-evals-26.3
+              mkdir -p /mnt/cephfs/hoangduy/runlogs /work/pipeline/evalsuite
+              cp /cm/aa_overthinking.py /cm/aa_cap_loop_screen.py /cm/sample_output_check.py /work/pipeline/
+              cp /cm/health.py /work/pipeline/evalsuite/
+              : > /work/pipeline/__init__.py
+              : > /work/pipeline/evalsuite/__init__.py
+              export PYTHONPATH=/work
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-overthinking-format-letter.log
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> $(date -u +%FT%TZ)"
+              "$VENV/bin/python" - <<'PY'
+              import os, re
+              from collections import Counter
+              from datasets import load_dataset
+              from pipeline.aa_overthinking import (
+                  CAP_AA, _COMMITTED, _gold_letter, categorize_failure,
+                  committed_letters, index_gpqa_diamond, lookup_official_gold,
+                  records_from_cache,
+              )
+
+              fields = (
+                  "Question", "Correct Answer",
+                  "Incorrect Answer 1", "Incorrect Answer 2", "Incorrect Answer 3",
+              )
+              try:
+                  os.environ["HF_HUB_OFFLINE"] = "1"
+                  os.environ["HF_DATASETS_OFFLINE"] = "1"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              except Exception as exc:
+                  print("offline fail", type(exc).__name__, exc)
+                  os.environ["HF_HUB_OFFLINE"] = "0"
+                  os.environ["HF_DATASETS_OFFLINE"] = "0"
+                  ds = load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+              by_stem, by_choices = index_gpqa_diamond(
+                  [{k: row[k] for k in fields} for row in ds["train"]]
+              )
+
+              FORMAT = re.compile(
+                  r"(?i)(last line|final line|format:|e\.g\.|must (?:be|one)|oververbosity|"
+                  r"need (?:produce|ensure|provide|craft|decide)|response should|final response)"
+              )
+              # Prompt example is 'Answer: A'
+              COLON = _COMMITTED[0]
+
+              def is_format(text, m):
+                  pre = text[max(0, m.start() - 80):m.start()]
+                  return bool(FORMAT.search(pre + " " + m.group(0)))
+
+              root = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              dbs = {
+                  "ours": root + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                  "phala": root + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+
+              for arm, path in dbs.items():
+                  recs = records_from_cache(path)
+                  letter_all = Counter()
+                  eq_gold = 0
+                  eq_final = 0
+                  n_fmt = 0
+                  over_fmt_gold = Counter()
+                  examples = []
+                  for rec in recs:
+                      gold_text, _ = lookup_official_gold(
+                          rec["stem"], rec["choices"], by_stem, by_choices
+                      )
+                      gold = _gold_letter(rec["choices"], gold_text)
+                      text = rec["text"] or ""
+                      letters = committed_letters(text)
+                      final = letters[-1] if letters else None
+                      first_fmt = None
+                      for m in COLON.finditer(text):
+                          if is_format(text, m):
+                              first_fmt = m
+                              break
+                      if first_fmt is not None:
+                          n_fmt += 1
+                          L = first_fmt.group(1).upper()
+                          letter_all[L] += 1
+                          if gold and L == gold:
+                              eq_gold += 1
+                          if final and L == final:
+                              eq_final += 1
+                          if len(examples) < 6 and L != "A":
+                              pre = text[max(0, first_fmt.start()-70):first_fmt.start()].replace("\n", " ")
+                              examples.append((L, gold, final, rec["stem_key"], pre, first_fmt.group(0)))
+                      cat = categorize_failure(
+                          text=text, score=rec["score"], gold_letter=gold,
+                          capped=rec["completion_tokens"] >= CAP_AA,
+                      )
+                      if cat["category"] == "overthinking" and first_fmt is not None:
+                          L = first_fmt.group(1).upper()
+                          if gold and L == gold:
+                              over_fmt_gold[gold] += 1
+
+                  print("=" * 72)
+                  print(f"ARM {arm} n={len(recs)} with_format_rehearsal_Answer_colon={n_fmt}")
+                  print("  letter in first format-rehearsal Answer:X", dict(sorted(letter_all.items())))
+                  if n_fmt:
+                      print(f"  that letter == gold: {eq_gold}/{n_fmt} = {eq_gold/n_fmt:.3f} (chance ~0.25)")
+                      print(f"  that letter == final committed letter: {eq_final}/{n_fmt} = {eq_final/n_fmt:.3f}")
+                      print(f"  letter == A (prompt e.g.): {letter_all['A']}/{n_fmt} = {letter_all['A']/n_fmt:.3f}")
+                  print("  overthinking ∩ first format Answer:X == gold, by gold letter", dict(sorted(over_fmt_gold.items())))
+                  print("  examples where rehearsed letter is not A:")
+                  for L, gold, final, sk, pre, surf in examples:
+                      print(f"    stem={sk} rehearsed={L} gold={gold} final={final}")
+                      print(f"      …{pre[-60:]}[[{surf}]]")
+              PY
+              echo "==> $(date -u +%FT%TZ)"

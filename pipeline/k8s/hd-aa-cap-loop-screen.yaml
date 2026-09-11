@@ -1,0 +1,101 @@
+---
+# CPU-only loop screen of Sep-11 AA GPQA cap-hit traces.
+#
+# Detectors: pipeline/sample_output_check.py (M3 arringarring baseline) +
+# pipeline/evalsuite/health.py _periodic_suffix, applied to the tail so a
+# late collapse is not hidden by a unique prefix. Read-only on the results
+# tree; JSON + log to /mnt/cephfs/hoangduy/runlogs only. No GPU.
+#
+#   kubectl -n evaluation create configmap hd-aa-cap-loop-screen \
+#     --from-file=aa_cap_loop_screen.py=pipeline/aa_cap_loop_screen.py \
+#     --from-file=sample_output_check.py=pipeline/sample_output_check.py \
+#     --from-file=health.py=pipeline/evalsuite/health.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-aa-cap-loop-screen.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-cap-loop-screen
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: cap-loop-screen}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: cap-loop-screen}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: scripts
+          configMap: {name: hd-aa-cap-loop-screen}
+      containers:
+        - name: screen
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: scripts, mountPath: /cm}
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              ROOT=/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z
+              OURS=$ROOT/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
+              PHALA=$ROOT/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
+              DIAG=$ROOT/client-ours/aa-gpqa-v3/results-diag-allcap-q008-160k/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
+              mkdir -p /mnt/cephfs/hoangduy/runlogs
+              LOG=/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.log
+              JSON=/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.json
+              exec > >(tee -a "$LOG") 2>&1
+              echo "==> durable log: $LOG json: $JSON"
+              echo "==> node=${NODE_NAME:-unknown} date=$(date -u +%FT%TZ)"
+
+              mkdir -p /work/pipeline/evalsuite
+              cp /cm/aa_cap_loop_screen.py /work/pipeline/
+              cp /cm/sample_output_check.py /work/pipeline/
+              cp /cm/health.py /work/pipeline/evalsuite/
+              : > /work/pipeline/__init__.py
+              : > /work/pipeline/evalsuite/__init__.py
+              export PYTHONPATH=/work
+
+              echo "=== [0] detector self-check ==="
+              python3 - <<'PY'
+              from pipeline.aa_cap_loop_screen import classify_trace
+              loop = classify_trace("arring" * 400)
+              sent = classify_trace(" I don't know. " * 80)
+              assert loop["label"] == "loop", loop
+              assert sent["label"] == "loop", sent
+              print("self-check OK", loop["label"], sent["label"])
+              PY
+
+              echo "=== [1] input files ==="
+              for p in "$OURS" "$PHALA" "$DIAG"; do
+                if [ -f "$p" ]; then
+                  echo "  PRESENT $(stat -c%s "$p") $p"
+                else
+                  echo "  ABSENT $p"
+                fi
+              done
+              test -f "$OURS" || { echo "FATAL: ours cache missing"; exit 10; }
+
+              ARMS=( "ours:131072:$OURS" )
+              [ -f "$PHALA" ] && ARMS+=( "phala:131072:$PHALA" )
+              [ -f "$DIAG" ] && ARMS+=( "diag160k:160000:$DIAG" )
+
+              echo "=== [2] screen ==="
+              python3 -m pipeline.aa_cap_loop_screen --json-out "$JSON" \
+                $(printf -- '--arm %s ' "${ARMS[@]}")
+              echo "==> screen complete rc=0 date=$(date -u +%FT%TZ)"

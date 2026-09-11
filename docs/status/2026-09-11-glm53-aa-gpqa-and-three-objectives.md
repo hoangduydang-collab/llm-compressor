@@ -42,8 +42,9 @@ interesting finding.
   while generating less.
 - Truncation is probably most of the gap to AA's 91.7%. Ours ceilings at 87.9%
   if every length-finish scores zero.
-- That last point is unverified, not measured. The harness kept only aggregates,
-  no per-item scores.
+- **Update (same day):** per-item scores *are* in the sqlite caches. Cap-hits
+  all scored 0; uncapped acc 93.1% / 94.1%. Loop vs overthinking write-up:
+  [`2026-09-11-aa-gpqa-truncation-and-overthinking.md`](2026-09-11-aa-gpqa-truncation-and-overthinking.md).
 - The unquantized comparison is still missing. No BF16 GLM-5.3 fits an 8xH100
   node, so a defect shared by both arms stays invisible.
 

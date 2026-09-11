@@ -1,0 +1,121 @@
+---
+# Regroup by GPQA stem (strip shuffled A/B/C/D). Finished-attempt token stats.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-capped-stem-sibling-tokens
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: capped-stem-sibling-tokens}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: capped-stem-sibling-tokens}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: stats
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "4Gi"}
+            limits: {cpu: "2", memory: "8Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hashlib, json, re, sqlite3
+              from collections import defaultdict
+
+              CAP = 131072
+              ROOT = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              DBS = {
+                "ours": ROOT + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                "phala": ROOT + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+              STEM = re.compile(
+                  r"Answer the following multiple choice question\..*?\n\n(.+?)\n\nA\)",
+                  re.S,
+              )
+
+              def stem_key(prompt):
+                  m = STEM.search(prompt)
+                  body = m.group(1).strip() if m else prompt
+                  return hashlib.sha256(body.encode("utf-8","ignore")).hexdigest()[:12], body[:80]
+
+              def quantiles(xs):
+                  xs = sorted(xs)
+                  if not xs:
+                      return None
+                  n = len(xs)
+                  q = lambda f: xs[min(n-1, int((n-1)*f))]
+                  return {"n": n, "min": xs[0], "p50": q(.5), "p90": q(.9), "p95": q(.95),
+                          "max": xs[-1], "mean": round(sum(xs)/n, 1)}
+
+              def near(xs):
+                  n = len(xs) or 1
+                  return {"ge_32k": sum(x>=32768 for x in xs), "ge_64k": sum(x>=65536 for x in xs),
+                          "ge_100k": sum(x>=100000 for x in xs), "ge_120k": sum(x>=120000 for x in xs),
+                          "pct_ge_64k": round(100*sum(x>=65536 for x in xs)/n,1),
+                          "pct_ge_100k": round(100*sum(x>=100000 for x in xs)/n,1)}
+
+              def load(db):
+                  con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+                  rows = []
+                  for (v,) in con.execute("select value from Cache"):
+                      d = json.loads(v)
+                      if not isinstance(d, dict) or "convo" not in d or "score" not in d:
+                          continue
+                      prompt = str(d["convo"][0].get("content",""))
+                      sk, preview = stem_key(prompt)
+                      ct = int((d["convo"][1].get("usage") or {}).get("completion_tokens", -1))
+                      rows.append((sk, ct, float(d["score"]), preview))
+                  con.close()
+                  return rows
+
+              for arm, db in DBS.items():
+                  rows = load(db)
+                  by = defaultdict(list)
+                  preview = {}
+                  for sk, ct, sc, pv in rows:
+                      by[sk].append((ct, sc))
+                      preview[sk] = pv
+                  n_atts = [len(v) for v in by.values()]
+                  print("=" * 72)
+                  print("ARM", arm, "n", len(rows), "unique_stems", len(by),
+                        "attempts_per_stem min/p50/max", min(n_atts), sorted(n_atts)[len(n_atts)//2], max(n_atts))
+                  cap_stems = {sk for sk, atts in by.items() if any(ct>=CAP for ct,_ in atts)}
+                  never = {sk for sk, atts in by.items() if all(ct<CAP for ct,_ in atts)}
+                  print("stems with >=1 cap-hit", len(cap_stems), "never-cap stems", len(never))
+                  n_cap = [sum(ct>=CAP for ct,_ in by[sk]) for sk in cap_stems]
+                  n_sib = [sum(ct<CAP for ct,_ in by[sk]) for sk in cap_stems]
+                  n_sib_ok = [sum(ct<CAP and sc==1 for ct,sc in by[sk]) for sk in cap_stems]
+                  print("cap-hits per such stem", {k: n_cap.count(k) for k in sorted(set(n_cap))})
+                  print("finished siblings per such stem", {k: n_sib.count(k) for k in sorted(set(n_sib))})
+                  print("correct finished siblings per such stem", {k: n_sib_ok.count(k) for k in sorted(set(n_sib_ok))})
+                  print("cap stems with ZERO finished-correct siblings", sum(x==0 for x in n_sib_ok), "/", len(cap_stems))
+
+                  sib = [(ct,sc) for sk in cap_stems for ct,sc in by[sk] if ct<CAP]
+                  sib_ok = [ct for ct,sc in sib if sc==1]
+                  sib_bad = [ct for ct,sc in sib if sc==0]
+                  nev = [(ct,sc) for sk in never for ct,sc in by[sk]]
+                  nev_ok = [ct for ct,sc in nev if sc==1]
+
+                  print("\n  finished siblings (same stem, ct<131k) of cap-hit problems:")
+                  print("   all    ", quantiles([ct for ct,_ in sib]), near([ct for ct,_ in sib]),
+                        "acc", round(sum(s for _,s in sib)/len(sib),4) if sib else None)
+                  print("   score=1", quantiles(sib_ok), near(sib_ok) if sib_ok else None)
+                  print("   score=0", quantiles(sib_bad), near(sib_bad) if sib_bad else None)
+
+                  print("\n  attempts on problems that NEVER hit the cap:")
+                  print("   all    ", quantiles([ct for ct,_ in nev]), near([ct for ct,_ in nev]),
+                        "acc", round(sum(s for _,s in nev)/len(nev),4) if nev else None)
+                  print("   score=1", quantiles(nev_ok), near(nev_ok) if nev_ok else None)

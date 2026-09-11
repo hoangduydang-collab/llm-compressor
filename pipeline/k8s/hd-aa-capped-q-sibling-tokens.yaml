@@ -1,0 +1,127 @@
+---
+# Token-length of finished sibling attempts on cap-hit questions. CPU-only.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-capped-q-sibling-tokens
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: capped-q-sibling-tokens}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: capped-q-sibling-tokens}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: stats
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "4Gi"}
+            limits: {cpu: "2", memory: "8Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hashlib, json, sqlite3
+              from collections import defaultdict
+
+              CAP = 131072
+              ROOT = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              DBS = {
+                "ours": ROOT + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                "phala": ROOT + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+
+              def quantiles(xs):
+                  xs = sorted(xs)
+                  if not xs:
+                      return None
+                  n = len(xs)
+                  q = lambda f: xs[min(n-1, int((n-1)*f))]
+                  return {"n": n, "min": xs[0], "p50": q(.5), "p90": q(.9), "p95": q(.95),
+                          "max": xs[-1], "mean": round(sum(xs)/n, 1)}
+
+              def near(xs):
+                  n = len(xs) or 1
+                  return {
+                      "ge_32k": sum(x>=32768 for x in xs),
+                      "ge_64k": sum(x>=65536 for x in xs),
+                      "ge_100k": sum(x>=100000 for x in xs),
+                      "ge_120k": sum(x>=120000 for x in xs),
+                      "pct_ge_64k": round(100*sum(x>=65536 for x in xs)/n, 1),
+                      "pct_ge_100k": round(100*sum(x>=100000 for x in xs)/n, 1),
+                  }
+
+              def load(db):
+                  con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+                  rows = []
+                  for (v,) in con.execute("select value from Cache"):
+                      d = json.loads(v)
+                      if not isinstance(d, dict) or "convo" not in d or "score" not in d:
+                          continue
+                      convo = d["convo"]
+                      qk = hashlib.sha256(str(convo[0].get("content","")).encode()).hexdigest()[:12]
+                      ct = int((convo[1].get("usage") or {}).get("completion_tokens", -1))
+                      rows.append((qk, ct, float(d["score"])))
+                  con.close()
+                  return rows
+
+              for arm, db in DBS.items():
+                  rows = load(db)
+                  by = defaultdict(list)
+                  for qk, ct, sc in rows:
+                      by[qk].append((ct, sc))
+                  cap_qs = {qk for qk, atts in by.items() if any(ct>=CAP for ct,sc in atts)}
+                  never_qs = {qk for qk, atts in by.items() if all(ct<CAP for ct,sc in atts)}
+
+                  sib = [(ct,sc) for qk in cap_qs for ct,sc in by[qk] if ct < CAP]
+                  sib_ok = [ct for ct,sc in sib if sc==1]
+                  sib_bad = [ct for ct,sc in sib if sc==0]
+                  never = [(ct,sc) for qk in never_qs for ct,sc in by[qk]]
+                  never_ok = [ct for ct,sc in never if sc==1]
+                  never_bad = [ct for ct,sc in never if sc==0]
+                  all_free = [ct for qk,ct,sc in rows if ct < CAP]
+                  all_free_ok = [ct for qk,ct,sc in rows if ct < CAP and sc==1]
+
+                  n_atts = [len(by[qk]) for qk in cap_qs]
+                  n_cap = [sum(ct>=CAP for ct,_ in by[qk]) for qk in cap_qs]
+                  n_sib = [sum(ct<CAP for ct,_ in by[qk]) for qk in cap_qs]
+                  n_sib_ok = [sum(ct<CAP and sc==1 for ct,sc in by[qk]) for qk in cap_qs]
+
+                  print("=" * 72)
+                  print("ARM", arm, "n_records", len(rows), "unique_q", len(by),
+                        "cap_q", len(cap_qs), "never_cap_q", len(never_qs))
+                  print("attempts per cap_q: min/p50/max", min(n_atts), sorted(n_atts)[len(n_atts)//2], max(n_atts))
+                  print("cap-hits per cap_q distribution",
+                        {k: n_cap.count(k) for k in sorted(set(n_cap))})
+                  print("finished siblings per cap_q distribution",
+                        {k: n_sib.count(k) for k in sorted(set(n_sib))})
+                  print("correct finished siblings per cap_q distribution",
+                        {k: n_sib_ok.count(k) for k in sorted(set(n_sib_ok))})
+                  print("cap_q with ZERO finished-correct siblings",
+                        sum(1 for x in n_sib_ok if x==0), "/", len(cap_qs))
+
+                  print("\n  finished siblings of cap-hit questions (ct<131k):")
+                  print("   all     ", quantiles([ct for ct,_ in sib]), near([ct for ct,_ in sib]),
+                        "acc", round(sum(sc for _,sc in sib)/len(sib),4) if sib else None)
+                  print("   score=1 ", quantiles(sib_ok), near(sib_ok) if sib_ok else None)
+                  print("   score=0 ", quantiles(sib_bad), near(sib_bad) if sib_bad else None)
+
+                  print("\n  attempts on questions that NEVER hit the cap:")
+                  print("   all     ", quantiles([ct for ct,_ in never]), near([ct for ct,_ in never]),
+                        "acc", round(sum(sc for _,sc in never)/len(never),4) if never else None)
+                  print("   score=1 ", quantiles(never_ok), near(never_ok) if never_ok else None)
+
+                  print("\n  all uncapped attempts (any question):")
+                  print("   all     ", quantiles(all_free), near(all_free))
+                  print("   score=1 ", quantiles(all_free_ok), near(all_free_ok))

@@ -1,0 +1,98 @@
+---
+# Score-by-length on the 160k diagnostic cache + its run_config.
+# CPU-only, read-only. Interprets the loop-screen overfire.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-cap-loop-screen-diag
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: cap-loop-screen-diag}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: cap-loop-screen-diag}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: diag
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "2Gi"}
+            limits: {cpu: "2", memory: "4Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              D=/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-diag-allcap-q008-160k
+              echo "=== run_config / custom_config ==="
+              for f in "$D/run_config.yml" "$D/custom_config.yml" "$D/temp_config.json"; do
+                echo "--- $f ---"; cat "$f"; echo
+              done
+              python3 - <<'PY'
+              import json, sqlite3
+              from collections import Counter, defaultdict
+              db = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-diag-allcap-q008-160k/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db"
+              js = "/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.json"
+              report = json.loads(open(js).read())
+
+              def bucket(ct):
+                  if ct < 65536: return "lt_64k"
+                  if ct < 131072: return "64k_131k"
+                  if ct < 160000: return "131k_160k"
+                  return "eq_160k"
+
+              con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+              rows = []
+              finish = Counter()
+              for (v,) in con.execute("select value from Cache"):
+                  d = json.loads(v)
+                  if not isinstance(d, dict) or "convo" not in d:
+                      continue
+                  msg = d["convo"][1] if len(d["convo"]) > 1 else {}
+                  usage = (msg.get("usage") or {})
+                  try:
+                      ct = int(usage.get("completion_tokens", -1))
+                  except Exception:
+                      continue
+                  fr = msg.get("finish_reason") or usage.get("finish_reason") or msg.get("stop_reason")
+                  finish[str(fr)] += 1
+                  rows.append((ct, float(d.get("score") or 0.0), fr, list(msg)))
+              con.close()
+              print("n", len(rows), "assistant_keys_sample", rows[0][3] if rows else None)
+              print("finish_reason", dict(finish))
+              by = defaultdict(list)
+              for ct, sc, fr, _ in rows:
+                  by[bucket(ct)].append((ct, sc))
+              print("\nbucket  n  n_correct  acc  ct_min  ct_p50  ct_max")
+              for k in ("lt_64k", "64k_131k", "131k_160k", "eq_160k"):
+                  xs = by[k]
+                  if not xs:
+                      print(f"{k:10} 0"); continue
+                  cts = sorted(c for c,_ in xs)
+                  acc = sum(s for _,s in xs) / len(xs)
+                  print(f"{k:10} {len(xs):3d}  {sum(s for _,s in xs):7.1f}  {acc:.4f}  {cts[0]}  {cts[len(cts)//2]}  {cts[-1]}")
+
+              # zlib / periodic from the already-computed screen JSON
+              print("\n=== screen JSON: zlib and periodic flags (formal cap-hits) ===")
+              for arm in report["arms"]:
+                  cap_rows = arm["capped_rows"]
+                  z = [r.get("zlib_tail_8k") for r in cap_rows]
+                  pw = sum(bool(r.get("periodic_word")) for r in cap_rows)
+                  pc = sum(bool(r.get("periodic_char")) for r in cap_rows)
+                  tight = sum(1 for x in z if x is not None and x <= 0.08)
+                  mid = sum(1 for x in z if x is not None and 0.08 < x <= 0.20)
+                  loose = sum(1 for x in z if x is not None and x > 0.20)
+                  print(f"{arm['name']:10} n={len(cap_rows)} periodic_word={pw} periodic_char={pc} "
+                        f"zlib<=0.08={tight} 0.08-0.20={mid} >0.20={loose}")
+              PY

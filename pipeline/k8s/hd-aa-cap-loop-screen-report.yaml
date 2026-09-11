@@ -1,0 +1,95 @@
+---
+# Read-only report over hd-aa-cap-loop-screen.json + the 160k diagnostic
+# cache token histogram. CPU-only; does not re-read the 131k traces.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-cap-loop-screen-report
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: cap-loop-screen-report}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: cap-loop-screen-report}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: report
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "2Gi"}
+            limits: {cpu: "2", memory: "4Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -uo pipefail
+              python3 - <<'PY'
+              import json, sqlite3, statistics
+              from collections import Counter
+              from pathlib import Path
+
+              p = Path("/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.json")
+              print("json_bytes", p.stat().st_size)
+              report = json.loads(p.read_text())
+
+              def quantiles(xs):
+                  xs = sorted(x for x in xs if x is not None)
+                  if not xs:
+                      return None
+                  n = len(xs)
+                  q = lambda f: xs[min(n - 1, int((n - 1) * f))]
+                  return {"n": n, "min": xs[0], "p50": q(0.5), "p90": q(0.9), "max": xs[-1],
+                          "mean": round(sum(xs) / n, 4)}
+
+              for arm in report["arms"]:
+                  rows = arm["capped_rows"]
+                  print("\n====", arm["name"], "cap", arm["cap"], "n_capped", len(rows))
+                  reasons = Counter()
+                  for row in rows:
+                      for r in row.get("reasons") or []:
+                          key = r.split("(")[0].split("period=")[0].strip()
+                          reasons[key] += 1
+                  print("reason_stems:")
+                  for k, v in reasons.most_common():
+                      print(f"  {v:4d}  {k}")
+                  for field in ("full_distinct_4gram", "tail_distinct_4gram",
+                                "full_unique_word_ratio", "zlib_tail_8k",
+                                "completion_tokens", "n_chars"):
+                      print(f"  {field}: {quantiles([row.get(field) for row in rows])}")
+                  print("tail_previews (first 5, last 240 chars):")
+                  for row in rows[:5]:
+                      prev = (row.get("tail_preview") or "").replace("\n", "\\n")
+                      print(f"  q={row.get('question_key')} ct={row.get('completion_tokens')} "
+                            f"d4={row.get('tail_distinct_4gram')} zlib={row.get('zlib_tail_8k')}")
+                      print(f"    {prev[:240]!r}")
+
+              diag = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-diag-allcap-q008-160k/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db"
+              print("\n==== diag160k token histogram (all records, not just cap-hits)")
+              con = sqlite3.connect(f"file:{diag}?mode=ro", uri=True)
+              cts, scores = [], []
+              for (v,) in con.execute("select value from Cache"):
+                  d = json.loads(v)
+                  if not isinstance(d, dict) or "convo" not in d:
+                      continue
+                  try:
+                      cts.append(int(d["convo"][1]["usage"]["completion_tokens"]))
+                      scores.append(float(d.get("score") or 0.0))
+                  except Exception:
+                      pass
+              con.close()
+              print("n", len(cts), "quantiles", quantiles(cts))
+              print("ge_131072", sum(c >= 131072 for c in cts),
+                    "ge_160000", sum(c >= 160000 for c in cts),
+                    "mean_score", round(sum(scores)/len(scores), 4) if scores else None)
+              PY

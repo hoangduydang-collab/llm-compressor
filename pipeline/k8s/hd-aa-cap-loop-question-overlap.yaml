@@ -1,0 +1,116 @@
+---
+# Join ours vs phala cap-hits / tight-loops on prompt sha12. CPU-only.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-aa-cap-loop-question-overlap
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: cap-loop-question-overlap}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: cap-loop-question-overlap}
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+      containers:
+        - name: join
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: "1", memory: "4Gi"}
+            limits: {cpu: "2", memory: "8Gi"}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hashlib, json, sqlite3, re
+              from collections import defaultdict
+
+              js = json.load(open("/mnt/cephfs/hoangduy/runlogs/hd-aa-cap-loop-screen.json"))
+              ROOT = "/mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z"
+              DBS = {
+                "ours": ROOT + "/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+                "phala": ROOT + "/client-phala/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db",
+              }
+
+              def arm_rows(name):
+                  return next(a for a in js["arms"] if a["name"] == name)["capped_rows"]
+
+              def keys(rows, pred=lambda r: True):
+                  return {r["question_key"] for r in rows if pred(r)}
+
+              def tight(r):
+                  z = r.get("zlib_tail_8k")
+                  return z is not None and z <= 0.08
+
+              ours, phala = arm_rows("ours"), arm_rows("phala")
+              o_cap, p_cap = keys(ours), keys(phala)
+              o_t, p_t = keys(ours, tight), keys(phala, tight)
+
+              def show(label, a, b):
+                  inter = sorted(a & b)
+                  print(f"{label}: |A|={len(a)} |B|={len(b)} |A∩B|={len(inter)} |A-B|={len(a-b)} |B-A|={len(b-a)}")
+                  return inter
+
+              print("unique questions among cap-hits / tight traces")
+              show("all cap-hits ours ∩ phala", o_cap, p_cap)
+              show("tight zlib<=0.08 ours ∩ phala", o_t, p_t)
+              show("tight_ours ∩ all_capped_phala", o_t, p_cap)
+              show("tight_phala ∩ all_capped_ours", p_t, o_cap)
+
+              # How many repeats per overlapping tight question
+              def traces_by_q(rows, pred):
+                  m = defaultdict(list)
+                  for r in rows:
+                      if pred(r):
+                          m[r["question_key"]].append(r)
+                  return m
+              ot, pt = traces_by_q(ours, tight), traces_by_q(phala, tight)
+              print("tight traces (not unique q): ours", sum(len(v) for v in ot.values()), "phala", sum(len(v) for v in pt.values()))
+              print("tight unique q: ours", len(ot), "phala", len(pt))
+
+              # Load prompt heads for union of interesting keys
+              want = (o_t | p_t | (o_cap & p_cap))
+              heads = {}
+              for name, db in DBS.items():
+                  con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
+                  for (v,) in con.execute("select value from Cache"):
+                      d = json.loads(v)
+                      if not isinstance(d, dict) or "convo" not in d:
+                          continue
+                      prompt = str(d["convo"][0].get("content", ""))
+                      qk = hashlib.sha256(prompt.encode("utf-8", "ignore")).hexdigest()[:12]
+                      if qk in want and qk not in heads:
+                          # strip AA wrapper; keep first 180 chars of the question
+                          q = re.sub(r"^Answer the following.*?\n\n", "", prompt, count=1, flags=re.S)
+                          q = re.sub(r"\s+", " ", q).strip()
+                          heads[qk] = q[:180]
+                  con.close()
+
+              print("\n--- tight∩tight prompt heads ---")
+              inter_tt = sorted(o_t & p_t)
+              if not inter_tt:
+                  print("(none)")
+              for qk in inter_tt:
+                  print(f"  {qk}  {heads.get(qk, '?')}")
+
+              print("\n--- tight_ours also capped on phala (any zlib) ---")
+              for qk in sorted(o_t & p_cap):
+                  pz = [r["zlib_tail_8k"] for r in phala if r["question_key"]==qk]
+                  oz = [r["zlib_tail_8k"] for r in ours if r["question_key"]==qk]
+                  print(f"  {qk} ours_zlib={oz} phala_zlib={pz}  {heads.get(qk,'?')}")
+
+              print("\n--- tight_phala also capped on ours (any zlib) ---")
+              for qk in sorted(p_t & o_cap):
+                  pz = [r["zlib_tail_8k"] for r in phala if r["question_key"]==qk]
+                  oz = [r["zlib_tail_8k"] for r in ours if r["question_key"]==qk]
+                  print(f"  {qk} ours_zlib={oz} phala_zlib={pz}  {heads.get(qk,'?')}")

@@ -8,10 +8,26 @@ from typing import Any, Iterable
 
 
 @dataclass(frozen=True)
+class SweAssistantAnchor:
+    """One substantive field in a normalized assistant message."""
+
+    message_index: int
+    field: str
+    tool_call_index: int | None = None
+
+
+@dataclass(frozen=True)
 class NormalizedSweSession:
+    """Normalized messages with exact source-turn and assistant-field provenance.
+
+    ``message_turns[index]`` contains every original non-metadata turn merged into
+    ``messages[index]``. Each anchor identifies one substantive text field or one
+    actual tool-call function name in an assistant message.
+    """
+
     messages: list[dict[str, Any]]
-    message_turns: list[int]
-    anchor_message_indices: list[int]
+    message_turns: list[list[int]]
+    anchors: list[SweAssistantAnchor]
 
 
 def _text(value: Any, field: str, turn: int) -> str:
@@ -27,20 +43,16 @@ def _append_text(message: dict[str, Any], field: str, content: str) -> None:
     message[field] = f"{current}\n{content}" if current else content
 
 
-def _is_substantive_assistant(message: dict[str, Any]) -> bool:
-    if message.get("tool_calls"):
-        return True
-    text = "\n".join(
-        str(message.get(field) or "") for field in ("reasoning_content", "content")
-    ).strip()
-    return len(text) >= 32 or "```" in text or "\n" in text
+def _is_substantive_text(text: str) -> bool:
+    stripped = text.strip()
+    return len(stripped) >= 32 or "```" in stripped or "\n" in stripped
 
 
 def normalize_swe_chat_session(rows: Iterable[dict[str, Any]]) -> NormalizedSweSession:
     """Convert one ordered normalized SWE-chat session to tokenizer messages."""
     ordered = sorted(rows, key=lambda row: row.get("turn_number", -1))
     messages: list[dict[str, Any]] = []
-    message_turns: list[int] = []
+    message_turns: list[list[int]] = []
     seen_turns: set[int] = set()
     open_calls: set[str] = set()
 
@@ -58,7 +70,7 @@ def normalize_swe_chat_session(rows: Iterable[dict[str, Any]]) -> NormalizedSweS
         if role == "user":
             content = _text(row.get("content"), "content", turn)
             messages.append({"role": "user", "content": content})
-            message_turns.append(turn)
+            message_turns.append([turn])
             continue
         if role == "assistant":
             turn_type = row.get("turn_type")
@@ -70,11 +82,11 @@ def normalize_swe_chat_session(rows: Iterable[dict[str, Any]]) -> NormalizedSweS
             content = _text(row.get("content"), "content", turn)
             if messages and messages[-1].get("role") == "assistant":
                 message = messages[-1]
-                message_turns[-1] = turn
+                message_turns[-1].append(turn)
             else:
                 message = {"role": "assistant", "content": ""}
                 messages.append(message)
-                message_turns.append(turn)
+                message_turns.append([turn])
             field = (
                 "reasoning_content" if turn_type == "assistant_thinking" else "content"
             )
@@ -108,11 +120,11 @@ def normalize_swe_chat_session(rows: Iterable[dict[str, Any]]) -> NormalizedSweS
                 )
             if messages and messages[-1].get("role") == "assistant":
                 message = messages[-1]
-                message_turns[-1] = turn
+                message_turns[-1].append(turn)
             else:
                 message = {"role": "assistant", "content": ""}
                 messages.append(message)
-                message_turns.append(turn)
+                message_turns.append([turn])
             message.setdefault("tool_calls", []).append(
                 {
                     "id": call_id,
@@ -140,7 +152,7 @@ def normalize_swe_chat_session(rows: Iterable[dict[str, Any]]) -> NormalizedSweS
                     "tool_call_id": call_id,
                 }
             )
-            message_turns.append(turn)
+            message_turns.append([turn])
             open_calls.remove(call_id)
             continue
         raise ValueError(f"SWE-chat turn {turn} has unknown role {role!r}")
@@ -149,9 +161,16 @@ def normalize_swe_chat_session(rows: Iterable[dict[str, Any]]) -> NormalizedSweS
         raise ValueError(
             f"SWE-chat session has tool calls without results: {sorted(open_calls)}"
         )
-    anchors = [
-        index
-        for index, message in enumerate(messages)
-        if message.get("role") == "assistant" and _is_substantive_assistant(message)
-    ]
+    anchors = []
+    for index, message in enumerate(messages):
+        if message.get("role") != "assistant":
+            continue
+        for field in ("reasoning_content", "content"):
+            value = message.get(field)
+            if isinstance(value, str) and _is_substantive_text(value):
+                anchors.append(SweAssistantAnchor(index, field))
+        for tool_call_index, _tool_call in enumerate(message.get("tool_calls", [])):
+            anchors.append(
+                SweAssistantAnchor(index, "tool_call_function_name", tool_call_index)
+            )
     return NormalizedSweSession(messages, message_turns, anchors)

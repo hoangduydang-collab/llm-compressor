@@ -52,11 +52,43 @@ class TinyTokenizer:
         text = "".join(rendered)
         return self(text)["input_ids"] if tokenize else text
 
-    def __call__(self, text, **_kwargs):
-        return {
+    def __call__(self, text, **kwargs):
+        encoded = {
             "input_ids": [2 + (ord(char) % 211) for char in text],
             "attention_mask": [1] * len(text),
         }
+        if kwargs.get("return_offsets_mapping"):
+            encoded["offset_mapping"] = [
+                (index, index + 1) for index in range(len(text))
+            ]
+        return encoded
+
+
+class NonPrefixAlignedTinyTokenizer(TinyTokenizer):
+    def apply_chat_template(self, messages, *, tokenize=False, **kwargs):
+        body = super().apply_chat_template(messages, tokenize=False, **kwargs)
+        text = "P" * (131 * len(messages)) + body + f"<trailer:{len(messages)}>"
+        return self(text)["input_ids"] if tokenize else text
+
+
+class NoOffsetsTinyTokenizer(TinyTokenizer):
+    def __call__(self, text, **kwargs):
+        encoded = super().__call__(text, **kwargs)
+        encoded.pop("offset_mapping", None)
+        return encoded
+
+
+def _token_ids(text: str) -> list[int]:
+    return TinyTokenizer()(text)["input_ids"]
+
+
+def _contains_token_sequence(tokens: list[int], expected: str) -> bool:
+    expected_tokens = _token_ids(expected)
+    width = len(expected_tokens)
+    return any(
+        tokens[index : index + width] == expected_tokens
+        for index in range(len(tokens) - width + 1)
+    )
 
 
 def _rows(prefix: str, count: int = 6, size: int = 120):
@@ -290,7 +322,7 @@ def test_swe_session_reconstructs_tools_and_rejects_bad_calls():
         },
         {"role": "tool", "content": "contents", "tool_call_id": "call-1"},
     ]
-    assert normalized.message_turns == [0, 3, 4]
+    assert normalized.message_turns == [[0], [1, 2, 3], [4]]
 
     broken = [dict(rows[0]), dict(rows[3], tool_input_json="[]")]
     with pytest.raises(ValueError, match="dictionary"):
@@ -378,10 +410,176 @@ def test_swe_structural_window_selects_later_meaningful_work(monkeypatch, tmp_pa
         output,
         TinyTokenizer(),
     )
+    data = [
+        json.loads(line)
+        for line in (output / "data.jsonl").read_text().splitlines()
+    ]
     manifest = json.loads((output / "manifest.json").read_text())
     sample = manifest["samples"][0]
-    assert sample["anchor_turn"] == 6
+    assert sample["anchor_turns"] == [5, 6]
+    assert sample["anchor_message_index"] == 4
+    assert sample["anchor_tool_call_index"] is None
     assert sample["offset"] > 0
+    anchor_start, anchor_end = sample["anchor_token_span"]
+    assert anchor_end > anchor_start
+    assert sample["offset"] <= anchor_start < sample["offset"] + 80
+    selected_payload = {
+        "reasoning_content": "The parser drops the final record",
+        "content": "Patch the finalizer and add a regression",
+    }[sample["anchor_field"]]
+    assert _contains_token_sequence(data[0]["input_ids"], selected_payload)
+
+
+def test_swe_window_uses_full_render_offsets_for_substantive_payload(
+    monkeypatch, tmp_path
+):
+    payload = "ACTUAL_ASSISTANT_PAYLOAD fixes the buffered final record safely."
+    rows = [
+        {
+            "session_id": "offset-session",
+            "turn_number": 0,
+            "role": "user",
+            "turn_type": "user_prompt",
+            "content": "context " * 30,
+        },
+        {
+            "session_id": "offset-session",
+            "turn_number": 1,
+            "role": "assistant",
+            "turn_type": "assistant_response",
+            "content": payload,
+        },
+    ]
+    _install_fake_datasets(monkeypatch, {"offset-swe": rows})
+    tokenizer = NonPrefixAlignedTinyTokenizer()
+    normalized = normalize_swe_chat_session(rows)
+    full_text = tokenizer.apply_chat_template(normalized.messages, tokenize=False)
+    prefix_text = tokenizer.apply_chat_template(normalized.messages[:1], tokenize=False)
+    assert full_text.index(payload) - len(prefix_text) > 96
+
+    output = tmp_path / "offset-bundle"
+    prepare_calibration_bundle(
+        MixConfig(
+            num_samples=1,
+            max_seq_length=96,
+            seed=5,
+            sources=(
+                SourceConfig(
+                    name="offset-swe",
+                    weight=1,
+                    dataset_id="offset-swe",
+                    format="swe_chat",
+                ),
+            ),
+        ),
+        output,
+        tokenizer,
+    )
+
+    row = json.loads((output / "data.jsonl").read_text().strip())
+    sample = json.loads((output / "manifest.json").read_text())["samples"][0]
+    assert _contains_token_sequence(row["input_ids"], "ACTUAL_ASSISTANT_PAYLOAD")
+    assert sample["anchor_field"] == "content"
+    assert sample["anchor_turns"] == [1]
+    assert sample["anchor_char_span"][0] > 0
+    anchor_start, anchor_end = sample["anchor_token_span"]
+    assert anchor_end > anchor_start
+    assert sample["offset"] <= anchor_start < sample["offset"] + 96
+
+
+def test_swe_merged_assistant_records_constituents_and_selected_field(
+    monkeypatch, tmp_path
+):
+    reasoning = (
+        "MERGED_REASONING_PAYLOAD identifies the state flush missing at loop exit."
+    )
+    rows = [
+        {
+            "session_id": "merged-session",
+            "turn_number": 9,
+            "role": "user",
+            "turn_type": "user_prompt",
+            "content": "investigate " * 20,
+        },
+        {
+            "session_id": "merged-session",
+            "turn_number": 10,
+            "role": "assistant",
+            "turn_type": "assistant_thinking",
+            "content": reasoning,
+        },
+        {
+            "session_id": "merged-session",
+            "turn_number": 11,
+            "role": "assistant",
+            "turn_type": "assistant_response",
+            "content": "Done.",
+        },
+    ]
+    _install_fake_datasets(monkeypatch, {"merged-swe": rows})
+    output = tmp_path / "merged-bundle"
+    prepare_calibration_bundle(
+        MixConfig(
+            num_samples=1,
+            max_seq_length=80,
+            seed=3,
+            sources=(
+                SourceConfig(
+                    name="merged-swe",
+                    weight=1,
+                    dataset_id="merged-swe",
+                    format="swe_chat",
+                ),
+            ),
+        ),
+        output,
+        TinyTokenizer(),
+    )
+
+    row = json.loads((output / "data.jsonl").read_text().strip())
+    sample = json.loads((output / "manifest.json").read_text())["samples"][0]
+    assert sample["anchor_turns"] == [10, 11]
+    assert sample["anchor_message_index"] == 1
+    assert sample["anchor_field"] == "reasoning_content"
+    assert sample["anchor_tool_call_index"] is None
+    assert _contains_token_sequence(row["input_ids"], "MERGED_REASONING_PAYLOAD")
+
+
+def test_swe_requires_offset_mapping_support(monkeypatch, tmp_path):
+    rows = [
+        {
+            "session_id": "no-offsets",
+            "turn_number": 0,
+            "role": "user",
+            "turn_type": "user_prompt",
+            "content": "diagnose " * 20,
+        },
+        {
+            "session_id": "no-offsets",
+            "turn_number": 1,
+            "role": "assistant",
+            "turn_type": "assistant_response",
+            "content": "The final buffered record needs an explicit flush." * 3,
+        },
+    ]
+    _install_fake_datasets(monkeypatch, {"no-offsets": rows})
+    output = tmp_path / "no-offsets-bundle"
+    config = MixConfig(
+        num_samples=1,
+        max_seq_length=32,
+        seed=1,
+        sources=(
+            SourceConfig(
+                name="no-offsets",
+                weight=1,
+                dataset_id="no-offsets",
+                format="swe_chat",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="requires a tokenizer.*offset"):
+        prepare_calibration_bundle(config, output, NoOffsetsTinyTokenizer())
+    assert not output.exists()
 
 
 def test_tokenizer_identity_is_stable_and_tracks_template_and_vocab():

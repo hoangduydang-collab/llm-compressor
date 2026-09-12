@@ -10,6 +10,7 @@ import operator
 import random
 import shutil
 import tempfile
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from decimal import ROUND_FLOOR, Decimal
 from pathlib import Path
@@ -24,7 +25,11 @@ from pipeline.calibration_bundle import (
     sha256_file,
     tokenizer_identity,
 )
-from pipeline.swe_chat import NormalizedSweSession, normalize_swe_chat_session
+from pipeline.swe_chat import (
+    NormalizedSweSession,
+    SweAssistantAnchor,
+    normalize_swe_chat_session,
+)
 
 _FORMATS = {"messages", "text", "swe_chat"}
 _TOP_LEVEL_KEYS = {"num_samples", "max_seq_length", "seed", "sources"}
@@ -232,14 +237,7 @@ def _canonical_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _tokenize_text(tokenizer, text: str) -> list[int]:
-    encoded = tokenizer(
-        text,
-        add_special_tokens=False,
-        padding=False,
-        truncation=False,
-    )
-    tokens = encoded["input_ids"]
+def _normalize_token_ids(tokens: Any) -> list[int]:
     if hasattr(tokens, "tolist"):
         tokens = tokens.tolist()
     if tokens and isinstance(tokens[0], list):
@@ -260,6 +258,69 @@ def _tokenize_text(tokenizer, text: str) -> list[int]:
     return normalized
 
 
+def _tokenize_text(tokenizer, text: str) -> list[int]:
+    encoded = tokenizer(
+        text,
+        add_special_tokens=False,
+        padding=False,
+        truncation=False,
+    )
+    return _normalize_token_ids(encoded["input_ids"])
+
+
+def _tokenize_text_with_offsets(
+    tokenizer, text: str
+) -> tuple[list[int], list[tuple[int, int]]]:
+    """Tokenize canonical SWE text once and require character offset mappings."""
+    try:
+        encoded = tokenizer(
+            text,
+            add_special_tokens=False,
+            padding=False,
+            truncation=False,
+            return_offsets_mapping=True,
+        )
+    except (NotImplementedError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "SWE-chat format requires a tokenizer that supports "
+            "return_offsets_mapping=True"
+        ) from exc
+    if "offset_mapping" not in encoded:
+        raise ValueError(
+            "SWE-chat format requires a tokenizer that supports "
+            "return_offsets_mapping=True"
+        )
+
+    tokens = _normalize_token_ids(encoded["input_ids"])
+    raw_offsets = encoded["offset_mapping"]
+    if hasattr(raw_offsets, "tolist"):
+        raw_offsets = raw_offsets.tolist()
+    if (
+        raw_offsets
+        and isinstance(raw_offsets[0], (list, tuple))
+        and raw_offsets[0]
+        and isinstance(raw_offsets[0][0], (list, tuple))
+    ):
+        if len(raw_offsets) != 1:
+            raise ValueError("tokenizer returned an unexpected offset batch")
+        raw_offsets = raw_offsets[0]
+
+    offsets = []
+    for offset in raw_offsets:
+        if not isinstance(offset, (list, tuple)) or len(offset) != 2:
+            raise ValueError("tokenizer returned a malformed offset mapping")
+        try:
+            start, end = (operator.index(value) for value in offset)
+        except TypeError as exc:
+            raise ValueError("tokenizer returned a non-integer offset") from exc
+        if start < 0 or end < start or end > len(text):
+            raise ValueError("tokenizer returned an out-of-range offset mapping")
+        offsets.append((start, end))
+    if len(offsets) != len(tokens):
+        raise ValueError("tokenizer returned mismatched tokens and offset mappings")
+    return tokens, offsets
+
+
 def _render_messages(tokenizer, messages: list[dict[str, Any]]) -> str:
     rendered = tokenizer.apply_chat_template(
         messages,
@@ -269,6 +330,102 @@ def _render_messages(tokenizer, messages: list[dict[str, Any]]) -> str:
     if not isinstance(rendered, str):
         raise ValueError("tokenizer chat template must render to text")
     return rendered
+
+
+def _anchor_text(
+    messages: list[dict[str, Any]], anchor: SweAssistantAnchor
+) -> str:
+    message = messages[anchor.message_index]
+    if anchor.field != "tool_call_function_name":
+        value = message[anchor.field]
+    else:
+        value = message["tool_calls"][anchor.tool_call_index]["function"]["name"]
+    if not isinstance(value, str):
+        raise ValueError("SWE-chat assistant anchor must be text")
+    return value
+
+
+def _set_anchor_text(
+    messages: list[dict[str, Any]], anchor: SweAssistantAnchor, value: str
+) -> None:
+    message = messages[anchor.message_index]
+    if anchor.field != "tool_call_function_name":
+        message[anchor.field] = value
+    else:
+        message["tool_calls"][anchor.tool_call_index]["function"]["name"] = value
+
+
+def _anchor_markers(
+    canonical_text: str, anchor: SweAssistantAnchor
+) -> tuple[str, str]:
+    """Derive deterministic alphanumeric sentinels absent from canonical text."""
+    attempt = 0
+    while True:
+        key = (
+            f"{hashlib.sha256(canonical_text.encode('utf-8')).hexdigest()}:"
+            f"{anchor.message_index}:{anchor.field}:{anchor.tool_call_index}:{attempt}"
+        )
+        digest = hashlib.sha256(key.encode("ascii")).hexdigest().upper()
+        start = f"SWECHATANCHORSTART{digest}X"
+        end = f"SWECHATANCHOREND{digest}X"
+        if start not in canonical_text and end not in canonical_text:
+            return start, end
+        attempt += 1
+
+
+def _canonical_anchor_span(
+    session: NormalizedSweSession,
+    anchor: SweAssistantAnchor,
+    tokenizer,
+    canonical_text: str,
+) -> tuple[int, int]:
+    """Locate one assistant field in the canonical full-session rendering.
+
+    The marked rendering must become byte-for-byte identical to the canonical
+    rendering after the two sentinels are removed. This rejects templates that
+    omit, transform, duplicate, or relocate the selected assistant field.
+    """
+    value = _anchor_text(session.messages, anchor)
+    content_start = len(value) - len(value.lstrip())
+    content_end = len(value.rstrip())
+    if content_start >= content_end:
+        raise ValueError("SWE-chat assistant anchor is empty after trimming")
+
+    start_marker, end_marker = _anchor_markers(canonical_text, anchor)
+    marked_messages = deepcopy(session.messages)
+    marked_value = (
+        value[:content_start]
+        + start_marker
+        + value[content_start:content_end]
+        + end_marker
+        + value[content_end:]
+    )
+    _set_anchor_text(marked_messages, anchor, marked_value)
+    marked_text = _render_messages(tokenizer, marked_messages)
+    if marked_text.count(start_marker) != 1 or marked_text.count(end_marker) != 1:
+        raise ValueError(
+            "SWE-chat chat template must preserve assistant anchor markers exactly"
+        )
+    start = marked_text.index(start_marker)
+    marked_end = marked_text.index(end_marker)
+    if marked_end < start + len(start_marker):
+        raise ValueError(
+            "SWE-chat chat template reordered assistant anchor markers"
+        )
+    unmarked_text = (
+        marked_text[:start]
+        + marked_text[start + len(start_marker) : marked_end]
+        + marked_text[marked_end + len(end_marker) :]
+    )
+    if unmarked_text != canonical_text:
+        raise ValueError(
+            "SWE-chat chat template changed canonical rendering around "
+            "assistant anchor markers"
+        )
+    end = marked_end - len(start_marker)
+    if start >= end:
+        raise ValueError("SWE-chat assistant anchor rendered no substantive text")
+    return start, end
 
 
 def _standard_document(
@@ -304,39 +461,51 @@ def _swe_window(
     tokenizer,
     length: int,
     rng: random.Random,
-) -> tuple[list[int], int, int]:
-    if not session.anchor_message_indices:
+) -> tuple[list[int], dict[str, Any]]:
+    """Return a full-length window with verified assistant-field overlap.
+
+    Character and token spans are half-open positions in the one canonical full
+    session rendering. anchor_turns lists every original turn merged into the
+    selected assistant message.
+    """
+    if not session.anchors:
         raise _IneligibleDocument
-    anchor_index = rng.choice(session.anchor_message_indices)
-    full_tokens = _tokenize_text(
-        tokenizer, _render_messages(tokenizer, session.messages)
+    anchor = rng.choice(session.anchors)
+    canonical_text = _render_messages(tokenizer, session.messages)
+    anchor_char_start, anchor_char_end = _canonical_anchor_span(
+        session, anchor, tokenizer, canonical_text
     )
+    full_tokens, token_offsets = _tokenize_text_with_offsets(tokenizer, canonical_text)
     if len(full_tokens) < length:
         raise _IneligibleDocument
 
-    before_tokens = (
-        _tokenize_text(
-            tokenizer, _render_messages(tokenizer, session.messages[:anchor_index])
+    overlapping_tokens = [
+        index
+        for index, (start, end) in enumerate(token_offsets)
+        if end > anchor_char_start and start < anchor_char_end
+    ]
+    if not overlapping_tokens:
+        raise ValueError(
+            "SWE-chat assistant anchor has no overlapping tokenizer offsets"
         )
-        if anchor_index
-        else []
+    anchor_token_start = overlapping_tokens[0]
+    anchor_token_end = overlapping_tokens[-1] + 1
+    offset = max(
+        0,
+        min(anchor_token_start - length // 3, len(full_tokens) - length),
     )
-    through_tokens = _tokenize_text(
-        tokenizer, _render_messages(tokenizer, session.messages[: anchor_index + 1])
-    )
-    anchor_start = min(len(before_tokens), len(full_tokens) - 1)
-    anchor_end = min(max(len(through_tokens), anchor_start + 1), len(full_tokens))
-    lower = max(0, anchor_end - length)
-    upper = min(anchor_start, len(full_tokens) - length)
-    if lower <= upper:
-        offset = rng.randint(lower, upper)
-    else:
-        offset = max(0, min(anchor_start - length // 3, len(full_tokens) - length))
-    return (
-        full_tokens[offset : offset + length],
-        offset,
-        session.message_turns[anchor_index],
-    )
+    if not any(offset <= index < offset + length for index in overlapping_tokens):
+        raise ValueError("SWE-chat window does not overlap its assistant anchor")
+
+    return full_tokens[offset : offset + length], {
+        "offset": offset,
+        "anchor_message_index": anchor.message_index,
+        "anchor_turns": list(session.message_turns[anchor.message_index]),
+        "anchor_field": anchor.field,
+        "anchor_tool_call_index": anchor.tool_call_index,
+        "anchor_char_span": [anchor_char_start, anchor_char_end],
+        "anchor_token_span": [anchor_token_start, anchor_token_end],
+    }
 
 
 def _sample_standard_source(
@@ -380,7 +549,12 @@ def _sample_standard_source(
                     "source": source.name,
                     "document_id": document_id,
                     "offset": offset,
-                    "anchor_turn": None,
+                    "anchor_message_index": None,
+                    "anchor_turns": None,
+                    "anchor_field": None,
+                    "anchor_tool_call_index": None,
+                    "anchor_char_span": None,
+                    "anchor_token_span": None,
                     "content_sha256": content_hash,
                 },
             )
@@ -432,7 +606,7 @@ def _sample_swe_source(
         rows = [dataset[index] for index in indices]
         try:
             normalized = normalize_swe_chat_session(rows)
-            tokens, offset, anchor_turn = _swe_window(
+            tokens, anchor_metadata = _swe_window(
                 normalized, tokenizer, length, rng
             )
         except _IneligibleDocument:
@@ -447,8 +621,7 @@ def _sample_swe_source(
                 {
                     "source": source.name,
                     "document_id": session_id,
-                    "offset": offset,
-                    "anchor_turn": anchor_turn,
+                    **anchor_metadata,
                     "content_sha256": _canonical_hash(rows),
                 },
             )

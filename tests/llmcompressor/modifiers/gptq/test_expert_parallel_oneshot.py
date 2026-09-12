@@ -397,6 +397,11 @@ def _lifecycle_worker(
             model.save_pretrained(str(workdir / "checkpoint"), save_compressed=True)
             _phase(workdir, rank, "ep:save-complete")
         del record_solve, checked_rest_epoch, record_propagation
+        # Distributed disk caches share source-rank files. Keep every rank's
+        # model/cache alive until all peers finish their pre-save inspection
+        # and collective save; otherwise a faster rank's GC deletes files that
+        # a slower rank still needs to onload.
+        dist.barrier()
         del model, output, records, combined, gathered, propagation
         active_session().reset()
         gc.collect()

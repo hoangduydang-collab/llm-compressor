@@ -1,4 +1,4 @@
-# Mixed calibration CPU smoke — 2026-09-12
+# Mixed calibration CPU smoke — 2026-09-12–13
 
 Reproducible synthetic local inputs and the real pinned GLM tokenizer; no model weights,
 model forward passes, quantization runs or GPU allocations. This verifies data

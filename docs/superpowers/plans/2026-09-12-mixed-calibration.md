@@ -76,9 +76,11 @@ No automatic production dataset download in tests. Use existing HF APIs and temp
   the same prepared_dataset directory, distinct run/output/offload paths. Test config parity.
 - [x] Document prepare/consume commands, weighted quotas, short-session policy, provenance,
   resource limits, tokenizer verification and source access. No full-run launch authorization.
-- [ ] Inspect task diff and independent review; fix important findings, test changed behavior.
-- [ ] Commit docs/evidence, review final feature diff, push duy-branch using dedicated
-  hoangduydang-collab credential helper and verify remote SHA. Preserve unrelated files.
+- [x] Inspect task diff and independent review; fix important findings, test changed behavior.
+- [x] Commit docs/evidence and review final feature diff.
+
+Delivery: push duy-branch using the dedicated hoangduydang-collab credential
+helper and verify the remote SHA. Preserve unrelated files.
 
 ### Review-required correction
 

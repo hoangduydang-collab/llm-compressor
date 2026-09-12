@@ -111,7 +111,8 @@ Sampling considers substantive assistant work across the session, with preceding
 context. Anchor spans are located in the final rendered session and mapped to its
 tokens; each selected window must overlap the chosen assistant payload. The manifest
 records the merged message's constituent turns and the selected field/span, rather
-than attributing the entire merged message to its last original turn. It does not always take the first 2,048 tokens and does not select windows
+than attributing the entire merged message to its last original turn. It does not
+always take the first 2,048 tokens and does not select windows
 consisting only of metadata or tool output. These are inexpensive structural rules,
 not an assertion that the window is difficult or that the code is correct.
 

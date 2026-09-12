@@ -22,8 +22,10 @@ Preparation sources support HF IDs/configs/revisions or local JSON/Parquet files
 messages/text/SWE-chat-turn formats, positive weights, deterministic window quotas.
 SWE-chat turns are grouped by session and ordered by turn_number before formatting;
 retain assistant text/reasoning and tool calls/results, exclude metadata, reject malformed
-required fields. Sampling is session-based, without scoring, with one randomly located
-full window per eligible document/session. Short documents are skipped, not padded;
+required fields. Sampling is session-based, without scoring, with one full window per eligible document/session. SWE-chat windows are selected
+from substantive assistant decision/work turns across the session, retaining preceding
+context; exclude metadata-only or tool-output-only stretches. Never default to the
+session prefix. Use structural eligibility and seeded selection, not entropy scoring. Short documents are skipped, not padded;
 insufficient eligible data is an error. This avoids letting a few long sessions dominate.
 SWE-chat requires authorized access; there is no silent source fallback. Its Arrow
 turn table can require substantial one-time CPU/disk preparation, outside quantization.

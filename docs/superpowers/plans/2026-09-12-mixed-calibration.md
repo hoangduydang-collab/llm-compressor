@@ -47,6 +47,12 @@ No automatic production dataset download in tests. Use existing HF APIs and temp
   matching IDs and tool results. Fail on malformed required tool fields/unknown role.
   Adapt only the published normalized table, not multiple raw agent transcript formats.
 - [ ] Tokenize entire eligible sessions on CPU, select seeded offset, slice exact length.
+  SWE-chat selection MUST span session positions, not default to prefixes: identify
+  substantive assistant text/code/tool-call turns, choose among eligible anchors across
+  the session, retain preceding context and meaningful assistant content in each window.
+  Exclude metadata-only/tool-output-only stretches. Structural selection only, no model
+  scoring. Record anchor turn and offset. Test a long synthetic trace where useful later
+  work is selected, including a prefix made of boilerplate/large tool output.
   Shuffle combined windows deterministically. Record source ID, document/session ID, offset,
   source content identity, realized counts and source specifications. Pin/record resolved HF
   revisions when practical; always record selected content hashes. Use tokenizer identity

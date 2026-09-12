@@ -1,0 +1,175 @@
+{
+  "ambiguities": {
+    "duplicate_span_boundaries": [],
+    "malformed_or_truncated_lines": 0,
+    "multiple_or_missing_run_roots_by_observed_rank": {}
+  },
+  "automatic_report_note": "A source-rank report may be partial until regenerated after the launcher exits.",
+  "decoder_layer_rollups": [
+    {
+      "completed_spans": 2000,
+      "decoder_layer": 3,
+      "failed_spans": 0,
+      "max_duration_s": 0.189729413,
+      "median_duration_s": 0.189729413,
+      "min_duration_s": 0.189729413,
+      "observed_rank_count": 1,
+      "phase": "awq_search",
+      "rank_durations_s": {
+        "xcnc14:0": 0.189729413
+      },
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "status": "complete"
+    }
+  ],
+  "evidence_complete": true,
+  "groups": [
+    {
+      "completed_spans": 2000,
+      "decoder_layer": 3,
+      "failed_spans": 0,
+      "identity": {
+        "module": "model.layers.3.mlp.experts.0.up_proj"
+      },
+      "max_duration_s": 0.189729413,
+      "median_duration_s": 0.189729413,
+      "min_duration_s": 0.189729413,
+      "observed_rank_count": 1,
+      "phase": "awq_search",
+      "rank_durations_s": {
+        "xcnc14:0": 0.189729413
+      },
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "status": "complete"
+    },
+    {
+      "completed_spans": 1,
+      "decoder_layer": null,
+      "failed_spans": 0,
+      "identity": {
+        "benchmark": true
+      },
+      "max_duration_s": 0.445465514,
+      "median_duration_s": 0.445465514,
+      "min_duration_s": 0.445465514,
+      "observed_rank_count": 1,
+      "phase": "quantize_run",
+      "rank_durations_s": {
+        "xcnc14:0": 0.445465514
+      },
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "status": "complete"
+    }
+  ],
+  "phases": [
+    {
+      "completed_spans": 2000,
+      "failed_spans": 0,
+      "max_duration_s": 0.189729413,
+      "max_rank_observed_s": 0.189729413,
+      "median_duration_s": 0.189729413,
+      "min_duration_s": 0.189729413,
+      "observed_rank_count": 1,
+      "phase": "awq_search",
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "summed_rank_work_s": 0.189729413
+    },
+    {
+      "completed_spans": 1,
+      "failed_spans": 0,
+      "max_duration_s": 0.445465514,
+      "max_rank_observed_s": 0.445465514,
+      "median_duration_s": 0.445465514,
+      "min_duration_s": 0.445465514,
+      "observed_rank_count": 1,
+      "phase": "quantize_run",
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "summed_rank_work_s": 0.445465514
+    }
+  ],
+  "resource_observations": [],
+  "resource_scope": "Process I/O is not unique shared-storage traffic. Missing or reset counters are unavailable; RSS and GPU allocator values are boundary gauges.",
+  "schema_version": 1,
+  "slow_groups": [
+    {
+      "completed_spans": 2000,
+      "decoder_layer": 3,
+      "failed_spans": 0,
+      "identity": {
+        "module": "model.layers.3.mlp.experts.0.up_proj"
+      },
+      "max_duration_s": 0.189729413,
+      "median_duration_s": 0.189729413,
+      "min_duration_s": 0.189729413,
+      "observed_rank_count": 1,
+      "phase": "awq_search",
+      "rank_durations_s": {
+        "xcnc14:0": 0.189729413
+      },
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "status": "complete"
+    },
+    {
+      "completed_spans": 2000,
+      "decoder_layer": 3,
+      "failed_spans": 0,
+      "max_duration_s": 0.189729413,
+      "median_duration_s": 0.189729413,
+      "min_duration_s": 0.189729413,
+      "observed_rank_count": 1,
+      "phase": "awq_search",
+      "rank_durations_s": {
+        "xcnc14:0": 0.189729413
+      },
+      "slowest_rank": "xcnc14:0",
+      "spread_s": 0.0,
+      "status": "complete"
+    }
+  ],
+  "source_paths": [
+    "/tmp/glm53-timing-overhead-final-20260912/lightweight-1.jsonl"
+  ],
+  "summary": {
+    "available": true,
+    "complete": true,
+    "critical_path_elapsed_s": 0.445465514,
+    "expected_world_size": 1,
+    "invalid_spans": [],
+    "max_rank_elapsed_s": 0.445465514,
+    "missing_parent_spans": [],
+    "missing_paths": [],
+    "missing_ranks": [],
+    "missing_run_ranks": [],
+    "observed_ranks": [
+      "xcnc14:0"
+    ],
+    "paired_complete": true,
+    "phases": {
+      "awq_search": {
+        "completed_spans": 2000,
+        "failed_spans": 0,
+        "max_rank_observed_s": 0.189729413,
+        "summed_rank_work_s": 0.189729413
+      },
+      "quantize_run": {
+        "completed_spans": 1,
+        "failed_spans": 0,
+        "max_rank_observed_s": 0.445465514,
+        "summed_rank_work_s": 0.445465514
+      }
+    },
+    "scope": "observed paired spans only; critical path is the maximum node envelope, not synchronized multi-node elapsed; wall time includes waits; phase totals overlap and must not be added; process I/O is not unique filesystem traffic",
+    "summed_rank_work_s": 0.445465514,
+    "unenclosed_spans": [],
+    "unexpected_ranks": [],
+    "unmatched_ends": [],
+    "unmatched_starts": []
+  },
+  "timing_scope": "Rank durations include waits. Nested phases and rank work must not be added as elapsed. Clock values are compared only within a node. Rank imbalance does not identify collective latency."
+}

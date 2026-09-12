@@ -1,0 +1,24 @@
+{
+  "base": "a150f6902d7938f8b2b9d4e57be95e062a1be0c3",
+  "scope": "Quantization work functions only; remove compression_phase wrappers and compare ASTs including operation order. Reporting integration is tested separately.",
+  "checks": [
+    {
+      "path": "pipeline/quantize.py",
+      "function": "_run_quantize",
+      "work_ast_identical": true,
+      "source_sha256": "d0271727ba9c66411c5d41f01ad2b1016831d5479f56f4fc1ead5ae221dfc848"
+    },
+    {
+      "path": "src/llmcompressor/modifiers/transform/awq/base.py",
+      "function": "_apply_smoothing",
+      "work_ast_identical": true,
+      "source_sha256": "e2bbd7b85c91dab222532aafaf326329f20d5eb9b904ed4522d8ff5c77351d53"
+    },
+    {
+      "path": "src/llmcompressor/pipelines/sequential/pipeline.py",
+      "function": "__call__",
+      "work_ast_identical": true,
+      "source_sha256": "47fbc506bd20d095c96faa3ac7c4e43f3d98b99ce6fc4f7b0ebe3fffd3781003"
+    }
+  ]
+}

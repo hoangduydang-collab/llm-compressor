@@ -1,0 +1,170 @@
+{
+  "scope": "CPU observer only; no CUDA initialization, model or GPU work; real Loguru JSONL sink, buffered writes without fsync; not a shared-storage or full-quantization benchmark",
+  "python": "3.12.3",
+  "platform": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+  "output_dir": "/tmp/glm53-timing-overhead-final-20260912",
+  "results": {
+    "baseline": {
+      "samples": [
+        {
+          "trial": 0,
+          "warmup": true,
+          "spans": 2000,
+          "elapsed_s": 0.001300347,
+          "us_per_span": 0.6501735,
+          "jsonl_bytes": 2127
+        },
+        {
+          "trial": 1,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.000971393,
+          "us_per_span": 0.48569650000000003,
+          "jsonl_bytes": 2128
+        },
+        {
+          "trial": 2,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.000952556,
+          "us_per_span": 0.47627800000000003,
+          "jsonl_bytes": 2127
+        },
+        {
+          "trial": 3,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.000950793,
+          "us_per_span": 0.4753965,
+          "jsonl_bytes": 2128
+        },
+        {
+          "trial": 4,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.000929616,
+          "us_per_span": 0.464808,
+          "jsonl_bytes": 2127
+        },
+        {
+          "trial": 5,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.000961093,
+          "us_per_span": 0.4805465,
+          "jsonl_bytes": 2128
+        }
+      ],
+      "median_us_per_span": 0.47627800000000003
+    },
+    "lightweight": {
+      "samples": [
+        {
+          "trial": 0,
+          "warmup": true,
+          "spans": 2000,
+          "elapsed_s": 0.481206462,
+          "us_per_span": 240.603231,
+          "jsonl_bytes": 4473913
+        },
+        {
+          "trial": 1,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.445298978,
+          "us_per_span": 222.649489,
+          "jsonl_bytes": 4473541
+        },
+        {
+          "trial": 2,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.433079396,
+          "us_per_span": 216.53969800000002,
+          "jsonl_bytes": 4473552
+        },
+        {
+          "trial": 3,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.426703565,
+          "us_per_span": 213.3517825,
+          "jsonl_bytes": 4473455
+        },
+        {
+          "trial": 4,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.432034705,
+          "us_per_span": 216.01735250000002,
+          "jsonl_bytes": 4473585
+        },
+        {
+          "trial": 5,
+          "warmup": false,
+          "spans": 2000,
+          "elapsed_s": 0.429364143,
+          "us_per_span": 214.68207149999998,
+          "jsonl_bytes": 4473590
+        }
+      ],
+      "median_us_per_span": 216.01735250000002
+    },
+    "existing_snapshot": {
+      "samples": [
+        {
+          "trial": 0,
+          "warmup": true,
+          "spans": 200,
+          "elapsed_s": 0.386559997,
+          "us_per_span": 1932.7999849999999,
+          "jsonl_bytes": 2619882
+        },
+        {
+          "trial": 1,
+          "warmup": false,
+          "spans": 200,
+          "elapsed_s": 0.360707404,
+          "us_per_span": 1803.53702,
+          "jsonl_bytes": 2619846
+        },
+        {
+          "trial": 2,
+          "warmup": false,
+          "spans": 200,
+          "elapsed_s": 0.370682971,
+          "us_per_span": 1853.414855,
+          "jsonl_bytes": 2619845
+        },
+        {
+          "trial": 3,
+          "warmup": false,
+          "spans": 200,
+          "elapsed_s": 0.361129427,
+          "us_per_span": 1805.6471350000002,
+          "jsonl_bytes": 2619846
+        },
+        {
+          "trial": 4,
+          "warmup": false,
+          "spans": 200,
+          "elapsed_s": 0.363323004,
+          "us_per_span": 1816.6150200000002,
+          "jsonl_bytes": 2619835
+        },
+        {
+          "trial": 5,
+          "warmup": false,
+          "spans": 200,
+          "elapsed_s": 0.374024404,
+          "us_per_span": 1870.1220199999998,
+          "jsonl_bytes": 2620723
+        }
+      ],
+      "median_us_per_span": 1816.6150200000002
+    }
+  },
+  "lightweight_incremental_us_per_span": 215.5410745,
+  "illustrative_100000_added_spans_s": 21.55410745,
+  "illustrative_fraction_of_10h_percent": 0.059872520694444445
+}

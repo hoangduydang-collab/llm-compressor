@@ -1,0 +1,21 @@
+{
+  "scope": "CPU-only observer and offline reporter evidence; no quantization model or GPU workload",
+  "benchmark_command": "OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 PYTHONPATH=src:. .venv-prequant/bin/python results/glm53-timing/20260912-cpu/benchmark_overhead.py --output-dir /tmp/glm53-timing-overhead-final-20260912",
+  "warmup_trials": 1,
+  "measured_trials": 5,
+  "lightweight_spans_per_trial": 2000,
+  "existing_snapshot_spans_per_trial": 200,
+  "raw_sample": {
+    "path": "lightweight-sample.jsonl.gz",
+    "decompressed_sha256": "abca45302f073157025bd260a73d264897f93a8f5744354dc232505fcefb3a07",
+    "decompressed_bytes": 4473541,
+    "boundaries": 4002
+  },
+  "measurement_notes": [
+    "Only existing_snapshot mode collects process/cgroup snapshots.",
+    "The initial overhead run predates preserving snapshot object compatibility; final overhead.json supersedes its numbers.",
+    "benchmark_overhead.py was formatted after measurement with no semantic change.",
+    "Example report records measure observer calls, not model calibration.",
+    "Offline aggregation and automatic budget do not introduce GPU work."
+  ]
+}

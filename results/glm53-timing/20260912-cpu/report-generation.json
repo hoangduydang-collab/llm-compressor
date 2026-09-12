@@ -1,0 +1,7 @@
+{
+  "scope": "Offline report from CPU observer benchmark; not quantization time",
+  "input_bytes": 4473541,
+  "phase_boundaries": 4002,
+  "report_elapsed_s": 0.2989017179934308,
+  "evidence_complete": true
+}

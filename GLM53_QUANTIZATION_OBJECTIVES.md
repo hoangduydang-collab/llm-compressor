@@ -194,14 +194,19 @@ included. `pipeline.metrics.summarize_phases(paths)` aggregates explicit rank
 files. Keep missing counters unavailable; per-process read counts are not unique
 shared-storage traffic, and nested timers must not be added together.
 
-Status: timing instrumentation implemented. The 2026-09-12 Rancher run now
+Status: timing instrumentation implemented. The approved [low-overhead timing
+report](docs/glm53-quantization-timing.md) adds all-rank and layer/subgraph
+breakdowns, resource context and interrupted-run reporting. New timers skip
+resource snapshots and add no CUDA synchronization or distributed barriers.
+Final diagnosis still needs complete executor traces. The 2026-09-12 Rancher run now
 contains raw per-rank full GPTQ phase records for load/dispatch, dataset
 preparation, tracing, every layer's calibration, Hessian reduction, local solve,
 publication, propagation, offload transitions and the active checkpoint save.
 Final save/offline-validation spans are not complete yet, so the definitive
 critical-path and rank-skew summary has not been generated. A comparable Rancher
-AWQ trace and the forthcoming W4AFP8 conversion measurements are still needed to
-close the original AWQ shared-storage diagnosis. Storage tuning must preserve
+AWQ trace and available historical conversion measurements are still needed to
+close the original AWQ shared-storage diagnosis. Native AWQ/GPTQ output now
+eliminates the separate conversion from future runs. Storage tuning must preserve
 calibration and quality controls. Coordinate format changes with objective 2 to
 eliminate work rather than merely accelerating avoidable conversions.
 

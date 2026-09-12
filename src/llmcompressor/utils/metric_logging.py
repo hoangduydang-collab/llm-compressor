@@ -138,7 +138,7 @@ def _safe_phase_snapshot(rank: int) -> dict:
 
 
 @contextmanager
-def compression_phase(name: str, **identity):
+def compression_phase(name: str, *, collect_snapshot: bool = True, **identity):
     """Emit paired structured loguru spans without changing work semantics.
 
     Durations use the local monotonic clock and include waits. Snapshots are
@@ -170,7 +170,7 @@ def compression_phase(name: str, **identity):
         timestamp_ns=start,
         duration_ns=None,
         status="running",
-        snapshot=_safe_phase_snapshot(rank),
+        snapshot=_safe_phase_snapshot(rank) if collect_snapshot else {},
     ).debug("phase_start {}", name)
     token = _PARENT_SPAN.set(span_id)
     status = "ok"
@@ -190,7 +190,7 @@ def compression_phase(name: str, **identity):
             duration_ns=stop - start,
             status=status,
             error_type=error_type,
-            snapshot=_safe_phase_snapshot(rank),
+            snapshot=_safe_phase_snapshot(rank) if collect_snapshot else {},
         ).debug("phase_end {}", name)
 
 

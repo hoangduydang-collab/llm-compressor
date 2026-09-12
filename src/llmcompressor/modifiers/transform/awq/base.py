@@ -50,6 +50,7 @@ from llmcompressor.pipelines.cache import IntermediatesCache
 from llmcompressor.sentinel import Sentinel
 from llmcompressor.utils import get_high_precision
 from llmcompressor.utils.helpers import calibration_forward_context
+from llmcompressor.utils.metric_logging import compression_phase
 from llmcompressor.utils.pytorch.module import get_module_to_name_dict
 
 __all__ = ["AWQModifier"]
@@ -329,7 +330,11 @@ class AWQModifier(Modifier):
 
         # Environment overrides so long-running launchers can enable landscape
         # telemetry without a recipe/config change (see field docstrings).
-        if os.environ.get("AWQ_LOG_LANDSCAPE_STATS", "").lower() in {"1", "true", "yes"}:
+        if os.environ.get("AWQ_LOG_LANDSCAPE_STATS", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
             self.log_landscape_stats = True
         if self.log_landscape_vectors_dir is None:
             self.log_landscape_vectors_dir = (
@@ -713,9 +718,14 @@ class AWQModifier(Modifier):
                     for balance_layer in mapping.balance_layers
                 }
 
-                best_scales = self._compute_best_scale(
-                    mapping, fp16_outputs, orig_layer_weights
-                )
+                with compression_phase(
+                    "awq_search",
+                    collect_snapshot=False,
+                    module=mapping.smooth_name,
+                ):
+                    best_scales = self._compute_best_scale(
+                        mapping, fp16_outputs, orig_layer_weights
+                    )
 
                 @torch.no_grad()
                 def _smooth(

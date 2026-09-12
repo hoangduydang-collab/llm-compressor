@@ -82,7 +82,7 @@ def capture_quant_metrics(path):
         remove_external_sink(sink_id)
 
 
-def _iter_records(path: Path):
+def _iter_records(path: Path, *, diagnostics: dict | None = None):
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -91,6 +91,16 @@ def _iter_records(path: Path):
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError:
+                if diagnostics is not None:
+                    diagnostics["malformed_lines"] = (
+                        diagnostics.get("malformed_lines", 0) + 1
+                    )
+                continue
+            if not isinstance(obj, dict) or not isinstance(obj.get("record", {}), dict):
+                if diagnostics is not None:
+                    diagnostics["malformed_lines"] = (
+                        diagnostics.get("malformed_lines", 0) + 1
+                    )
                 continue
             yield obj.get("record", {})
 

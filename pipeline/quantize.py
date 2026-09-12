@@ -1392,7 +1392,8 @@ def _run_quantize(
 
         if save_checkpoint:
             assert_native_mtp_destination(versioning.checkpoint_dir(run_dir))
-        mtp_plan = preflight_native_mtp(cfg.model.id, model.config)
+        with compression_phase("native_mtp_preflight", collect_snapshot=False):
+            mtp_plan = preflight_native_mtp(cfg.model.id, model.config)
         print(f"[pipeline] native MTP preflight: {mtp_plan.provenance()}")
 
     oneshot_kwargs: dict = dict(
@@ -1504,34 +1505,44 @@ def _run_quantize(
                 _deferred_weight_conversion_compat(model),
             ):
                 model.save_pretrained(str(ckpt), **save_kwargs)
-        dist_ctx.barrier()
+        with compression_phase(
+            "distributed_barrier", collect_snapshot=False, stage="after_checkpoint_save"
+        ):
+            dist_ctx.barrier()
 
         if dist_ctx.is_source:
-            tokenizer.save_pretrained(str(ckpt))
+            with compression_phase("checkpoint_side_artifacts", collect_snapshot=False):
+                tokenizer.save_pretrained(str(ckpt))
 
-            # vLLM VL load needs image-processor configs; tokenizer.save_pretrained
-            # alone does not write preprocessor_config.json.
-            if cfg.model.auto_class == "AutoModelForImageTextToText":
-                added = ensure_vl_processor_artifacts(
-                    ckpt,
-                    cfg.model.id,
-                    trust_remote_code=cfg.model.trust_remote_code,
-                )
-                if added:
-                    print(f"[pipeline] saved VL processor artifacts: {added}")
-
-                cfg_patches = ensure_minimax_m3_vllm_serve_config(ckpt, cfg.model.id)
-                if cfg_patches:
-                    print(
-                        f"[pipeline] patched saved config for vLLM serve: {cfg_patches}"
+                # vLLM VL load needs image-processor configs; tokenizer.save_pretrained
+                # alone does not write preprocessor_config.json.
+                if cfg.model.auto_class == "AutoModelForImageTextToText":
+                    added = ensure_vl_processor_artifacts(
+                        ckpt,
+                        cfg.model.id,
+                        trust_remote_code=cfg.model.trust_remote_code,
                     )
+                    if added:
+                        print(f"[pipeline] saved VL processor artifacts: {added}")
 
-            # Preserve intended ignore patterns for downstream loaders.
-            if not native_output:
-                _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
-            versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
-            print(f"[pipeline] saved checkpoint to {ckpt}")
-        dist_ctx.barrier()
+                    cfg_patches = ensure_minimax_m3_vllm_serve_config(
+                        ckpt, cfg.model.id
+                    )
+                    if cfg_patches:
+                        print(
+                            "[pipeline] patched saved config for vLLM serve: "
+                            f"{cfg_patches}"
+                        )
+
+                # Preserve intended ignore patterns for downstream loaders.
+                if not native_output:
+                    _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
+                versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
+                print(f"[pipeline] saved checkpoint to {ckpt}")
+        with compression_phase(
+            "distributed_barrier", collect_snapshot=False, stage="after_side_artifacts"
+        ):
+            dist_ctx.barrier()
 
         # After the barrier so a gate failure on the source rank cannot strand
         # other ranks in a collective (the r11/r12 zombie choreography).
@@ -1640,7 +1651,10 @@ def _run_quantize(
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.
-        dist_ctx.barrier()
+        with compression_phase(
+            "distributed_barrier", collect_snapshot=False, stage="before_smoke_marker"
+        ):
+            dist_ctx.barrier()
         if dist_ctx.is_source:
             (run_dir / "smoke_complete.json").write_text(
                 json.dumps(
@@ -1656,7 +1670,10 @@ def _run_quantize(
                 + "\n",
                 encoding="utf-8",
             )
-        dist_ctx.barrier()
+        with compression_phase(
+            "distributed_barrier", collect_snapshot=False, stage="after_smoke_marker"
+        ):
+            dist_ctx.barrier()
 
     # Distributed generation is not part of calibration and can require a
     # different dispatch topology. Keep the existing local check only.
@@ -1678,21 +1695,44 @@ def run_quantize(
     *,
     save_checkpoint: bool = True,
 ) -> Path:
-    """Capture phase evidence from model loading through checkpoint verification."""
+    """Capture phase evidence and emit a best-effort source-rank report."""
     from llmcompressor.utils.metric_logging import compression_phase
 
     dist_ctx = dist_ctx or DistributedContext()
     metrics_path = _evidence_paths(run_dir, dist_ctx)["metrics"]
-    with metrics.capture_quant_metrics(metrics_path):
-        with compression_phase("quantize_run", model_id=cfg.model.id):
-            ckpt = _run_quantize(
-                cfg, run_dir, dist_ctx, save_checkpoint=save_checkpoint
-            )
-    # Close the capture before summarizing so the enclosing end is present.
-    # Failed work still leaves paired failure records and any incomplete spans
-    # in the raw JSONL for postmortem inspection.
-    summary = metrics.summarize_quant_metrics(metrics_path)
-    if dist_ctx.is_source:
-        versioning.update_metadata(run_dir, {"quant_metrics": summary})
-    print(f"[pipeline] quant metrics: {summary}")
+    try:
+        with metrics.capture_quant_metrics(metrics_path):
+            with compression_phase("quantize_run", model_id=cfg.model.id):
+                ckpt = _run_quantize(
+                    cfg, run_dir, dist_ctx, save_checkpoint=save_checkpoint
+                )
+    finally:
+        # Capture has closed here, so this rank root span is visible. Do not wait
+        # for peers: an automatic distributed report can be partial and the CLI
+        # regenerates it after the launcher exits. Reporting must remain advisory.
+        try:
+            summary = metrics.summarize_quant_metrics(metrics_path)
+            if dist_ctx.is_source:
+                versioning.update_metadata(run_dir, {"quant_metrics": summary})
+            print(f"[pipeline] quant metrics: {summary}")
+        except Exception as exc:
+            print(f"[warn] quant metrics summary failed: {exc}")
+
+        if dist_ctx.is_source:
+            try:
+                from pipeline.timing_report import write_automatic_timing_report
+
+                base_path = run_dir / "quant_metrics.jsonl"
+                rank_paths = [
+                    DistributedContext(
+                        enabled=dist_ctx.enabled,
+                        rank=rank,
+                        world_size=dist_ctx.world_size,
+                    ).rank_path(base_path)
+                    for rank in range(dist_ctx.world_size)
+                ]
+                write_automatic_timing_report(rank_paths, run_dir / "timing_report")
+            except Exception as exc:
+                print(f"[warn] quant timing report failed: {exc}")
+
     return ckpt

@@ -67,6 +67,24 @@ def test_phase_failure_reraises_original_and_restores_context(tmp_path, monkeypa
     assert records[2]["parent_span_id"] is None
 
 
+def test_lightweight_phase_performs_no_snapshot_reads(tmp_path, monkeypatch):
+    def forbidden(rank):
+        raise AssertionError("snapshot read")
+
+    monkeypatch.setattr(metric_logging, "_safe_phase_snapshot", forbidden)
+    monkeypatch.setattr(
+        metric_logging.torch.cuda,
+        "synchronize",
+        lambda *args: (_ for _ in ()).throw(AssertionError("CUDA sync")),
+    )
+    path = tmp_path / "lightweight.jsonl"
+    with capture_quant_metrics(path):
+        with compression_phase("lightweight", collect_snapshot=False):
+            pass
+    records = _records(path)
+    assert [record["snapshot"] for record in records] == [{}, {}]
+
+
 def test_unavailable_platform_counters_are_not_zero(monkeypatch):
     def unavailable(self, *args, **kwargs):
         raise PermissionError("counter unavailable")
@@ -157,3 +175,79 @@ def test_failed_load_leaves_raw_paired_evidence(tmp_path, monkeypatch):
     assert phases["complete"] is True
     assert phases["phases"]["model_load_dispatch"]["failed_spans"] == 1
     assert phases["phases"]["quantize_run"]["failed_spans"] == 1
+
+
+def test_run_timing_report_uses_declared_rank_paths(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from pipeline import quantize, timing_report
+    from pipeline.distributed import DistributedContext
+
+    calls = {}
+    monkeypatch.setattr(
+        quantize.metrics, "capture_quant_metrics", lambda path: nullcontext()
+    )
+    monkeypatch.setattr(quantize.metrics, "summarize_quant_metrics", lambda path: {})
+    monkeypatch.setattr(quantize.versioning, "update_metadata", lambda *args: None)
+    monkeypatch.setattr(
+        quantize, "_run_quantize", lambda *args, **kwargs: tmp_path / "checkpoint"
+    )
+    monkeypatch.setattr(
+        timing_report,
+        "write_timing_report",
+        lambda paths, prefix: calls.update(paths=list(paths), prefix=prefix),
+    )
+    cfg = SimpleNamespace(model=SimpleNamespace(id="test-model"))
+    ctx = DistributedContext(enabled=True, rank=0, world_size=2, local_rank=0)
+
+    assert quantize.run_quantize(cfg, tmp_path, ctx) == tmp_path / "checkpoint"
+    assert calls == {
+        "paths": [
+            str(tmp_path / "quant_metrics.rank-0.jsonl"),
+            str(tmp_path / "quant_metrics.rank-1.jsonl"),
+        ],
+        "prefix": tmp_path / "timing_report",
+    }
+
+
+def test_report_failure_never_changes_work_result_or_exception(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from pipeline import quantize, timing_report
+
+    monkeypatch.setattr(
+        quantize.metrics, "capture_quant_metrics", lambda path: nullcontext()
+    )
+    monkeypatch.setattr(quantize.metrics, "summarize_quant_metrics", lambda path: {})
+    monkeypatch.setattr(quantize.versioning, "update_metadata", lambda *args: None)
+    monkeypatch.setattr(
+        timing_report,
+        "write_timing_report",
+        lambda *args: (_ for _ in ()).throw(RuntimeError("report failed")),
+    )
+    cfg = SimpleNamespace(model=SimpleNamespace(id="test-model"))
+    expected = tmp_path / "checkpoint"
+    monkeypatch.setattr(quantize, "_run_quantize", lambda *args, **kwargs: expected)
+    assert quantize.run_quantize(cfg, tmp_path) == expected
+
+    original = OSError("work failed")
+    monkeypatch.setattr(
+        quantize,
+        "_run_quantize",
+        lambda *args, **kwargs: (_ for _ in ()).throw(original),
+    )
+    with pytest.raises(OSError) as caught:
+        quantize.run_quantize(cfg, tmp_path)
+    assert caught.value is original
+
+
+def test_lightweight_snapshot_shape_is_accepted_by_peak_cuda_validator(tmp_path):
+    from pipeline.validate_glm53_ep_gptq import peak_cuda_bytes
+
+    path = tmp_path / "lightweight.jsonl"
+    with capture_quant_metrics(path):
+        with compression_phase("lightweight", collect_snapshot=False):
+            pass
+    assert peak_cuda_bytes([path]) is None

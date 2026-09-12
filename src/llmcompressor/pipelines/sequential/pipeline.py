@@ -397,7 +397,12 @@ class SequentialPipeline(CalibrationPipeline):
                                         batch_idx, subgraph.consumed_names
                                     )
 
-                    LifecycleCallbacks.sequential_epoch_end(subgraph_modules)
+                    with compression_phase(
+                        "sequential_compression",
+                        collect_snapshot=False,
+                        subgraph=subgraph_index,
+                    ):
+                        LifecycleCallbacks.sequential_epoch_end(subgraph_modules)
 
                     if dataset_args.propagate_error:
                         # this pass does not trigger modifier hooks

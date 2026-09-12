@@ -104,6 +104,10 @@ class QuantizationConfig:
     # every token runs all of them while only 8 of 256 experts fire, so they are
     # ~40% of active params and ~57% of decode bytes read once experts are int4.
     fp8_scheme: str = "FP8_DYNAMIC"
+    # Materialize block-FP8 weights before GPTQ gathers downstream Hessians.
+    fp8_weights_before_gptq: bool = False
+    # Native SGLang layout on the first checkpoint write (opt-in).
+    checkpoint_format: str = "compressed-tensors"
     # Post-quant sanity generation. Disable for very large offloaded models, where
     # autoregressive generation runs on CPU/disk (~minutes per token) and adds hours.
     sample_generation: bool = True
@@ -311,6 +315,25 @@ class PipelineConfig:
             raise ValueError(
                 f"unknown quantization.method {self.quantization.method!r}; "
                 f"valid: {sorted(VALID_METHODS)}"
+            )
+        quant = self.quantization
+        if quant.checkpoint_format not in {"compressed-tensors", "sglang-w4afp8"}:
+            raise ValueError(f"unknown checkpoint_format {quant.checkpoint_format!r}")
+        if quant.fp8_weights_before_gptq and (
+            quant.method != "gptq" or quant.fp8_scheme != "FP8_BLOCK"
+            or not quant.fp8_dynamic_targets
+            or self.calibration.pipeline not in (None, "sequential")
+        ):
+            raise ValueError(
+                "fp8_weights_before_gptq requires sequential GPTQ "
+                "with FP8_BLOCK targets"
+            )
+        if quant.checkpoint_format == "sglang-w4afp8" and (
+            quant.method != "gptq" or quant.scheme != "W4AFP8"
+            or not quant.fp8_weights_before_gptq
+        ):
+            raise ValueError(
+                "native SGLang export requires W4AFP8 GPTQ with FP8 weight preparation"
             )
         if self.model.device_map == "auto_offload" and not self.model.offload_folder:
             raise ValueError(

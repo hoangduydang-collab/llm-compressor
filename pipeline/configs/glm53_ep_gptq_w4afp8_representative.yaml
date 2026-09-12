@@ -1,0 +1,52 @@
+# FP8 group-A weights are prepared before routed INT4 GPTQ calibration.
+# Separate from the historical W4A16 execution packet; requires fresh qualification.
+name: glm53_ep_gptq_w4afp8_representative
+model:
+  id: /scratch/glm53-bf16-layers-0-4
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /scratch/offload/glm53-ep-gptq-w4afp8-representative
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  ignore:
+  - lm_head
+  - re:.*mlp[.]gate$
+  - re:.*mlp[.]shared_experts[.].*
+  - re:.*self_attn[.].*
+  - re:.*layers[.][0-2][.].*
+  - re:.*layers[.]78[.].*
+  gptq_dampening_frac: 0.01
+  gptq_offload_hessians: false
+  gptq_expert_parallel: true
+  fp8_dynamic_targets:
+  - re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$
+  - re:.*model[.]layers[.][0-9]+[.]self_attn[.]indexer[.](wk|wq_b)$
+  - re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$
+  - re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$
+  sample_generation: false
+  fp8_scheme: FP8_BLOCK
+  fp8_weights_before_gptq: true
+  checkpoint_format: sglang-w4afp8
+calibration:
+  dataset_id: json
+  dataset_split: train
+  dataset_data_files: pipeline/fixtures/glm53_ep_gptq_representative.jsonl
+  num_samples: 8
+  max_seq_length: 512
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets:
+  - GlmMoeDsaDecoderLayer
+  pipeline: sequential
+  sequential_weight_prefetch: true
+  sequential_weight_prefetch_depth: 1
+serve:
+  enabled: false
+eval:
+  enabled: false
+output_dir: /mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/representative

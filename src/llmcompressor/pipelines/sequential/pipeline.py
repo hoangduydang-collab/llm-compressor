@@ -13,6 +13,10 @@ from llmcompressor.core import LifecycleCallbacks, active_session
 from llmcompressor.modeling.moe.context import get_calibrate_all_experts_flag
 from llmcompressor.modeling.moe.expert_parallel import expert_parallel_context
 from llmcompressor.modifiers.gptq.distributed import agree_ep_manifest
+from llmcompressor.modifiers.quantization.quantization.weight_preparation import (
+    prepare_subgraph_weights,
+    validate_weight_preparation,
+)
 from llmcompressor.modifiers.utils.hooks import HooksMixin
 from llmcompressor.pipelines.cache import IntermediatesCache
 from llmcompressor.pipelines.registry import CalibrationPipeline
@@ -249,7 +253,6 @@ class SequentialPipeline(CalibrationPipeline):
         # prepare model for sequential onloading
         onload_device = get_main_device()
         offload_device = torch.device(dataset_args.sequential_offload_device)
-        set_onload_device(model, onload_device)
 
         # AutoRoundModifier optimizes each layer independently using its own
         # forward passes, so quantization error should not be propagated between
@@ -257,6 +260,12 @@ class SequentialPipeline(CalibrationPipeline):
         modifiers = session.lifecycle.recipe.modifiers
         if any(type(m).__name__ == "AutoRoundModifier" for m in modifiers):
             dataset_args.propagate_error = False
+
+        weight_preparers = validate_weight_preparation(
+            model, modifiers, dataset_args.propagate_error
+        )
+
+        set_onload_device(model, onload_device)
 
         # prepare to trace subgraphs
         sequential_targets = infer_sequential_targets(
@@ -366,6 +375,7 @@ class SequentialPipeline(CalibrationPipeline):
                 num_batches = len(dataloader)
                 with _timed_offloading(subgraph_index):
                     subgraph_modules = subgraph.submodules(model)
+                    prepare_subgraph_weights(weight_preparers, subgraph_modules)
                     # do a preliminary pass to trigger modifier hooks
                     with compression_phase(
                         "calibration_forward", subgraph=subgraph_index

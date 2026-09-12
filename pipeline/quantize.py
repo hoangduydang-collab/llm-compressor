@@ -9,7 +9,7 @@ import os
 import shutil
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import copy_context
 from functools import wraps
 from pathlib import Path
@@ -1349,6 +1349,29 @@ def _run_quantize(
         )
         _persist_calibration_partition(run_dir, ds, partition, dist_ctx)
     recipe = build_recipe(cfg.quantization)
+    native_output = (
+        getattr(cfg.quantization, "checkpoint_format", "compressed-tensors")
+        == "sglang-w4afp8"
+    )
+    if native_output:
+        from compressed_tensors.utils import match_named_modules
+
+        from pipeline.native_sglang_save import assert_native_sglang_preflight
+
+        # Resolve the future scheme without initializing/onloading the model.
+        # Reject an incompatible serving inventory before the calibration walk.
+        schemes = {}
+        for modifier in recipe:
+            for scheme in modifier.resolve_quantization_config().config_groups.values():
+                for name, _ in match_named_modules(
+                    model, scheme.targets, modifier.ignore
+                ):
+                    if name in schemes:
+                        raise ValueError(
+                            f"native export has overlapping recipe targets: {name}"
+                        )
+                    schemes[name] = scheme
+        assert_native_sglang_preflight(model, schemes)
 
     oneshot_kwargs: dict = dict(
         model=model,
@@ -1404,6 +1427,12 @@ def _run_quantize(
         # compressed-tensors distributed saving is collective: every rank calls
         # model.save_pretrained, then only rank zero writes shared side artifacts.
         save_kwargs: dict = {"save_compressed": True}
+        if native_output:
+            from pipeline.native_sglang_save import native_sglang_save
+
+        def save_format_context():
+            return native_sglang_save(model) if native_output else nullcontext()
+
         if cfg.quantization.scheme in _PACK_QUANTIZED_SCHEMES:
             if cfg.quantization.fp8_dynamic_targets:
                 # Mixed int4+FP8 checkpoint (r8): a global quantization_format
@@ -1430,6 +1459,7 @@ def _run_quantize(
             )
             with (
                 compression_phase("checkpoint_save", checkpoint=str(ckpt)),
+                save_format_context(),
                 _tied_weights_meta_buffer_compat(model),
                 _deferred_weight_conversion_compat(model) as deferral,
                 _save_heartbeat(ckpt),
@@ -1447,6 +1477,7 @@ def _run_quantize(
             # a heartbeat there would be 8x duplicate noise.
             with (
                 compression_phase("checkpoint_save", checkpoint=str(ckpt)),
+                save_format_context(),
                 _tied_weights_meta_buffer_compat(model),
                 _deferred_weight_conversion_compat(model),
             ):
@@ -1474,7 +1505,8 @@ def _run_quantize(
                     )
 
             # Preserve intended ignore patterns for downstream loaders.
-            _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
+            if not native_output:
+                _persist_ignore_to_config(ckpt, cfg.quantization.ignore)
             versioning.write_recipe(run_dir, describe_recipe(cfg.quantization))
             print(f"[pipeline] saved checkpoint to {ckpt}")
         dist_ctx.barrier()
@@ -1483,87 +1515,100 @@ def _run_quantize(
         # other ranks in a collective (the r11/r12 zombie choreography).
         if dist_ctx.is_source or not dist_ctx.enabled:
             with compression_phase("offline_verification", checkpoint=str(ckpt)):
-                # Default to every M3 MoE layer: r4's degenerate folds sat on
-                # layers 8/10-13, which a 3/31/59 spot-check cannot see. Layers
-                # that were not smoothed audit as scale == 1 and pass trivially.
-                gate_layers_env = os.environ.get("M3_DIAGNOSTIC_LAYERS", "")
-                if gate_layers_env.strip():
-                    gate_layers = [
-                        int(part) for part in gate_layers_env.split(",") if part.strip()
-                    ]
-                else:
-                    # Derived from the model, not M3's sparse range. The old
-                    # constant range(3, 60) left GLM-5.2/5.3 layers 60-77 (18 of
-                    # 75 MoE layers) unaudited, so a fold lost only in that tail --
-                    # the r2/r3/r7 failure mode -- would pass silently.
-                    depth = getattr(
-                        getattr(model, "config", None), "num_hidden_layers", 60
+                if native_output:
+                    from pipeline.native_sglang_save import (
+                        verify_native_sglang_checkpoint,
                     )
-                    first_dense = getattr(
-                        getattr(model, "config", None), "first_k_dense_replace", 3
-                    )
-                    gate_layers = list(range(int(first_dense), int(depth)))
-                    # Add the DSA indexer layers. Starting at first_k_dense_replace
-                    # covers every MoE layer, which is right for the router and shared
-                    # experts -- but GLM's indexer_types marks layers 0,1,2 as "full"
-                    # (own indexer) and layer 3 as "shared" (no indexer at all), so the
-                    # attention-side audit reported `absent=3` and checked no indexer on
-                    # a run whose whole point was an indexer change. An audit that
-                    # cannot see the component under test is not an audit.
-                    indexer_types = (
-                        getattr(getattr(model, "config", None), "indexer_types", None)
-                        or []
-                    )
-                    indexer_layers = [
-                        i for i, kind in enumerate(indexer_types) if kind == "full"
-                    ]
-                    added = sorted(set(indexer_layers) - set(gate_layers))
-                    if added:
-                        gate_layers = sorted(set(gate_layers) | set(indexer_layers))
-                        print(
-                            "[pipeline] smooth-fold gate: added indexer layers "
-                            f"{added} "
-                            "so the attention-side audit is not vacuous"
-                        )
-                norm_gain_offset = resolve_norm_gain_offset(model)
-                print(
-                    "[pipeline] norm gain form: "
-                    + (
-                        "unresolved"
-                        if norm_gain_offset is None
-                        else f"output * ({norm_gain_offset:g} + weight)"
-                    )
-                )
-                assert_smooth_fold_consistency(
-                    ckpt,
-                    Path(cfg.model.id),
-                    gate_layers,
-                    norm_gain_offset=norm_gain_offset,
-                )
-                assert_quant_checkpoint_verified(
-                    ckpt,
-                    Path(cfg.model.id),
-                    fp8_dynamic_targets=list(
-                        cfg.quantization.fp8_dynamic_targets or []
-                    ),
-                )
-                # Storage-vs-scheme consistency: no ignore entry may hide a module
-                # that IS quantized. Loaders check ignore before targets, so a
-                # shadowed module serves as unquantized -- its quantized bytes cast
-                # into unscaled parameters, garbage output, exit code 0 (M3 r8 ABI
-                # smoke, 2026-07-24). Runs LAST because it reads the final config,
-                # after _persist_ignore_to_config and any serve-config patching.
-                # Enforced unconditionally, including on partial-scope smokes. An
-                # earlier revision exempted them, reasoning that their
-                # layer-restriction pattern covers too many unquantized modules to
-                # enumerate. That exemption was unnecessary AND weakening: when
-                # resolution overflows, _persist_ignore_to_config DROPS the pattern
-                # and warns, so no shadowing survives and this gate passes anyway.
-                # The only way it fires is a pattern that genuinely hides a quantized
-                # module -- which is never acceptable, smoke or not.
-                from pipeline.serve_ignore import assert_no_ignore_shadowing
 
-                assert_no_ignore_shadowing(ckpt)
+                    verified = verify_native_sglang_checkpoint(ckpt)
+                    print(f"[pipeline] native SGLang serialization gate: {verified}")
+                else:
+                    # Default to every M3 MoE layer: r4's degenerate folds sat on layers
+                    # 8/10-13, which a 3/31/59 spot-check cannot see. Layers that were
+                    # not smoothed audit as scale == 1 and pass trivially.
+                    gate_layers_env = os.environ.get("M3_DIAGNOSTIC_LAYERS", "")
+                    if gate_layers_env.strip():
+                        gate_layers = [
+                            int(part)
+                        for part in gate_layers_env.split(",")
+                        if part.strip()
+                        ]
+                    else:
+                        # Derived from the model, not M3's sparse range. The old
+                        # constant range(3, 60) left GLM-5.2/5.3 layers 60-77 (18 of 75
+                        # MoE layers) unaudited, so a fold lost only in that tail -- the
+                        # r2/r3/r7 failure mode -- would pass silently.
+                        depth = getattr(
+                            getattr(model, "config", None), "num_hidden_layers", 60
+                        )
+                        first_dense = getattr(
+                            getattr(model, "config", None), "first_k_dense_replace", 3
+                        )
+                        gate_layers = list(range(int(first_dense), int(depth)))
+                        # Add the DSA indexer layers. Starting at first_k_dense_replace
+                        # covers every MoE layer, which is right for the router and
+                        # shared experts -- but GLM's indexer_types marks layers 0,1,2
+                        # as "full" (own indexer) and layer 3 as "shared" (no indexer at
+                        # all), so the attention-side audit reported `absent=3` and
+                        # checked no indexer on a run whose whole point was an indexer
+                        # change. An audit that cannot see the component under test is
+                        # not an audit.
+                        indexer_types = (
+                            getattr(
+                                getattr(model, "config", None), "indexer_types", None
+                            )
+                            or []
+                        )
+                        indexer_layers = [
+                            i for i, kind in enumerate(indexer_types) if kind == "full"
+                        ]
+                        added = sorted(set(indexer_layers) - set(gate_layers))
+                        if added:
+                            gate_layers = sorted(set(gate_layers) | set(indexer_layers))
+                            print(
+                                "[pipeline] smooth-fold gate: added indexer layers "
+                                f"{added} "
+                                "so the attention-side audit is not vacuous"
+                            )
+                    norm_gain_offset = resolve_norm_gain_offset(model)
+                    print(
+                        "[pipeline] norm gain form: "
+                        + (
+                            "unresolved"
+                            if norm_gain_offset is None
+                            else f"output * ({norm_gain_offset:g} + weight)"
+                        )
+                    )
+                    assert_smooth_fold_consistency(
+                        ckpt,
+                        Path(cfg.model.id),
+                        gate_layers,
+                        norm_gain_offset=norm_gain_offset,
+                    )
+                    assert_quant_checkpoint_verified(
+                        ckpt,
+                        Path(cfg.model.id),
+                        fp8_dynamic_targets=list(
+                            cfg.quantization.fp8_dynamic_targets or []
+                        ),
+                    )
+                    # Storage-vs-scheme consistency: no ignore entry may hide a module
+                    # that IS quantized. Loaders check ignore before targets, so a
+                    # shadowed module serves as unquantized -- its quantized bytes cast
+                    # into unscaled parameters, garbage output, exit code 0 (M3 r8 ABI
+                    # smoke, 2026-07-24). Runs LAST because it reads the final config,
+                    # after _persist_ignore_to_config and any serve-config patching.
+                    # Enforced unconditionally, including on partial-scope smokes. An
+                    # earlier revision exempted them, reasoning that their layer-
+                    # restriction pattern covers too many unquantized modules to
+                    # enumerate. That exemption was unnecessary AND weakening: when
+                    # resolution overflows, _persist_ignore_to_config DROPS the pattern
+                    # and warns, so no shadowing survives and this gate passes anyway.
+                    # The only way it fires is a pattern that genuinely hides a
+                    # quantized module -- which is never acceptable, smoke or not.
+                    from pipeline.serve_ignore import assert_no_ignore_shadowing
+
+                    assert_no_ignore_shadowing(ckpt)
     else:
         # A partial-layer smoke is evidence only. The completion marker appears
         # only after every rank finishes calibration and reaches this barrier.

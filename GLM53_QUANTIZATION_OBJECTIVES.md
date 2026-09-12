@@ -1,6 +1,6 @@
 # GLM-5.3 quantization: three objectives and executor brief
 
-Updated: 2026-09-09. Owner: planner; full-scale execution: remote executor.
+Updated: 2026-09-12. Owner: planner; full-scale execution: remote executor.
 This is the canonical shared brief for the three problems raised by the owner.
 Read it before planning or executing GLM-5.3 quantization work. It records scope
 and evidence; it is not a ready full-scale launch packet.
@@ -103,7 +103,8 @@ on 2026-09-09. [Early SGLang alignment](docs/glm53-sglang-w4afp8-early-alignment
 adds indexer wk/wq_b to the GLM-5.3 AWQ FP8_BLOCK recipe and preserves native block
 FP8 in the existing converter, with exact verification. Direct native export,
 expert activation-scale alignment, MTP assembly and runtime/quality qualification
-remain open. No full AWQ rerun is authorized by this brief alone.
+were open at that checkpoint. The implementation update below supersedes the
+direct-export status. No full AWQ rerun is authorized by this brief alone.
 
 The active EP8 GPTQ run intentionally emits W4A16: calibrated INT4 routed experts
 and BF16 non-expert modules. The owner confirmed W4AFP8 as the final serving target
@@ -111,10 +112,35 @@ on 2026-09-12. If the W4A16 checkpoint passes its gates, its expensive calibrate
 INT4 experts can be reused; the established post-processing path must repack those
 experts for SGLang, block-FP8-quantize the explicit attention/shared/dense/indexer
 scope from the unchanged BF16 source, verify the new artifact, and graft MTP when
-speculative decoding is required. No GPTQ rerun is expected: FP8_BLOCK weights are
-data-free RTN, and activation QDQ is disabled during the current sequential
-calibration/propagation path. This equivalence still requires artifact and quality
-validation; it is not permission to relabel the W4A16 checkpoint.
+speculative decoding is required. This salvage path retains the original GPTQ
+solution; it does not incorporate the newly introduced FP8 weight error into its
+calibration. Artifact and quality validation are required; this is not permission
+to relabel the W4A16 checkpoint.
+
+**Owner clarification (2026-09-12):** future EP GPTQ must account for the
+block-FP8 weight error of attention/shared/dense/indexer modules (group A) while
+calibrating INT4 routed experts (group B). The current sequential replay already
+propagates GPTQ weight error; group A remains BF16 in the active W4A16 run.
+The no-rerun statement above applies to salvaging that artifact through conversion,
+not to equivalence with a new A-FP8-aware GPTQ calibration. Native serving export
+and the calibration ordering are both required for the intended future path.
+
+[Primary-source reuse research](docs/research/2026-09-12-glm53-fp8-int4-sequential-reuse.md)
+finds a close precedent in IST-DASLab MoE-Quant's native-FP8-source, expert-only
+GPTQ flow, plus original GPTQ's within-block sequential ordering. Reuse existing
+compressed-tensors FP8 primitives and this fork's EP/replay/offload implementation;
+materialize A's FP8-rounded weights before B's Hessian collection.
+
+**Implementation update (2026-09-12):** the opt-in sequential path now prepares
+resident group-A weights using CT FP8 rounding, freezes their scales, calibrates
+group B against those working weights, and replays both groups' weight error
+into later blocks. Separate representative/full W4AFP8 recipes select direct
+native SGLang saving through the existing collective CT/Transformers writer.
+The native checkpoint uses fixed-unit expert input scales and explicitly reports
+MTP absent. Fresh GPU/runtime and paired quality qualification remain required;
+no new full-model run has been launched. See
+[implementation and qualification](docs/glm53-fp8-before-gptq-implementation.md).
+Activation quantization optimization is a separate follow-up.
 
 ## 3. Diagnose shared-storage overhead across the entire run
 

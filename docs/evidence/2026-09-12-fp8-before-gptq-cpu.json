@@ -1,0 +1,450 @@
+{
+  "baseline_commit": "383a4411",
+  "date": "2026-09-12",
+  "environment": {
+    "compressed-tensors": "0.17.2a20260707",
+    "pytest": "9.1.1",
+    "python": "3.12",
+    "safetensors": "0.8.0",
+    "torch": "2.11.0+cu128",
+    "transformers": "5.12.1"
+  },
+  "numerical_gates": {
+    "activation_enabled_ddp_ep": "diagnostic only; old pointwise gate fails; runtime equivalence unqualified",
+    "first_routed_hessians": "rtol=3e-4, atol=2e-5",
+    "fp8_payload_scales": "exact bytes and stored dtype",
+    "per_arm_activation_enabled_reload": "rtol=2e-3, atol=2e-4",
+    "weight_replay_hessians_logits": {
+      "normalized_max_lt": 0.01,
+      "relative_frobenius_lt": 0.001
+    }
+  },
+  "ranks": {
+    "0": {
+      "activation_enabled_logits": {
+        "absolute_max": 0.005181729793548584,
+        "normalized_max": 0.0052911044747704665,
+        "relative_frobenius": 0.003121255838952184
+      },
+      "summary": {
+        "hessian": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.0002886019712389187,
+          "relative_frobenius": 0.00020457278456429857
+        },
+        "replay": {
+          "absolute_max": 0.0004104301333427429,
+          "normalized_max": 0.0007783501029416652,
+          "relative_frobenius": 0.00022550469405682337
+        },
+        "weight_only_logits": {
+          "absolute_max": 0.0013737976551055908,
+          "normalized_max": 0.0013991313044831692,
+          "relative_frobenius": 0.0008596491301165518
+        }
+      },
+      "weight_calibration_comparisons": {
+        "hessian:model.layers.1.mlp.experts.0.down_proj": {
+          "absolute_max": 3.5762786865234375e-07,
+          "normalized_max": 3.3632049459740363e-07,
+          "relative_frobenius": 1.2984823934600357e-07
+        },
+        "hessian:model.layers.1.mlp.experts.0.gate_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.0.up_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.1.down_proj": {
+          "absolute_max": 4.76837158203125e-07,
+          "normalized_max": 1.0454507628236036e-07,
+          "relative_frobenius": 1.161684258745762e-07
+        },
+        "hessian:model.layers.1.mlp.experts.1.gate_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.1.up_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.2.down_proj": {
+          "absolute_max": 5.960464477539062e-07,
+          "normalized_max": 2.6480470123674385e-07,
+          "relative_frobenius": 1.4827064714305283e-07
+        },
+        "hessian:model.layers.1.mlp.experts.2.gate_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.2.up_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.2.mlp.experts.0.down_proj": {
+          "absolute_max": 0.0001812577247619629,
+          "normalized_max": 8.576869224433287e-05,
+          "relative_frobenius": 0.00018851246686967196
+        },
+        "hessian:model.layers.2.mlp.experts.0.gate_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.0.up_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.1.down_proj": {
+          "absolute_max": 0.00031936168670654297,
+          "normalized_max": 0.0002077176045438284,
+          "relative_frobenius": 0.00019663866490625694
+        },
+        "hessian:model.layers.2.mlp.experts.1.gate_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.1.up_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.2.down_proj": {
+          "absolute_max": 0.0004366636276245117,
+          "normalized_max": 0.0002886019712389187,
+          "relative_frobenius": 0.00020457278456429857
+        },
+        "hessian:model.layers.2.mlp.experts.2.gate_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.2.up_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "replay-0:getitem": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-0:getitem_2": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-0:wrapped_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-1:getitem": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-1:getitem_2": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-1:wrapped_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-2:getitem_3": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-2:getitem_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-3:getitem_3": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-3:getitem_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-4:getitem_5": {
+          "absolute_max": 0.0004104301333427429,
+          "normalized_max": 0.0007783501029416652,
+          "relative_frobenius": 0.00022550469405682337
+        },
+        "replay-4:getitem_6": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-5:getitem_5": {
+          "absolute_max": 0.0001331716775894165,
+          "normalized_max": 0.00019953880792028628,
+          "relative_frobenius": 0.00018571861769026436
+        },
+        "replay-5:getitem_6": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "weight_only_logits": {
+          "absolute_max": 0.0013737976551055908,
+          "normalized_max": 0.0013991313044831692,
+          "relative_frobenius": 0.0008596491301165518
+        }
+      }
+    },
+    "1": {
+      "activation_enabled_logits": {
+        "absolute_max": 0.003309682011604309,
+        "normalized_max": 0.0032658650501020156,
+        "relative_frobenius": 0.0022625083932527293
+      },
+      "summary": {
+        "hessian": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.0002886019712389187,
+          "relative_frobenius": 0.00020457278456429857
+        },
+        "replay": {
+          "absolute_max": 0.0002746880054473877,
+          "normalized_max": 0.0003641200229983848,
+          "relative_frobenius": 0.00018302210355331276
+        },
+        "weight_only_logits": {
+          "absolute_max": 0.000588834285736084,
+          "normalized_max": 0.0005816376995902219,
+          "relative_frobenius": 0.0006055703335999994
+        }
+      },
+      "weight_calibration_comparisons": {
+        "hessian:model.layers.1.mlp.experts.0.down_proj": {
+          "absolute_max": 3.5762786865234375e-07,
+          "normalized_max": 3.3632049459740363e-07,
+          "relative_frobenius": 1.2984823934600357e-07
+        },
+        "hessian:model.layers.1.mlp.experts.0.gate_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.0.up_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.1.down_proj": {
+          "absolute_max": 4.76837158203125e-07,
+          "normalized_max": 1.0454507628236036e-07,
+          "relative_frobenius": 1.161684258745762e-07
+        },
+        "hessian:model.layers.1.mlp.experts.1.gate_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.1.up_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.2.down_proj": {
+          "absolute_max": 5.960464477539062e-07,
+          "normalized_max": 2.6480470123674385e-07,
+          "relative_frobenius": 1.4827064714305283e-07
+        },
+        "hessian:model.layers.1.mlp.experts.2.gate_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.1.mlp.experts.2.up_proj": {
+          "absolute_max": 1.52587890625e-05,
+          "normalized_max": 6.714649101502732e-08,
+          "relative_frobenius": 7.000267901048024e-08
+        },
+        "hessian:model.layers.2.mlp.experts.0.down_proj": {
+          "absolute_max": 0.0001812577247619629,
+          "normalized_max": 8.576869224433287e-05,
+          "relative_frobenius": 0.00018851246686967196
+        },
+        "hessian:model.layers.2.mlp.experts.0.gate_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.0.up_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.1.down_proj": {
+          "absolute_max": 0.00031936168670654297,
+          "normalized_max": 0.0002077176045438284,
+          "relative_frobenius": 0.00019663866490625694
+        },
+        "hessian:model.layers.2.mlp.experts.1.gate_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.1.up_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.2.down_proj": {
+          "absolute_max": 0.0004366636276245117,
+          "normalized_max": 0.0002886019712389187,
+          "relative_frobenius": 0.00020457278456429857
+        },
+        "hessian:model.layers.2.mlp.experts.2.gate_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "hessian:model.layers.2.mlp.experts.2.up_proj": {
+          "absolute_max": 0.026336669921875,
+          "normalized_max": 0.00010019752729221581,
+          "relative_frobenius": 0.00013582965571439935
+        },
+        "replay-0:getitem": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-0:getitem_2": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-0:wrapped_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-1:getitem": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-1:getitem_2": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-1:wrapped_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-2:getitem_3": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-2:getitem_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-3:getitem_3": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-3:getitem_4": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-4:getitem_5": {
+          "absolute_max": 0.0001325458288192749,
+          "normalized_max": 0.00020438901219376344,
+          "relative_frobenius": 0.00017155305812291275
+        },
+        "replay-4:getitem_6": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "replay-5:getitem_5": {
+          "absolute_max": 0.0002746880054473877,
+          "normalized_max": 0.0003641200229983848,
+          "relative_frobenius": 0.00018302210355331276
+        },
+        "replay-5:getitem_6": {
+          "absolute_max": 0.0,
+          "normalized_max": 0.0,
+          "relative_frobenius": 0.0
+        },
+        "weight_only_logits": {
+          "absolute_max": 0.000588834285736084,
+          "normalized_max": 0.0005816376995902219,
+          "relative_frobenius": 0.0006055703335999994
+        }
+      }
+    }
+  },
+  "remaining": [
+    "Fresh two-GPU NCCL qualification",
+    "Real-width EP4/EP8 memory and phase gates",
+    "Pinned SGLang load/forward and paired quality evaluation",
+    "Optional MTP assembly for speculative decoding",
+    "Full-scale storage/performance measurements"
+  ],
+  "scope": "CPU/Gloo; no GPU or full-model run",
+  "source_sha256": {
+    "pipeline/config.py": "c0df7131c83d32e6fc5711f14ad6c563524859768db229f1bf1a9c7a484f6e66",
+    "pipeline/configs/glm53_ep_gptq_w4afp8_full.yaml": "6efd10d5346bff79331818f7b1f004e73f6e177f24eaa9675993fad7ab160a8a",
+    "pipeline/configs/glm53_ep_gptq_w4afp8_representative.yaml": "7d40813a0ccdb3c89cdc20b5ba996742d6734cb702286bf02b76ee253d1b595a",
+    "pipeline/native_sglang_save.py": "11247365e8d7d2fbae0e94eda1a737e82ba38a45fcff3cb65a2808cea69cca05",
+    "pipeline/quantize.py": "081b5fb4ace38114df03085ad94118c8000ab97b6b489e21dc7e16f01d9c255a",
+    "pipeline/recipe.py": "a73266cbef8600669847a602e704f9e556d60ab79df61f1907eb9a681319ea08",
+    "pipeline/tests/test_native_sglang_save.py": "899047209f7c42fe430eb3e7a542cb4d6ed63e96e84415ae1c0ca27f777b0d17",
+    "src/llmcompressor/modifiers/gptq/base.py": "49ab7b762922742d03ec7f34b31830a0ce2c82b49a68604b27347d1b196c70bf",
+    "src/llmcompressor/modifiers/quantization/quantization/base.py": "ae5b35ac1fbe018e27a9a886069ae13ff7bdb364ecb601c32c4dac228dd2d419",
+    "src/llmcompressor/modifiers/quantization/quantization/weight_preparation.py": "5ed9e3b187b554b095353714cddc80e39dcff87c33d40a4f8b684122882385fb",
+    "src/llmcompressor/pipelines/registry.py": "330615e9a216d92255ca589d2a863fe150bcc1348776e4aaa0ab9ddf9f19307c",
+    "src/llmcompressor/pipelines/sequential/pipeline.py": "7f925e0727560ede3f62cc9abe20cc6f82a29320e1b8c634099497adccdcaeee",
+    "tests/llmcompressor/modifiers/gptq/test_expert_parallel_nccl.py": "a2392131f3d6f7a2ccb06973a4f3a7ea34edbff849b41481ebb8742968eb64ca",
+    "tests/llmcompressor/modifiers/gptq/test_expert_parallel_oneshot.py": "c1e9de9e6ac4ea1bcdfa0e2788566704c6fdf73e7d6d5867464dd7cac0f906d7",
+    "tests/llmcompressor/modifiers/quantization/test_weight_preparation.py": "baac64fa50a0acd161df59b30bf5ef84d4d0eeb7f191af4cf4eb329410e1ba37"
+  },
+  "validation": {
+    "git_diff_check": "passed",
+    "gpu_skips": 5,
+    "native_export": {
+      "core": "25 passed in 118.84s",
+      "entrypoint": "2 passed in 18.36s",
+      "total": 27
+    },
+    "regression": {
+      "log_sha256": "6a62ea459663dd238c61eb60961fc1152dd7eaabbda700293f21c45eee68e997",
+      "result": "100 passed, 14 warnings in 8.72s"
+    },
+    "retained-lifecycle": {
+      "log_sha256": "a8c26caff323001c7c0012e9e680d1a67ca0ac3272af4c92587e08683b25e18d",
+      "result": "11 passed, 5 skipped, 35 warnings in 64.71s (0:01:04)"
+    },
+    "ruff": "passed",
+    "total_cpu_passes": 138
+  }
+}

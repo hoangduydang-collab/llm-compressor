@@ -86,7 +86,9 @@ class ThreadCollectives(Collectives):
 # --------------------------------------------------------------------------
 
 
-def build_model(num_hidden_layers=4, first_k_dense_replace=3, n_experts=None):
+def build_model(
+    num_hidden_layers=4, first_k_dense_replace=3, n_experts=None, config_overrides=None
+):
     """Build the shared real GLM fixture, retaining its complete model lifecycle."""
     if n_experts is None:
         n_experts = N_EXPERTS
@@ -97,7 +99,7 @@ def build_model(num_hidden_layers=4, first_k_dense_replace=3, n_experts=None):
         GlmMoeDsaForCausalLM,
     )
 
-    cfg = GlmMoeDsaConfig(
+    config_kwargs = dict(
         hidden_size=HIDDEN, num_hidden_layers=num_hidden_layers,
         n_routed_experts=n_experts,
         num_experts_per_tok=TOP_K, moe_intermediate_size=16,
@@ -108,6 +110,7 @@ def build_model(num_hidden_layers=4, first_k_dense_replace=3, n_experts=None):
         qk_nope_head_dim=8, index_topk=8, max_position_embeddings=32,
         tie_word_embeddings=False,
     )
+    cfg = GlmMoeDsaConfig(**(config_kwargs | (config_overrides or {})))
     torch.manual_seed(0)
     model = GlmMoeDsaForCausalLM(cfg)
     model.eval()

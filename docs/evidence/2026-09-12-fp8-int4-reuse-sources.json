@@ -1,0 +1,106 @@
+{
+  "accessed": "2026-09-12",
+  "local_baseline": "383a4411",
+  "sources": [
+    {
+      "repo": "vllm-project/compressed-tensors",
+      "sha": "ddd5a568f435eb71bde3d71846ee55cab7be0d4b",
+      "date": "2026-09-11T15:22:55Z",
+      "files": [
+        {
+          "path": "src/compressed_tensors/quantization/lifecycle/forward.py",
+          "sha256": "45e56d3504c40b297eb75950f08058a5eba2926e476548aed0a353864a5707eb",
+          "bytes": 10306
+        }
+      ]
+    },
+    {
+      "repo": "IST-DASLab/gptq",
+      "sha": "2d65066eeb06a5c9ff5184d8cebdf33662c67faf",
+      "date": "2023-07-11T11:34:18Z",
+      "files": [
+        {
+          "path": "llama.py",
+          "sha256": "f011982054dfa4eeaa0de9aa9af33afca3fc033e209ee02c0c29ff62d638d167",
+          "bytes": 10760
+        }
+      ]
+    },
+    {
+      "repo": "vllm-project/llm-compressor",
+      "sha": "b52e76d66a6f47275c33dd59342a90ae7c50d34a",
+      "date": "2026-09-11T16:39:37Z",
+      "files": [
+        {
+          "path": "examples/quantization_non_uniform/quantization_multiple_modifiers.py",
+          "sha256": "d23df657a288fbede82456168530c1d822b2eb888270f04a2730100537f1fdf3",
+          "bytes": 2707
+        },
+        {
+          "path": "src/llmcompressor/modifiers/quantization/quantization/base.py",
+          "sha256": "2bf6b4db0c2452c0c5729fcb464178ebacf60661bb483b1af44b9ae4302835ee",
+          "bytes": 5451
+        },
+        {
+          "path": "src/llmcompressor/modifiers/quantization/quantization/mixin.py",
+          "sha256": "3655c940d58e622cec47a68eab1da5b3ea81b4368287f42426594af5cbc5b313",
+          "bytes": 21323
+        },
+        {
+          "path": "src/llmcompressor/pipelines/independent/pipeline.py",
+          "sha256": "2820ee7a46cf80889fa53ec10c127b7bfaa805ac429adda077a58fddc048b074",
+          "bytes": 1707
+        },
+        {
+          "path": "src/llmcompressor/pipelines/sequential/pipeline.py",
+          "sha256": "66c21da8f85727696702e4d5664226ce87ceff486a0e0fb9c8ddc62e50facdb5",
+          "bytes": 7735
+        }
+      ]
+    },
+    {
+      "repo": "NVIDIA/Model-Optimizer",
+      "sha": "51de53e48ccae8804f8fe1198b7cf89475c5c4f4",
+      "date": "2026-09-12T03:49:01Z",
+      "files": [
+        {
+          "path": "modelopt/torch/quantization/config.py",
+          "sha256": "aa398aceb1e4f56b1811253d53f5276ecafeeb13bdab31393149ef20ce1c2ff9",
+          "bytes": 79812
+        },
+        {
+          "path": "modelopt/torch/quantization/mode.py",
+          "sha256": "18c0df6d8f9daa64f096f1343a28773234dc5466db386f7f75fa93722120a9ac",
+          "bytes": 20329
+        },
+        {
+          "path": "modelopt/torch/quantization/model_calib.py",
+          "sha256": "cba96d8ae9586eeaa77612d0c8380283516db5db8fd39cf9cdfae5a2f302081e",
+          "bytes": 104181
+        }
+      ]
+    },
+    {
+      "repo": "IST-DASLab/MoE-Quant",
+      "sha": "5a3b298cfb5c475a9b6584d48b43fcebc4ddfb2f",
+      "date": "2025-12-11T18:04:01Z",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "59d4381819aaef8486f0c15305fa236f47982809856a23c29149cff5da430b5c",
+          "bytes": 9995
+        },
+        {
+          "path": "quant.py",
+          "sha256": "ba157c59746bc6b734613628a0d68fda05d8a4e23c6d2b1fdbc0bdf11796a3e7",
+          "bytes": 19270
+        },
+        {
+          "path": "src/quant_utils.py",
+          "sha256": "ed9255448f06c010f8d83b5b7ea857817af20da6fc466f4237260279f0716a44",
+          "bytes": 9717
+        }
+      ]
+    }
+  ]
+}

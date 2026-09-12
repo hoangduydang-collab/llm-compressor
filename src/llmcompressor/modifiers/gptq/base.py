@@ -341,7 +341,10 @@ class GPTQModifier(Modifier, QuantizationMixin):
     def on_sequential_epoch_end(
         self, state: State, event: Event, modules: list[torch.nn.Module], **kwargs
     ):
-        modules = [module for module in modules if is_module_quantized(module)]
+        modules = [
+            module for module in modules
+            if module in self._module_names and is_module_quantized(module)
+        ]
         if self.expert_parallel and is_expert_parallel_enabled():
             targets = sorted(
                 (

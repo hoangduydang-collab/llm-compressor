@@ -1,9 +1,9 @@
 import torch
 from compressed_tensors.quantization.utils import is_module_quantized
 from compressed_tensors.utils import match_named_modules
+from pydantic import PrivateAttr
 
 from llmcompressor.core import Event, State
-from llmcompressor.modeling.moe.expert_parallel import is_expert_parallel_enabled
 from llmcompressor.modifiers import Modifier
 from llmcompressor.modifiers.quantization.calibration import (
     observe,
@@ -49,6 +49,12 @@ class QuantizationModifier(Modifier, QuantizationMixin):
         and kv_cache_scheme != None, the quantization of kv cache will fail
     """
 
+    # GPTQ-only composition: prepare FP8 weights before collecting downstream
+    # Hessians, while keeping activation QDQ disabled in the sequential walk.
+    quantize_weights_before_calibration: bool = False
+    _prepared_weight_modules: set = PrivateAttr(default_factory=set)
+    _weight_preparation_targets: dict = PrivateAttr(default_factory=dict)
+
     def on_initialize(self, state: State, **kwargs) -> bool:
         """
         Prepare to calibrate activations and weights
@@ -64,6 +70,8 @@ class QuantizationModifier(Modifier, QuantizationMixin):
             raise ValueError(
                 "QuantizationModifier requires that quantization fields be specified"
             )
+        self._prepared_weight_modules.clear()
+        self._weight_preparation_targets.clear()
         QuantizationMixin.initialize_quantization(self, state.model)
 
         return True
@@ -77,17 +85,18 @@ class QuantizationModifier(Modifier, QuantizationMixin):
     def on_sequential_epoch_end(
         self, state: State, event: Event, modules: list[torch.nn.Module], **kwargs
     ):
-        if is_expert_parallel_enabled():
-            # An additional FP8-rest modifier must not re-observe routed GPTQ
-            # weights: that overwrites solved scales and pins non-owned experts.
-            targets = {
-                module
-                for _, module in match_named_modules(
-                    state.model, self.resolved_targets, self.ignore
-                )
-            }
-            modules = [module for module in modules if module in targets]
-        modules = [module for module in modules if is_module_quantized(module)]
+        # Every modifier owns only its targets, in DDP as well as EP. Updating
+        # another modifier's weight scales would invalidate its GPTQ solution.
+        targets = {
+            module
+            for _, module in match_named_modules(
+                state.model, self.resolved_targets, self.ignore
+            )
+        }
+        modules = [
+            module for module in modules
+            if module in targets and is_module_quantized(module)
+        ]
         self.sync_obs_act_stats(modules)
         update_qparams(modules, ACTIVATION_OBS)
 
@@ -103,8 +112,12 @@ class QuantizationModifier(Modifier, QuantizationMixin):
         # over 8 ranks: two ranks got zero) -> mismatched barrier counts ->
         # NCCL deadlock at 100% GPU (r8 smoke hang, 2026-07-23; see
         # BUGS_AND_FIXES.md).
-        observe(modules, "weight")
-        update_qparams(modules, "weight")
+        weight_modules = [
+            module for module in modules
+            if module not in self._prepared_weight_modules
+        ]
+        observe(weight_modules, "weight")
+        update_qparams(weight_modules, "weight")
 
     def on_calibration_end(self, state: State, event: Event, **kwargs):
         """

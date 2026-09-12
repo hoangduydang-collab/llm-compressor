@@ -2,7 +2,6 @@ from pathlib import Path
 
 from pipeline.config import load_config
 
-
 ROOT = Path(__file__).resolve().parents[2]
 REPRESENTATIVE = ROOT / "pipeline/configs/glm53_ep_gptq_representative.yaml"
 FULL = ROOT / "pipeline/configs/glm53_ep_gptq_full.yaml"
@@ -59,3 +58,46 @@ def test_full_config_pins_source_and_production_calibration():
     assert cfg.calibration.num_samples == 256
     assert cfg.calibration.max_seq_length == 2048
     assert cfg.calibration.seed == 42
+
+
+def test_w4afp8_recipes_prepare_weights_before_gptq_and_export_natively():
+    from pipeline.recipe import build_recipe, describe_recipe
+
+    for lane in ("full", "representative"):
+        cfg = load_config(ROOT / f"pipeline/configs/glm53_ep_gptq_w4afp8_{lane}.yaml")
+        assert cfg.quantization.scheme == "W4AFP8"
+        assert cfg.quantization.checkpoint_format == "sglang-w4afp8"
+        assert cfg.quantization.fp8_weights_before_gptq
+        assert cfg.quantization.gptq_expert_parallel
+        assert cfg.quantization.fp8_scheme == "FP8_BLOCK"
+        assert any(
+            "indexer" in target for target in cfg.quantization.fp8_dynamic_targets
+        )
+        main, rest = build_recipe(cfg.quantization)
+        assert main.expert_parallel
+        assert rest.quantize_weights_before_calibration
+        assert describe_recipe(cfg.quantization)["fp8_weights_before_gptq"] is True
+
+
+def test_preparation_configuration_rejects_unsupported_composition():
+    import pytest
+
+    from pipeline.config import ModelConfig, PipelineConfig, QuantizationConfig
+
+    for overrides in (
+        {"method": "awq"},
+        {"fp8_scheme": "FP8_DYNAMIC"},
+        {"fp8_dynamic_targets": []},
+    ):
+        kwargs = dict(
+            method="gptq",
+            fp8_scheme="FP8_BLOCK",
+            fp8_dynamic_targets=["attention"],
+            fp8_weights_before_gptq=True,
+        )
+        kwargs.update(overrides)
+        cfg = PipelineConfig(
+            model=ModelConfig(id="local"), quantization=QuantizationConfig(**kwargs)
+        )
+        with pytest.raises(ValueError, match="fp8_weights_before_gptq"):
+            cfg.validate()

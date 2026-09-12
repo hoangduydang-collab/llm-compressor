@@ -39,6 +39,9 @@ class CalibrationPipeline(ABC, RegistryMixin):
         """
         user = standardize_lookup_name(user) if user else None
         inferred = standardize_lookup_name(cls._infer_pipeline(modifiers))
+        if any(getattr(m, "quantize_weights_before_calibration", False)
+               for m in modifiers) and (user or inferred) != "sequential":
+            raise ValueError("FP8 weight preparation requires pipeline='sequential'")
         independent = standardize_lookup_name("independent")
 
         if user == independent:

@@ -29,12 +29,22 @@ def _nccl_worker(rank, workdir, case):
     _lifecycle_worker(
         rank,
         workdir,
-        dynamic=case == "mixed-disk",
-        compare_baseline=case == "ddp-ep-parity",
-        disk_offload=case != "ddp-ep-parity",
+        dynamic=case in ("mixed-disk", "early-fp8-parity", "early-fp8-disk"),
+        compare_baseline=case in ("ddp-ep-parity", "early-fp8-parity"),
+        disk_offload=case not in ("ddp-ep-parity", "early-fp8-parity"),
+        early_fp8=case in ("early-fp8-parity", "early-fp8-disk"),
     )
 
 
-@pytest.mark.parametrize("case", ["ddp-ep-parity", "weight-only-disk", "mixed-disk"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "ddp-ep-parity",
+        "weight-only-disk",
+        "mixed-disk",
+        "early-fp8-parity",
+        "early-fp8-disk",
+    ],
+)
 def test_two_gpu_nccl_expert_gptq_collective_save_reload(tmp_path, case):
     _launch(_nccl_worker, tmp_path, case, backend="nccl")

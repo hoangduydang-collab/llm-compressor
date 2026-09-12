@@ -77,6 +77,11 @@ def build_recipe(quant: QuantizationConfig) -> list:
     method = quant.method
     if quant.gptq_expert_parallel and method != "gptq":
         raise ValueError("gptq_expert_parallel currently requires method=gptq")
+    if quant.fp8_weights_before_gptq and (
+        method != "gptq" or quant.fp8_scheme != "FP8_BLOCK"
+        or not quant.fp8_dynamic_targets
+    ):
+        raise ValueError("fp8_weights_before_gptq requires GPTQ with FP8_BLOCK targets")
     scheme = quant.scheme
     ignore = list(quant.ignore)
 
@@ -93,6 +98,7 @@ def build_recipe(quant: QuantizationConfig) -> list:
                 QuantizationModifier(
                     targets=list(quant.fp8_dynamic_targets),
                     scheme=quant.fp8_scheme,
+                    quantize_weights_before_calibration=quant.fp8_weights_before_gptq,
                 )
             )
         return recipe
@@ -159,6 +165,9 @@ def describe_recipe(quant: QuantizationConfig) -> dict:
         "awq_duo_scaling": quant.awq_duo_scaling,
         "gptq_dampening_frac": quant.gptq_dampening_frac,
         "gptq_offload_hessians": quant.gptq_offload_hessians,
+        "gptq_expert_parallel": quant.gptq_expert_parallel,
         "fp8_dynamic_targets": list(quant.fp8_dynamic_targets),
         "fp8_scheme": quant.fp8_scheme,
+        "fp8_weights_before_gptq": quant.fp8_weights_before_gptq,
+        "checkpoint_format": quant.checkpoint_format,
     }

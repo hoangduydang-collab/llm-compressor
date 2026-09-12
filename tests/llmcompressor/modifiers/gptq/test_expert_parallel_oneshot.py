@@ -1,10 +1,9 @@
 """Small real GLM sequential GPTQ, collective export and offline reload.
 
 CPU/Gloo coverage is separate from the required executor NCCL qualification.
-The weight-only case compares the complete DDP and EP walk. The mixed FP8-rest
-case checks EP modifier isolation and save/reload: legacy mixed DDP overwrites
-GPTQ scales, so it is not a valid numerical reference for the corrected EP path.
-The separate expert test compares dynamic-activation GPTQ against its reference.
+The weight-only and early block-FP8 cases compare the complete DDP and EP walk.
+The historical mixed FP8-rest case checks EP isolation and save/reload. The new
+case also freezes FP8 scale/payloads and uses a block-aligned real GLM fixture.
 """
 
 import gc
@@ -66,8 +65,10 @@ def _processor():
     )
 
 
-def _recipe(ep, dynamic):
+def _recipe(ep, dynamic, early_fp8=False, group_size=8):
     targets = ["re:.*mlp\\.(experts\\.\\d+\\.)?(gate_proj|up_proj|down_proj)$"]
+    if early_fp8:
+        targets = [r"re:.*mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$"]
     scheme = {
         "targets": targets,
         "weights": {
@@ -75,7 +76,7 @@ def _recipe(ep, dynamic):
             "type": "int",
             "symmetric": True,
             "strategy": "group",
-            "group_size": 8,
+            "group_size": group_size,
         },
     }
     if dynamic:
@@ -88,23 +89,55 @@ def _recipe(ep, dynamic):
     main = GPTQModifier(
         config_groups={"experts": scheme},
         expert_parallel=ep,
-        block_size=8,
-        actorder="group",
+        block_size=group_size,
+        actorder="static" if early_fp8 else "group",
     )
     if not dynamic:
         return [main]
+    rest_scheme = "FP8_DYNAMIC"
+    if early_fp8:
+        from compressed_tensors.quantization import preset_name_to_scheme
+
+        # The independent reference also uses tiny widths below activation
+        # group size. These tests isolate block-FP8 WEIGHT preparation/replay.
+        rest_scheme = preset_name_to_scheme("FP8_BLOCK", ["Linear"])
+        rest_scheme.input_activations = None
     return [
         main,
         QuantizationModifier(
-            scheme="FP8_DYNAMIC",
+            **(
+                {"config_groups": {"rest": rest_scheme}}
+                if early_fp8
+                else {"scheme": rest_scheme}
+            ),
+            quantize_weights_before_calibration=early_fp8,
             targets=["Linear"],
             ignore=targets + ["lm_head", "re:.*gate$"],
         ),
     ]
 
 
+def _relative_errors(actual, expected):
+    difference = (actual.double() - expected.double()).abs()
+    return {
+        "absolute_max": float(difference.max()),
+        "relative_frobenius": float(
+            difference.norm() / expected.double().norm().clamp_min(1e-12)
+        ),
+        "normalized_max": float(
+            difference.max() / expected.double().abs().max().clamp_min(1e-12)
+        ),
+    }
+
+
 def _lifecycle_worker(
-    rank, workdir, dynamic, *, compare_baseline=True, disk_offload=False
+    rank,
+    workdir,
+    dynamic,
+    *,
+    compare_baseline=True,
+    disk_offload=False,
+    early_fp8=False,
 ):
     device = (
         torch.device("cuda", rank)
@@ -115,10 +148,28 @@ def _lifecycle_worker(
         name: value.to(device) for name, value in next(iter(_calibration(rank))).items()
     }
     reference_output, reference_hessians, reference_propagation = None, None, None
-    compare_baseline = compare_baseline and not dynamic
+    reference_weight_output = None
+    expected_fp8 = {}
+    compare_baseline = compare_baseline and (not dynamic or early_fp8)
     for ep in (False, True) if compare_baseline else (True,):
         arm = "ep" if ep else "ddp"
-        model = build_model(num_hidden_layers=3, first_k_dense_replace=1, n_experts=3)
+        model = build_model(
+            num_hidden_layers=3,
+            first_k_dense_replace=1,
+            n_experts=3,
+            config_overrides={
+                "hidden_size": 256,
+                "intermediate_size": 256,
+                "moe_intermediate_size": 256,
+                "kv_lora_rank": 256,
+                "q_lora_rank": 256,
+                "qk_rope_head_dim": 128,
+                "qk_nope_head_dim": 128,
+                "v_head_dim": 128,
+            }
+            if early_fp8
+            else None,
+        )
         model.to(device)
         if disk_offload:
             from compressed_tensors.offload import offload_module
@@ -137,9 +188,7 @@ def _lifecycle_worker(
                     # Linearization already gives experts CPU offload caches.
                     # Reuse CT's transition helper before installing disk caches.
                     remove_module_offload(module, onload_tensors=True)
-                    offload_module(
-                        module, device, "disk", offload_dir=str(offload_dir)
-                    )
+                    offload_module(module, device, "disk", offload_dir=str(offload_dir))
             _phase(workdir, rank, "disk:offload-complete")
         model.config.use_cache = False
         model.config._attn_implementation = "eager"
@@ -182,6 +231,7 @@ def _lifecycle_worker(
                 and module in modules
                 and getattr(module, "weight_scale", None) is not None
                 for attribute in ("weight_scale", "weight_zero_point", "weight_g_idx")
+                if getattr(module, attribute, None) is not None
             }
             result = rest_epoch(modifier, state, event, modules, **kwargs)
             if ep:
@@ -202,7 +252,9 @@ def _lifecycle_worker(
             oneshot(
                 model=model,
                 processor=_processor(),
-                recipe=_recipe(ep, dynamic),
+                recipe=_recipe(
+                    ep, dynamic, early_fp8, group_size=128 if early_fp8 else 8
+                ),
                 dataset=_calibration(rank),
                 num_calibration_samples=4,
                 sequential_targets=["GlmMoeDsaDecoderLayer"],
@@ -225,38 +277,99 @@ def _lifecycle_worker(
         with torch.no_grad(), disable_offloading():
             output = model(**inputs).logits
         assert torch.isfinite(output).all()
+        weight_output = output
+        if early_fp8:
+            from llmcompressor.utils.helpers import DisableQuantization
+
+            # Compare the requested weight-calibration semantics separately from
+            # dynamic activation rounding used in the save/reload forward below.
+            with torch.no_grad(), disable_offloading(), DisableQuantization(model):
+                weight_output = model(**inputs).logits
+        if early_fp8:
+            from compressed_tensors.quantization import quantize
+
+            for name, module in model.named_modules():
+                scheme = getattr(module, "quantization_scheme", None)
+                if scheme is not None and scheme.weights.type == "float":
+                    scale = module.weight_scale.detach().cpu().clone()
+                    payload = quantize(
+                        module.weight,
+                        module.weight_scale,
+                        module.weight_zero_point,
+                        scheme.weights,
+                        dtype=torch.float8_e4m3fn,
+                    ).cpu()
+                    expected_fp8[name] = (scale, payload)
+        if dynamic:
+            from pipeline.quantize import _stamp_mixed_precision_formats
+
+            _stamp_mixed_precision_formats(model)
         if not ep:
             reference_output = output.detach().clone()
+            reference_weight_output = weight_output.detach().clone()
             reference_hessians = combined
             reference_propagation = propagation
             model.save_pretrained(str(workdir / "ddp-checkpoint"), save_compressed=True)
         else:
             if compare_baseline:
                 assert len(propagation) == len(reference_propagation)
+                parity = {}
+                if early_fp8:
+                    for index, ((_, actual), (_, expected)) in enumerate(
+                        zip(propagation, reference_propagation)
+                    ):
+                        for name, value in actual.items():
+                            parity[f"replay-{index}:{name}"] = _relative_errors(
+                                value, expected[name]
+                            )
+                    for name, (hessian, _) in combined.items():
+                        parity[f"hessian:{name}"] = _relative_errors(
+                            hessian, reference_hessians[name][0]
+                        )
+                    parity["weight_only_logits"] = _relative_errors(
+                        weight_output, reference_weight_output
+                    )
+                    (workdir / f"rank-{rank}-fp8-parity.json").write_text(
+                        json.dumps(parity, indent=2, sort_keys=True)
+                    )
+                    (workdir / f"rank-{rank}-activation-logits.json").write_text(
+                        json.dumps(_relative_errors(output, reference_output), indent=2)
+                    )
+                    # Distributed accumulation order can cross an INT4 rounding
+                    # boundary. Gate aggregate error without unstable relative
+                    # comparisons at individual values close to zero.
+                    for name, errors in parity.items():
+                        assert errors["relative_frobenius"] < 1e-3, (name, errors)
+                        assert errors["normalized_max"] < 1e-2, (name, errors)
                 for (batch, actual), (ref_batch, expected) in zip(
                     propagation, reference_propagation
                 ):
                     assert batch == ref_batch and set(actual) == set(expected)
-                    for name, value in actual.items():
-                        torch.testing.assert_close(
-                            value, expected[name], rtol=3e-4, atol=2e-5
-                        )
+                    if not early_fp8:
+                        for name, value in actual.items():
+                            torch.testing.assert_close(
+                                value, expected[name], rtol=3e-4, atol=2e-5
+                            )
                 assert set(combined) == set(reference_hessians)
                 for name, (hessian, count) in combined.items():
                     expected_hessian, expected_count = reference_hessians[name]
                     assert count == expected_count == 4
+                    # The first routed block sees identical prepared FP8 inputs;
+                    # later blocks also carry preceding INT4 solve differences.
+                    if not early_fp8 or name.startswith("model.layers.1."):
+                        torch.testing.assert_close(
+                            hessian, expected_hessian, rtol=3e-4, atol=2e-5
+                        )
+                        torch.testing.assert_close(
+                            hessian / count,
+                            expected_hessian / expected_count,
+                            rtol=3e-4,
+                            atol=2e-5,
+                        )
+                if not early_fp8:
                     torch.testing.assert_close(
-                        hessian, expected_hessian, rtol=3e-4, atol=2e-5
+                        output, reference_output, rtol=2e-3, atol=2e-4
                     )
-                    torch.testing.assert_close(
-                        hessian / count,
-                        expected_hessian / expected_count,
-                        rtol=3e-4,
-                        atol=2e-5,
-                    )
-                torch.testing.assert_close(
-                    output, reference_output, rtol=2e-3, atol=2e-4
-                )
             expected_experts = {
                 name
                 for name, module in model.named_modules()
@@ -272,6 +385,7 @@ def _lifecycle_worker(
                     "weight_g_idx",
                     "weight_shape",
                 )
+                if attribute != "weight_g_idx" or not early_fp8
             }
             expected_quantized_output = output.detach().clone()
             if dynamic:
@@ -293,10 +407,25 @@ def _lifecycle_worker(
     with (checkpoint / "config.json").open() as stream:
         config = json.load(stream)
     quantization_config = config["quantization_config"]
+    if early_fp8:
+        from pipeline.serve_ignore import weight_map_of
+
+        weight_map = weight_map_of(checkpoint)
+        assert expected_fp8
+        for name, (scale, payload) in expected_fp8.items():
+            for suffix, expected in (("weight_scale", scale), ("weight", payload)):
+                key = f"{name}.{suffix}"
+                with safe_open(
+                    str(checkpoint / weight_map[key]), framework="pt"
+                ) as src:
+                    actual = src.get_tensor(key)
+                assert actual.dtype == expected.dtype
+                assert torch.equal(actual.view(torch.uint8), expected.view(torch.uint8))
     groups = quantization_config["config_groups"].values()
     int4_groups = [group for group in groups if group["weights"]["num_bits"] == 4]
     assert int4_groups and all(
-        group["weights"]["group_size"] == 8 for group in int4_groups
+        group["weights"]["group_size"] == (128 if early_fp8 else 8)
+        for group in int4_groups
     )
     for group in int4_groups:
         activations = group.get("input_activations")
@@ -348,6 +477,11 @@ def _lifecycle_worker(
             attn_implementation="eager",
         )
     assert all(parameter.device.type != "meta" for parameter in reloaded.parameters())
+    if early_fp8:
+        for name, (scale, _) in expected_fp8.items():
+            torch.testing.assert_close(
+                reloaded.get_submodule(name).weight_scale.cpu(), scale, rtol=0, atol=0
+            )
     reloaded.eval()
     with torch.no_grad():
         output = reloaded(**inputs).logits
@@ -364,9 +498,7 @@ def test_real_glm_gloo_oneshot_collective_save_reload(tmp_path, dynamic):
 
 
 def _disk_lifecycle_worker(rank, workdir, dynamic):
-    _lifecycle_worker(
-        rank, workdir, dynamic, compare_baseline=False, disk_offload=True
-    )
+    _lifecycle_worker(rank, workdir, dynamic, compare_baseline=False, disk_offload=True)
 
 
 @pytest.mark.parametrize("dynamic", [False, True], ids=["weight-only", "fp8-rest"])
@@ -380,6 +512,11 @@ def _preflight_worker(rank, workdir, defect):
 
     model = build_model(num_hidden_layers=3, first_k_dense_replace=1, n_experts=3)
     recipe = _recipe(True, False)
+    if defect == "fp8-dtype":
+        recipe = _recipe(True, True, early_fp8=True)
+        if rank == 1:
+            projection = model.model.layers[0].self_attn.q_a_proj
+            projection.weight.data = projection.weight.data.double()
     data = list(_calibration(rank))
     if defect == "zero-steps":
         data = []
@@ -418,7 +555,84 @@ def _preflight_worker(rank, workdir, defect):
 
 
 @pytest.mark.parametrize(
-    "defect", ["zero-steps", "unequal-steps", "static-activations"]
+    "defect", ["zero-steps", "unequal-steps", "static-activations", "fp8-dtype"]
 )
 def test_real_oneshot_preflight_rejects_before_forward(tmp_path, defect):
     _launch(_preflight_worker, tmp_path, defect)
+
+
+def _early_fp8_worker(rank, workdir, disk):
+    _lifecycle_worker(
+        rank,
+        workdir,
+        True,
+        compare_baseline=not disk,
+        disk_offload=disk,
+        early_fp8=True,
+    )
+
+
+@pytest.mark.parametrize("disk", [False, True], ids=["ddp-ep-parity", "disk"])
+def test_real_glm_fp8_before_gptq_save_reload(tmp_path, disk):
+    _launch(_early_fp8_worker, tmp_path, disk)
+
+
+def test_fp8_preparation_matches_independent_two_block_reference():
+    from compressed_tensors.utils import match_named_modules
+
+    from pipeline.sglang_w4afp8_kernels import dequantize_block_fp8, quantize_block_fp8
+
+    arms = []
+    for explicit_reference in (True, False):
+        model = build_model(num_hidden_layers=2, first_k_dense_replace=1, n_experts=2)
+        recipe = _recipe(False, True, early_fp8=True)
+        if explicit_reference:
+            for _, module in match_named_modules(
+                model, recipe[1].resolved_targets, recipe[1].ignore
+            ):
+                payload, scale = quantize_block_fp8(module.weight.detach())
+                module.weight.data.copy_(dequantize_block_fp8(payload, scale))
+            recipe[1].quantize_weights_before_calibration = False
+        records, propagation = {}, []
+        solve = GPTQModifier._solve_module
+        update = IntermediatesCache.update
+
+        def record_solve(modifier, module):
+            records[modifier._module_names[module]] = modifier._hessians[module].clone()
+            return solve(modifier, module)
+
+        def record_update(cache, batch, values):
+            propagation.append(
+                {
+                    name: value.detach().clone()
+                    for name, value in values.items()
+                    if isinstance(value, torch.Tensor)
+                }
+            )
+            return update(cache, batch, values)
+
+        with patch.object(GPTQModifier, "_solve_module", record_solve), patch.object(
+            IntermediatesCache, "update", record_update
+        ):
+            oneshot(
+                model=model,
+                processor=_processor(),
+                recipe=recipe,
+                dataset=_calibration(0),
+                num_calibration_samples=2,
+                sequential_targets=["GlmMoeDsaDecoderLayer"],
+                pipeline="sequential",
+                moe_calibrate_all_experts=True,
+            )
+        arms.append((records, propagation))
+        active_session().reset()
+    reference, actual = arms
+    assert reference[0] and reference[1]
+    assert actual[0].keys() == reference[0].keys()
+    for name, hessian in actual[0].items():
+        torch.testing.assert_close(hessian, reference[0][name], rtol=1e-6, atol=1e-6)
+    assert len(actual[1]) == len(reference[1])
+    for observed, expected in zip(actual[1], reference[1]):
+        assert observed.keys() == expected.keys()
+        for name, value in observed.items():
+            torch.testing.assert_close(value, expected[name], rtol=1e-6, atol=1e-6)

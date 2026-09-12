@@ -39,5 +39,12 @@
   "warnings": "14 upstream torch.jit.script_method deprecation warnings per pytest process; no final errors/failures/skips",
   "initial_integration_error": "Repository file-count guard detected root documentation commit creating .git objects during pytest; all17 test bodies passed; isolated final retry17passed. No test or production change made for the guard.",
   "gpu_work": "none; full Rancher runtime overhead not measured",
-  "review": "pending independent final review"
+  "review": "PASS/APPROVE: no blocking findings; see final-review.md",
+  "review_note": "Optional low-severity presentation issue: resource sample order may vary because paired spans are traversed as a set; all numeric observations remain in JSON.",
+  "dependencies": {
+    "torch": "2.11.0+cu128",
+    "loguru": "0.7.3",
+    "compressed-tensors": "0.17.2a20260707",
+    "pytest": "9.1.1"
+  }
 }

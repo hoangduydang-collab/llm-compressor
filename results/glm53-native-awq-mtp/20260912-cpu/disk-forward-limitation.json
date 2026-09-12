@@ -1,0 +1,18 @@
+{
+  "status": "identified library limitation in test forward path",
+  "failed_suite": {
+    "passed": 142,
+    "failed": 1,
+    "seconds": 115.44
+  },
+  "failed_test": "pipeline/tests/test_native_sglang_save.py::test_two_process_collective_native_save[True]",
+  "cause": "CT ModelCompressor.decompress_model uses an independent module loop and explicitly does not support distributed decompression. Recoupled ranks share compressed DiskCache filenames. A source replacement deletes a file while its peer still onloads it.",
+  "repair_contract": "Assert restored compressed values on shared disk on every rank; materialize each tiny model with CT remove_dispatch(onload_tensors=True); execute forward on private CPU state on every rank. Preserve single-process disk-forward tests and original failure evidence.",
+  "production_scope": "No production quantization/save changes; distributed post-save sample generation is already disabled. No claim that CT distributed decompression is supported.",
+  "installed_source_sha256": {
+    "compressors/model_compressors/model_compressor.py": "7bdfc1b024498981636bd39aad17f17eb8e5523faaf3e9ff520c0bc71411f584",
+    "offload/cache/dist_disk.py": "c54421bb6a96a06165862f83c5a6bdae26e8174a2da9ca57345939695d9486de",
+    "offload/cache/disk.py": "04bcf87ae6902f1fdb4a5c4d0ec62f21222dbfef2070aefd767c31e7d7d404bd",
+    "offload/module.py": "52f0a328f00c5fc1eca07bc70926eba195f855cd5e0c0c12618777b903d7a2f8"
+  }
+}

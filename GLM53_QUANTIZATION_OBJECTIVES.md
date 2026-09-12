@@ -146,6 +146,17 @@ authorized GPU qualification; local two-H100 job 841530 is queued, and the
 delegates Rancher deployment resolution and representative EP4/EP8 execution to
 the executor. This handoff returns evidence before a new full-model run.
 
+**AWQ/MTP continuation (owner-approved 2026-09-12):** the same native writer now
+supports AWQ, and optional same-source MTP assembly is integrated into export.
+Both full GLM-5.3 recipes produce the combined native checkpoint
+without a converter, indexer repatch or manual graft command. Main expert weights
+retain AWQ/GPTQ; MTP expert weights use the existing RTN quantizer, explicitly
+recorded in provenance. The five-layer representative recipe remains MTP absent.
+See [the AWQ/MTP implementation guide](docs/glm53-native-awq-mtp.md) and
+[pinned source/runtime evidence](docs/research/2026-09-12-native-mtp-reuse.md).
+The combined CPU suite passes 144 tests. Runtime, activation-scale and
+paired-quality qualification remain open.
+
 ## 3. Diagnose shared-storage overhead across the entire run
 
 **Owner report:** AWQ was very slow on shared storage on the inaccessible Rancher

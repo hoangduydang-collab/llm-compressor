@@ -1,10 +1,13 @@
 # Active executor handoff: native W4AFP8 representative qualification
 
-Protocol: PLANNER_EXECUTOR_PROTOCOL v1. Packet revision: 1 (2026-09-12).
+Protocol: PLANNER_EXECUTOR_PROTOCOL v1. Packet revision: 2 (2026-09-12).
 State: READY_FOR_EXECUTOR — deployment discovery, then gated representative runs.
 Branch: `duy-branch`. Implementation/base commit:
 `d90ea79c49b4e62d314cc8d9eba190fdfba0ddf4`.
-Record the actual handoff commit from `git rev-parse HEAD` after pulling this file.
+The queued local worker remains pinned to that commit. For new executor qualification,
+use the current `duy-branch` commit containing the AWQ/MTP extension and record its
+SHA from `git rev-parse HEAD` after pulling this file. The representative GPTQ
+recipe retains absent-MTP behavior.
 
 **Owner instruction:** “push to my branch, for executor access, just write a
 handoff with info you have, the executor will figure the rancher stuff”. This
@@ -26,13 +29,18 @@ Run the five-layer representative only; return evidence before a full rerun.
 - Direct native SGLang W4AFP8 save through the existing collective writer; no
   intermediate CT checkpoint or post-quant conversion is required.
 - Native policy: INT4 group 128, E4M3 block 128x128, fixed-unit expert input
-  scales, dynamic linear activations. MTP absent; no speculative decoding.
+  scales, dynamic linear activations. The representative recipe has MTP absent;
+  full AWQ/GPTQ recipes now request integrated same-source RTN MTP assembly.
 - 138 CPU tests passed. See [implementation](glm53-fp8-before-gptq-implementation.md)
   and [raw numerical evidence](evidence/2026-09-12-fp8-before-gptq-cpu.json).
 - Local Slurm job **841530** is queued for the five-case two-H100 NCCL gate.
   [Local controller/evidence](../results/glm53-ep-gptq/20260912-fp8-before-gptq-h100/).
-  Last checked: PENDING (Resources); this is not a pass. Do not cancel this or
+  Last checked during this update: PENDING (Resources); this is not a pass. Do not cancel this or
   unrelated jobs. Run the same gate in your actual quantization environment.
+
+The AWQ/MTP extension adds **144 passing combined CPU tests**, including real
+AWQ export and real GLM native-save/MTP composition. [Evidence and exact versions](../results/glm53-native-awq-mtp/20260912-cpu/validation.json)
+record this extension's validation; serving remains unqualified.
 
 ## Known Rancher inputs; executor verifies and resolves them
 
@@ -115,6 +123,7 @@ the next stage. Create fresh log/report directories under the fresh run root.
 
 ```bash
 python -m pytest -q pipeline/tests/test_native_sglang_save.py \
+  pipeline/tests/test_native_mtp.py \
   pipeline/tests/test_glm53_ep_gptq_configs.py \
   tests/llmcompressor/modifiers/quantization/test_weight_preparation.py
 CUDA_VISIBLE_DEVICES=0,1 python -m pytest -vv -rA \
@@ -224,3 +233,71 @@ comparison separately. On a partial failure, retain the completed lane and retur
 the first failing operation and raw evidence. Do not label the task fully qualified
 from checkpoint hashing alone. Return for analysis before full-model quantization
 or meaningful model-quality benchmarking; no full run is in this handoff.
+
+
+## AWQ and MTP extension: additional qualification evidence
+
+The owner explicitly requested integrated MTP and no separate post-quant conversion
+for either AWQ or GPTQ. [The implementation guide](glm53-native-awq-mtp.md)
+describes the final pipeline path. Both full recipes emit native W4AFP8 and request
+`quantization.mtp_policy: source-rtn`; the representative recipe stays `absent`.
+Do not execute the full recipes as part of this six-hour representative packet.
+Existing main-only artifacts remain main-only; a successful CPU test does not
+retroactively add a draft layer to them.
+
+Before using a full recipe, run source MTP preflight against the same verified BF16
+snapshot and record its complete inventory, source revision and metadata hashes.
+The pinned release has 791 MTP tensors: 768 expert matrices plus 23 other tensors.
+Its correction bias is FP32; 790 tensors are BF16. Verify all source shards are
+locally readable, including 270–274; do not download a different vendor FP8 draft.
+[Recorded public source headers](evidence/2026-09-12-native-mtp-source-contract.json)
+provide the expected source contract. This CPU-only command validates source
+metadata without quantizing or writing a checkpoint:
+
+```bash
+python - <<'PY_MTP'
+import json
+import os
+from transformers import AutoConfig
+from pipeline.native_mtp import preflight_native_mtp
+
+source = os.environ["NATIVE_SOURCE"]
+config = AutoConfig.from_pretrained(source, local_files_only=True)
+plan = preflight_native_mtp(source, config)
+print(json.dumps(plan.provenance(), indent=2, sort_keys=True))
+PY_MTP
+```
+
+Capture stdout and exit code in the run evidence. For a local snapshot, the path
+and config/index/header hashes identify the source even when Transformers does
+not populate `_commit_hash`; Hub-ID resolution requires the loaded commit hash.
+
+Additional runtime evidence still needed after the CPU gates:
+
+- AWQ: an actual calibration/native-save artifact must load and forward on the
+  recorded SGLang runtime, preserving its AWQ folds and native FP8 payload. Use
+  a bounded representative recipe with `mtp_policy: absent`, `method: awq`,
+  `gptq_expert_parallel: false` and `fp8_weights_before_gptq: false`. Do not
+  interpret a GPTQ-only runtime smoke as AWQ qualification.
+- MTP: inspect and load the automatically assembled draft with the pinned runtime.
+  Record complete loaded parameter coverage, input-scale mapping, finite forward
+  output and a bounded speculative request. Check metadata declares exactly one
+  draft layer and the manifest includes every added tensor hash. Draft experts
+  are RTN, not calibrated AWQ/GPTQ. Keep target/draft depths and source revision
+  consistent; an original layer-78 draft cannot qualify a truncated five-layer
+  target without changing the experiment.
+- Preserve the native manifest and main-shard hashes before/after assembly, phase
+  timings, new-shard byte count and all gate exit codes. There must be no separate
+  converter, indexer repatch or manual graft invocation in the successful pipeline.
+
+These are separate qualification requirements, not an extension of the existing
+allocation ceiling or permission to launch a full quantization/quality run.
+Return serialization/runtime evidence before claiming objective 2 complete or
+comparing speculative acceptance rate and throughput.
+
+
+CPU requalification must retain the repaired collective-save fixture: it checks
+shared compressed state on every rank, then materializes private CPU state before
+forward. CT distributed decompression is unsupported and was the source of a
+reproduced missing-cache-file failure in the old test, not a native artifact
+failure. See [the finding and raw evidence](../results/glm53-native-awq-mtp/20260912-cpu/disk-forward-limitation.json).

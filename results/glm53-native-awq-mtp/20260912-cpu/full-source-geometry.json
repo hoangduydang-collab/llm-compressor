@@ -1,0 +1,7 @@
+{
+  "source_inventory_matches_pinned_headers": true,
+  "source_tensors": 791,
+  "native_tensors": 2337,
+  "source_revision": "304b8051cfb2b260b61ce0cbe330e02a98e73639",
+  "weight_payload_read": false
+}

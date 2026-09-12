@@ -24,11 +24,11 @@
 
 **Interfaces:** Existing `native_sglang_save(model)` and `assert_native_sglang_preflight(model, schemes)` remain method-independent. Config `checkpoint_format: sglang-w4afp8` supports plain AWQ and GPTQ.
 
-- [ ] Write failing config and actual tiny GLM AWQ lifecycle tests. The output must pass `verify_native_sglang_checkpoint` on first save, preserve folds/FP8 payload and restore CT state. Exercise disk-offload saving as feasible with the existing fixture; no converter invocation.
-- [ ] Accept AWQ W4AFP8 with disjoint FP8_BLOCK targets, keeping GPTQ early preparation mandatory and rejecting unsupported methods/layouts.
-- [ ] Resolve schemes only from quantization modifiers; AWQ is transform-only and must not receive `resolve_quantization_config()`.
-- [ ] Enable direct native output in the full GLM-5.3 AWQ recipe; preserve calibration behavior.
-- [ ] Run relevant native/config/recipe tests and Ruff; commit only task files and report exact commands/results.
+- [x] Write failing config and actual tiny GLM AWQ lifecycle tests. The output must pass `verify_native_sglang_checkpoint` on first save, preserve folds/FP8 payload and restore CT state. Exercise disk-offload saving as feasible with the existing fixture; no converter invocation.
+- [x] Accept AWQ W4AFP8 with disjoint FP8_BLOCK targets, keeping GPTQ early preparation mandatory and rejecting unsupported methods/layouts.
+- [x] Resolve schemes only from quantization modifiers; AWQ is transform-only and must not receive `resolve_quantization_config()`.
+- [x] Enable direct native output in the full GLM-5.3 AWQ recipe; preserve calibration behavior.
+- [x] Run relevant native/config/recipe tests and Ruff; commit only task files and report exact commands/results.
 
 ### Task 2: Optional native MTP assembly
 
@@ -36,13 +36,13 @@
 
 **Interfaces:** Add `quantization.mtp_policy` values `absent` (default) and `source-rtn`; permit source-rtn only for native W4AFP8. Export `preflight_native_mtp(source, model_config)` returning a validated source plan, and `assemble_native_mtp(checkpoint, plan)` returning assembly evidence. Resolve Hub source IDs to the already-cached snapshot using existing Hub helpers, never choose a different source revision.
 
-- [ ] Test full tiny source inventory, missing/mismatched source pre-calibration, correct expert `.w1/w2/w3.input_scale` names, exact reused INT4/FP8 output, complete hashes including copied BF16 tensors, duplicate assembly and interrupted/failed publication.
-- [ ] Validate source config/index/header metadata, main/source depth and architecture, expert IDs/projections, draft tensors, dtypes/geometries before oneshot. Use bounded reads and explicit required inventory; a partial source must fail.
-- [ ] Reuse `graft_mtp_w4afp8` quantizers/classification and `graft_mtp_head` inventory helpers. Stage only new MTP shards; reject file collisions; verify before publishing. On ordinary failure restore metadata and remove only created files. An interruption marker invalidates incomplete artifacts.
-- [ ] Extend manifest/verifier for complete MTP assembly, source provenance, layer and RTN policy. Main shard bytes must remain unchanged. Handle both single-shard and indexed native main checkpoints.
-- [ ] Invoke preflight before oneshot; assembly source-only after final existing barrier and before offline verification. No non-source collective follows assembly.
-- [ ] Enable source-rtn in the AWQ and GPTQ full recipes, keep representative absent, record policy in recipe provenance.
-- [ ] Run MTP/native/config/graft regression tests and Ruff; commit only task files and report commands/results.
+- [x] Test full tiny source inventory, missing/mismatched source pre-calibration, correct expert `.w1/w2/w3.input_scale` names, exact reused INT4/FP8 output, complete hashes including copied BF16 tensors, duplicate assembly and interrupted/failed publication.
+- [x] Validate source config/index/header metadata, main/source depth and architecture, expert IDs/projections, draft tensors, dtypes/geometries before oneshot. Use bounded reads and explicit required inventory; a partial source must fail.
+- [x] Reuse `graft_mtp_w4afp8` quantizers/classification and `graft_mtp_head` inventory helpers. Stage only new MTP shards; reject file collisions; verify before publishing. On ordinary failure restore metadata and remove only created files. An interruption marker invalidates incomplete artifacts.
+- [x] Extend manifest/verifier for complete MTP assembly, source provenance, layer and RTN policy. Main shard bytes must remain unchanged. Handle both single-shard and indexed native main checkpoints.
+- [x] Invoke preflight before oneshot; assembly source-only after final existing barrier and before offline verification. No non-source collective follows assembly.
+- [x] Enable source-rtn in the AWQ and GPTQ full recipes, keep representative absent, record policy in recipe provenance.
+- [x] Run MTP/native/config/graft regression tests and Ruff; commit only task files and report commands/results.
 
 ### Task 3: Review and executor documentation
 

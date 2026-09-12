@@ -1,0 +1,12 @@
+{
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "compressed-tensors": "0.17.2a20260707",
+    "transformers": "5.12.1",
+    "safetensors": "0.8.0",
+    "pytest": "9.1.1",
+    "huggingface-hub": "1.23.0"
+  },
+  "transformers_version_source": "module.__version__ (distribution metadata omitted Version)"
+}

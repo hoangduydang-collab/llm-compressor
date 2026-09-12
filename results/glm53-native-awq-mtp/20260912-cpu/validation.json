@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-12",
+  "status": "cpu_passed_runtime_pending",
+  "combined": {
+    "tests": 144,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 107.09,
+    "command": "OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 PYTHONPATH=src:. .venv-prequant/bin/python -m pytest -q pipeline/tests/test_native_mtp.py pipeline/tests/test_native_sglang_save.py pipeline/tests/test_glm53_ep_gptq_configs.py pipeline/tests/test_graft_mtp_w4afp8.py pipeline/tests/test_resolve_weight_index.py tests/pipeline/test_r8_fp8_recipe.py --junitxml=/tmp/native-mtp-final-pass.xml"
+  },
+  "environment": {
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "packages": {
+      "torch": "2.11.0+cu128",
+      "compressed-tensors": "0.17.2a20260707",
+      "transformers": "5.12.1",
+      "safetensors": "0.8.0",
+      "pytest": "9.1.1",
+      "huggingface-hub": "1.23.0"
+    },
+    "transformers_version_source": "module.__version__ (distribution metadata omitted Version)"
+  },
+  "source_geometry": {
+    "source_inventory_matches_pinned_headers": true,
+    "source_tensors": 791,
+    "native_tensors": 2337,
+    "source_revision": "304b8051cfb2b260b61ce0cbe330e02a98e73639",
+    "weight_payload_read": false
+  },
+  "coverage": [
+    "real AWQ calibration and first-write native INT4/FP8 preservation",
+    "real Transformers GLM native save then complete MTP assembly and verification",
+    "source identity/inventory/dtype/geometry before calibration",
+    "exact reused RTN and FP8 tensors, copied F32 bias, all added tensor hashes",
+    "source mutation, collisions, partial publication, corruption and rollback",
+    "source-only post-barrier assembly; no main-payload reads during assembly",
+    "all-rank restored shared compressed state followed by private CPU forward"
+  ],
+  "limitations": [
+    "SGLang GPU target/draft load, forward, acceptance rate, throughput and paired quality remain unqualified",
+    "MTP routed experts use RTN, not AWQ/GPTQ calibration",
+    "CT distributed decompression remains unsupported; repaired test materializes private CPU states using existing CT API",
+    "No full quantization job or new GPU allocation was launched"
+  ],
+  "previous_failure_evidence": "disk-forward-limitation.json",
+  "implementation_commit": "f25b179b057fdc2e51608c5ee26db19615f64518",
+  "source_sha256": {
+    "pipeline/native_mtp.py": "028602286f5c952be3bd79b1b53dc806c209c5d112687a8b5b2ef8873f3239a3",
+    "pipeline/native_sglang_save.py": "bd8dc268c06beeb178d0ab7d97836f4d5187fb4e479828bd01d694731c636d74",
+    "pipeline/config.py": "357fb1634d806e76c35deb6b8779bd56a263ec70938973f47b9ba4829fa89cc7",
+    "pipeline/recipe.py": "e5245c5682460217a8cbc2f7a78352690858694df10c7788af6b0294671b7003",
+    "pipeline/quantize.py": "00f0ec3afacdb3a0ff00eef4b6da228010c0137735d62a58cc0d88aa73608f6f",
+    "pipeline/graft_mtp_w4afp8.py": "9c5577a17f1a97e573b15a89371af1e3a0c359572f7c705d28f63841ea677f22",
+    "pipeline/tests/test_native_mtp.py": "c4d870d89a93af1193ea5179001c32a35081644d8c65b2da83eb9d53c2adc566",
+    "pipeline/tests/test_native_sglang_save.py": "d04f25cd80b2ca21aa746b38b7fb7e91d35ee5b30482e0b59958e3e03af0fd9f",
+    "pipeline/configs/glm53_distributed_w4afp8_awq_full.yaml": "b52a1d7f29b3ee6dbf9cb32a61f8c494dac85c0d911552dd1acbb722239c3a22",
+    "pipeline/configs/glm53_ep_gptq_w4afp8_full.yaml": "a0dc3c13949c4ecc39047528dee9a6f5e54d74062d55be73e00652244d6bfcdf"
+  }
+}

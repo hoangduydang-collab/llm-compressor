@@ -48,8 +48,10 @@ The serving contract is GLM native INT4 group 128 plus E4M3 128x128 FP8 blocks.
 Expert input scales use the existing **fixed unit** policy; metadata explicitly
 sets static MoE inputs and dynamic linear inputs. This is not activation-scale
 optimization. Unsupported inventories and group activation ordering are rejected.
-MTP is **absent** (`num_nextn_predict_layers: 0`); speculative decoding still needs
-separately qualified draft-layer assembly.
+The original implementation and representative recipe declare MTP **absent**
+(`num_nextn_predict_layers: 0`). The [AWQ/MTP extension](glm53-native-awq-mtp.md)
+adds automatic same-source assembly for the full recipes; speculative runtime
+qualification remains separate.
 
 `native_sglang_manifest.json` records full tensor inventory and save-time SHA256
 hashes of all quantized tensors. The source-only offline gate reads the checkpoint

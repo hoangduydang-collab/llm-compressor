@@ -1,0 +1,195 @@
+........................................................................ [ 50%]
+..F....................................................................  [100%]
+=================================== FAILURES ===================================
+________________ test_two_process_collective_native_save[True] _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-e1129930/pytest-19/test_two_process_collective_na0')
+disk = True
+
+    @pytest.mark.parametrize("disk", [False, True])
+    def test_two_process_collective_native_save(tmp_path, disk):
+        import torch.multiprocessing as mp
+    
+        (tmp_path / "offload").mkdir()
+        context = mp.spawn(
+            _distributed_save_worker, args=(str(tmp_path), disk), nprocs=2, join=False
+        )
+        try:
+>           while not context.join(timeout=30):
+                      ^^^^^^^^^^^^^^^^^^^^^^^^
+
+pipeline/tests/test_native_sglang_save.py:365: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <torch.multiprocessing.spawn.ProcessContext object at 0x7fdbef8f91c0>
+timeout = 30, grace_period = None
+
+    def join(self, timeout: float | None = None, grace_period: float | None = None):
+        r"""Join one or more processes within spawn context.
+    
+        Attempt to join one or more processes in this spawn context.
+        If one of them exited with a non-zero exit status, this function
+        kills the remaining processes (optionally with a grace period)
+        and raises an exception with the cause of the first process exiting.
+    
+        Returns ``True`` if all processes have been joined successfully,
+        ``False`` if there are more processes that need to be joined.
+    
+        Args:
+            timeout (float): Wait this long (in seconds) before giving up on waiting.
+            grace_period (float): When any processes fail, wait this long (in seconds)
+                for others to shutdown gracefully before terminating them. If they
+                still don't exit, wait another grace period before killing them.
+        """
+        # Ensure this function can be called even when we're done.
+        if len(self.sentinels) == 0:
+            return True
+    
+        # Wait for any process to fail or all of them to succeed.
+        ready = multiprocessing.connection.wait(
+            self.sentinels.keys(),
+            timeout=timeout,
+        )
+    
+        error_index = None
+        for sentinel in ready:
+            index = self.sentinels.pop(sentinel)
+            process = self.processes[index]
+            process.join()
+            if process.exitcode != 0:
+                error_index = index
+                break
+    
+        # Return if there was no error.
+        if error_index is None:
+            # Return whether or not all processes have been joined.
+            return len(self.sentinels) == 0
+        # An error occurred. Clean-up all processes before returning.
+        # First, allow a grace period for processes to shutdown themselves.
+        if grace_period is not None:
+            self._join_procs_with_timeout(grace_period)
+        # Then, terminate processes that are still alive. Try SIGTERM first.
+        for process in self.processes:
+            if process.is_alive():
+                log.warning("Terminating process %s via signal SIGTERM", process.pid)
+                process.terminate()
+    
+        # Try SIGKILL if the process isn't going down after another grace_period.
+        # The reason is related to python signal handling is limited
+        # to main thread and if that is in c/c++ land and stuck it won't
+        # to handle it. We have seen processes getting stuck not handling
+        # SIGTERM for the above reason.
+        self._join_procs_with_timeout(30 if grace_period is None else grace_period)
+        for process in self.processes:
+            if process.is_alive():
+                log.warning(
+                    "Unable to shutdown process %s via SIGTERM , forcefully exiting via SIGKILL",
+                    process.pid,
+                )
+                process.kill()
+            process.join()
+    
+        # The file will only be created if the process crashed.
+        failed_process = self.processes[error_index]
+        if not os.access(self.error_files[error_index], os.R_OK):
+            exitcode = self.processes[error_index].exitcode
+            if exitcode < 0:
+                try:
+                    name = signal.Signals(-exitcode).name
+                except ValueError:
+                    name = f"<Unknown signal {-exitcode}>"
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with signal {name}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                    signal_name=name,
+                )
+            else:
+                raise ProcessExitedException(
+                    f"process {error_index:d} terminated with exit code {exitcode:d}",
+                    error_index=error_index,
+                    error_pid=failed_process.pid,
+                    exit_code=exitcode,
+                )
+    
+        with open(self.error_files[error_index], "rb") as fh:
+            original_trace = pickle.load(fh)
+        msg = f"\n\n-- Process {error_index:d} terminated with the following error:\n"
+        msg += original_trace
+>       raise ProcessRaisedException(msg, error_index, failed_process.pid)
+E       torch.multiprocessing.spawn.ProcessRaisedException: 
+E       
+E       -- Process 1 terminated with the following error:
+E       Traceback (most recent call last):
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py", line 87, in _wrap
+E           fn(i, *args)
+E         File "/home/e/e1129930/llm-compressor/pipeline/tests/test_native_sglang_save.py", line 351, in _distributed_save_worker
+E           assert_restored(model, expected)
+E         File "/home/e/e1129930/llm-compressor/pipeline/tests/test_native_sglang_save.py", line 161, in assert_restored
+E           output = model(torch.randn(1, 128).bfloat16())
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+E           return self._call_impl(*args, **kwargs)
+E                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1885, in _call_impl
+E           return inner()
+E                  ^^^^^^^
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1822, in inner
+E           args_result = hook(self, args)
+E                         ^^^^^^^^^^^^^^^^
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/compressors/model_compressors/model_compressor.py", line 244, in ct_decompress_hook
+E           self.decompress_model(model)
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/compressors/model_compressors/model_compressor.py", line 184, in decompress_model
+E           decompress_module(module, self.force_compression_format)
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/compressors/base.py", line 219, in decompress_module
+E           compressor.decompress_module(module)
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/compressors/base.py", line 127, in decompress_module
+E           state_dict = get_direct_state_dict(module)
+E                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/utils/module.py", line 23, in get_direct_state_dict
+E           return {
+E                  ^
+E         File "<frozen _collections_abc>", line 894, in __iter__
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/cache/base.py", line 195, in __getitem__
+E           onloaded = self.onload(offloaded)
+E                      ^^^^^^^^^^^^^^^^^^^^^^
+E         File "/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/compressed_tensors/offload/cache/disk.py", line 73, in onload
+E           with safe_open(
+E                ^^^^^^^^^^
+E       FileNotFoundError: No such file or directory: /tmp/pytest-of-e1129930/pytest-19/test_two_process_collective_na0/offload/ct_disk_cache_0_140353915129280.safetensors
+
+.venv-prequant/lib/python3.12/site-packages/torch/multiprocessing/spawn.py:211: ProcessRaisedException
+----------------------------- Captured stdout call -----------------------------
+2026-09-12T15:18:35.0518 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+2026-09-12T15:18:35.0519 | get_main_device | WARNING - No accelerator available! Compressing model on CPU instead
+----------------------------- Captured stderr call -----------------------------
+Validating native SGLang parameters:   0%|          | 0/2 [00:00<?, ?it/s]
+Validating native SGLang parameters:   0%|          | 0/3 [00:00<?, ?it/s][AValidating native SGLang parameters: 100%|██████████| 3/3 [00:00<00:00, 153.03it/s]Validating native SGLang parameters: 100%|██████████| 2/2 [00:00<00:00, 99.65it/s]
+
+
+Compressing native SGLang model:   0%|          | 0/3 [00:00<?, ?it/s]Compressing native SGLang model:   0%|          | 0/2 [00:00<?, ?it/s][ACompressing native SGLang model: 100%|██████████| 3/3 [00:00<00:00, 117.74it/s]Compressing native SGLang model: 100%|██████████| 2/2 [00:00<00:00, 78.50it/s]
+
+/home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/transformers/modeling_utils.py:3486: UserWarning: Attempting to save a model with offloaded modules. Ensure that unallocated cpu memory exceeds the `shard_size` (50GB default)
+  warnings.warn(
+Writing model shards:   0%|          | 0/3 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 3/3 [00:00<00:00, 908.45it/s]
+Dispatching model:   0%|          | 0/19 [00:00<?, ?it/s]Dispatching model:   0%|          | 0/19 [00:00<?, ?it/s]Dispatching model:  84%|████████▍ | 16/19 [00:00<00:00, 56.81it/s]Dispatching model:  84%|████████▍ | 16/19 [00:00<00:00, 56.69it/s]Dispatching model: 100%|██████████| 19/19 [00:00<00:00, 65.33it/s]
+Dispatching model: 100%|██████████| 19/19 [00:00<00:00, 65.37it/s]
+Restoring CT model layout:   0%|          | 0/2 [00:00<?, ?it/s]
+Restoring CT model layout:   0%|          | 0/3 [00:00<?, ?it/s][ARestoring CT model layout: 100%|██████████| 2/2 [00:00<00:00, 61.62it/s]
+Restoring CT model layout: 100%|██████████| 3/3 [00:00<00:00, 94.44it/s]
+Decompressing model:   0%|          | 0/5 [00:00<?, ?it/s]Decompressing model:   0%|          | 0/5 [00:00<?, ?it/s]Decompressing model:   0%|          | 0/5 [00:00<?, ?it/s]
+Decompressing model:   0%|          | 0/5 [00:00<?, ?it/s]
+=============================== warnings summary ===============================
+.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+pipeline/tests/test_native_sglang_save.py::test_actual_ct_save_first_write_and_restore[True]
+  /home/e/e1129930/llm-compressor/.venv-prequant/lib/python3.12/site-packages/transformers/modeling_utils.py:3486: UserWarning: Attempting to save a model with offloaded modules. Ensure that unallocated cpu memory exceeds the `shard_size` (50GB default)
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED pipeline/tests/test_native_sglang_save.py::test_two_process_collective_native_save[True]
+1 failed, 142 passed, 15 warnings in 115.44s (0:01:55)

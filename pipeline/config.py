@@ -123,6 +123,8 @@ class CalibrationConfig:
     # This lets execution packets commit an immutable calibration fixture while
     # preserving the existing Hub-dataset behavior when unset.
     dataset_data_files: str | None = None
+    # Optional verified fixed-token calibration bundle prepared on CPU.
+    prepared_dataset: str | None = None
     num_samples: int = 256
     max_seq_length: int = 2048
     seed: int = 42

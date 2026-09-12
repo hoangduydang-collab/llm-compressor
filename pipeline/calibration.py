@@ -89,8 +89,18 @@ def _load_raw_dataset(cal: CalibrationConfig):
 
 def build_calibration_dataset_with_partition(cal: CalibrationConfig, tokenizer):
     """Load/tokenize calibration data and return its rank-local partition."""
-    ds = _load_raw_dataset(cal)
-    ds = ds.shuffle(seed=cal.seed)
+    if cal.prepared_dataset is not None:
+        from pipeline.calibration_bundle import load_calibration_bundle
+
+        ds = load_calibration_bundle(
+            cal.prepared_dataset,
+            tokenizer,
+            cal.num_samples,
+            cal.max_seq_length,
+        )
+    else:
+        ds = _load_raw_dataset(cal)
+        ds = ds.shuffle(seed=cal.seed)
 
     global_num_samples = len(ds)
     rank, world_size = _distributed_rank_world_size()
@@ -104,6 +114,9 @@ def build_calibration_dataset_with_partition(cal: CalibrationConfig, tokenizer):
     )
     if world_size > 1:
         ds = ds.select(range(start, end))
+
+    if cal.prepared_dataset is not None:
+        return ds, partition
 
     column_names = ds.column_names
     has_messages = "messages" in column_names

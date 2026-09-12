@@ -300,6 +300,10 @@ def _lifecycle_worker(
                         dtype=torch.float8_e4m3fn,
                     ).cpu()
                     expected_fp8[name] = (scale, payload)
+        # Native/generic save mutates compressed offload state. Do not let a
+        # faster rank begin that transition while a peer is still collecting
+        # the frozen FP8 payload/scale evidence from shared disk-cache files.
+        dist.barrier()
         if dynamic:
             from pipeline.quantize import _stamp_mixed_precision_formats
 

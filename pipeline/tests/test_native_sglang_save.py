@@ -504,8 +504,9 @@ def test_two_process_invalid_scale_fails_collectively_before_mutation(tmp_path, 
 
 
 @pytest.mark.parametrize("missing_indexer_target", [False, True])
+@pytest.mark.parametrize("method", ["gptq", "awq"])
 def test_pipeline_preflights_before_oneshot_and_selects_native_save(
-    tmp_path, monkeypatch, missing_indexer_target
+    tmp_path, monkeypatch, missing_indexer_target, method
 ):
     from types import SimpleNamespace
 
@@ -520,9 +521,9 @@ def test_pipeline_preflights_before_oneshot_and_selects_native_save(
     cfg = PipelineConfig()
     cfg.model.id = str(tmp_path)
     cfg.quantization.checkpoint_format = "sglang-w4afp8"
-    cfg.quantization.method = "gptq"
-    cfg.quantization.gptq_expert_parallel = True
-    cfg.quantization.fp8_weights_before_gptq = True
+    cfg.quantization.method = method
+    cfg.quantization.gptq_expert_parallel = method == "gptq"
+    cfg.quantization.fp8_weights_before_gptq = method == "gptq"
     cfg.quantization.fp8_scheme = "FP8_BLOCK"
     cfg.quantization.ignore = ["lm_head", "re:.*self_attn.*"]
     cfg.quantization.fp8_dynamic_targets = [
@@ -584,3 +585,153 @@ def test_pipeline_preflights_before_oneshot_and_selects_native_save(
         assert events == ["preflight", "oneshot", "native_verify"]
         assert_native(checkpoint, expected)
         assert_restored(model, expected)
+
+
+def test_real_awq_lifecycle_writes_native_payload_and_restores_state(
+    tmp_path, monkeypatch
+):
+    import transformers.modeling_utils as mu
+
+    from llmcompressor import oneshot
+    from llmcompressor.core import active_session
+    from llmcompressor.modifiers.quantization import QuantizationModifier
+    from llmcompressor.modifiers.transform.awq import AWQModifier
+    from tests.llmcompressor.modeling.moe.test_expert_parallel_equivalence import (
+        build_model,
+    )
+    from tests.llmcompressor.modifiers.gptq.test_expert_parallel_oneshot import (
+        _calibration,
+        _processor,
+    )
+
+    model = build_model(
+        num_hidden_layers=3,
+        first_k_dense_replace=1,
+        n_experts=2,
+        config_overrides={
+            "hidden_size": 128,
+            "intermediate_size": 128,
+            "moe_intermediate_size": 128,
+            "kv_lora_rank": 128,
+            "q_lora_rank": 128,
+            "qk_rope_head_dim": 64,
+            "qk_nope_head_dim": 64,
+            "v_head_dim": 64,
+        },
+    )
+    model.config.use_cache = False
+    model.config._attn_implementation = "eager"
+    expert_targets = [
+        r"re:.*mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$"
+    ]
+    recipe = [
+        AWQModifier(duo_scaling=False, n_grid=3),
+        QuantizationModifier(targets=expert_targets, scheme="W4AFP8"),
+        QuantizationModifier(
+            targets=["Linear"],
+            scheme="FP8_BLOCK",
+            ignore=expert_targets
+            + [
+                "lm_head",
+                r"re:.*mlp\.gate$",
+                r"re:.*indexer\.(weights_proj|k_norm)$",
+            ],
+        ),
+    ]
+    expert_name = "model.layers.1.mlp.experts.0.gate_proj"
+    fold_name = "model.layers.1.post_attention_layernorm.weight"
+    before_awq = model.get_submodule(expert_name).weight.detach().clone()
+    try:
+        oneshot(
+            model=model,
+            processor=_processor(),
+            recipe=recipe,
+            dataset=_calibration(0),
+            num_calibration_samples=2,
+            sequential_targets=["GlmMoeDsaDecoderLayer"],
+            pipeline="sequential",
+            moe_calibrate_all_experts=True,
+        )
+        assert not torch.equal(before_awq, model.get_submodule(expert_name).weight)
+        assert_native_sglang_preflight(model)
+
+        expert = model.get_submodule(expert_name)
+        expert_state = {
+            key: value.detach().clone()
+            for key, value in get_direct_state_dict(expert).items()
+            if value is not None
+        }
+        expected_ct = PackedQuantizationCompressor.compress(
+            expert_state, expert.quantization_scheme
+        )
+        fp8_name = "model.layers.1.self_attn.o_proj"
+        fp8 = model.get_submodule(fp8_name)
+        fp8_state = {
+            key: value.detach().clone()
+            for key, value in get_direct_state_dict(fp8).items()
+            if value is not None
+        }
+        expected_fp8 = FloatQuantizationCompressor.compress(
+            fp8_state, fp8.quantization_scheme
+        )
+        expected_fold = model.state_dict()[fold_name].detach().clone()
+        original_writer = mu.safe_save_file
+        first_write_checked = False
+
+        def check_native_first_write(tensors, filename, **kwargs):
+            nonlocal first_write_checked
+            assert not any(key.endswith(".weight_packed") for key in tensors)
+            first_write_checked = True
+            return original_writer(tensors, filename, **kwargs)
+
+        monkeypatch.setattr(mu, "safe_save_file", check_native_first_write)
+        output = tmp_path / "native-awq"
+        with native_sglang_save(model):
+            model.save_pretrained(output, max_shard_size="1MB")
+        assert first_write_checked
+        assert verify_native_sglang_checkpoint(output)["ok"]
+
+        tensors = {}
+        for shard in output.glob("*.safetensors"):
+            tensors.update(load_file(shard))
+        shape = torch.Size(expected_ct["weight_shape"].tolist())
+        unpacked = default_unpacker(expected_ct["weight_packed"], shape)
+        raw = tensors[f"{expert_name}.weight"].view(torch.uint8).to(torch.int16)
+        values = torch.stack((raw & 15, raw >> 4), dim=-1).reshape(shape)
+        values = torch.where(values >= 8, values - 16, values).to(torch.int8)
+        assert torch.equal(values, unpacked)
+        assert torch.equal(
+            tensors[f"{expert_name}.weight_scale_inv"], expected_ct["weight_scale"]
+        )
+        assert torch.equal(
+            tensors["model.layers.1.mlp.experts.0.w1.input_scale"],
+            torch.ones(1, dtype=torch.bfloat16),
+        )
+        assert torch.equal(
+            tensors[f"{fp8_name}.weight"].view(torch.uint8),
+            expected_fp8["weight"].view(torch.uint8),
+        )
+        assert tensors[f"{fp8_name}.weight_scale_inv"].dtype == torch.float32
+        assert torch.equal(
+            tensors[f"{fp8_name}.weight_scale_inv"],
+            expected_fp8["weight_scale"].float(),
+        )
+        assert torch.equal(tensors[fold_name], expected_fold)
+
+        for module, expected in ((expert, expected_ct), (fp8, expected_fp8)):
+            restored = {
+                key: value
+                for key, value in get_direct_state_dict(module).items()
+                if value is not None
+            }
+            assert restored.keys() == expected.keys()
+            for key, want in expected.items():
+                actual = restored[key]
+                assert actual.dtype == want.dtype
+                if actual.dtype == torch.float8_e4m3fn:
+                    actual, want = actual.view(torch.uint8), want.view(torch.uint8)
+                assert torch.equal(actual, want)
+            assert module.quantization_status == QuantizationStatus.COMPRESSED
+        assert torch.equal(model.state_dict()[fold_name], expected_fold)
+    finally:
+        active_session().reset()

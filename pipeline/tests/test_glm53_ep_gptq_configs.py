@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from pipeline.config import load_config
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -80,8 +82,6 @@ def test_w4afp8_recipes_prepare_weights_before_gptq_and_export_natively():
 
 
 def test_preparation_configuration_rejects_unsupported_composition():
-    import pytest
-
     from pipeline.config import ModelConfig, PipelineConfig, QuantizationConfig
 
     for overrides in (
@@ -101,3 +101,51 @@ def test_preparation_configuration_rejects_unsupported_composition():
         )
         with pytest.raises(ValueError, match="fp8_weights_before_gptq"):
             cfg.validate()
+
+
+def test_full_awq_w4afp8_recipe_exports_natively_without_gptq_preparation():
+    from pipeline.recipe import build_recipe
+
+    cfg = load_config(
+        ROOT / "pipeline/configs/glm53_distributed_w4afp8_awq_full.yaml"
+    )
+    assert cfg.quantization.method == "awq"
+    assert cfg.quantization.scheme == "W4AFP8"
+    assert cfg.quantization.fp8_scheme == "FP8_BLOCK"
+    assert cfg.quantization.fp8_dynamic_targets
+    assert cfg.quantization.fp8_weights_before_gptq is False
+    assert cfg.quantization.checkpoint_format == "sglang-w4afp8"
+    cfg.validate()
+    awq, quant, fp8 = build_recipe(cfg.quantization)
+    assert type(awq).__name__ == "AWQModifier"
+    assert type(quant).__name__ == "QuantizationModifier"
+    assert type(fp8).__name__ == "QuantizationModifier"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"method": "quant_only"},
+        {"method": "smoothquant+awq"},
+        {"method": "gptq", "fp8_weights_before_gptq": False},
+        {"scheme": "W4A16"},
+        {"fp8_scheme": "FP8_DYNAMIC"},
+        {"fp8_dynamic_targets": []},
+    ],
+)
+def test_native_export_rejects_unsupported_composition(overrides):
+    from pipeline.config import ModelConfig, PipelineConfig, QuantizationConfig
+
+    kwargs = dict(
+        method="awq",
+        scheme="W4AFP8",
+        fp8_scheme="FP8_BLOCK",
+        fp8_dynamic_targets=["attention"],
+        checkpoint_format="sglang-w4afp8",
+    )
+    kwargs.update(overrides)
+    cfg = PipelineConfig(
+        model=ModelConfig(id="local"), quantization=QuantizationConfig(**kwargs)
+    )
+    with pytest.raises(ValueError, match="plain AWQ or GPTQ"):
+        cfg.validate()

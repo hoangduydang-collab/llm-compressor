@@ -328,13 +328,20 @@ class PipelineConfig:
                 "fp8_weights_before_gptq requires sequential GPTQ "
                 "with FP8_BLOCK targets"
             )
-        if quant.checkpoint_format == "sglang-w4afp8" and (
-            quant.method != "gptq" or quant.scheme != "W4AFP8"
-            or not quant.fp8_weights_before_gptq
-        ):
-            raise ValueError(
-                "native SGLang export requires W4AFP8 GPTQ with FP8 weight preparation"
-            )
+        if quant.checkpoint_format == "sglang-w4afp8":
+            supported_method = quant.method in {"gptq", "awq"}
+            gptq_prepared = quant.method != "gptq" or quant.fp8_weights_before_gptq
+            if (
+                not supported_method
+                or quant.scheme != "W4AFP8"
+                or quant.fp8_scheme != "FP8_BLOCK"
+                or not quant.fp8_dynamic_targets
+                or not gptq_prepared
+            ):
+                raise ValueError(
+                    "native SGLang export requires plain AWQ or GPTQ with W4AFP8, "
+                    "disjoint FP8_BLOCK targets, and GPTQ FP8 weight preparation"
+                )
         if self.model.device_map == "auto_offload" and not self.model.offload_folder:
             raise ValueError(
                 "model.offload_folder is required when device_map='auto_offload'"

@@ -102,6 +102,7 @@ quantization:
   # from the vendor, and that is safe: it is outside this recipe's scope entirely
   # and never folded.
   fp8_scheme: FP8_BLOCK
+  checkpoint_format: sglang-w4afp8
   sample_generation: false
 
 calibration:

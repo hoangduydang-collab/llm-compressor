@@ -1356,12 +1356,17 @@ def _run_quantize(
     if native_output:
         from compressed_tensors.utils import match_named_modules
 
+        from llmcompressor.modifiers.quantization.quantization.mixin import (
+            QuantizationMixin,
+        )
         from pipeline.native_sglang_save import assert_native_sglang_preflight
 
         # Resolve the future scheme without initializing/onloading the model.
         # Reject an incompatible serving inventory before the calibration walk.
         schemes = {}
         for modifier in recipe:
+            if not isinstance(modifier, QuantizationMixin):
+                continue
             for scheme in modifier.resolve_quantization_config().config_groups.values():
                 for name, _ in match_named_modules(
                     model, scheme.targets, modifier.ignore

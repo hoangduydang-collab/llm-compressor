@@ -104,10 +104,14 @@ schema. Normalized tool results already contain the publisher's truncation.
 The adapter groups turns by `session_id` and orders them by `turn_number`, keeping
 assistant reasoning, responses, tool calls and tool results. It excludes metadata
 rather than treating each database row as a separate calibration example. Rendering
-uses the target tokenizer's chat template and structured tool arguments.
+uses the target tokenizer's chat template and structured tool arguments. SWE-chat
+window selection requires token offset mappings (supported by GLM's fast tokenizer).
 
 Sampling considers substantive assistant work across the session, with preceding
-context. It does not always take the first 2,048 tokens and does not select windows
+context. Anchor spans are located in the final rendered session and mapped to its
+tokens; each selected window must overlap the chosen assistant payload. The manifest
+records the merged message's constituent turns and the selected field/span, rather
+than attributing the entire merged message to its last original turn. It does not always take the first 2,048 tokens and does not select windows
 consisting only of metadata or tool output. These are inexpensive structural rules,
 not an assertion that the window is difficult or that the code is correct.
 
@@ -148,7 +152,7 @@ budget; it is not a matched-token experimental control for this bundle.
 
 ## Local validation
 
-The calibration/config/distributed regression set passes 35 tests. The existing
+The calibration/config/distributed regression set passes 38 tests. The existing
 Torch dependency emits 14 `torch.jit.script_method` deprecation warnings. A separate
 CPU smoke with the real pinned GLM tokenizer and synthetic generic/agent traces
 produced identical AWQ/GPTQ token hashes and selected agent windows thousands of

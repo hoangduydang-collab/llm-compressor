@@ -1,3 +1,8 @@
+> Historical initial implementation report for c6d5e163. Independent review
+> required canonical assistant spans and constituent-turn provenance; the final
+> implementation and regenerated integration-result.json include those fixes.
+> See fix-report.md for the final source validation.
+
 # Task 1 implementation report: mixed calibration bundles
 
 Status: DONE

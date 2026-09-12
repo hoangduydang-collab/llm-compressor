@@ -7,7 +7,8 @@ preparation/consumption, not quantized model quality or production dataset acces
 The input records are synthetic (8 generic conversations, 8 agent sessions), with
 long predictable prefixes and later reasoning/tool/patch turns. The preparation
 command succeeded. Both mixed pipeline configs consumed identical token IDs;
-all selected agent windows had nonzero offsets and assistant markup. Runtime
+all selected agent windows must have nonzero offsets and substantive assistant
+text/tool payload. The verifier checks actual decoded content, not just markup. Runtime
 padding/truncation settings did not alter the tokenizer identity hash.
 See integration-result.json for raw observed counts, offsets, anchor turns,
 preview text and both consumer hashes. prepare.log preserves dataset-loader output.
@@ -23,10 +24,14 @@ python -m pipeline.prepare_calibration \
   --tokenizer zai-org/GLM-5.3-BF16 \
   --tokenizer-revision 304b8051cfb2b260b61ce0cbe330e02a98e73639 \
   --output /tmp/mixed-calibration-reproduction
+PYTHONPATH=src:. python results/mixed-calibration/20260912-cpu/verify_smoke_bundle.py \
+  --bundle /tmp/mixed-calibration-reproduction \
+  --tokenizer zai-org/GLM-5.3-BF16 \
+  --tokenizer-revision 304b8051cfb2b260b61ce0cbe330e02a98e73639 \
+  --output /tmp/mixed-calibration-verification.json
 ```
 
-Load that directory through `build_calibration_dataset_with_partition` with each
-mixed pipeline config's calibration replaced with `prepared_dataset` pointing to
-it, `num_samples=8`, `max_seq_length=128`. Verify the returned partition manifests
-against integration-result.json. The original smoke used the same tokenizer
+The verifier loads the bundle through both mixed pipeline configurations at the
+smoke dimensions, compares their token hashes and checks the decoded agent windows.
+Compare its output against integration-result.json. The original smoke used the same tokenizer
 revision from its local snapshot path. Names/paths do not enter the behavior hash.

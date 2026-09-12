@@ -1,0 +1,210 @@
+{
+  "date": "2026-09-12",
+  "source_revision": "304b8051cfb2b260b61ce0cbe330e02a98e73639",
+  "source_repo": "zai-org/GLM-5.3-BF16",
+  "method": "Public pinned config/index and bounded safetensors header reads only; no weight payload downloaded",
+  "config_sha256": "ca8f2f47b07919a514c0ca223dc2ea2bc7445afaa5ac76c013a3784e096426ca",
+  "index_sha256": "5fd47a926aefce0f2c917f42523e5e0f3c87e23e389e767c3681536a62f5cf5e",
+  "mtp_tensor_count": 791,
+  "mtp_expert_tensor_count": 768,
+  "mtp_dtype_counts": {
+    "BF16": 790,
+    "F32": 1
+  },
+  "mtp_nonexpert_and_expert0_metadata": {
+    "model.layers.78.eh_proj.weight": {
+      "shape": [
+        6144,
+        12288
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.enorm.weight": {
+      "shape": [
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.hnorm.weight": {
+      "shape": [
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.input_layernorm.weight": {
+      "shape": [
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.experts.0.down_proj.weight": {
+      "shape": [
+        6144,
+        2048
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.experts.0.gate_proj.weight": {
+      "shape": [
+        2048,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.experts.0.up_proj.weight": {
+      "shape": [
+        2048,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.gate.e_score_correction_bias": {
+      "shape": [
+        256
+      ],
+      "dtype": "F32"
+    },
+    "model.layers.78.mlp.gate.weight": {
+      "shape": [
+        256,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.shared_experts.down_proj.weight": {
+      "shape": [
+        6144,
+        2048
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.shared_experts.gate_proj.weight": {
+      "shape": [
+        2048,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.mlp.shared_experts.up_proj.weight": {
+      "shape": [
+        2048,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.post_attention_layernorm.weight": {
+      "shape": [
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.indexer.k_norm.bias": {
+      "shape": [
+        128
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.indexer.k_norm.weight": {
+      "shape": [
+        128
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.indexer.weights_proj.weight": {
+      "shape": [
+        32,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.indexer.wk.weight": {
+      "shape": [
+        128,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.indexer.wq_b.weight": {
+      "shape": [
+        4096,
+        2048
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.kv_a_layernorm.weight": {
+      "shape": [
+        512
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.kv_a_proj_with_mqa.weight": {
+      "shape": [
+        576,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.kv_b_proj.weight": {
+      "shape": [
+        28672,
+        512
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.o_proj.weight": {
+      "shape": [
+        6144,
+        16384
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.q_a_layernorm.weight": {
+      "shape": [
+        2048
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.q_a_proj.weight": {
+      "shape": [
+        2048,
+        6144
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.self_attn.q_b_proj.weight": {
+      "shape": [
+        16384,
+        2048
+      ],
+      "dtype": "BF16"
+    },
+    "model.layers.78.shared_head.norm.weight": {
+      "shape": [
+        6144
+      ],
+      "dtype": "BF16"
+    }
+  },
+  "runtime_sources": [
+    "https://github.com/sgl-project/sglang/blob/v0.5.17/python/sglang/srt/models/deepseek_nextn.py",
+    "https://github.com/sgl-project/sglang/blob/v0.5.17/python/sglang/srt/models/deepseek_common/deepseek_weight_loader.py",
+    "https://github.com/sgl-project/sglang/blob/v0.5.17/python/sglang/srt/layers/quantization/w4afp8.py"
+  ],
+  "findings": [
+    "NextN uses one draft layer at num_hidden_layers (special legacy depth=1 maps layer0).",
+    "Draft loader maps NextN-specific enorm/hnorm/eh_proj/shared_head.norm to model.*, other tensors to model.decoder.*.",
+    "W4AFP8 includes make_expert_input_scale_params_mapping for expert .w1/.w2/.w3.input_scale.",
+    "NextN uses target shared head and embeddings rather than draft duplicates.",
+    "Existing pipeline RTN and FP8 helpers are reused; only integrated source validation and publication are new.",
+    "MTP source router correction bias is F32, remaining 790 tensors BF16. Preserve source dtype for copied tensors."
+  ],
+  "expected_native_mtp_tensors": 2337,
+  "expected_native_counts": {
+    "expert_weights": 768,
+    "expert_weight_scales": 768,
+    "expert_input_scales": 768,
+    "fp8_weights": 10,
+    "fp8_weight_scales": 10,
+    "copied_tensors": 13
+  }
+}

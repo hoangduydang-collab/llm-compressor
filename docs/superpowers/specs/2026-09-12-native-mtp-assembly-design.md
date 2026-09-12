@@ -1,4 +1,4 @@
-# Proposed objective-2 continuation: optional native MTP assembly
+# Objective-2 continuation: direct AWQ and optional native MTP assembly
 
 Date: 2026-09-12. Status: approved by owner; includes direct AWQ export per explicit follow-up.
 Implementation baseline: `c3872fe8`; existing MTP helper baseline: 32 CPU tests
@@ -45,7 +45,7 @@ The actual executor runtime revision remains authoritative for serving tests.
 ## Approved behavior
 
 - Add an opt-in native-export MTP policy, default absent. Source-RTN assembly is
-  valid only for native GLM W4AFP8 output with a matching, complete BF16 source.
+  valid only for native GLM W4AFP8 output with a matching, complete BF16 source. Preserve the source FP32 router correction bias.
 - Before expensive calibration, validate source config/index/header metadata,
   source/target depth and architecture, expected expert IDs/projections, required
   draft tensors, supported dtypes/geometries and destination collisions. Use the
@@ -63,7 +63,7 @@ The actual executor runtime revision remains authoritative for serving tests.
   assembly marker makes an interrupted artifact fail verification until repaired.
 - Set MTP presence true only after complete assembly. Extend the native manifest
   with layer number, source provenance, RTN policy and hashes for all added
-  tensors, including copied BF16 tensors. The standalone verifier supports both
+  tensors, including copied BF16/FP32 tensors. The standalone verifier supports both
   absent and assembled policies and rejects partial/mismatched metadata.
 
 ## Validation and boundaries

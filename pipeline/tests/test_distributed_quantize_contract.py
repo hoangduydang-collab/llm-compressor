@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from pipeline.calibration import CalibrationPartition
+from pipeline.config import QuantizationConfig
 from pipeline.distributed import DistributedContext
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -123,7 +124,7 @@ def _quantize_config():
             moe_calibrate_all_experts=True,
             pipeline="sequential",
         ),
-        quantization=SimpleNamespace(
+        quantization=QuantizationConfig(
             scheme="W4AFP8",
             ignore=["lm_head"],
             sample_generation=False,

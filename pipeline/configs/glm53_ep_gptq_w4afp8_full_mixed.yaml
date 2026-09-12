@@ -1,0 +1,54 @@
+# Mixed calibration variant of glm53_ep_gptq_w4afp8_full.yaml.
+# Prepare the shared bundle first; see docs/mixed-calibration.md.
+# Quantization recipe and native W4AFP8/MTP policies match the base config.
+name: glm53_ep_gptq_w4afp8_full_mixed
+model:
+  id: /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639
+  trust_remote_code: true
+  auto_class: AutoModelForCausalLM
+  dtype: bfloat16
+  device_map: auto_offload
+  max_memory:
+    cpu: 32000000000
+  offload_folder: /mnt/cephfs/hoangduy/offload/glm53-ep-gptq-w4afp8-full-mixed
+quantization:
+  method: gptq
+  scheme: W4AFP8
+  ignore:
+  - lm_head
+  - re:.*mlp[.]gate$
+  - re:.*mlp[.]shared_experts[.].*
+  - re:.*self_attn[.].*
+  - re:.*layers[.][0-2][.].*
+  - re:.*layers[.]78[.].*
+  gptq_dampening_frac: 0.01
+  gptq_offload_hessians: false
+  gptq_expert_parallel: true
+  fp8_dynamic_targets:
+  - re:.*model[.]layers[.][0-9]+[.]self_attn[.](q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)$
+  - re:.*model[.]layers[.][0-9]+[.]self_attn[.]indexer[.](wk|wq_b)$
+  - re:.*model[.]layers[.][0-9]+[.]mlp[.]shared_experts[.](gate_proj|up_proj|down_proj)$
+  - re:.*model[.]layers[.][0-2][.]mlp[.](gate_proj|up_proj|down_proj)$
+  sample_generation: false
+  fp8_scheme: FP8_BLOCK
+  fp8_weights_before_gptq: true
+  checkpoint_format: sglang-w4afp8
+  mtp_policy: source-rtn
+calibration:
+  dataset_id: HuggingFaceH4/ultrachat_200k
+  dataset_split: train_sft
+  num_samples: 256
+  max_seq_length: 2048
+  seed: 42
+  moe_calibrate_all_experts: true
+  sequential_targets:
+  - GlmMoeDsaDecoderLayer
+  pipeline: sequential
+  sequential_weight_prefetch: true
+  sequential_weight_prefetch_depth: 1
+  prepared_dataset: /mnt/cephfs/hoangduy/calibration/glm53-generic-agentic-256x2048-s42
+serve:
+  enabled: false
+eval:
+  enabled: false
+output_dir: /mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-mixed

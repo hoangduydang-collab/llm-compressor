@@ -210,6 +210,17 @@ eliminates the separate conversion from future runs. Storage tuning must preserv
 calibration and quality controls. Coordinate format changes with objective 2 to
 eliminate work rather than merely accelerating avoidable conversions.
 
+## Calibration source option
+
+The owner chose a simple configurable generic/coding-agent mixture instead of an
+entropy-selection experiment. Both native AWQ/GPTQ paths can consume the same
+CPU-prepared token bundle; see [mixed calibration usage](docs/mixed-calibration.md).
+The example is 50% UltraChat / 50% SWE-chat, 256 windows of 2048 tokens. SWE-chat
+windows include substantive assistant work across session positions, with preceding
+context. Dataset preparation does not add model-scoring passes or change the
+quantization/MTP recipes. Quality gains remain unmeasured, and the option is not
+a new full-run execution authorization.
+
 ## Executor starting checklist
 
 - Read this brief and the current linked implementation/evidence before proposing

@@ -1,0 +1,22 @@
+# CPU preparation only: python -m pipeline.prepare_calibration --help
+# 128 generic + 128 coding-agent windows; weights are configurable.
+# SWE-chat needs authorized Hugging Face access. See docs/mixed-calibration.md.
+num_samples: 256
+max_seq_length: 2048
+seed: 42
+sources:
+  - name: generic
+    weight: 0.5
+    dataset_id: HuggingFaceH4/ultrachat_200k
+    dataset_split: train_sft
+    dataset_revision: 8049631c405ae6576f93f445c6b8166f76f5505a
+    format: messages
+    column: messages
+  - name: coding_agentic
+    weight: 0.5
+    dataset_id: SALT-NLP/SWE-chat
+    dataset_config_name: conversations
+    dataset_split: train
+    dataset_revision: f66cca95b14caaa4177f7ed5eaa424608dadcffa
+    format: swe_chat
+    id_column: session_id

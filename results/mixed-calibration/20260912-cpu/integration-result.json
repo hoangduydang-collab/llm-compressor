@@ -1,0 +1,60 @@
+{
+  "result": "PASS",
+  "tokenizer": "GLM-5.3-BF16@304b8051cfb2b260b61ce0cbe330e02a98e73639",
+  "counts": {
+    "coding_agentic": 4,
+    "generic": 4
+  },
+  "num_samples": 8,
+  "max_seq_length": 128,
+  "consumer_partitions": {
+    "gptq": {
+      "schema_version": 1,
+      "global_num_samples": 8,
+      "rank": 0,
+      "world_size": 1,
+      "start": 0,
+      "end": 8,
+      "local_num_samples": 8,
+      "token_ids_sha256": "6677aa560b0053bf8d7c51911395302ff290c97b641e010c971205b6b8036c24"
+    },
+    "awq": {
+      "schema_version": 1,
+      "global_num_samples": 8,
+      "rank": 0,
+      "world_size": 1,
+      "start": 0,
+      "end": 8,
+      "local_num_samples": 8,
+      "token_ids_sha256": "6677aa560b0053bf8d7c51911395302ff290c97b641e010c971205b6b8036c24"
+    }
+  },
+  "selected_agent_windows": [
+    {
+      "session": "synthetic-session-1",
+      "offset": 6497,
+      "anchor_turn": 9,
+      "preview": "<arg_key>file_path</arg_key><arg_value>src/boundary_1.py</arg_value><arg_key>old_string</arg_key><arg_value>while index <= limit:</arg_value><arg_key>new_string</arg_key><arg_value"
+    },
+    {
+      "session": "synthetic-session-7",
+      "offset": 4175,
+      "anchor_turn": 4,
+      "preview": " project overview and setup. Existing project overview and setup. Existing project overview and setup. Existing project overview and setup. Existing project overview and setup. Exi"
+    },
+    {
+      "session": "synthetic-session-4",
+      "offset": 5760,
+      "anchor_turn": 7,
+      "preview": " and execution context. Stack frame and execution context. Stack frame and execution context. Stack frame and execution context. Stack frame and execution context. Stack frame and "
+    },
+    {
+      "session": "synthetic-session-2",
+      "offset": 6497,
+      "anchor_turn": 9,
+      "preview": "<arg_key>file_path</arg_key><arg_value>src/boundary_2.py</arg_value><arg_key>old_string</arg_key><arg_value>while index <= limit:</arg_value><arg_key>new_string</arg_key><arg_value"
+    }
+  ],
+  "runtime_tokenizer_settings_do_not_change_identity": true,
+  "scope": "CPU synthetic data and real tokenizer; no model forward or quantization run"
+}

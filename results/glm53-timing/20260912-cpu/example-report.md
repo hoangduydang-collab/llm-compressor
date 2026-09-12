@@ -23,9 +23,12 @@ Process I/O is not unique shared-storage traffic. Missing or reset counters are 
 
 | Phase | Identity | Decoder layer | Ranks | Max (s) | Spread (s) | Status |
 |---|---|---:|---:|---:|---:|---|
-| awq_search | `{"module": "model.layers.3.mlp.experts.0.up_proj"}` | 3 | 1 | 0.189729 | 0.000000 | complete |
-| quantize_run | `{"benchmark": true}` | n/a | 1 | 0.445466 | 0.000000 | complete |
 | awq_search | `decoder-layer rollup` | 3 | 1 | 0.189729 | 0.000000 | complete |
+
+## Slowest layer and subgraph groups
+
+- `awq_search` `{"module": "model.layers.3.mlp.experts.0.up_proj"}`: 0.189729 s max, 0.000000 s spread
+- `awq_search` `{"decoder_layer": 3}`: 0.189729 s max, 0.000000 s spread
 
 ## Incomplete, failed, or ambiguous evidence
 

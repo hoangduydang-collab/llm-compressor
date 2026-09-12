@@ -101,7 +101,7 @@ run**, on this host. This extrapolation is not a measured full-run slowdown. Ful
 against the executor's actual phase evidence; no new GPU allocation is required
 for report generation.
 
-The local complete report took **0.30 seconds** for **4.47 MB / 4,002 boundary
+The local complete report took **0.23 seconds** for **4.47 MB / 4,002 boundary
 records**, measured separately from the observer benchmark. The automatic size
 budget follows this measured cost; it is a byte limit, not a hard wall-time
 guarantee for arbitrary storage. Example JSON/Markdown and the compressed raw
@@ -112,3 +112,9 @@ AWQ smoothing, sequential walk and quantization work functions against the
 previous branch revision. Removing only timer wrappers leaves their work ASTs
 identical, including call order. Runtime tests cover reporting integration and
 exceptions separately.
+
+Validation: **56 distinct CPU tests passed**, including real native AWQ export,
+MTP pipeline ordering, sequential helpers, overlap/rank/partial-log reporting and
+report-failure isolation. Raw logs and JUnit are in the evidence directory.
+PyTorch emitted existing `torch.jit.script_method` deprecation warnings; final
+runs had no failures or errors.

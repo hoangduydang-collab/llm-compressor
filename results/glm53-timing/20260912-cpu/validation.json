@@ -1,0 +1,43 @@
+{
+  "source_commit": "7f09ab1d5d6165449d7432d7fe4811b34b769994",
+  "unique_passing_tests": 56,
+  "suites": {
+    "focused-tests": {
+      "tests": 39,
+      "errors": 0,
+      "failures": 0,
+      "skips": 0
+    },
+    "integration-tests": {
+      "tests": 17,
+      "errors": 0,
+      "failures": 0,
+      "skips": 0
+    },
+    "native-awq-roundtrip": {
+      "tests": 1,
+      "errors": 0,
+      "failures": 0,
+      "skips": 0
+    },
+    "sequential-tests": {
+      "tests": 12,
+      "errors": 0,
+      "failures": 0,
+      "skips": 0
+    }
+  },
+  "source_sha256": {
+    "pipeline/metrics.py": "b0be6241ce51bf21bd8ee4e38824879f0284babd2c37d3fa5b870f8200c465ca",
+    "pipeline/timing_report.py": "70a6cf71bcab6857b8dc15b284bded2165938cc192284ec2e65f75230a60cb1e",
+    "pipeline/quantize.py": "d0271727ba9c66411c5d41f01ad2b1016831d5479f56f4fc1ead5ae221dfc848",
+    "src/llmcompressor/utils/metric_logging.py": "49340b6c8cdb2b94358ec8ec6aca2e723987598597b260ea23eea625e29b0578",
+    "src/llmcompressor/modifiers/transform/awq/base.py": "43acb92f886a59e6ad2d465bd3b5a576b09bd07c4d21854d327ed2362eb5d9ae",
+    "src/llmcompressor/pipelines/sequential/pipeline.py": "47fbc506bd20d095c96faa3ac7c4e43f3d98b99ce6fc4f7b0ebe3fffd3781003"
+  },
+  "python": "3.12.3",
+  "warnings": "14 upstream torch.jit.script_method deprecation warnings per pytest process; no final errors/failures/skips",
+  "initial_integration_error": "Repository file-count guard detected root documentation commit creating .git objects during pytest; all17 test bodies passed; isolated final retry17passed. No test or production change made for the guard.",
+  "gpu_work": "none; full Rancher runtime overhead not measured",
+  "review": "pending independent final review"
+}

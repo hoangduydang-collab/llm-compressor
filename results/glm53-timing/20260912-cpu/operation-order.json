@@ -12,7 +12,7 @@
       "path": "src/llmcompressor/modifiers/transform/awq/base.py",
       "function": "_apply_smoothing",
       "work_ast_identical": true,
-      "source_sha256": "e2bbd7b85c91dab222532aafaf326329f20d5eb9b904ed4522d8ff5c77351d53"
+      "source_sha256": "43acb92f886a59e6ad2d465bd3b5a576b09bd07c4d21854d327ed2362eb5d9ae"
     },
     {
       "path": "src/llmcompressor/pipelines/sequential/pipeline.py",

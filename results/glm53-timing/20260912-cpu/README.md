@@ -21,3 +21,10 @@ python -m pipeline.timing_report /tmp/glm53-timing-sample.jsonl --output-prefix 
 Raw logs retain the original host/rank identity. The absolute source paths in the
 example identify the measurement invocation; the compressed sample above makes
 the input reproducible after temporary files are cleaned up.
+
+`validation.json` records exact source hashes and the 56 distinct passing tests.
+The final focused/integration stdout and JUnit are preserved. The earlier
+integration teardown error came from a simultaneous documentation commit
+triggering the repository file-count guard; the identical suite passed after
+concurrent writes stopped. `operation-order.json` and its script record the
+quantization-work AST comparison.

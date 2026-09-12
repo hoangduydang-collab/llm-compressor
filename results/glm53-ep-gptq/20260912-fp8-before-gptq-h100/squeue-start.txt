@@ -1,0 +1,2 @@
+             JOBID PARTITION     NAME     USER ST          START_TIME  NODES SCHEDNODES           NODELIST(REASON)
+            841530       gpu glm53-fp e1129930 PD 2026-09-12T14:15:07      1 xgpi6                (Resources)

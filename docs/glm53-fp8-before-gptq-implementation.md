@@ -116,3 +116,19 @@ quality comparison with identical calibration/evaluation data. Only fresh
 representative evidence should unlock the new full recipe. Existing W4A16 results
 do not qualify this different calibration path. No full-model or GPU job was
 launched as part of this implementation.
+
+## GPU qualification submitted
+
+On 2026-09-12 the user authorized qualification. Local Slurm job **841530**
+was submitted for two full H100s against fixed implementation commit `d90ea79c`.
+At submission it is **PENDING (Resources)**; no GPU result is claimed.
+The detached controller has an eight-hour queue cap and a 15-minute GPU runtime.
+[Controller, worker and evidence](../results/glm53-ep-gptq/20260912-fp8-before-gptq-h100/)
+record the eventual terminal result. All five tests must execute and pass.
+
+The [active executor handoff](glm53-native-w4afp8-executor-handoff.md) delegates
+Rancher deployment resolution to the executor, as explicitly instructed by the
+owner. It covers native representative EP4/EP8 qualification and evidence return.
+The historical W4A16 chain cannot be reused unchanged: it uses CT-only validators
+and automatically launches full EP8. The owner explicitly authorized publication to `duy-branch` after the initial
+automatic approval rejection. Implementation commit: `d90ea79c`.

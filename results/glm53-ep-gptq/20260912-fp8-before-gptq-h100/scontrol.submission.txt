@@ -1,0 +1,26 @@
+JobId=841530 JobName=glm53-fp8-h100
+   UserId=e1129930(52572) GroupId=soc(140) MCS_label=N/A
+   Priority=4542 Nice=-200 Account=allusers QOS=normal
+   JobState=PENDING Reason=Resources Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=0 Reboot=0 ExitCode=0:0
+   RunTime=00:00:00 TimeLimit=00:15:00 TimeMin=N/A
+   SubmitTime=2026-09-12T13:47:46 EligibleTime=2026-09-12T13:47:46
+   AccrueTime=2026-09-12T13:47:46
+   StartTime=2026-09-12T14:15:07 EndTime=2026-09-12T14:30:07 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-09-12T13:49:12 Scheduler=Main
+   Partition=gpu AllocNode:Sid=xcnc14.comp.nus.edu.sg:849567
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList= SchedNodeList=xgpi6
+   NumNodes=1-1 NumCPUs=4 NumTasks=1 CPUs/Task=4 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=4,mem=16G,node=1,billing=42,gres/gpu=2,gres/gpu:h100-96=2
+   AllocTRES=(null)
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=4 MinMemoryNode=16G MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=NO Exclusive=NO Contiguous=0 Licenses=(null) LicensesAlloc=(null) Network=(null)
+   Command=bash
+   SubmitLine=srun -vvv --partition=gpu --nodes=1 --ntasks=1 --cpus-per-task=4 --cpu-bind=cores --mem=16G --gres=gpu:h100-96:2 --time=00:15:00 --job-name=glm53-fp8-h100 bash /home/e/e1129930/llm-compressor/results/glm53-ep-gptq/20260912-fp8-before-gptq-h100/worker.sh
+   WorkDir=/home/e/e1129930/llm-compressor
+   TresPerNode=gres/gpu:h100-96:2
+   TresPerTask=cpu=4
+

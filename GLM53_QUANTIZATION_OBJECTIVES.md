@@ -140,7 +140,11 @@ The native checkpoint uses fixed-unit expert input scales and explicitly reports
 MTP absent. Fresh GPU/runtime and paired quality qualification remain required;
 no new full-model run has been launched. See
 [implementation and qualification](docs/glm53-fp8-before-gptq-implementation.md).
-Activation quantization optimization is a separate follow-up.
+Activation quantization optimization is a separate follow-up. The owner has
+authorized GPU qualification; local two-H100 job 841530 is queued, and the
+[active native W4AFP8 handoff](docs/glm53-native-w4afp8-executor-handoff.md)
+delegates Rancher deployment resolution and representative EP4/EP8 execution to
+the executor. This handoff returns evidence before a new full-model run.
 
 ## 3. Diagnose shared-storage overhead across the entire run
 

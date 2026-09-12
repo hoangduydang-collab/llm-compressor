@@ -1,0 +1,14 @@
+{
+  "recorded_utc": "2026-09-12T05:49:20.061406+00:00",
+  "job_id": "841530",
+  "state": "PENDING",
+  "reason": "Resources",
+  "source_commit": "d90ea79c49b4e62d314cc8d9eba190fdfba0ddf4",
+  "controller": "glm53_fp8_h100_20260912",
+  "gpu_runtime_limit_minutes": 15,
+  "queue_limit_hours": 8,
+  "required_tests": 5,
+  "gpus": 2,
+  "gpu_type": "full H100",
+  "representative_status": "blocked on Rancher access and native-compatible packet"
+}

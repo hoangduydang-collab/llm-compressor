@@ -48,6 +48,21 @@ remote depth-truncated, real-width EP4/EP8 experiment retaining all 256 experts.
 Only representative memory/persistence/numerical evidence should unlock a full
 run. Preserve calibration manifests and storage/prefetch settings for comparisons.
 
+**Rancher execution update (2026-09-12 03:56 UTC):** commit `d174b8d8` is
+running in Job `glm53-ep-gptq-20260911t15451789141515z` on `gpu04`, with durable
+evidence under
+`/mnt/cephfs/hoangduy/results/glm53-ep-gptq/20260911t15451789141515z`.
+The real-width representative EP4 and EP8 lanes both passed their checkpoint,
+phase-completeness and memory gates. Their measured peak CUDA allocations were
+26,314,134,016 and 13,622,837,760 bytes respectively. The non-EP DDP4 control
+failed only in its separate CPU-Hessian/disk-publication path; it is not reachable
+from expert-parallel compression, and the owner chose not to let that control block
+the production EP8 path. Full EP8 then compressed all 57,600 routed-expert
+projections across layers 3-77 and wrote a nine-shard, approximately 383 GiB W4A16
+checkpoint. Post-save/offline and final full-checkpoint validation are still
+running, so this is an in-progress artifact and must not yet be called a passing
+checkpoint.
+
 Read in order:
 1. [Implementation and supported scope](docs/glm53-ep-gptq-implementation.md).
 2. [GPU failures, repairs and passing evidence](docs/glm53-ep-gptq-gpu-validation.md).
@@ -90,6 +105,17 @@ FP8 in the existing converter, with exact verification. Direct native export,
 expert activation-scale alignment, MTP assembly and runtime/quality qualification
 remain open. No full AWQ rerun is authorized by this brief alone.
 
+The active EP8 GPTQ run intentionally emits W4A16: calibrated INT4 routed experts
+and BF16 non-expert modules. The owner confirmed W4AFP8 as the final serving target
+on 2026-09-12. If the W4A16 checkpoint passes its gates, its expensive calibrated
+INT4 experts can be reused; the established post-processing path must repack those
+experts for SGLang, block-FP8-quantize the explicit attention/shared/dense/indexer
+scope from the unchanged BF16 source, verify the new artifact, and graft MTP when
+speculative decoding is required. No GPTQ rerun is expected: FP8_BLOCK weights are
+data-free RTN, and activation QDQ is disabled during the current sequential
+calibration/propagation path. This equivalence still requires artifact and quality
+validation; it is not permission to relabel the W4A16 checkpoint.
+
 ## 3. Diagnose shared-storage overhead across the entire run
 
 **Owner report:** AWQ was very slow on shared storage on the inaccessible Rancher
@@ -127,10 +153,16 @@ included. `pipeline.metrics.summarize_phases(paths)` aggregates explicit rank
 files. Keep missing counters unavailable; per-process read counts are not unique
 shared-storage traffic, and nested timers must not be added together.
 
-Status: timing instrumentation implemented; representative GPTQ evidence and
-Rancher AWQ evidence still needed. Storage tuning must preserve calibration and
-quality controls. Coordinate format changes with objective 2 to eliminate work
-rather than merely accelerating avoidable conversions.
+Status: timing instrumentation implemented. The 2026-09-12 Rancher run now
+contains raw per-rank full GPTQ phase records for load/dispatch, dataset
+preparation, tracing, every layer's calibration, Hessian reduction, local solve,
+publication, propagation, offload transitions and the active checkpoint save.
+Final save/offline-validation spans are not complete yet, so the definitive
+critical-path and rank-skew summary has not been generated. A comparable Rancher
+AWQ trace and the forthcoming W4AFP8 conversion measurements are still needed to
+close the original AWQ shared-storage diagnosis. Storage tuning must preserve
+calibration and quality controls. Coordinate format changes with objective 2 to
+eliminate work rather than merely accelerating avoidable conversions.
 
 ## Executor starting checklist
 

@@ -512,12 +512,31 @@ def native_sglang_save(model: torch.nn.Module):
         def update_config(self, save_directory):
             if not native_modules:
                 raise ValueError("native save requires save_compressed=True")
-            path = Path(save_directory) / "config.json"
+            save_directory = Path(save_directory)
+            serialized = _serialized_tensor_inventory(save_directory)
+            expected = manifest["tensors"]
+            if set(serialized) != set(expected):
+                raise ValueError(
+                    "serialized tensor inventory differs from resident save state"
+                )
+            for name, spec in serialized.items():
+                if spec["shape"] != expected[name]["shape"]:
+                    raise ValueError(f"{name}: serialized tensor shape changed")
+                if name in tensor_hashes and spec["dtype"] != expected[name]["dtype"]:
+                    raise ValueError(
+                        f"{name}: serialized quantized tensor dtype changed"
+                    )
+            # Offloaded modules can retain FP32 meta placeholders while their
+            # materialized save tensors use the requested BF16 model dtype.
+            # The manifest must describe the bytes Transformers actually wrote.
+            manifest["tensors"] = serialized
+
+            path = save_directory / "config.json"
             config = json.loads(path.read_text())
             config["quantization_config"] = native_config["quantization_config"]
             config["num_nextn_predict_layers"] = 0
             path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
-            (Path(save_directory) / "native_sglang_manifest.json").write_text(
+            (save_directory / "native_sglang_manifest.json").write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n"
             )
 
@@ -556,6 +575,26 @@ def _tensor_hash(tensor: torch.Tensor) -> str:
     """Hash raw storage without materializing a Python bytes copy."""
     raw = tensor.detach().contiguous().cpu().view(torch.uint8).numpy()
     return hashlib.sha256(memoryview(raw)).hexdigest()
+
+
+def _serialized_tensor_inventory(checkpoint: Path) -> dict[str, dict[str, object]]:
+    """Read shape/dtype metadata from written shard headers without loading data."""
+    from safetensors import safe_open
+    from safetensors.torch import _getdtype
+
+    weight_map = weight_map_of(checkpoint)
+    inventory = {}
+    for filename in sorted(set(weight_map.values())):
+        with safe_open(checkpoint / filename, framework="pt", device="cpu") as handle:
+            for name in handle.keys():
+                tensor_slice = handle.get_slice(name)
+                inventory[name] = {
+                    "shape": list(tensor_slice.get_shape()),
+                    "dtype": str(_getdtype(tensor_slice.get_dtype())),
+                }
+    if set(inventory) != set(weight_map):
+        raise ValueError("written shard/index tensor inventory mismatch")
+    return inventory
 
 
 def verify_native_sglang_checkpoint(checkpoint: str | Path) -> dict[str, int | bool]:

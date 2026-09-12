@@ -199,6 +199,42 @@ def test_actual_ct_save_first_write_and_restore(tmp_path, monkeypatch, disk):
     assert_restored(model, expected)
 
 
+def test_manifest_records_serialized_dtype_for_offloaded_buffer(tmp_path, monkeypatch):
+    import transformers.modeling_utils as mu
+
+    from pipeline.quantize import (
+        _deferred_weight_conversion_compat,
+        _tied_weights_meta_buffer_compat,
+    )
+
+    model, expected = make_model()
+    model.model.layers[0].mlp.gate = torch.nn.Module()
+    model.model.layers[0].mlp.gate.register_buffer(
+        "e_score_correction_bias", torch.arange(8, dtype=torch.float32)
+    )
+    original_writer = mu.safe_save_file
+
+    def emulate_offloaded_write(tensors, filename, **kwargs):
+        tensors = dict(tensors)
+        key = "model.layers.0.mlp.gate.e_score_correction_bias"
+        if key in tensors:
+            tensors[key] = tensors[key].to(torch.bfloat16)
+        return original_writer(tensors, filename, **kwargs)
+
+    monkeypatch.setattr(mu, "safe_save_file", emulate_offloaded_write)
+    with native_sglang_save(model), _tied_weights_meta_buffer_compat(
+        model
+    ), _deferred_weight_conversion_compat(model):
+        model.save_pretrained(tmp_path / "native", max_shard_size="30KB")
+
+    manifest = json.loads(
+        (tmp_path / "native" / "native_sglang_manifest.json").read_text()
+    )
+    key = "model.layers.0.mlp.gate.e_score_correction_bias"
+    assert manifest["tensors"][key]["dtype"] == "torch.bfloat16"
+    assert_native(tmp_path / "native", expected)
+
+
 def test_writer_failure_restores_context_and_ct_state(tmp_path, monkeypatch):
     import transformers.modeling_utils as mu
 

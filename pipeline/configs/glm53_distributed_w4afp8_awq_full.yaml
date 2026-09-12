@@ -103,6 +103,7 @@ quantization:
   # and never folded.
   fp8_scheme: FP8_BLOCK
   checkpoint_format: sglang-w4afp8
+  mtp_policy: source-rtn
   sample_generation: false
 
 calibration:

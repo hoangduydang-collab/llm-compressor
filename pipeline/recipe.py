@@ -170,4 +170,5 @@ def describe_recipe(quant: QuantizationConfig) -> dict:
         "fp8_scheme": quant.fp8_scheme,
         "fp8_weights_before_gptq": quant.fp8_weights_before_gptq,
         "checkpoint_format": quant.checkpoint_format,
+        "mtp_policy": quant.mtp_policy,
     }

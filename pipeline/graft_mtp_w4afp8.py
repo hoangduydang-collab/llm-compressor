@@ -6,8 +6,9 @@ loaded it and never saved it. The recipe's ``re:.*layers[.]78[.].*`` ignore was
 belt-and-braces on top of that. The layer is NOT missing from the source.
 
 WHY BF16 AND NOT THE VENDOR FP8 RELEASE. GLM-5.3-BF16 -- the same repo and
-revision the main model was quantized from -- carries all 791 layer-78 tensors in
-BF16 (shards 270-274 of 282, already staged). The vendor FP8 release
+revision the main model was quantized from -- carries 790 BF16 layer-78 tensors
+and one F32 router bias (shards 270-274 of 282, already staged). The vendor FP8
+release
 (``zai-org/GLM-5.3``) is worse on every axis: its layer 78 holds 1,536 expert
 tensors in BLOCK FP8, which SGLang's w4afp8 MoE loader cannot consume because it
 wants int8-packed int4; it needs a ~16 GB three-shard download; and its snapshot
@@ -19,16 +20,13 @@ TREATMENT MIRRORS OUR OWN RECIPE, NOT THE VENDOR'S. Per layer-78 module:
 
   256 x 3 routed experts   -> int4 group-128, RTN, then int8 nibble pack
   q_a/q_b/kv_a/kv_b/o_proj -> block fp8 (5 modules)
+  indexer wk/wq_b          -> block fp8 (2 modules)
   shared_experts g/u/d     -> block fp8 (3 modules)
-  norms, router (+bias), eh_proj, indexer, shared_head.norm -> copied BF16
+  norms, router, eh_proj, indexer weights_proj/k_norm, shared_head.norm
+                          -> copied at source dtype (BF16; router bias F32)
 
-Two deliberate divergences from the vendor, both to match OUR main model rather
-than theirs:
-  * the DSA indexer stays BF16. The vendor FP8-quantizes indexer.wk / wq_b; our
-    recipe does not, and layer 78 must look like the other 78 layers of the
-    artifact it is joining, not like a different checkpoint.
-  * eh_proj stays BF16, which happens to agree with the vendor (their eh_proj
-    carries no weight_scale_inv either).
+The DSA indexer wk/wq_b follow the same FP8 policy as the main model.
+eh_proj and the other explicitly copied modules retain their source precision.
 
 RTN, NOT AWQ, FOR THE EXPERTS -- and why that is acceptable HERE specifically.
 There are no calibration statistics for layer 78 and borrowing a neighbouring
@@ -60,13 +58,13 @@ import json
 import sys
 from pathlib import Path
 
-from pipeline.to_sglang_w4afp8 import ENGINE_FP8_SUFFIXES
 from pipeline.sglang_w4afp8_kernels import (
     DEFAULT_BLOCK,
     dequantize_block_fp8,
     pack_nibbles_int8,
     quantize_block_fp8,
 )
+from pipeline.to_sglang_w4afp8 import ENGINE_FP8_SUFFIXES
 
 # Measured on our own AWQ output, not assumed: max|w_group|/scale_group is
 # 7.958-8.040 and values span [-8, 7], so compressed-tensors uses max/8 and the
@@ -263,19 +261,10 @@ def graft(
         back = dequantize_block_fp8(qweight, scale_inv, DEFAULT_BLOCK)
         fp8_resid.append(((back - weight).norm() / weight.norm()).item())
 
-    # Linears this graft leaves BF16. The loader consults ignored_layers to
-    # decide whether a module gets UnquantizedLinearMethod or Fp8LinearMethod,
-    # and layer 78 is not covered by anything the AWQ run wrote: its only entry
-    # was the pattern `re:.*layers[.]78[.].*`, which matched nothing at the time
-    # because the layer did not exist yet. Left alone, eh_proj and the DSA
-    # indexer would be handed Fp8LinearMethod and asked for a weight_scale_inv
-    # that was never written.
-    #
-    # The pattern also cannot simply be expanded now: it says "ignore ALL of
-    # layer 78", whereas this graft deliberately quantizes layer 78's experts
-    # and attention. Expanding it would make the loader read grafted int4
-    # nibbles as BF16 -- no error, just noise. So the entries are derived from
-    # what was actually copied, not from the recipe.
+    # Record the concrete copied Linear modules as export metadata. SGLang's
+    # W4AFp8Config.from_config does not consume ignored_layers; runtime module
+    # construction is authoritative (NextN eh_proj is an ordinary nn.Linear).
+    # Derive this list from copies, rather than the obsolete whole-layer ignore.
     newly_ignored: list[str] = []
     for name in buckets["copy"]:
         tensor = _get(name)

@@ -563,12 +563,17 @@ def verify_native_sglang_checkpoint(checkpoint: str | Path) -> dict[str, int | b
 
     Validate full key/shape/dtype inventory, and every native quantized tensor's
     bytes against its resident save-time hash. Read at most one tensor at a time.
-    Unquantized tensors have structural checks only. This certifies serialization,
-    not the calibration quality or an SGLang GPU execution path.
+    Main unquantized tensors have structural checks only; assembled MTP tensors
+    all require hashes, including copied BF16/FP32 tensors. This certifies
+    serialization, not calibration quality or an SGLang GPU execution path.
     """
     from safetensors import safe_open
 
+    from pipeline.native_mtp import MARKER, validate_mtp_manifest
+
     checkpoint = Path(checkpoint)
+    if (checkpoint / MARKER).exists() or (checkpoint / MARKER).is_symlink():
+        raise ValueError("incomplete native MTP assembly marker exists")
     manifest = json.loads((checkpoint / "native_sglang_manifest.json").read_text())
     if manifest.get("version") != 1 or manifest.get("format") != "sglang-w4afp8":
         raise ValueError("unsupported native SGLang manifest")
@@ -581,9 +586,9 @@ def verify_native_sglang_checkpoint(checkpoint: str | Path) -> dict[str, int | b
         or quant.get("moe_input_scale_policy") != "fixed_unit"
         or quant.get("moe_activation_scheme") != "static"
         or quant.get("linear_activation_scheme") != "dynamic"
-        or config.get("num_nextn_predict_layers") != 0
     ):
         raise ValueError("native SGLang configuration/activation/MTP contract changed")
+    mtp_hashes = validate_mtp_manifest(config, manifest)
     expected = manifest["tensors"]
     hashes = manifest["sha256"]
     required_hashes = {
@@ -596,6 +601,7 @@ def verify_native_sglang_checkpoint(checkpoint: str | Path) -> dict[str, int | b
         for name in required_hashes.copy()
         if name.endswith(".weight_scale_inv")
     )
+    required_hashes.update(mtp_hashes)
     if not required_hashes <= hashes.keys() or not hashes.keys() <= expected.keys():
         raise ValueError("native manifest is missing quantized tensor hashes")
     weight_map = weight_map_of(checkpoint)
@@ -603,6 +609,13 @@ def verify_native_sglang_checkpoint(checkpoint: str | Path) -> dict[str, int | b
         raise ValueError(
             "native checkpoint tensor inventory differs from save-time inventory"
         )
+    if mtp_hashes:
+        mtp_shards = {weight_map[name] for name in mtp_hashes}
+        if mtp_shards != set(manifest["mtp"]["shards"]) or any(
+            shard in mtp_shards for name, shard in weight_map.items()
+            if name not in mtp_hashes
+        ):
+            raise ValueError("native MTP shard provenance/inventory changed")
     checked = set()
     for filename in sorted(set(weight_map.values())):
         with safe_open(checkpoint / filename, framework="pt", device="cpu") as handle:

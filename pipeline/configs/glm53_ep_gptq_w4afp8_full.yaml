@@ -32,6 +32,7 @@ quantization:
   fp8_scheme: FP8_BLOCK
   fp8_weights_before_gptq: true
   checkpoint_format: sglang-w4afp8
+  mtp_policy: source-rtn
 calibration:
   dataset_id: HuggingFaceH4/ultrachat_200k
   dataset_split: train_sft

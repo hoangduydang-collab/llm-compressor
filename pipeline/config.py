@@ -108,6 +108,8 @@ class QuantizationConfig:
     fp8_weights_before_gptq: bool = False
     # Native SGLang layout on the first checkpoint write (opt-in).
     checkpoint_format: str = "compressed-tensors"
+    # Optional draft layer assembled from the same BF16 source after native save.
+    mtp_policy: str = "absent"
     # Post-quant sanity generation. Disable for very large offloaded models, where
     # autoregressive generation runs on CPU/disk (~minutes per token) and adds hours.
     sample_generation: bool = True
@@ -319,6 +321,12 @@ class PipelineConfig:
         quant = self.quantization
         if quant.checkpoint_format not in {"compressed-tensors", "sglang-w4afp8"}:
             raise ValueError(f"unknown checkpoint_format {quant.checkpoint_format!r}")
+        if quant.mtp_policy not in {"absent", "source-rtn"}:
+            raise ValueError(f"unknown mtp_policy {quant.mtp_policy!r}")
+        if quant.mtp_policy == "source-rtn" and (
+            quant.checkpoint_format != "sglang-w4afp8" or quant.scheme != "W4AFP8"
+        ):
+            raise ValueError("source-rtn MTP requires native SGLang W4AFP8 output")
         if quant.fp8_weights_before_gptq and (
             quant.method != "gptq" or quant.fp8_scheme != "FP8_BLOCK"
             or not quant.fp8_dynamic_targets

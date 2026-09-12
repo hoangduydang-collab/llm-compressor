@@ -140,7 +140,7 @@ def assert_native(path, expected):
         assert set(json.loads(index_path.read_text())["weight_map"]) == set(tensors)
 
 
-def assert_restored(model, expected):
+def assert_restored(model, expected, *, forward=True):
     assert model.config.num_nextn_predict_layers == 1
     assert not hasattr(model.config, "quantization_config")
     for name, ct in expected.items():
@@ -158,8 +158,9 @@ def assert_restored(model, expected):
         assert module.quantization_status == QuantizationStatus.COMPRESSED
     assert not hasattr(model.model.layers[0].mlp.experts[0], "w1")
     assert hasattr(model, "ct_decompress_hook")
-    output = model(torch.randn(1, 128).bfloat16())
-    assert torch.isfinite(output).all()
+    if forward:
+        output = model(torch.randn(1, 128).bfloat16())
+        assert torch.isfinite(output).all()
 
 
 @pytest.mark.parametrize("disk", [False, True])
@@ -347,6 +348,16 @@ def _distributed_save_worker(rank, root, disk):
         # Source-only file verification must not touch any collective caches.
         if rank == 0:
             assert_native(root / "native", expected)
+        dist.barrier()
+        assert_restored(model, expected, forward=False)
+        # CT's model decompression hook explicitly does not support distributed
+        # decompression. Independently deleting shared DiskCache entries during
+        # forward can race another rank's onload. Verify the restored shared
+        # state first, then materialize private CPU dictionaries without deleting
+        # cache files before exercising the forward on every rank.
+        from compressed_tensors.offload import remove_dispatch
+
+        remove_dispatch(model, onload_tensors=True)
         dist.barrier()
         assert_restored(model, expected)
     finally:

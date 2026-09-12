@@ -1146,7 +1146,9 @@ def assert_quant_checkpoint_verified(
     print("[pipeline] quant-verify gate OK: structure + sampled tensors healthy")
 
 
-def _resolve_weight_index(model_id: str) -> Path | None:
+def _resolve_weight_index(
+    model_id: str, *, revision: str | None = None
+) -> Path | None:
     """Locate a local ``model.safetensors.index.json`` for ``model_id``.
 
     ``model.id`` is usually a HUB REPO ID (``zai-org/GLM-5.2``), not a directory.
@@ -1172,7 +1174,10 @@ def _resolve_weight_index(model_id: str) -> Path | None:
         return None
 
     try:
-        cached = try_to_load_from_cache(repo_id=model_id, filename=filename)
+        cache_kwargs = {"repo_id": model_id, "filename": filename}
+        if revision is not None:
+            cache_kwargs["revision"] = revision
+        cached = try_to_load_from_cache(**cache_kwargs)
     except Exception:
         # A malformed repo id, or a cache layout we do not understand, must not
         # crash the run before quantization has even started.
@@ -1378,6 +1383,18 @@ def _run_quantize(
                     schemes[name] = scheme
         assert_native_sglang_preflight(model, schemes)
 
+    mtp_plan = None
+    if cfg.quantization.mtp_policy == "source-rtn":
+        from pipeline.native_mtp import (
+            assert_native_mtp_destination,
+            preflight_native_mtp,
+        )
+
+        if save_checkpoint:
+            assert_native_mtp_destination(versioning.checkpoint_dir(run_dir))
+        mtp_plan = preflight_native_mtp(cfg.model.id, model.config)
+        print(f"[pipeline] native MTP preflight: {mtp_plan.provenance()}")
+
     oneshot_kwargs: dict = dict(
         model=model,
         # Text-only calibration: pass the loaded tokenizer so oneshot does not
@@ -1519,6 +1536,12 @@ def _run_quantize(
         # After the barrier so a gate failure on the source rank cannot strand
         # other ranks in a collective (the r11/r12 zombie choreography).
         if dist_ctx.is_source or not dist_ctx.enabled:
+            if mtp_plan is not None:
+                from pipeline.native_mtp import assemble_native_mtp
+
+                with compression_phase("native_mtp_assembly", checkpoint=str(ckpt)):
+                    assembled = assemble_native_mtp(ckpt, mtp_plan)
+                    print(f"[pipeline] native MTP assembled: {assembled}")
             with compression_phase("offline_verification", checkpoint=str(ckpt)):
                 if native_output:
                     from pipeline.native_sglang_save import (

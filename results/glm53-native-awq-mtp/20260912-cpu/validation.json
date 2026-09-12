@@ -56,5 +56,12 @@
     "pipeline/tests/test_native_sglang_save.py": "d04f25cd80b2ca21aa746b38b7fb7e91d35ee5b30482e0b59958e3e03af0fd9f",
     "pipeline/configs/glm53_distributed_w4afp8_awq_full.yaml": "b52a1d7f29b3ee6dbf9cb32a61f8c494dac85c0d911552dd1acbb722239c3a22",
     "pipeline/configs/glm53_ep_gptq_w4afp8_full.yaml": "a0dc3c13949c4ecc39047528dee9a6f5e54d74062d55be73e00652244d6bfcdf"
+  },
+  "review": {
+    "task_1": "PASS / APPROVE",
+    "task_2_and_final": "PASS / APPROVE",
+    "reviewed_head": "cb9f0b1c",
+    "actionable_findings": 0,
+    "report": "final-review.md"
   }
 }

@@ -48,8 +48,8 @@
 
 **Files:** `GLM53_QUANTIZATION_OBJECTIVES.md`, implementation docs and `docs/glm53-native-w4afp8-executor-handoff.md`, evidence JSON.
 
-- [ ] Review task diffs for spec compliance and quality; fix important findings with covering tests.
-- [ ] Document final recipe controls, same-source resolution, RTN MTP semantics, failure behavior and direct output for both methods.
-- [ ] Update executor handoff with CPU evidence and separate AWQ/MTP runtime load/forward checks; do not imply GPU qualification from serialization tests.
-- [ ] Run combined targeted CPU suite once after integration, required lint and diff checks; record results.
-- [ ] Commit and push completed work using the dedicated hoangduydang-collab credential helper, verify remote branch SHA.
+- [x] Review task diffs for spec compliance and quality; fix important findings with covering tests.
+- [x] Document final recipe controls, same-source resolution, RTN MTP semantics, failure behavior and direct output for both methods.
+- [x] Update executor handoff with CPU evidence and separate AWQ/MTP runtime load/forward checks; do not imply GPU qualification from serialization tests.
+- [x] Run combined targeted CPU suite once after integration, required lint and diff checks; record results.
+- [x] Commit and push completed work using the dedicated hoangduydang-collab credential helper, verify remote branch SHA.

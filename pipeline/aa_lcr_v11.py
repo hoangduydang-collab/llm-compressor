@@ -10,7 +10,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Callable, Mapping
+from typing import Callable, Collection, Mapping
 from urllib.request import urlopen
 
 import tiktoken
@@ -165,27 +165,76 @@ def parse_judge_verdict(text: str) -> str:
     return verdict.upper()
 
 
-def _member_path(member: zipfile.ZipInfo) -> PurePosixPath:
-    path = PurePosixPath(member.filename)
+def _safe_member_path(name: str, *, is_directory: bool) -> PurePosixPath:
+    components = name.split("/")
+    if is_directory and components[-1:] == [""]:
+        components.pop()
     if (
-        not member.filename
-        or member.filename.startswith(("/", "\\"))
-        or path.is_absolute()
-        or ".." in path.parts
-        or any(part in ("", ".") for part in path.parts)
+        not name
+        or "\x00" in name
+        or "\\" in name
+        or name.startswith("/")
+        or (len(name) >= 2 and name[0].isalpha() and name[1] == ":")
+        or not components
+        or any(part in ("", ".", "..") for part in components)
     ):
-        raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
-    if stat.S_IFMT(member.external_attr >> 16) == stat.S_IFLNK:
+        raise DatasetIntegrityError(f"unsafe archive member: {name!r}")
+    return PurePosixPath(*components)
+
+
+def _member_path(member: zipfile.ZipInfo) -> PurePosixPath:
+    is_directory = member.is_dir()
+    path = _safe_member_path(member.filename, is_directory=is_directory)
+    unix_type = stat.S_IFMT(member.external_attr >> 16)
+    allowed_type = stat.S_IFDIR if is_directory else stat.S_IFREG
+    if unix_type not in (0, allowed_type):
         raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
     return path
 
 
-def safe_extract_zip(zip_path: Path, destination: Path) -> list[Path]:
+def _member_has_nul_name(archive: zipfile.ZipFile, member: zipfile.ZipInfo) -> bool:
+    """Inspect the local-header filename before zipfile truncates a NUL suffix."""
+    assert archive.fp is not None
+    archive.fp.seek(member.header_offset + 26)
+    filename_length = int.from_bytes(archive.fp.read(2), "little")
+    extra_length = int.from_bytes(archive.fp.read(2), "little")
+    if filename_length == 0 or extra_length < 0:
+        raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
+    return b"\x00" in archive.fp.read(filename_length)
+
+
+def safe_extract_zip(
+    zip_path: Path,
+    destination: Path,
+    *,
+    expected_members: Collection[str] | None = None,
+) -> list[Path]:
     """Extract a ZIP only after validating every archive member."""
+    expected_paths = (
+        {
+            _safe_member_path(member, is_directory=False).as_posix()
+            for member in expected_members
+        }
+        if expected_members is not None
+        else None
+    )
+    expected_directories = (
+        {
+            parent.as_posix()
+            for path in expected_paths or set()
+            for parent in PurePosixPath(path).parents
+            if parent != PurePosixPath(".")
+        }
+        if expected_paths is not None
+        else set()
+    )
     with zipfile.ZipFile(zip_path) as archive:
         members: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
         names: set[str] = set()
+        extracted_file_names: set[str] = set()
         for member in archive.infolist():
+            if _member_has_nul_name(archive, member):
+                raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
             path = _member_path(member)
             normalized = path.as_posix()
             if normalized in names:
@@ -193,12 +242,28 @@ def safe_extract_zip(zip_path: Path, destination: Path) -> list[Path]:
                     f"duplicate archive member: {member.filename!r}"
                 )
             names.add(normalized)
+            if expected_paths is not None:
+                allowed = expected_directories if member.is_dir() else expected_paths
+                if normalized not in allowed:
+                    raise DatasetIntegrityError(
+                        f"unexpected archive member: {member.filename!r}"
+                    )
+                if not member.is_dir():
+                    extracted_file_names.add(normalized)
             members.append((member, path))
 
         destination.mkdir(parents=True, exist_ok=True)
+        resolved_destination = destination.resolve()
         extracted: list[Path] = []
         for member, path in members:
             target = destination.joinpath(*path.parts)
+            resolved_parent = target.parent.resolve()
+            resolved_target = target.resolve(strict=False)
+            if not (
+                resolved_parent.is_relative_to(resolved_destination)
+                and resolved_target.is_relative_to(resolved_destination)
+            ):
+                raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
             target.parent.mkdir(parents=True, exist_ok=True)
             if member.is_dir():
                 target.mkdir(exist_ok=True)
@@ -206,6 +271,8 @@ def safe_extract_zip(zip_path: Path, destination: Path) -> list[Path]:
                 with archive.open(member) as source, target.open("wb") as output:
                     output.write(source.read())
                 extracted.append(target)
+    if expected_paths is not None and extracted_file_names != expected_paths:
+        raise DatasetIntegrityError("archive is missing expected document members")
     return extracted
 
 
@@ -265,27 +332,41 @@ def _row_value(row: Mapping[str, str], *names: str) -> str:
     raise DatasetIntegrityError(f"CSV is missing a value for {names[0]}")
 
 
-def _load_questions(csv_path: Path, documents_root: Path) -> tuple[Question, ...]:
+def _read_dataset_rows(csv_path: Path) -> list[dict[str, str]]:
+    with csv_path.open(encoding="utf-8-sig", newline="") as source:
+        return list(csv.DictReader(source))
+
+
+def _document_member_paths(rows: Collection[Mapping[str, str]]) -> set[str]:
+    members: set[str] = set()
+    for row in rows:
+        category = _row_value(row, "document_category", "category")
+        document_set_id = _row_value(row, "document_set_id", "data_source_id")
+        filenames = _row_value(row, "data_source_filenames").split(";")
+        for filename in filenames:
+            members.add(
+                _safe_member_path(
+                    f"lcr/{category}/{document_set_id}/{filename.strip()}",
+                    is_directory=False,
+                ).as_posix()
+            )
+    return members
+
+
+def _load_questions(
+    documents_root: Path, rows: Collection[Mapping[str, str]]
+) -> tuple[Question, ...]:
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
     except Exception as exc:
         raise DatasetIntegrityError("cl100k_base tokenizer is unavailable") from exc
 
-    document_paths: dict[str, Path] = {}
-    for document_path in documents_root.rglob("*"):
-        if document_path.is_file():
-            if document_path.name in document_paths:
-                raise DatasetIntegrityError(
-                    f"duplicate extracted document filename: {document_path.name}"
-                )
-            document_paths[document_path.name] = document_path
-
-    with csv_path.open(encoding="utf-8-sig", newline="") as source:
-        rows = list(csv.DictReader(source))
     questions: list[Question] = []
     for row in rows:
         try:
             question_id = int(_row_value(row, "question_id", "id"))
+            document_category = _row_value(row, "document_category", "category")
+            document_set_id = _row_value(row, "document_set_id", "data_source_id")
             filenames = tuple(
                 filename.strip()
                 for filename in _row_value(row, "data_source_filenames").split(";")
@@ -295,9 +376,15 @@ def _load_questions(csv_path: Path, documents_root: Path) -> tuple[Question, ...
                 raise DatasetIntegrityError("question has no document filenames")
             documents = []
             for filename in filenames:
-                document_path = document_paths.get(filename)
-                if document_path is None:
-                    raise DatasetIntegrityError(f"referenced document is missing: {filename}")
+                member = _safe_member_path(
+                    f"lcr/{document_category}/{document_set_id}/{filename}",
+                    is_directory=False,
+                )
+                document_path = documents_root.joinpath(*member.parts)
+                if not document_path.is_file():
+                    raise DatasetIntegrityError(
+                        f"referenced document is missing: {member.as_posix()}"
+                    )
                 documents.append(document_path.read_text(encoding="utf-8"))
             question_text = _row_value(row, "question")
             prompt = build_candidate_prompt(documents, question_text)
@@ -311,9 +398,7 @@ def _load_questions(csv_path: Path, documents_root: Path) -> tuple[Question, ...
                 Question(
                     question_id=question_id,
                     category=_row_value(row, "category"),
-                    document_set_id=_row_value(
-                        row, "document_set_id", "data_source_id"
-                    ),
+                    document_set_id=document_set_id,
                     question=question_text,
                     official_answer=_row_value(
                         row, "official_answer", "answer"
@@ -350,10 +435,15 @@ def prepare_dataset(
         CSV_FILENAME: _download_file(csv_path, CSV_FILENAME, opener),
         ZIP_FILENAME: _download_file(zip_path, ZIP_FILENAME, opener, ZIP_SHA256),
     }
-    extracted_paths = safe_extract_zip(zip_path, documents_root)
+    rows = _read_dataset_rows(csv_path)
+    extracted_paths = safe_extract_zip(
+        zip_path,
+        documents_root,
+        expected_members=_document_member_paths(rows),
+    )
     for path in extracted_paths:
         digests[path.relative_to(documents_root).as_posix()] = _sha256_file(path)
-    questions = _load_questions(csv_path, documents_root)
+    questions = _load_questions(documents_root, rows)
     validate_questions(questions)
     prompt_sha256 = sha256_text(
         canonical_json([question.prompt for question in questions])

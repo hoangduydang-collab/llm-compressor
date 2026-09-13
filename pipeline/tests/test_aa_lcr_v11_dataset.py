@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import io
+import stat
 import zipfile
 from pathlib import Path
 
@@ -23,6 +24,21 @@ def make_duplicate_zip(path: Path, name: str) -> Path:
         with zipfile.ZipFile(archive, "w") as zf:
             zf.writestr(name, b"first")
             zf.writestr(name, b"second")
+    return archive
+
+
+def make_special_zip(path: Path, name: str, mode: int) -> Path:
+    archive = path / "special.zip"
+    member = zipfile.ZipInfo(name)
+    member.external_attr = mode << 16
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(member, b"x")
+    return archive
+
+
+def make_nul_filename_zip(path: Path) -> Path:
+    archive = make_zip(path, {"nulXmember.txt": b"x"})
+    archive.write_bytes(archive.read_bytes().replace(b"nulXmember.txt", b"nul\x00member.txt"))
     return archive
 
 
@@ -68,8 +84,9 @@ def fixture_payloads() -> dict[str, bytes]:
     writer.writerows(rows)
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w") as zf:
-        for filename, contents in documents.items():
-            zf.writestr(f"lcr/synthetic/{filename}", contents)
+        for set_id in range(1, 31):
+            zf.writestr(f"lcr/synthetic/set-{set_id}/a.txt", documents["a.txt"])
+        zf.writestr("lcr/synthetic/set-1/b.txt", documents["b.txt"])
     return {
         A.CSV_FILENAME: csv_file.getvalue().encode("utf-8"),
         A.ZIP_FILENAME: archive.getvalue(),
@@ -121,8 +138,30 @@ def test_safe_extract_rejects_parent_traversal(tmp_path):
         A.safe_extract_zip(archive, tmp_path / "out")
 
 
-def test_safe_extract_rejects_windows_parent_traversal(tmp_path):
-    archive = make_zip(tmp_path, {r"folder\..\escape.txt": b"x"})
+@pytest.mark.parametrize(
+    "member",
+    [
+        "/absolute.txt",
+        "C:/drive-qualified.txt",
+        "//server/share.txt",
+        r"folder\..\escape.txt",
+    ],
+)
+def test_safe_extract_rejects_cross_platform_unsafe_paths(tmp_path, member):
+    archive = make_zip(tmp_path, {member: b"x"})
+    with pytest.raises(A.DatasetIntegrityError, match="unsafe archive member"):
+        A.safe_extract_zip(archive, tmp_path / "out")
+
+
+def test_safe_extract_rejects_nul_filename(tmp_path):
+    archive = make_nul_filename_zip(tmp_path)
+    with pytest.raises(A.DatasetIntegrityError, match="unsafe archive member"):
+        A.safe_extract_zip(archive, tmp_path / "out")
+
+
+@pytest.mark.parametrize("mode", [stat.S_IFLNK | 0o777, stat.S_IFIFO | 0o644])
+def test_safe_extract_rejects_non_regular_unix_members(tmp_path, mode):
+    archive = make_special_zip(tmp_path, "lcr/category/set/document.txt", mode)
     with pytest.raises(A.DatasetIntegrityError, match="unsafe archive member"):
         A.safe_extract_zip(archive, tmp_path / "out")
 
@@ -131,6 +170,22 @@ def test_safe_extract_rejects_duplicate_members(tmp_path):
     archive = make_duplicate_zip(tmp_path, "lcr/A/x.txt")
     with pytest.raises(A.DatasetIntegrityError, match="duplicate archive member"):
         A.safe_extract_zip(archive, tmp_path / "out")
+
+
+def test_safe_extract_rejects_member_outside_expected_contract(tmp_path):
+    archive = make_zip(
+        tmp_path,
+        {
+            "lcr/category/set/expected.txt": b"expected",
+            "lcr/category/set/unexpected.txt": b"unexpected",
+        },
+    )
+    with pytest.raises(A.DatasetIntegrityError, match="unexpected archive member"):
+        A.safe_extract_zip(
+            archive,
+            tmp_path / "out",
+            expected_members={"lcr/category/set/expected.txt"},
+        )
 
 
 def test_validate_questions_requires_exact_population():
@@ -158,8 +213,8 @@ def test_prepare_fixture_preserves_csv_filename_order(tmp_path, monkeypatch):
     assert set(prepared.file_sha256) == {
         A.CSV_FILENAME,
         A.ZIP_FILENAME,
-        "lcr/synthetic/a.txt",
-        "lcr/synthetic/b.txt",
+        *(f"lcr/synthetic/set-{set_id}/a.txt" for set_id in range(1, 31)),
+        "lcr/synthetic/set-1/b.txt",
     }
     payloads = fixture_payloads()
     assert prepared.file_sha256[A.CSV_FILENAME] == hashlib.sha256(
@@ -172,6 +227,7 @@ def test_prepare_fixture_preserves_csv_filename_order(tmp_path, monkeypatch):
             / "extracted_text"
             / "lcr"
             / "synthetic"
+            / "set-1"
             / filename
         ).is_file()
         for filename in ("a.txt", "b.txt")

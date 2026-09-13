@@ -64,6 +64,9 @@ CANDIDATE_TEMPERATURE = 0.6
 CANDIDATE_TOP_P = 1.0
 CANDIDATE_MAX_TOKENS = 131_072
 CANDIDATE_CONCURRENCY = 2
+# Non-streaming chat/completions sends no bytes until prefill+decode finish.
+# AA-LCR prompts are ~90k-113k tokens, so 120s is shorter than first-byte time.
+CANDIDATE_HTTP_TIMEOUT_SECONDS = 7200
 JUDGE_MODEL = "gpt-5.6-luna"
 JUDGE_REASONING_EFFORT = "medium"
 JUDGE_REASONING_MODE = "standard"
@@ -341,6 +344,28 @@ def build_run_contract(
     )
 
 
+def _candidate_json_needs_generation(record_json: str) -> bool:
+    """Return True when a stored candidate is absent work, not a successful answer."""
+    record = json.loads(record_json)
+    error = record.get("error")
+    status = record.get("http_status")
+    content = record.get("content")
+    if (
+        error is None
+        and isinstance(content, str)
+        and isinstance(status, int)
+        and 200 <= status < 300
+    ):
+        return False
+    if (
+        isinstance(status, int)
+        and 400 <= status <= 499
+        and status not in {408, 409, 429}
+    ):
+        return False
+    return True
+
+
 class Checkpoint:
     """Durable, immutable SQLite storage for a single run contract."""
 
@@ -480,22 +505,30 @@ class Checkpoint:
                         f"invalid immutable {table[:-1]} key: {key!r}"
                     ) from exc
             elif row[0] != record_json:
-                raise CheckpointConflictError(
-                    f"conflicting immutable {table[:-1]} record for {key!r}"
-                )
+                if table == "candidates" and _candidate_json_needs_generation(row[0]):
+                    self._connection.execute(
+                        "UPDATE candidates SET record_json = ? "
+                        "WHERE question_id = ? AND repeat_index = ?",
+                        (record_json, *key),
+                    )
+                else:
+                    raise CheckpointConflictError(
+                        f"conflicting immutable {table[:-1]} record for {key!r}"
+                    )
 
     def missing_candidates(self) -> list[tuple[int, int]]:
         with self._lock:
-            return [
-                (question_id, repeat_index)
-                for question_id in self.contract.question_ids
-                for repeat_index in range(self.contract.repeats)
-                if self._connection.execute(
-                    "SELECT 1 FROM candidates WHERE question_id = ? AND repeat_index = ?",
-                    (question_id, repeat_index),
-                ).fetchone()
-                is None
-            ]
+            missing: list[tuple[int, int]] = []
+            for question_id in self.contract.question_ids:
+                for repeat_index in range(self.contract.repeats):
+                    row = self._connection.execute(
+                        "SELECT record_json FROM candidates "
+                        "WHERE question_id = ? AND repeat_index = ?",
+                        (question_id, repeat_index),
+                    ).fetchone()
+                    if row is None or _candidate_json_needs_generation(row[0]):
+                        missing.append((question_id, repeat_index))
+            return missing
 
     def record_candidate(self, record: CandidateRecord) -> None:
         self._validate_unit(record.question_id, record.repeat_index)
@@ -1326,7 +1359,7 @@ def generate_one(
     )
     for attempt in range(max_attempts):
         try:
-            with urlopen(request, timeout=120) as response:
+            with urlopen(request, timeout=CANDIDATE_HTTP_TIMEOUT_SECONDS) as response:
                 status = int(getattr(response, "status", 200))
                 raw_response = _response_json(response)
         except HTTPError as exc:

@@ -208,6 +208,34 @@ def successful_response() -> dict[str, object]:
     }
 
 
+def test_generate_one_uses_long_http_timeout_for_nonstreaming_completions(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class Response:
+        status = 200
+
+        def read(self) -> bytes:
+            return json.dumps(successful_response()).encode("utf-8")
+
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+    def fake_urlopen(_request: object, timeout: object = None) -> Response:
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(A, "urlopen", fake_urlopen)
+    record = A.generate_one(questions()[0], 0, "http://example.invalid")
+
+    assert captured["timeout"] == A.CANDIDATE_HTTP_TIMEOUT_SECONDS
+    assert A.CANDIDATE_HTTP_TIMEOUT_SECONDS >= 3600
+    assert record.http_status == 200
+    assert record.content == "final answer"
+
+
 def test_candidate_request_is_glm_max_contract():
     body = A.candidate_request(questions()[0])
 
@@ -237,6 +265,38 @@ def test_resume_does_not_regenerate_terminal_candidate(tmp_path, fake_server):
     A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
 
     assert fake_server.chat_calls == 1
+
+
+def test_resume_retries_transport_error_candidate(tmp_path, fake_server):
+    checkpoint = seeded_checkpoint(tmp_path)
+    checkpoint.record_candidate(
+        A.CandidateRecord(
+            question_id=1,
+            repeat_index=0,
+            http_status=0,
+            raw_response=None,
+            usage=None,
+            finish_reason=None,
+            content=None,
+            reasoning_content=None,
+            retry_count=29,
+            started_at_utc="2026-09-13T14:34:04Z",
+            completed_at_utc="2026-09-13T15:36:48Z",
+            error="transport error after 30 attempts: TimeoutError",
+        )
+    )
+
+    A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert fake_server.chat_calls == 1
+    record = json.loads(
+        sqlite3.connect(checkpoint.path).execute(
+            "SELECT record_json FROM candidates WHERE question_id = 1 AND repeat_index = 0"
+        ).fetchone()[0]
+    )
+    assert record["error"] is None
+    assert record["http_status"] == 200
+    assert record["content"] == "final answer"
 
 
 @pytest.mark.parametrize("status", [408, 409, 429, 500])

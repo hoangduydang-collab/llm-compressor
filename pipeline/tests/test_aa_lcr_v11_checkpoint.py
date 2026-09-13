@@ -103,6 +103,51 @@ def test_candidate_is_insert_once(tmp_path):
         db.record_candidate(replace(record, content="changed"))
 
 
+def test_missing_candidates_include_transport_errors_not_http_400(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", replace(contract(), repeats=1))
+    timeout = replace(
+        candidate_record(),
+        http_status=0,
+        content=None,
+        finish_reason=None,
+        error="transport error after 30 attempts: TimeoutError",
+    )
+    bad_request = replace(
+        candidate_record(),
+        http_status=400,
+        content=None,
+        error="HTTP 400 response",
+    )
+
+    assert db.missing_candidates() == [(1, 0)]
+    db.record_candidate(timeout)
+    assert db.missing_candidates() == [(1, 0)]
+    db.record_candidate(replace(timeout, http_status=200, content="ok", error=None, finish_reason="stop"))
+    assert db.missing_candidates() == []
+
+    other = A.Checkpoint(tmp_path / "http400.sqlite", replace(contract(), repeats=1))
+    other.record_candidate(bad_request)
+    assert other.missing_candidates() == []
+
+
+def test_record_candidate_replaces_transport_error_only(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+    timeout = replace(
+        candidate_record(),
+        http_status=0,
+        content=None,
+        finish_reason=None,
+        error="transport error after 30 attempts: TimeoutError",
+    )
+    success = replace(timeout, http_status=200, content="ok", error=None, finish_reason="stop")
+
+    db.record_candidate(timeout)
+    db.record_candidate(success)
+    assert db.missing_candidates() == [(1, 1), (1, 2)]
+    with pytest.raises(A.CheckpointConflictError):
+        db.record_candidate(replace(success, content="changed"))
+
+
 def test_judgment_key_includes_judge_contract(tmp_path):
     db = A.Checkpoint(tmp_path / "run.sqlite", contract())
     db.record_candidate(candidate_record())

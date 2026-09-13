@@ -12,6 +12,28 @@ canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
 
 # Bugs and fixes (llm-compressor pipeline)
 
+## AA-LCR candidate HTTP timeout too short for non-streaming long context (fixed, 2026-09-13)
+
+**Root cause:** `generate_one` called `urlopen(..., timeout=120)` and does not
+stream. SGLang therefore sends no HTTP body until prefill and decode finish.
+AA-LCR prompts are about 90k-113k tokens with thinking enabled and
+`max_tokens=131072`. First-byte time routinely exceeds 120s after the short
+question-1 samples, so the client timed out, retried up to 30 times, and wrote
+no new sqlite rows.
+
+**Long-term fix:** Wait `CANDIDATE_HTTP_TIMEOUT_SECONDS = 7200` per candidate
+request. This is a client transport setting, not an AA scoring-contract field,
+so it is not added to the run fingerprint. A new code revision still changes
+`code_revision` in the contract; resume of an in-flight run must keep the
+existing checkpoint's `code_revision` or start a new run ID.
+
+**Tactical workaround:** None. Do not skip later questions. Resume may
+replace a stored transport-error candidate with a later successful
+generation; successful answers remain insert-once.
+
+**Removal criteria:** Keep the 7200s timeout until the candidate client uses
+streaming and an idle-read timeout instead of a total first-byte timeout.
+
 ## AA-LCR runtime canary archive and Job-start blockers (fixed, 2026-09-13)
 
 **Root cause:** The official AA-LCR archive pinned at revision

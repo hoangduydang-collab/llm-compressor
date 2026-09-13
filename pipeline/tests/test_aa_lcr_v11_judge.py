@@ -297,6 +297,16 @@ def test_missing_final_candidate_content_is_not_sent(fake_openai):
     assert record.attempt_count == 0
 
 
+def test_missing_content_failure_persists_zero_attempts(tmp_path):
+    checkpoint = seeded_checkpoint(tmp_path)
+    checkpoint.record_candidate(candidate_record(content=None))
+
+    with pytest.raises(A.IncompleteJudgmentError):
+        A.judge_missing(checkpoint, questions(), FakeOpenAI([]))
+
+    assert checkpoint.judge_failures()[0].attempt_count == 0
+
+
 def test_judge_missing_resumes_without_duplicate_calls(tmp_path):
     checkpoint = seeded_checkpoint(tmp_path)
     checkpoint.record_candidate(candidate_record())
@@ -314,6 +324,8 @@ def test_judge_missing_resumes_without_duplicate_calls(tmp_path):
         {"judge_model": "not-luna"},
         {"judge_reasoning_effort": "low"},
         {"judge_reasoning_mode": "other"},
+        {"judge_max_attempts": A.MAX_ATTEMPTS - 1},
+        {"judge_max_attempts": A.MAX_ATTEMPTS + 1},
         {"judge_system_prompt_sha256": "0" * 64},
         {"judge_user_prompt_sha256": "0" * 64},
     ],
@@ -330,6 +342,26 @@ def test_judge_missing_rejects_invalid_request_contract_before_api_call(
         A.judge_missing(checkpoint, questions(), client)
 
     assert client.responses.calls == []
+
+
+@pytest.mark.parametrize("attempts", [A.MAX_ATTEMPTS - 1, A.MAX_ATTEMPTS + 1])
+def test_build_run_contract_rejects_nonstandard_judge_attempt_ceiling(attempts):
+    prepared = A.PreparedDataset(
+        revision="revision",
+        questions=(),
+        file_sha256={},
+        prompt_sha256="prompt",
+    )
+
+    with pytest.raises(A.JudgeContractError, match="judge_max_attempts"):
+        A.build_run_contract(
+            prepared,
+            candidate_model="candidate",
+            served_model="served",
+            endpoint_deployment_identity={},
+            code_revision="test",
+            judge_max_attempts=attempts,
+        )
 
 
 def test_failed_judgment_is_incomplete_and_failure_audit_is_append_only(

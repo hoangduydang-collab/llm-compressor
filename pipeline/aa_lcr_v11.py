@@ -268,6 +268,7 @@ def build_run_contract(
         judge_reasoning_mode=judge_reasoning_mode,
         judge_system_prompt_sha256=sha256_text(JUDGE_SYSTEM_PROMPT),
         judge_user_prompt_sha256=sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
+        judge_max_attempts=judge_max_attempts,
     )
     return RunContract(
         dataset_revision=prepared_dataset.revision,
@@ -657,6 +658,7 @@ def _validate_judge_request_contract(
     judge_reasoning_mode: str,
     judge_system_prompt_sha256: str,
     judge_user_prompt_sha256: str,
+    judge_max_attempts: int,
 ) -> None:
     expected = {
         "judge_model": JUDGE_MODEL,
@@ -664,6 +666,7 @@ def _validate_judge_request_contract(
         "judge_reasoning_mode": JUDGE_REASONING_MODE,
         "judge_system_prompt_sha256": sha256_text(JUDGE_SYSTEM_PROMPT),
         "judge_user_prompt_sha256": sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
+        "judge_max_attempts": MAX_ATTEMPTS,
     }
     actual = {
         "judge_model": judge_model,
@@ -671,9 +674,15 @@ def _validate_judge_request_contract(
         "judge_reasoning_mode": judge_reasoning_mode,
         "judge_system_prompt_sha256": judge_system_prompt_sha256,
         "judge_user_prompt_sha256": judge_user_prompt_sha256,
+        "judge_max_attempts": judge_max_attempts,
     }
     if actual != expected:
-        raise JudgeContractError("judge run contract differs from pinned AA-LCR v1.1")
+        mismatched = ", ".join(
+            name for name in expected if actual[name] != expected[name]
+        )
+        raise JudgeContractError(
+            "judge run contract differs from pinned AA-LCR v1.1: " + mismatched
+        )
 
 
 def validate_judge_contract(contract: RunContract) -> str:
@@ -684,6 +693,7 @@ def validate_judge_contract(contract: RunContract) -> str:
         judge_reasoning_mode=contract.judge_reasoning_mode,
         judge_system_prompt_sha256=contract.judge_system_prompt_sha256,
         judge_user_prompt_sha256=contract.judge_user_prompt_sha256,
+        judge_max_attempts=contract.judge_max_attempts,
     )
     return _judge_contract_hash()
 
@@ -806,7 +816,7 @@ def _judge_failure_record(record: JudgmentRecord) -> JudgeFailureRecord:
         http_status=record.http_status,
         request_id=record.request_id,
         retry_count=record.retry_count,
-        attempt_count=record.retry_count + 1,
+        attempt_count=record.attempt_count,
         started_at_utc=record.started_at_utc,
         completed_at_utc=record.completed_at_utc,
         raw_output_text=record.raw_output_text,

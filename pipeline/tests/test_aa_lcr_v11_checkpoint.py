@@ -125,3 +125,52 @@ def test_build_run_contract_accepts_prepared_dataset_mapping_proxy():
     )
 
     assert len(run_contract.fingerprint) == 64
+
+
+@pytest.mark.parametrize("repeat_index", [-1, 3])
+def test_record_candidate_rejects_repeat_outside_contract(tmp_path, repeat_index):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+
+    with pytest.raises(A.CheckpointConflictError, match="outside run contract"):
+        db.record_candidate(replace(candidate_record(), repeat_index=repeat_index))
+
+
+def test_record_candidate_rejects_unknown_contract_question(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+
+    with pytest.raises(A.CheckpointConflictError, match="outside run contract"):
+        db.record_candidate(replace(candidate_record(), question_id=2))
+
+
+@pytest.mark.parametrize("repeat_index", [-1, 3])
+def test_record_judgment_rejects_repeat_outside_contract(tmp_path, repeat_index):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+    db.record_candidate(candidate_record())
+
+    with pytest.raises(A.CheckpointConflictError, match="outside run contract"):
+        db.record_judgment(
+            replace(judgment_record("a" * 64), repeat_index=repeat_index)
+        )
+
+
+def test_record_judgment_rejects_unknown_contract_question(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+
+    with pytest.raises(A.CheckpointConflictError, match="outside run contract"):
+        db.record_judgment(replace(judgment_record("a" * 64), question_id=2))
+
+
+def test_missing_judgments_ignores_out_of_contract_candidate_rows(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+    db.record_candidate(candidate_record())
+    db._connection.execute("PRAGMA foreign_keys=OFF")
+    db._connection.execute("INSERT INTO questions (question_id) VALUES (2)")
+    db._connection.execute(
+        """
+        INSERT INTO candidates (question_id, repeat_index, record_json)
+        VALUES (2, 99, '{}')
+        """
+    )
+    db._connection.commit()
+
+    assert db.missing_judgments("a" * 64) == [(1, 0)]

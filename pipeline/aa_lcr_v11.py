@@ -232,6 +232,7 @@ class Checkpoint:
     def __init__(self, path: Path, contract: RunContract) -> None:
         self.path = Path(path)
         self.contract = contract
+        self._expected_question_ids = frozenset(contract.question_ids)
         self._lock = threading.Lock()
         self._connection = sqlite3.connect(self.path, check_same_thread=False)
         self._connection.execute("PRAGMA journal_mode=WAL")
@@ -253,13 +254,13 @@ class Checkpoint:
                 );
                 CREATE TABLE IF NOT EXISTS candidates (
                     question_id INTEGER NOT NULL REFERENCES questions(question_id),
-                    repeat_index INTEGER NOT NULL,
+                    repeat_index INTEGER NOT NULL CHECK (repeat_index >= 0),
                     record_json TEXT NOT NULL,
                     PRIMARY KEY (question_id, repeat_index)
                 );
                 CREATE TABLE IF NOT EXISTS judgments (
                     question_id INTEGER NOT NULL,
-                    repeat_index INTEGER NOT NULL,
+                    repeat_index INTEGER NOT NULL CHECK (repeat_index >= 0),
                     judge_contract_hash TEXT NOT NULL,
                     record_json TEXT NOT NULL,
                     PRIMARY KEY (question_id, repeat_index, judge_contract_hash),
@@ -285,6 +286,16 @@ class Checkpoint:
                 raise CheckpointConflictError(
                     "checkpoint belongs to a different immutable run contract"
                 )
+
+    def _validate_unit(self, question_id: int, repeat_index: int) -> None:
+        if (
+            question_id not in self._expected_question_ids
+            or not 0 <= repeat_index < self.contract.repeats
+        ):
+            raise CheckpointConflictError(
+                "record unit is outside run contract: "
+                f"({question_id}, {repeat_index})"
+            )
 
     def _record(
         self,
@@ -345,6 +356,7 @@ class Checkpoint:
             ]
 
     def record_candidate(self, record: CandidateRecord) -> None:
+        self._validate_unit(record.question_id, record.repeat_index)
         self._record(
             "candidates",
             (record.question_id, record.repeat_index),
@@ -354,23 +366,26 @@ class Checkpoint:
     def missing_judgments(self, judge_contract_hash: str) -> list[tuple[int, int]]:
         with self._lock:
             return [
-                (int(question_id), int(repeat_index))
-                for question_id, repeat_index in self._connection.execute(
+                (question_id, repeat_index)
+                for question_id in self.contract.question_ids
+                for repeat_index in range(self.contract.repeats)
+                if self._connection.execute(
+                    "SELECT 1 FROM candidates WHERE question_id = ? AND repeat_index = ?",
+                    (question_id, repeat_index),
+                ).fetchone()
+                is not None
+                and self._connection.execute(
                     """
-                    SELECT c.question_id, c.repeat_index
-                    FROM candidates AS c
-                    LEFT JOIN judgments AS j
-                      ON j.question_id = c.question_id
-                     AND j.repeat_index = c.repeat_index
-                     AND j.judge_contract_hash = ?
-                    WHERE j.question_id IS NULL
-                    ORDER BY c.question_id, c.repeat_index
+                    SELECT 1 FROM judgments
+                    WHERE question_id = ? AND repeat_index = ? AND judge_contract_hash = ?
                     """,
-                    (judge_contract_hash,),
-                )
+                    (question_id, repeat_index, judge_contract_hash),
+                ).fetchone()
+                is None
             ]
 
     def record_judgment(self, record: JudgmentRecord) -> None:
+        self._validate_unit(record.question_id, record.repeat_index)
         self._record(
             "judgments",
             (record.question_id, record.repeat_index),

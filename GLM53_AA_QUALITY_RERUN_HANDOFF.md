@@ -146,6 +146,28 @@
 > zlib flag) is still the experiment that tests the truncation hypothesis.
 > Do not skip it on a 100% loop reading of the 4-gram gate. Dropping the 15
 > tight-loop traces is the only GPU save from this screen.
+>
+> ### 256k diagnostic completed (2026-09-12) — not Packet B
+>
+> User-authorized diagnostic `hd-aa-caphit70-256k` finished
+> 2026-09-12T19:41Z (`eval rc=0`, 30 h wall). Design actually run: **all 5
+> attempts on every stem with ≥1 Sep-11 cap-hit** (70×5=350),
+> `max_new_tokens` 262144, concurrency 2, NVIDIA prompt/extract unchanged,
+> live tp=16 + EAGLE Service. Not the skip-10-loop n=110 sketch above.
+>
+> | | |
+> |---|---|
+> | Diagnostic pass@1 | **68.57%** (240/350), stderr ±2.49 pp |
+> | Same 70 stems @ 131k | 205/350 = 58.57% |
+> | Splice + 128 never-cap stems @ 131k (605/640) | **845/990 = 85.35%** |
+> | Budget used? | Yes: `max_completion_tokens=262144` (unlike the 160k dump) |
+> | Still `length` @ 256k | 71/300 in the last interceptor dump (~24%) |
+>
+> **Headline stays 81.82% at 131,072.** The splice is not an AA-comparable
+> 990 @ 256k run (serve also changed: tp=16 + EAGLE vs formal tp=8).
+> Packet B remains **not authorized**. Write-up:
+> `docs/status/2026-09-11-aa-gpqa-truncation-and-overthinking.md`. Evidence:
+> `docs/evidence/2026-09-12-aa-caphit70-256k.log`.
 
 - Protocol version: 1
 - Task: rerun AA GPQA Diamond on the two-node GLM-5.3 serve, and make the

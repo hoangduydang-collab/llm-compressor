@@ -45,6 +45,12 @@ interesting finding.
 - **Update (same day):** per-item scores *are* in the sqlite caches. Cap-hits
   all scored 0; uncapped acc 93.1% / 94.1%. Loop vs overthinking write-up:
   [`2026-09-11-aa-gpqa-truncation-and-overthinking.md`](2026-09-11-aa-gpqa-truncation-and-overthinking.md).
+- **Update (2026-09-13):** 256k diagnostic `hd-aa-caphit70-256k` completed
+  (70 cap-hit stems × 5 @ 262144, 30 h, 240/350 = 68.57%). Spliced with
+  the 128 never-cap stems kept at 131k: **845/990 = 85.35%**. Extra budget
+  was actually used (max 262144; ~24% of the first 300 still `length`).
+  Not AA-comparable; headline stays **81.82% @ 131072**. Packet B (full
+  990 raised-cap) still not authorized. Details in the write-up above.
 - The unquantized comparison is still missing. No BF16 GLM-5.3 fits an 8xH100
   node, so a defect shared by both arms stays invisible.
 

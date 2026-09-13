@@ -1,7 +1,9 @@
 # GLM-5.3 W4AFP8 — AA GPQA Diamond analysis (2026-09-11)
 
-Post-hoc read of the Sep-11 formal AA run (`results-formal-198-c8`). CPU-only
-jobs against the harness sqlite caches. No 256k GPU rerun was launched.
+Post-hoc read of the Sep-11 formal AA run (`results-formal-198-c8`), plus
+the Sep-12 256k diagnostic on the 70 cap-hit stems. CPU-only jobs against
+the harness sqlite caches; the 256k job is diagnostic only (not AA-
+comparable).
 
 This note is the analysis packet. Formal scores and provenance live in
 [`2026-09-11-glm53-aa-gpqa-and-three-objectives.md`](2026-09-11-glm53-aa-gpqa-and-three-objectives.md)
@@ -23,6 +25,15 @@ and [`GLM53_AA_QUALITY_RERUN_HANDOFF.md`](../GLM53_AA_QUALITY_RERUN_HANDOFF.md).
    overthinking), after dropping hedge-only “maybe / what if” hits and
    *keeping* format-rehearsal `Answer: X` (the letter is the model’s current
    pick, not a dummy C).
+5. **Raising the cap on the 70 cap-hit stems does use extra budget and
+   recovers some score, but not enough to match AA.** Job
+   `hd-aa-caphit70-256k` (ours only, 70×5=350, `max_new_tokens` 262144)
+   scored **68.57%** (240/350). Spliced with the 128 never-cap stems kept
+   at 131k (605/640), that is **85.35%** (845/990) vs formal **81.82%**
+   and AA **~91.7%**. Unlike the 160k dump, traces actually reached
+   262144 (`max_completion_tokens`). About a quarter of the first 300
+   diagnostic requests still finished `length`. Headline stays 81.82%
+   @ 131072.
 
 ## Setup
 
@@ -49,7 +60,8 @@ prompt. There is no missing join key (Packet A, job `hd-aa-artifact-inventory`).
 Code: `pipeline/aa_cap_loop_screen.py`, `pipeline/aa_overthinking.py`,
 tests under `pipeline/tests/`. CPU jobs under `pipeline/k8s/hd-aa-*.yaml`.
 Cluster JSON/logs: `/mnt/cephfs/hoangduy/runlogs/hd-aa-*`. Local copies of
-logs: `docs/evidence/2026-09-11-aa-*.log`.
+logs: `docs/evidence/2026-09-11-aa-*.log` and
+`docs/evidence/2026-09-12-aa-caphit70-256k.log`.
 
 ---
 
@@ -71,9 +83,62 @@ Evidence: handoff Packet A; `docs/evidence/2026-09-11-aa-artifact-inventory.log`
 - Earlier status note that “per-item scores were absent” is **false**. The
   sqlite caches have them.
 
-Live two-node serve (not used for this formal run; relevant to a future
-raised-cap rerun): tp=16, KV pool **598,848**, EAGLE on. Packet B (full 990
-at a raised cap) is **not authorized**.
+Live two-node serve (used for the 256k diagnostic below): tp=16, KV pool
+**598,848**, EAGLE on. Packet B (full 990 at a raised cap) is **not authorized**.
+
+### 256k diagnostic — completed 2026-09-12 19:41Z
+
+Job `hd-aa-caphit70-256k`: **70 stems × 5 = 350** attempts on ours only,
+`max_new_tokens` 262144, concurrency 2, NVIDIA prompt/extract unchanged.
+Subset is official Diamond rows whose stem had ≥1 Sep-11 cap-hit — not
+`limit_samples` first-N. Launched 2026-09-11 13:57Z against the live
+tp=16 / EAGLE Service (KV pool 598848). Wall time **30 h**, `eval rc=0`,
+350/350 HTTP 200. This is **not** the skip-10-paragraph-loop n=110 design
+in §3.1; it reran all five attempts on every cap-hit stem.
+
+Artifacts:
+
+```
+.../client-ours/aa-gpqa-v3/results-diag-caphit70-256k
+.../client-ours/aa-gpqa-v3/caphit70-stems.json
+/mnt/cephfs/hoangduy/runlogs/hd-aa-caphit70-256k.log
+docs/evidence/2026-09-12-aa-caphit70-256k.log
+```
+
+| | |
+|---|---|
+| n | 350 (70 stems × 5) |
+| pass@1 (`micro_avg_of_5`) | **68.57%** (240/350) |
+| stderr | ±2.49 pp |
+| Same 70 stems @ 131k | 205/350 = **58.57%** (120 cap-hit zeros + 25 finished-wrong) |
+| Δ vs those stems @ 131k | **+35** / **+10.0 pp** |
+
+Token budget actually moved (contrast §2.1): interceptor dumps show
+`max_completion_tokens = 262144`. Mean completion tokens ~79k on the
+first 300 requests. Finish reasons at n=300: **stop 229 / length 71**
+(~24% still hit 256k). Final n=350 `finish_reason` counts are in the
+CephFS `response_stats` metrics, not in the interval-100 log lines.
+
+**Not AA-comparable.** Headline remains 81.82% at 131,072. Serve stack
+also changed vs the formal run (tp=16 + EAGLE vs tp=8, no specdec), so
+the +10 pp on these stems is not a pure cap-budget delta.
+
+#### Splice with never-cap stems (diagnostic, not a 990 @ 256k run)
+
+Never-cap stems already finished under 131k (n=640, max ~95k, acc
+**94.53%** = 605/640; evidence
+`docs/evidence/2026-09-11-aa-capped-stem-sibling-tokens.log`). Keeping
+those traces and substituting the 256k scores on the 70 cap-hit stems:
+
+| Bucket | Attempts | Correct | Acc |
+|---|---:|---:|---:|
+| Never-cap stems, keep 131k | 128 × 5 = 640 | 605 | 94.53% |
+| Cap-hit stems, 256k diagnostic | 70 × 5 = 350 | 240 | 68.57% |
+| **Spliced 198 × 5** | **990** | **845** | **85.35%** |
+
+Vs formal 810/990 = 81.82% that is +3.54 pp. Vs AA ~91.7% still
+**~6.4 pp** short. Packet B (full 990 at a raised cap) is still **not
+authorized**.
 
 ---
 
@@ -161,14 +226,13 @@ finishes and one runaway**, not because all five attempts are long.
 Evidence: `docs/evidence/2026-09-11-aa-capped-stem-sibling-tokens.log`,
 `-aa-stem-token-std.log`.
 
-### 3.1 256k rerun (designed, not launched)
+### 3.1 256k rerun — what we ran vs the skip-loop sketch
 
-Diagnostic only; headline cap stays 131,072.
-
-- Rerun **attempts**, not all 5 repeats of unique problems.
-- Skip the **10** ours verbatim paragraph-loops; keep the 5 zlib-tight-but-
-  advancing tails. **n = 110** ours at 256k / concurrency 2.
-- Do not GPU-launch until explicitly authorized.
+The launched diagnostic was **all 5 attempts on every stem with ≥1
+cap-hit** (70×5=350), not the earlier sketch of rerunning only 110
+capped *attempts* after skipping 10 verbatim paragraph-loops. Results
+are in §1. The skip-loop n=110 design was not run. Headline cap stays
+131,072.
 
 ---
 
@@ -289,17 +353,23 @@ judge for logical vs arithmetic vs formatting. We did not run that.
 
 ---
 
-## 5. Implications (not yet executed)
+## 5. Implications
 
-- A raised-cap **attempt** rerun (110 ours @ 256k, skip 10 paragraph-loops)
-  tests whether rumination finishes given budget. It does not change the
-  AA-comparable headline, which must stay at 131,072.
-- Tight paragraph-loops will not be saved by more tokens; skip them.
+- The 70-stem × 5 diagnostic **did** spend the extra budget (max
+  completion 262144) and recovered +10 pp on those stems / +3.5 pp
+  spliced to 845/990 = 85.35%. It does **not** change the AA-comparable
+  headline, which must stay at 131,072.
+- Extra tokens are not sufficient by themselves: ~24% of the first 300
+  diagnostic requests still finished `length` at 256k, and the splice
+  remains ~6.4 pp below AA 91.7%.
+- Tight paragraph-loops will not be saved by more tokens; the launched
+  job did not skip them (it reran all 70 stems).
 - Overthinking is a large slice of *failures* (~1/3), including many
   cap-hits that stated gold then ran on. A decoding-time “wait/but”
   penalty (Lotfi) is a separate intervention from raising the cap.
 - Do not mix this AA number with last week’s in-house 61%/56% pair
   (greedy, 32k, homemade extract).
+- Packet B (full 990 at a raised cap) remains unauthorized.
 
 ## 6. Job / artifact index
 
@@ -314,3 +384,4 @@ judge for logical vs arithmetic vs formatting. We did not run that.
 | `hd-aa-overthinking-hedge` | Hedge / format / decision split |
 | `hd-aa-overthinking-format-letter` | Format-rehearsal letter vs gold |
 | `hd-aa-overthinking-keep-ratio` | Agreed keep/drop rates |
+| `hd-aa-caphit70-256k` | 70 cap-hit stems × 5 @ 262144; splice 85.35% |

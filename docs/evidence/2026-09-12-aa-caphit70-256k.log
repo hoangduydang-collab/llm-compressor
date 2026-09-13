@@ -1,0 +1,59 @@
+# hd-aa-caphit70-256k — captured 2026-09-13 from kubectl after Job Complete.
+# Namespace evaluation. Not a CephFS copy of the runlog; key lines from
+# `kubectl -n evaluation get job hd-aa-caphit70-256k` and
+# `kubectl -n evaluation logs job/hd-aa-caphit70-256k`.
+# Cluster artifacts:
+#   /mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-diag-caphit70-256k
+#   /mnt/cephfs/hoangduy/runlogs/hd-aa-caphit70-256k.log
+
+==== job ====
+NAME                  STATUS     COMPLETIONS   DURATION   AGE
+hd-aa-caphit70-256k   Complete   1/1           30h        41h
+pod hd-aa-caphit70-256k-q8f76  Completed  0 restarts
+
+==== harness command (excerpt) ====
+simple_evals --model glm-5.3-w4afp8 --eval_name gpqa_diamond --url http://localhost:3825
+  --temperature 0.6 --top_p 1.0 --max_tokens 262144
+  --out_dir .../results-diag-caphit70-256k/gpqa_diamond_aa_v3
+  --num_threads 2 --timeout 14400 --num_repeats 5
+Creating new cache at .../gpqa_diamond_aa_v3/cache/cache.sqlite
+
+==== ResponseStatsInterceptor (interval 100; last dump before n=350) ====
+[I 2026-09-11T22:26:18.355] avg_prompt_tokens=334.91 avg_total_tokens=80284.43
+  avg_completion_tokens=79949.56 avg_latency_ms=595527.96
+  max_prompt_tokens=2814 max_total_tokens=264958 max_completion_tokens=262144
+  max_latency_ms=1884245.21 count=100 successful_count=100
+  finish_reason={'stop': 75, 'length': 25} status_codes={200: 100}
+
+[I 2026-09-12T06:39:18.940] avg_prompt_tokens=314.31 avg_total_tokens=80496.02
+  avg_completion_tokens=80181.72 avg_latency_ms=597893.09
+  max_prompt_tokens=2814 max_total_tokens=264958 max_completion_tokens=262144
+  max_latency_ms=1931125.62 count=200 successful_count=200
+  finish_reason={'stop': 150, 'length': 50} status_codes={200: 200}
+
+[I 2026-09-12T15:22:40.571] avg_prompt_tokens=310.78 avg_total_tokens=79030.97
+  avg_completion_tokens=78720.18 avg_latency_ms=605642.72
+  max_prompt_tokens=2814 max_total_tokens=264958 max_completion_tokens=262144
+  max_latency_ms=2940156.76 count=300 successful_count=300
+  finish_reason={'stop': 229, 'length': 71} status_codes={200: 300}
+
+==== completion ====
+Writing report to .../gpqa_diamond_aa_v3/gpqa_diamond.html
+Writing results to .../gpqa_diamond_aa_v3/gpqa_diamond.json
+[I 2026-09-12T19:41:10.547] Generated HTML report .../results-diag-caphit70-256k/report.html
+[I 2026-09-12T19:41:10.571] Generated JSON report .../results-diag-caphit70-256k/report.json
+[I 2026-09-12T19:41:10.572] Writing response statistics to metrics
+  total_responses=350 successful_responses=350
+  output_dir=.../results-diag-caphit70-256k
+[I 2026-09-12T19:41:12.967] Aggregated metrics runtime_seconds=107010.55
+  inference_time_seconds=106992.52 scoring_time_seconds=18.04
+[W 2026-09-12T19:41:13.024] EvaluationTaskEvent task=gpqa_diamond_aa_v3
+  frameworkName=simple_evals model=glm-5.3-w4afp8
+  executionDurationSeconds=107013.47 status=StatusEnum.SUCCESS
+==> eval rc=0 2026-09-12T19:41:15Z
+
+==== nemo-evaluator results.groups.gpqa_diamond.metrics.score.scores.micro_avg_of_5 ====
+value: 0.6857142857142857
+stddev: 0.20721673559392853
+stderr: 0.024945963488123363
+# 0.6857142857142857 == 240/350 exactly

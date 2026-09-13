@@ -33,9 +33,13 @@ class FakeResponses:
 
 
 class FakeOpenAI:
-    def __init__(self, outcomes: list[object]) -> None:
+    def __init__(self, outcomes: list[object], *, model_id: str = A.JUDGE_MODEL) -> None:
         self.responses = FakeResponses(outcomes)
-        self.models = SimpleNamespace(retrieve=lambda model: SimpleNamespace(id=model))
+        self.models = SimpleNamespace(
+            retrieve=lambda model: SimpleNamespace(
+                id=model_id, created=123, object="model", owned_by="openai"
+            )
+        )
 
 
 def judge_response(
@@ -130,9 +134,38 @@ def test_preflight_retrieves_exact_model_and_requires_correct_verdict():
 
     result = A.preflight_judge(client)
 
-    assert result["requested_model"] == A.JUDGE_MODEL
-    assert result["returned_model"] == A.JUDGE_MODEL
+    assert result["model_identity"] == {
+        "id": A.JUDGE_MODEL,
+        "created": 123,
+        "object": "model",
+        "owned_by": "openai",
+    }
+    judgment = result["judgment"]
+    assert judgment["requested_model"] == A.JUDGE_MODEL
+    assert judgment["retrieved_model"] == A.JUDGE_MODEL
+    assert judgment["returned_model"] == A.JUDGE_MODEL
+    assert judgment["usage"] == {
+        "input_tokens": 10,
+        "output_tokens": 4,
+        "total_tokens": 14,
+    }
+    assert judgment["raw_output_text"] == '{"verdict":"CORRECT"}'
+    assert judgment["verdict"] == "CORRECT"
+    assert judgment["reasoning_effort"] == A.JUDGE_REASONING_EFFORT
+    assert judgment["reasoning_mode"] == A.JUDGE_REASONING_MODE
+    assert judgment["started_at_utc"].endswith("Z")
+    assert judgment["completed_at_utc"].endswith("Z")
+    assert judgment["retry_count"] == 0
     assert client.responses.calls[0]["input"][1]["content"].find("What is 2 + 2?") >= 0
+
+
+def test_preflight_rejects_unrelated_retrieved_model():
+    client = FakeOpenAI([judge_response()], model_id="gpt-4.1")
+
+    with pytest.raises(A.JudgeProtocolError, match="unrelated"):
+        A.preflight_judge(client)
+
+    assert client.responses.calls == []
 
 
 def test_malformed_judge_output_retries_then_records_normalized_verdict(monkeypatch):
@@ -176,6 +209,51 @@ def test_retryable_judge_failures_retry(error, monkeypatch):
     assert record.retry_count == 1
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        FakeAPIError(status_code=401, request_id="auth-request"),
+        FakeAPIError(status_code=404, request_id="not-found-request"),
+    ],
+)
+def test_non_retryable_judge_failures_stop_immediately(error, monkeypatch):
+    client = FakeOpenAI([error, judge_response()])
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+
+    record = A.judge_one(client, questions()[0], candidate_record())
+
+    assert len(client.responses.calls) == 1
+    assert record.exception_class == type(error).__name__
+    assert record.http_status == getattr(error, "status_code", None)
+
+
+def test_unknown_judge_exception_propagates_without_retry(monkeypatch):
+    client = FakeOpenAI([AttributeError("programming error"), judge_response()])
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(AttributeError, match="programming error"):
+        A.judge_one(client, questions()[0], candidate_record())
+
+    assert len(client.responses.calls) == 1
+
+
+def test_sdk_transport_exception_retries_without_status(monkeypatch):
+    fake_openai_module = ModuleType("openai")
+
+    class APIConnectionError(Exception):
+        pass
+
+    fake_openai_module.APIConnectionError = APIConnectionError  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openai", fake_openai_module)
+    client = FakeOpenAI([APIConnectionError(), judge_response()])
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+
+    record = A.judge_one(client, questions()[0], candidate_record())
+
+    assert len(client.responses.calls) == 2
+    assert record.verdict == "CORRECT"
+
+
 def test_judge_exhaustion_records_only_safe_error(monkeypatch):
     secret = "sk-do-not-record"
     client = FakeOpenAI([FakeAPIError(status_code=429, request_id=secret)] * A.MAX_ATTEMPTS)
@@ -209,17 +287,68 @@ def test_judge_missing_resumes_without_duplicate_calls(tmp_path):
     assert len(client.responses.calls) == 1
 
 
+def test_failed_judgment_is_incomplete_and_failure_audit_is_append_only(
+    tmp_path, monkeypatch
+):
+    checkpoint = seeded_checkpoint(tmp_path)
+    checkpoint.record_candidate(candidate_record())
+    client = FakeOpenAI([FakeAPIError(status_code=429, request_id="req_failure")] * A.MAX_ATTEMPTS)
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(A.IncompleteJudgmentError, match="incomplete"):
+        A.judge_missing(checkpoint, questions(), client)
+
+    contract_hash = A._judge_contract_hash(
+        checkpoint.contract.judge_model, checkpoint.contract.judge_reasoning_effort
+    )
+    assert checkpoint.missing_judgments(contract_hash) == [(1, 0)]
+    failures = checkpoint.judge_failures()
+    assert len(failures) == 1
+    assert failures[0].attempt_count == A.MAX_ATTEMPTS
+    assert failures[0].exception_class == "FakeAPIError"
+    assert failures[0].http_status == 429
+    assert failures[0].request_id == "req_failure"
+    assert failures[0].requested_model == A.JUDGE_MODEL
+    assert failures[0].reasoning_effort == A.JUDGE_REASONING_EFFORT
+    assert failures[0].reasoning_mode == A.JUDGE_REASONING_MODE
+
+    client.responses.outcomes = [judge_response()]
+    with pytest.raises(A.IncompleteJudgmentError, match="incomplete"):
+        A.judge_missing(checkpoint, questions(), client)
+
+    assert len(client.responses.calls) == A.MAX_ATTEMPTS
+    assert checkpoint.missing_judgments(contract_hash) == [(1, 0)]
+    assert len(checkpoint.judge_failures()) == 1
+
+
+def test_failed_judgment_cannot_occupy_immutable_success_key(tmp_path):
+    checkpoint = seeded_checkpoint(tmp_path)
+    checkpoint.record_candidate(candidate_record())
+    record = A.judge_one(FakeOpenAI([]), questions()[0], candidate_record(content=None))
+
+    with pytest.raises(A.CheckpointConflictError, match="valid CORRECT/INCORRECT"):
+        checkpoint.record_judgment(record)
+
+
 def test_secret_never_enters_judge_artifacts(tmp_path, monkeypatch):
     secret = "sk-test-do-not-serialize"
     monkeypatch.setenv("OPENAI_API_KEY", secret)
     checkpoint = seeded_checkpoint(tmp_path)
     checkpoint.record_candidate(candidate_record())
-    client = FakeOpenAI([judge_response()])
+    client = FakeOpenAI(
+        [FakeAPIError(status_code=429, request_id=secret)] * A.MAX_ATTEMPTS
+    )
 
-    A.judge_missing(checkpoint, questions(), client)
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+    with pytest.raises(A.IncompleteJudgmentError):
+        A.judge_missing(checkpoint, questions(), client)
 
     with sqlite3.connect(checkpoint.path) as connection:
         payload = "\n".join(
-            row[0] for row in connection.execute("SELECT record_json FROM judgments")
+            row[0]
+            for row in connection.execute(
+                "SELECT record_json FROM judgments "
+                "UNION ALL SELECT record_json FROM judge_failures"
+            )
         )
     assert secret not in payload

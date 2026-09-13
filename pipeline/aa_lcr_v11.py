@@ -110,6 +110,10 @@ class CredentialError(ValueError):
     """Raised when required judge credentials are unavailable."""
 
 
+class IncompleteJudgmentError(RuntimeError):
+    """Raised when a run contains a terminal, unscored judge failure."""
+
+
 class DatasetIntegrityError(ValueError):
     """Raised when the pinned AA-LCR dataset cannot be verified."""
 
@@ -196,6 +200,7 @@ class JudgmentRecord:
     completed_at_utc: str
     error: str | None
     requested_model: str | None = None
+    retrieved_model: str | None = None
     returned_model: str | None = None
     reasoning_effort: str | None = None
     reasoning_mode: str | None = None
@@ -204,6 +209,27 @@ class JudgmentRecord:
     request_id: str | None = None
     usage: object = None
     raw_output_text: str | None = None
+    exception_class: str | None = None
+    http_status: int | None = None
+
+
+@dataclass(frozen=True)
+class JudgeFailureRecord:
+    question_id: int
+    repeat_index: int
+    judge_contract_hash: str
+    requested_model: str
+    reasoning_effort: str
+    reasoning_mode: str
+    openai_sdk_version: str | None
+    exception_class: str
+    http_status: int | None
+    request_id: str | None
+    retry_count: int
+    attempt_count: int
+    started_at_utc: str
+    completed_at_utc: str
+    raw_output_text: str | None
 
 
 def build_run_contract(
@@ -290,6 +316,15 @@ class Checkpoint:
                     FOREIGN KEY (question_id, repeat_index)
                         REFERENCES candidates(question_id, repeat_index)
                 );
+                CREATE TABLE IF NOT EXISTS judge_failures (
+                    question_id INTEGER NOT NULL,
+                    repeat_index INTEGER NOT NULL CHECK (repeat_index >= 0),
+                    judge_contract_hash TEXT NOT NULL,
+                    record_json TEXT NOT NULL,
+                    PRIMARY KEY (question_id, repeat_index, judge_contract_hash),
+                    FOREIGN KEY (question_id, repeat_index)
+                        REFERENCES candidates(question_id, repeat_index)
+                );
                 CREATE TABLE IF NOT EXISTS server_snapshots (
                     stage TEXT PRIMARY KEY,
                     payload_json TEXT NOT NULL
@@ -342,19 +377,21 @@ class Checkpoint:
                 "VALUES (?, ?, ?)"
             )
             parameters = (*key, record_json)
-        else:
+        elif table in {"judgments", "judge_failures"}:
             query = (
-                "SELECT record_json FROM judgments WHERE question_id = ? "
+                f"SELECT record_json FROM {table} WHERE question_id = ? "
                 "AND repeat_index = ? AND judge_contract_hash = ?"
             )
             insert = (
-                "INSERT INTO judgments "
+                f"INSERT INTO {table} "
                 "(question_id, repeat_index, judge_contract_hash, record_json) "
                 "VALUES (?, ?, ?, ?)"
             )
             assert judge_contract_hash is not None
             parameters = (*key, judge_contract_hash, record_json)
             key = (*key, judge_contract_hash)
+        else:
+            raise ValueError(f"unknown immutable record table: {table}")
         with self._lock, self._connection:
             row = self._connection.execute(query, key).fetchone()
             if row is None:
@@ -437,6 +474,10 @@ class Checkpoint:
             ]
 
     def record_judgment(self, record: JudgmentRecord) -> None:
+        if record.verdict not in {"CORRECT", "INCORRECT"}:
+            raise CheckpointConflictError(
+                "only a valid CORRECT/INCORRECT record may occupy a judgment key"
+            )
         self._validate_unit(record.question_id, record.repeat_index)
         self._record(
             "judgments",
@@ -444,6 +485,39 @@ class Checkpoint:
             _canonical_dataclass(record),
             judge_contract_hash=record.judge_contract_hash,
         )
+
+    def record_judge_failure(self, record: JudgeFailureRecord) -> None:
+        """Append one immutable terminal failure event for an unscored unit."""
+        self._validate_unit(record.question_id, record.repeat_index)
+        self._record(
+            "judge_failures",
+            (record.question_id, record.repeat_index),
+            _canonical_dataclass(record),
+            judge_contract_hash=record.judge_contract_hash,
+        )
+
+    def judge_failures(self) -> list[JudgeFailureRecord]:
+        """Return terminal judge failures which leave the run incomplete."""
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT record_json FROM judge_failures ORDER BY question_id, repeat_index"
+            ).fetchall()
+        return [JudgeFailureRecord(**json.loads(row[0])) for row in rows]
+
+    def incomplete_judgments(self, judge_contract_hash: str) -> list[tuple[int, int]]:
+        """Return terminal failures for this judge contract."""
+        with self._lock:
+            return [
+                (question_id, repeat_index)
+                for question_id, repeat_index in self._connection.execute(
+                    """
+                    SELECT question_id, repeat_index FROM judge_failures
+                    WHERE judge_contract_hash = ?
+                    ORDER BY question_id, repeat_index
+                    """,
+                    (judge_contract_hash,),
+                )
+            ]
 
     def candidate_record(self, question_id: int, repeat_index: int) -> CandidateRecord:
         """Return one persisted candidate required for a missing judgment."""
@@ -563,6 +637,17 @@ def _response_value(response: object, name: str, default: object = None) -> obje
     return getattr(response, name, default)
 
 
+def _sdk_version() -> str | None:
+    return getattr(sys.modules.get("openai"), "__version__", None)
+
+
+def _safe_request_id(value: object) -> str | None:
+    """Keep public request IDs, never a value that resembles an API key."""
+    if not isinstance(value, str) or value.startswith("sk-"):
+        return None
+    return value
+
+
 def _usage_value(usage: object) -> object:
     if usage is None:
         return None
@@ -587,6 +672,7 @@ def _judge_error_record(
     started_at_utc: str,
     error: str,
     raw_output_text: str | None = None,
+    exc: Exception | None = None,
 ) -> JudgmentRecord:
     return JudgmentRecord(
         question_id=question.question_id,
@@ -603,13 +689,65 @@ def _judge_error_record(
         requested_model=JUDGE_MODEL,
         reasoning_effort=JUDGE_REASONING_EFFORT,
         reasoning_mode=JUDGE_REASONING_MODE,
+        openai_sdk_version=_sdk_version(),
+        request_id=_safe_request_id(getattr(exc, "request_id", None)),
         raw_output_text=raw_output_text,
+        exception_class=type(exc).__name__ if exc is not None else None,
+        http_status=_exception_status(exc) if exc is not None else None,
     )
 
 
 def _exception_status(exc: BaseException) -> int | None:
     status = getattr(exc, "status_code", getattr(exc, "status", None))
     return status if isinstance(status, int) else None
+
+
+def _is_retryable_judge_exception(exc: Exception) -> bool:
+    """Retry only protocol, transport, timeout, and retryable API-status failures."""
+    if isinstance(exc, (JudgeProtocolError, OSError, TimeoutError, URLError)):
+        return True
+    openai = sys.modules.get("openai")
+    sdk_transport_types = tuple(
+        exception_type
+        for name in (
+            "APIConnectionError",
+            "APITimeoutError",
+            "RateLimitError",
+            "InternalServerError",
+        )
+        if isinstance((exception_type := getattr(openai, name, None)), type)
+    )
+    if sdk_transport_types and isinstance(exc, sdk_transport_types):
+        return True
+    status = _exception_status(exc)
+    return status is not None and _is_retryable_status(status)
+
+
+def _is_known_api_exception(exc: Exception) -> bool:
+    """Recognize status-bearing OpenAI API errors without importing its SDK eagerly."""
+    return _exception_status(exc) is not None
+
+
+def _judge_failure_record(record: JudgmentRecord) -> JudgeFailureRecord:
+    assert record.error is not None
+    assert record.exception_class is not None
+    return JudgeFailureRecord(
+        question_id=record.question_id,
+        repeat_index=record.repeat_index,
+        judge_contract_hash=record.judge_contract_hash,
+        requested_model=record.requested_model or JUDGE_MODEL,
+        reasoning_effort=record.reasoning_effort or JUDGE_REASONING_EFFORT,
+        reasoning_mode=record.reasoning_mode or JUDGE_REASONING_MODE,
+        openai_sdk_version=record.openai_sdk_version,
+        exception_class=record.exception_class,
+        http_status=record.http_status,
+        request_id=record.request_id,
+        retry_count=record.retry_count,
+        attempt_count=record.retry_count + 1,
+        started_at_utc=record.started_at_utc,
+        completed_at_utc=record.completed_at_utc,
+        raw_output_text=record.raw_output_text,
+    )
 
 
 def judge_one(
@@ -626,9 +764,11 @@ def judge_one(
     started_at_utc = _utc_now()
     contract_hash = judge_contract_hash or _judge_contract_hash()
     if candidate.content is None:
+        error = JudgeProtocolError("candidate has no final content")
         return _judge_error_record(
             question, candidate, contract_hash, 0, started_at_utc,
             "candidate has no final content",
+            exc=error,
         )
     judge_user_prompt = build_judge_user_prompt(
         question.question, question.official_answer, candidate.content
@@ -653,20 +793,18 @@ def judge_one(
                 raise JudgeProtocolError("judge response has no output text")
             verdict = parse_judge_verdict(output_text)
         except Exception as exc:
-            status = _exception_status(exc)
-            retryable = (
-                isinstance(exc, (JudgeProtocolError, OSError, TimeoutError, URLError))
-                or status is None
-                or _is_retryable_status(status)
-            )
-            if retryable and attempt + 1 < max_attempts:
+            if _is_retryable_judge_exception(exc) and attempt + 1 < max_attempts:
                 time.sleep(_retry_delay(attempt))
                 continue
+            if not isinstance(exc, JudgeProtocolError) and not _is_known_api_exception(exc):
+                raise
+            status = _exception_status(exc)
             status_text = f" HTTP {status}" if status is not None else ""
             return _judge_error_record(
                 question, candidate, contract_hash, attempt, started_at_utc,
                 f"judge failed after {attempt + 1} attempts: {type(exc).__name__}{status_text}",
                 output_text,
+                exc,
             )
         return JudgmentRecord(
             question_id=question.question_id,
@@ -682,7 +820,7 @@ def judge_one(
             returned_model=_response_value(response, "model"),
             reasoning_effort=JUDGE_REASONING_EFFORT,
             reasoning_mode=JUDGE_REASONING_MODE,
-            openai_sdk_version=getattr(sys.modules.get("openai"), "__version__", None),
+            openai_sdk_version=_sdk_version(),
             response_id=_response_value(response, "id"),
             request_id=_response_value(response, "_request_id"),
             usage=_usage_value(_response_value(response, "usage")),
@@ -694,6 +832,9 @@ def judge_one(
 def preflight_judge(client: object) -> dict[str, object]:
     """Confirm the requested judge model is reachable and obeys the verdict protocol."""
     model = client.models.retrieve(JUDGE_MODEL)
+    model_id = _response_value(model, "id")
+    if model_id != JUDGE_MODEL:
+        raise JudgeProtocolError("judge preflight retrieved unrelated model identity")
     question = Question(
         question_id=0,
         category="preflight",
@@ -713,12 +854,12 @@ def preflight_judge(client: object) -> dict[str, object]:
     record = judge_one(client, question, candidate)
     if record.verdict != "CORRECT":
         raise JudgeProtocolError("judge preflight did not return CORRECT")
+    judgment = json.loads(_canonical_dataclass(record))
+    judgment["retrieved_model"] = model_id
     return {
         "requested_model": JUDGE_MODEL,
-        "returned_model": _response_value(model, "id"),
-        "response_id": record.response_id,
-        "request_id": record.request_id,
-        "verdict": record.verdict,
+        "model_identity": _json_value(vars(model)),
+        "judgment": judgment,
     }
 
 
@@ -732,6 +873,11 @@ def judge_missing(
     judge_contract_hash = _judge_contract_hash(
         checkpoint.contract.judge_model, checkpoint.contract.judge_reasoning_effort
     )
+    incomplete = checkpoint.incomplete_judgments(judge_contract_hash)
+    if incomplete:
+        raise IncompleteJudgmentError(
+            f"judge run is incomplete for terminal failures: {incomplete}"
+        )
     missing = checkpoint.missing_judgments(judge_contract_hash)
     if any(question_id not in question_by_id for question_id, _ in missing):
         raise CheckpointConflictError("questions do not cover immutable run contract")
@@ -744,7 +890,14 @@ def judge_missing(
             judge_contract_hash=judge_contract_hash,
             max_attempts=checkpoint.contract.judge_max_attempts,
         )
-        checkpoint.record_judgment(record)
+        if record.verdict in {"CORRECT", "INCORRECT"}:
+            checkpoint.record_judgment(record)
+        else:
+            checkpoint.record_judge_failure(_judge_failure_record(record))
+            raise IncompleteJudgmentError(
+                f"judge run is incomplete for terminal failure: "
+                f"({question_id}, {repeat_index})"
+            )
 
 
 def _utc_now() -> str:

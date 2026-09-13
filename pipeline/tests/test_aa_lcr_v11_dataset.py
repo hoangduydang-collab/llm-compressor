@@ -86,12 +86,14 @@ def fixture_payloads(*, include_official_extra: bool = True) -> dict[str, bytes]
         )
         rows.append(
             {
-                "question_id": question_id,
-                "category": "synthetic",
+                "": str(question_id - 1),
+                "document_category": "synthetic",
                 "document_set_id": f"set-{(question_id - 1) % 30 + 1}",
+                "question_id": question_id,
                 "question": f"Question {question_id}?",
-                "official_answer": f"Answer {question_id}",
+                "answer": f"Answer {question_id}",
                 "data_source_filenames": filenames,
+                "data_source_urls": "",
                 "input_tokens": len(
                     A.tiktoken.get_encoding("cl100k_base").encode(prompt)
                 ),
@@ -281,6 +283,14 @@ def test_prepare_dataset_allows_only_pinned_official_unreferenced_member(
     )
 
     assert A.OFFICIAL_UNREFERENCED_MEMBER in prepared.file_sha256
+
+
+def test_prepare_fixture_with_official_headers_loads_questions(tmp_path, monkeypatch):
+    prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
+
+    first = prepared.questions[0]
+    assert first.category == "synthetic"
+    assert first.official_answer == "Answer 1"
 
 
 def test_validate_questions_requires_exact_population():

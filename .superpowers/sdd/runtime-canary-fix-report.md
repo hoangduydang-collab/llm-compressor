@@ -85,3 +85,18 @@ digest; unrelated or stale nonempty files cannot satisfy readiness.
 identical path, filename, digest, and marker environment values. Final
 dataset/manifest tests: `27 passed in 1.27s`; full clean-venv AA-LCR suite:
 `141 passed in 34.42s`; Ruff and `git diff --check` passed.
+
+## Official CSV schema follow-up
+
+**Root cause:** The pinned CSV's exact header is
+`"", document_category, document_set_id, question_id, question, answer,
+data_source_filenames, data_source_urls, input_tokens`, but `_load_questions`
+read synthetic-only `category` after successfully using `document_category`
+for archive paths.
+
+**RED/GREEN:** The primary fixture now uses the exact official headers and a
+new full-loading test failed at the missing `category` lookup. The loader now
+uses official `document_category` for `Question.category` and official
+`answer` for `Question.official_answer`, retaining the old aliases only for
+fixture compatibility. Dataset tests: `18 passed in 1.83s`; full clean-venv
+AA-LCR suite: `142 passed in 38.46s`; Ruff and `git diff --check` passed.

@@ -432,8 +432,10 @@ _SHA64 = re.compile(r"\b[0-9a-f]{64}\b")
 
 def norm(p):
     t = p.read_text(encoding="utf-8", errors="replace")
-    for ident in ("glm-5.3-w4afp8-ours", "glm-5.3-w4afp8-phala",
-                  "glm-5.3-w4afp8-gptq", ours, phala, gptq):
+    identities = ["glm-5.3-w4afp8-ours", "glm-5.3-w4afp8-phala", ours, phala]
+    if gptq:
+        identities.extend(["glm-5.3-w4afp8-gptq", gptq])
+    for ident in identities:
         t = t.replace(ident, "<ARM>")
     lines = []
     for line in t.splitlines():
@@ -505,7 +507,6 @@ for arm, digest in all_digests.items():
 # does block, because then the two arms really are configured differently.
 INERT = {"is_local", "local_files_only", "_name_or_path", "name_or_path",
          "tokenizer_file", "auto_map"}
-cfg_note = None
 cfg_note = {}
 for arm, root in roots.items():
     if arm == "ours":

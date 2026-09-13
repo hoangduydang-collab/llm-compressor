@@ -1,8 +1,11 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from pipeline import aa_lcr_v11 as A
+from pipeline.tests.test_aa_lcr_v11_candidate import seeded_checkpoint
+from pipeline.tests.test_aa_lcr_v11_checkpoint import preflight_audit
 from pipeline.tests.test_aa_lcr_v11_dataset import (
     prepare_synthetic_100_question_fixture,
 )
@@ -25,7 +28,15 @@ def test_plan_only_validates_local_fixture_without_endpoint_or_judge(
 ):
     prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
     identity_path = tmp_path / "identity.json"
-    identity_path.write_text(json.dumps({"served_model": "glm-5.3-w4afp8"}))
+    identity_path.write_text(
+        json.dumps(
+            {
+                "served_model": A.CANDIDATE_MODEL,
+                "expected_served_model": A.CANDIDATE_MODEL,
+                "observed_served_model": A.CANDIDATE_MODEL,
+            }
+        )
+    )
     monkeypatch.setattr(A, "prepare_dataset", lambda _path: prepared)
     monkeypatch.setattr(
         A, "fetch_server_identity", lambda _url: pytest.fail("endpoint")
@@ -48,6 +59,37 @@ def test_plan_only_validates_local_fixture_without_endpoint_or_judge(
         == 0
     )
     assert (tmp_path / "work" / "local-plan" / "plan.json").is_file()
+
+
+def test_plan_only_rejects_wrong_candidate_identity(tmp_path, monkeypatch):
+    prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_text(
+        json.dumps(
+            {
+                "served_model": "glm-5.3-w4afp8-shadow",
+                "expected_served_model": A.CANDIDATE_MODEL,
+                "observed_served_model": "glm-5.3-w4afp8-shadow",
+            }
+        )
+    )
+    monkeypatch.setattr(A, "prepare_dataset", lambda _path: prepared)
+
+    with pytest.raises(SystemExit, match="2"):
+        A.main(
+            [
+                "prepare",
+                "--run-id",
+                "bad-plan",
+                "--work-dir",
+                str(tmp_path / "work"),
+                "--endpoint-identity-file",
+                str(identity_path),
+                "--plan-only",
+            ]
+        )
+
+    assert not (tmp_path / "work" / "bad-plan" / "run.sqlite").exists()
 
 
 @pytest.mark.parametrize(
@@ -74,7 +116,7 @@ def test_cli_requires_run_id():
 
 def test_run_preflight_failure_precedes_candidate_generation(tmp_path, monkeypatch):
     prepared = A.PreparedDataset("revision", (), {}, "prompt")
-    checkpoint = object()
+    checkpoint = SimpleNamespace(preflight_audit=lambda: None)
     calls: list[str] = []
     monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
     monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
@@ -102,7 +144,7 @@ def test_run_preflight_failure_precedes_candidate_generation(tmp_path, monkeypat
 
 def test_judge_preflight_failure_precedes_judgment(tmp_path, monkeypatch):
     prepared = A.PreparedDataset("revision", (), {}, "prompt")
-    checkpoint = object()
+    checkpoint = SimpleNamespace(preflight_audit=lambda: None)
     calls: list[str] = []
     monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
     monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
@@ -143,3 +185,246 @@ def test_generate_phase_does_not_construct_judge_client(monkeypatch):
     args = A._parser().parse_args(["generate", "--run-id", "generate-r1"])
     assert A._run_phase(args) == 0
     assert calls == ["generate"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["run", "--run-id", "partial", "--limit", "1", "--repeats", "1"],
+        ["run", "--run-id", "partial", "--limit", "99", "--repeats", "3"],
+        ["run", "--run-id", "partial", "--limit", "100", "--repeats", "2"],
+        ["run", "--run-id", "bad-canary", "--canary", "--limit", "2", "--repeats", "1"],
+        ["run", "--run-id", "bad-canary", "--canary", "--limit", "1", "--repeats", "2"],
+        [
+            "run",
+            "--run-id",
+            "bad-canary",
+            "--canary",
+            "--limit",
+            "1",
+            "--repeats",
+            "1",
+            "--plan-only",
+        ],
+        [
+            "generate",
+            "--run-id",
+            "bad-phase",
+            "--canary",
+            "--limit",
+            "1",
+            "--repeats",
+            "1",
+        ],
+    ],
+)
+def test_run_rejects_nonstandard_population_before_network(argv, monkeypatch):
+    monkeypatch.setattr(
+        A, "_prepare_run", lambda _args: pytest.fail("network preparation started")
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        A.main(argv)
+
+
+def test_canary_preflights_then_runs_one_unit_without_publication(
+    tmp_path, monkeypatch, capsys
+):
+    prepared = A.PreparedDataset("revision", (), {}, "prompt")
+    calls: list[str] = []
+    checkpoint = SimpleNamespace(
+        preflight_audit=lambda: None,
+        record_preflight_audit=lambda _audit: calls.append("persist-preflight")
+    )
+    monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
+    monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
+    monkeypatch.setattr(
+        A, "build_openai_client", lambda: calls.append("client") or object()
+    )
+    monkeypatch.setattr(
+        A, "preflight_judge", lambda _client: calls.append("preflight") or {}
+    )
+    monkeypatch.setattr(
+        A, "generate_missing", lambda *_args, **_kwargs: calls.append("generate")
+    )
+    monkeypatch.setattr(A, "judge_missing", lambda *_args: calls.append("judge"))
+    monkeypatch.setattr(
+        A, "publish_results", lambda *_args: pytest.fail("canary published a headline")
+    )
+    monkeypatch.setattr(
+        A,
+        "_canary_status",
+        lambda *_args: calls.append("status")
+        or {
+            "mode": "canary",
+            "status": "complete",
+            "run_id": "canary-r1",
+            "candidate_count": 1,
+            "judgment_count": 1,
+            "published": False,
+        },
+    )
+
+    args = A._parser().parse_args(
+        [
+            "run",
+            "--run-id",
+            "canary-r1",
+            "--work-dir",
+            str(tmp_path),
+            "--canary",
+            "--limit",
+            "1",
+            "--repeats",
+            "1",
+        ]
+    )
+    assert A._run_phase(args) == 0
+
+    assert calls == [
+        "client",
+        "preflight",
+        "persist-preflight",
+        "generate",
+        "judge",
+        "status",
+    ]
+    assert json.loads(capsys.readouterr().out) == {
+        "mode": "canary",
+        "status": "complete",
+        "run_id": "canary-r1",
+        "candidate_count": 1,
+        "judgment_count": 1,
+        "published": False,
+    }
+
+
+def test_canary_resume_reuses_immutable_preflight_audit(monkeypatch, capsys):
+    prepared = A.PreparedDataset("revision", (), {}, "prompt")
+    audit = preflight_audit()
+    checkpoint = SimpleNamespace(
+        preflight_audit=lambda: audit,
+        record_preflight_audit=lambda _audit: pytest.fail("rewrote preflight"),
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
+    monkeypatch.setattr(A, "build_openai_client", lambda: object())
+    monkeypatch.setattr(
+        A, "preflight_judge", lambda _client: pytest.fail("repeated preflight API call")
+    )
+    monkeypatch.setattr(
+        A, "generate_missing", lambda *_args, **_kwargs: calls.append("generate")
+    )
+    monkeypatch.setattr(A, "judge_missing", lambda *_args: calls.append("judge"))
+    monkeypatch.setattr(
+        A,
+        "_canary_status",
+        lambda *_args: {"mode": "canary", "status": "complete"},
+    )
+
+    args = A._parser().parse_args(
+        [
+            "run",
+            "--run-id",
+            "canary-r1",
+            "--canary",
+            "--limit",
+            "1",
+            "--repeats",
+            "1",
+        ]
+    )
+    assert A._run_phase(args) == 0
+
+    assert calls == ["generate", "judge"]
+    capsys.readouterr()
+
+
+def test_full_run_preflights_before_generation_without_optional_flag(
+    monkeypatch,
+):
+    prepared = A.PreparedDataset("revision", (), {}, "prompt")
+    calls: list[str] = []
+    checkpoint = SimpleNamespace(
+        preflight_audit=lambda: None,
+        record_preflight_audit=lambda _audit: calls.append("persist-preflight"),
+    )
+    monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
+    monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
+    monkeypatch.setattr(A, "build_openai_client", lambda: object())
+    monkeypatch.setattr(
+        A, "preflight_judge", lambda _client: calls.append("preflight") or {}
+    )
+    monkeypatch.setattr(
+        A, "generate_missing", lambda *_args, **_kwargs: calls.append("generate")
+    )
+    monkeypatch.setattr(A, "judge_missing", lambda *_args: calls.append("judge"))
+    monkeypatch.setattr(
+        A, "publish_results", lambda *_args: calls.append("publish")
+    )
+
+    assert A._run_phase(A._parser().parse_args(["run", "--run-id", "full-r1"])) == 0
+
+    assert calls == [
+        "preflight",
+        "persist-preflight",
+        "generate",
+        "judge",
+        "publish",
+    ]
+
+
+def test_canary_status_points_to_complete_durable_checkpoint(tmp_path):
+    checkpoint = seeded_checkpoint(tmp_path)
+    checkpoint.record_preflight_audit(preflight_audit())
+    checkpoint.record_candidate(
+        A.CandidateRecord(
+            question_id=1,
+            repeat_index=0,
+            http_status=200,
+            raw_response={},
+            usage={},
+            finish_reason="stop",
+            content="answer",
+            reasoning_content="reasoning",
+            retry_count=0,
+            started_at_utc="2026-09-13T00:00:00Z",
+            completed_at_utc="2026-09-13T00:00:01Z",
+            error=None,
+        )
+    )
+    checkpoint.record_judgment(
+        A.JudgmentRecord(
+            question_id=1,
+            repeat_index=0,
+            judge_contract_hash=A.validate_judge_contract(checkpoint.contract),
+            raw_response={},
+            verdict="CORRECT",
+            retry_count=0,
+            started_at_utc="2026-09-13T00:00:02Z",
+            completed_at_utc="2026-09-13T00:00:03Z",
+            error=None,
+        )
+    )
+    args = A._parser().parse_args(
+        [
+            "run",
+            "--run-id",
+            "canary-r1",
+            "--canary",
+            "--limit",
+            "1",
+            "--repeats",
+            "1",
+        ]
+    )
+
+    status = A._canary_status(checkpoint, args)
+
+    assert status["status"] == "complete"
+    assert status["checkpoint"] == str(checkpoint.path)
+    assert status["preflight_recorded"] is True
+    assert status["candidate_count"] == 1
+    assert status["judgment_count"] == 1
+    assert status["judge_terminal_failure_count"] == 0
+    assert status["published"] is False

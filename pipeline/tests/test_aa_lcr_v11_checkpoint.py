@@ -62,6 +62,28 @@ def judgment_record(judge_contract_hash: str) -> A.JudgmentRecord:
     )
 
 
+def preflight_audit() -> dict[str, object]:
+    return {
+        "requested_model": A.JUDGE_MODEL,
+        "retrieved_model": A.JUDGE_MODEL,
+        "returned_model": A.JUDGE_MODEL,
+        "endpoint": A.OPENAI_API_BASE_URL,
+        "reasoning_effort": A.JUDGE_REASONING_EFFORT,
+        "reasoning_mode": A.JUDGE_REASONING_MODE,
+        "openai_sdk_version": "3.8.0",
+        "response_id": "resp_preflight",
+        "request_id": "req_preflight",
+        "usage": {"input_tokens": 10, "output_tokens": 4, "total_tokens": 14},
+        "started_at_utc": "2026-09-13T00:00:00Z",
+        "completed_at_utc": "2026-09-13T00:00:01Z",
+        "raw_output_text": '{"verdict":"CORRECT"}',
+        "verdict": "CORRECT",
+        "retry_count": 0,
+        "attempt_count": 1,
+        "model_identity": {"id": A.JUDGE_MODEL},
+    }
+
+
 def test_fingerprint_changes_for_measurement_fields():
     base = contract()
 
@@ -174,3 +196,29 @@ def test_missing_judgments_ignores_out_of_contract_candidate_rows(tmp_path):
     db._connection.commit()
 
     assert db.missing_judgments("a" * 64) == [(1, 0)]
+
+
+def test_preflight_audit_is_durable_idempotent_and_immutable(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+    audit = preflight_audit()
+
+    db.record_preflight_audit(audit)
+    db.record_preflight_audit(audit)
+    reopened = A.Checkpoint(db.path, db.contract)
+
+    assert reopened.preflight_audit() == audit
+    with pytest.raises(A.CheckpointConflictError, match="conflicting immutable"):
+        reopened.record_preflight_audit(
+            {**audit, "returned_model": "gpt-5.6-luna-shadow"}
+        )
+
+
+def test_preflight_audit_requires_complete_identity_and_request_metadata(tmp_path):
+    db = A.Checkpoint(tmp_path / "run.sqlite", contract())
+    incomplete = preflight_audit()
+    del incomplete["openai_sdk_version"]
+
+    with pytest.raises(A.JudgeProtocolError, match="missing required fields"):
+        db.record_preflight_audit(incomplete)
+
+    assert db.preflight_audit() is None

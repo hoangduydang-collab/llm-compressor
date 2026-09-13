@@ -99,6 +99,7 @@ def test_judge_uses_responses_api_medium_effort(fake_openai):
     assert record.request_id == "req_123"
     assert record.response_id == "resp_123"
     assert record.raw_output_text == '{"verdict":"CORRECT"}'
+    assert record.endpoint == "https://api.openai.com/v1"
 
 
 def test_build_client_requires_environment_key(monkeypatch):
@@ -108,7 +109,7 @@ def test_build_client_requires_environment_key(monkeypatch):
         A.build_openai_client()
 
 
-def test_build_client_uses_official_sdk_when_installed(monkeypatch):
+def test_build_client_pins_official_endpoint_despite_environment_override(monkeypatch):
     created: dict[str, object] = {}
 
     class FakeSDKClient:
@@ -119,12 +120,14 @@ def test_build_client_uses_official_sdk_when_installed(monkeypatch):
     fake_openai_module.OpenAI = FakeSDKClient  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", fake_openai_module)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-only")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://attacker.invalid/v1")
 
     client = A.build_openai_client()
 
     assert isinstance(client, FakeSDKClient)
     assert created == {
         "api_key": "sk-test-only",
+        "base_url": "https://api.openai.com/v1",
         "timeout": 300.0,
         "max_retries": 0,
     }
@@ -141,22 +144,22 @@ def test_preflight_retrieves_exact_model_and_requires_correct_verdict():
         "object": "model",
         "owned_by": "openai",
     }
-    judgment = result["judgment"]
-    assert judgment["requested_model"] == A.JUDGE_MODEL
-    assert judgment["retrieved_model"] == A.JUDGE_MODEL
-    assert judgment["returned_model"] == A.JUDGE_MODEL
-    assert judgment["usage"] == {
+    assert result["requested_model"] == A.JUDGE_MODEL
+    assert result["retrieved_model"] == A.JUDGE_MODEL
+    assert result["returned_model"] == A.JUDGE_MODEL
+    assert result["endpoint"] == A.OPENAI_API_BASE_URL
+    assert result["usage"] == {
         "input_tokens": 10,
         "output_tokens": 4,
         "total_tokens": 14,
     }
-    assert judgment["raw_output_text"] == '{"verdict":"CORRECT"}'
-    assert judgment["verdict"] == "CORRECT"
-    assert judgment["reasoning_effort"] == A.JUDGE_REASONING_EFFORT
-    assert judgment["reasoning_mode"] == A.JUDGE_REASONING_MODE
-    assert judgment["started_at_utc"].endswith("Z")
-    assert judgment["completed_at_utc"].endswith("Z")
-    assert judgment["retry_count"] == 0
+    assert result["raw_output_text"] == '{"verdict":"CORRECT"}'
+    assert result["verdict"] == "CORRECT"
+    assert result["reasoning_effort"] == A.JUDGE_REASONING_EFFORT
+    assert result["reasoning_mode"] == A.JUDGE_REASONING_MODE
+    assert result["started_at_utc"].endswith("Z")
+    assert result["completed_at_utc"].endswith("Z")
+    assert result["retry_count"] == 0
     assert client.responses.calls[0]["input"][1]["content"].find("What is 2 + 2?") >= 0
 
 
@@ -180,6 +183,21 @@ def test_malformed_judge_output_retries_then_records_normalized_verdict(monkeypa
     assert len(client.responses.calls) == 2
     assert record.retry_count == 1
     assert record.verdict == "INCORRECT"
+
+
+def test_mismatched_returned_model_retries_then_fails_incomplete(monkeypatch):
+    client = FakeOpenAI(
+        [judge_response(model="gpt-5.6-luna-shadow")] * A.MAX_ATTEMPTS
+    )
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+
+    record = A.judge_one(client, questions()[0], candidate_record())
+
+    assert len(client.responses.calls) == A.MAX_ATTEMPTS
+    assert record.verdict is None
+    assert record.returned_model == "gpt-5.6-luna-shadow"
+    assert record.exception_class == "JudgeProtocolError"
+    assert "returned model does not match" in (record.error or "")
 
 
 def test_exhausted_malformed_output_persists_raw_output(monkeypatch):

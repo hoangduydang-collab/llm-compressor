@@ -162,11 +162,18 @@ Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary.yaml `
 Inspect the canary before proceeding:
 
 - Job succeeded with `backoffLimit: 0`; logs contain no environment values.
-- `run.sqlite` has one candidate and one valid external OpenAI judgment.
-- The retrieved judge model is `gpt-5.6-luna`; the judge preflight passed.
+- Inspect the durable checkpoint at
+  `/mnt/cephfs/hoangduy/aa-lcr-v11-work/glm53-w4afp8-aa-lcr-v11-canary-r1/run.sqlite`.
+- `run.sqlite` has one candidate, one valid external OpenAI judgment, and one
+  immutable successful judge-preflight audit.
+- Requested, retrieved, and returned judge model are exactly `gpt-5.6-luna`;
+  the recorded endpoint is exactly `https://api.openai.com/v1`.
 - The candidate server snapshots agree with the immutable run fingerprint.
-- Published files exist under
-  `/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/glm53-w4afp8-aa-lcr-v11-canary-r1`.
+- Expected and observed served model are exactly `glm-5.3-w4afp8`.
+
+The canary intentionally does not publish a headline bundle. Its JSON
+completion record points operators to the durable one-unit checkpoint; only a
+strict 100-question × 3-repeat full run may summarize and publish.
 
 ## Full run and resume
 
@@ -191,6 +198,13 @@ Do not change the run ID, endpoint identity, code revision, model, repeat
 count, or judge contract when resuming. The CLI rejects checkpoints and result
 directories that belong to another fingerprint, and refuses to summarize or
 publish an incomplete run.
+
+Current low-severity limitation: every CLI phase, including `summarize`,
+re-prepares the official pinned dataset before opening the checkpoint.
+Therefore `summarize` currently needs dataset-network availability even though
+all scoring primitives already exist in SQLite. This does not change the
+published metric, but a future cleanup may load the existing checkpoint
+without re-downloading the dataset.
 
 When the result is retained and no further evaluation needs the credential,
 the operator may remove it:

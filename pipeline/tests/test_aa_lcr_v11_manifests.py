@@ -84,6 +84,7 @@ def test_canary_and_full_have_pinned_population_and_concurrency():
 
     assert "--limit 1" in canary
     assert "--repeats 1" in canary
+    assert "--canary" in canary
     assert "--judge-preflight" in canary
     assert "--limit 100" in full
     assert "--repeats 3" in full
@@ -110,3 +111,8 @@ def test_runbook_renders_immutable_configmaps_and_resumable_jobs():
     assert "httpx2" in text
     assert "https://pypi.org/pypi/openai/3.8.0/json" in text
     assert "https://pypi.org/pypi/httpx2/2.12.0/json" in text
+    assert (
+        "/mnt/cephfs/hoangduy/aa-lcr-v11-work/"
+        "glm53-w4afp8-aa-lcr-v11-canary-r1/run.sqlite"
+    ) in text
+    assert "The canary intentionally does not publish a headline bundle." in text

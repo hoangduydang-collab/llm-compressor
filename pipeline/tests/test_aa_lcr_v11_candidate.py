@@ -29,6 +29,8 @@ def server_identity(version: int = 1) -> dict[str, object]:
     return {
         "model_path": f"/models/glm-{version}",
         "served_model": "glm-5.3-w4afp8",
+        "expected_served_model": "glm-5.3-w4afp8",
+        "observed_served_model": "glm-5.3-w4afp8",
         "tp_size": 2,
         "max_total_num_tokens": 32768,
         "context_length": 32768,
@@ -88,6 +90,7 @@ class FakeServer:
         self.chat_calls = 0
         self.requests: list[dict[str, object]] = []
         self.identity_version = 1
+        self.served_model = "glm-5.3-w4afp8"
         self.active_requests = 0
         self.max_active_requests = 0
         self.block_requests = False
@@ -119,7 +122,7 @@ class FakeServer:
                 elif self.path == "/v1/models":
                     self._send_json(
                         200,
-                        {"data": [{"id": "glm-5.3-w4afp8"}]},
+                        {"data": [{"id": owner.served_model}]},
                     )
                 else:
                     self.send_error(404)
@@ -323,6 +326,45 @@ def test_server_identity_contains_bound_fields(fake_server):
     identity = A.fetch_server_identity(fake_server.url)
 
     assert identity == server_identity()
+
+
+def test_generation_rejects_wrong_initial_served_model_before_candidate_call(
+    tmp_path, fake_server
+):
+    checkpoint = seeded_checkpoint(tmp_path)
+    fake_server.served_model = "glm-5.3-w4afp8-shadow"
+
+    with pytest.raises(A.CheckpointConflictError, match="expected served model"):
+        A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert checkpoint.server_snapshot("before") == {
+        **server_identity(),
+        "served_model": "glm-5.3-w4afp8-shadow",
+        "observed_served_model": "glm-5.3-w4afp8-shadow",
+    }
+    assert fake_server.chat_calls == 0
+
+
+def test_generation_rejects_post_snapshot_served_model_drift(
+    tmp_path, fake_server
+):
+    checkpoint = seeded_checkpoint(tmp_path)
+    original_record_candidate = checkpoint.record_candidate
+
+    def record_then_change_model(record):
+        original_record_candidate(record)
+        fake_server.served_model = "glm-5.3-w4afp8-shadow"
+
+    checkpoint.record_candidate = record_then_change_model  # type: ignore[method-assign]
+
+    with pytest.raises(A.CheckpointConflictError, match="expected served model"):
+        A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert checkpoint.server_snapshot("after") == {
+        **server_identity(),
+        "served_model": "glm-5.3-w4afp8-shadow",
+        "observed_served_model": "glm-5.3-w4afp8-shadow",
+    }
 
 
 def test_identity_change_invalidates_generation(tmp_path, fake_server):

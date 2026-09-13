@@ -42,6 +42,7 @@ HF_RESOLVE = (
     f"https://huggingface.co/datasets/{DATASET_REPO}/resolve/{DATASET_REVISION}"
 )
 REPEATS = 3
+CANDIDATE_MODEL = "glm-5.3-w4afp8"
 CANDIDATE_TEMPERATURE = 0.6
 CANDIDATE_TOP_P = 1.0
 CANDIDATE_MAX_TOKENS = 131_072
@@ -49,6 +50,7 @@ CANDIDATE_CONCURRENCY = 2
 JUDGE_MODEL = "gpt-5.6-luna"
 JUDGE_REASONING_EFFORT = "medium"
 JUDGE_REASONING_MODE = "standard"
+OPENAI_API_BASE_URL = "https://api.openai.com/v1"
 MAX_ATTEMPTS = 30
 
 CANDIDATE_PROMPT_TEMPLATE = """BEGIN INPUT DOCUMENTS
@@ -225,6 +227,7 @@ class JudgmentRecord:
     exception_class: str | None = None
     http_status: int | None = None
     attempt_count: int = 0
+    endpoint: str = OPENAI_API_BASE_URL
 
 
 @dataclass(frozen=True)
@@ -247,6 +250,7 @@ class JudgeFailureRecord:
     returned_model: str | None
     response_id: str | None
     usage: object
+    endpoint: str = OPENAI_API_BASE_URL
     verdict: None = None
 
 
@@ -359,6 +363,10 @@ class Checkpoint:
                 CREATE TABLE IF NOT EXISTS server_snapshots (
                     stage TEXT PRIMARY KEY,
                     payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS judge_preflight (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    record_json TEXT NOT NULL
                 );
                 """
             )
@@ -531,6 +539,37 @@ class Checkpoint:
             ).fetchone()
         return json.loads(row[0]) if row is not None else None
 
+    def record_preflight_audit(self, audit: Mapping[str, object]) -> None:
+        """Persist the one immutable successful judge preflight for this run."""
+        record_json = canonical_json(audit)
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT record_json FROM judge_preflight WHERE singleton = 1"
+            ).fetchone()
+            if row is None:
+                _validate_preflight_audit(audit)
+                self._connection.execute(
+                    "INSERT INTO judge_preflight (singleton, record_json) VALUES (1, ?)",
+                    (record_json,),
+                )
+            elif row[0] != record_json:
+                raise CheckpointConflictError(
+                    "conflicting immutable judge preflight audit"
+                )
+
+    def preflight_audit(self) -> dict[str, object] | None:
+        """Return the immutable successful judge preflight, if present."""
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT record_json FROM judge_preflight WHERE singleton = 1"
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row[0])
+        if not isinstance(payload, dict):
+            raise CheckpointConflictError("persisted judge preflight audit is malformed")
+        return payload
+
     def missing_judgments(self, judge_contract_hash: str) -> list[tuple[int, int]]:
         with self._lock:
             return [
@@ -687,7 +726,12 @@ def build_openai_client() -> "OpenAI":
         openai = importlib.import_module("openai")
     except ImportError as exc:
         raise CredentialError("openai package is required to run the judge") from exc
-    return openai.OpenAI(api_key=key, timeout=300.0, max_retries=0)
+    return openai.OpenAI(
+        api_key=key,
+        base_url=OPENAI_API_BASE_URL,
+        timeout=300.0,
+        max_retries=0,
+    )
 
 
 def _judge_contract_hash() -> str:
@@ -876,6 +920,7 @@ def _judge_failure_record(record: JudgmentRecord) -> JudgeFailureRecord:
         returned_model=record.returned_model,
         response_id=record.response_id,
         usage=record.usage,
+        endpoint=record.endpoint,
     )
 
 
@@ -923,6 +968,12 @@ def judge_one(
                 },
                 store=False,
             )
+            returned_model = _response_value(response, "model")
+            if returned_model != JUDGE_MODEL:
+                raise JudgeProtocolError(
+                    "judge returned model does not match requested "
+                    f"{JUDGE_MODEL!r}: {returned_model!r}"
+                )
             output_text = _response_value(response, "output_text")
             if not isinstance(output_text, str):
                 raise JudgeProtocolError("judge response has no output text")
@@ -937,13 +988,15 @@ def judge_one(
                 raise
             status = _exception_status(exc)
             status_text = f" HTTP {status}" if status is not None else ""
+            protocol_detail = f": {exc}" if isinstance(exc, JudgeProtocolError) else ""
             return _judge_error_record(
                 question,
                 candidate,
                 contract_hash,
                 attempt,
                 started_at_utc,
-                f"judge failed after {attempt + 1} attempts: {type(exc).__name__}{status_text}",
+                f"judge failed after {attempt + 1} attempts: "
+                f"{type(exc).__name__}{status_text}{protocol_detail}",
                 output_text,
                 exc,
                 response,
@@ -1008,11 +1061,56 @@ def preflight_judge(client: object) -> dict[str, object]:
         raise JudgeProtocolError("judge preflight did not return CORRECT")
     judgment = json.loads(_canonical_dataclass(record))
     judgment["retrieved_model"] = model_id
-    return {
-        "requested_model": JUDGE_MODEL,
-        "model_identity": _json_value(vars(model)),
-        "judgment": judgment,
+    judgment["model_identity"] = _json_value(vars(model))
+    _validate_preflight_audit(judgment)
+    return judgment
+
+
+def _validate_preflight_audit(audit: Mapping[str, object]) -> None:
+    required_fields = {
+        "requested_model",
+        "retrieved_model",
+        "returned_model",
+        "endpoint",
+        "reasoning_effort",
+        "reasoning_mode",
+        "openai_sdk_version",
+        "response_id",
+        "request_id",
+        "usage",
+        "started_at_utc",
+        "completed_at_utc",
+        "raw_output_text",
+        "verdict",
+        "retry_count",
+        "attempt_count",
+        "model_identity",
     }
+    missing = sorted(required_fields - set(audit))
+    if missing:
+        raise JudgeProtocolError(
+            "judge preflight audit is missing required fields: " + ", ".join(missing)
+        )
+    expected = {
+        "requested_model": JUDGE_MODEL,
+        "retrieved_model": JUDGE_MODEL,
+        "returned_model": JUDGE_MODEL,
+        "endpoint": OPENAI_API_BASE_URL,
+        "reasoning_effort": JUDGE_REASONING_EFFORT,
+        "reasoning_mode": JUDGE_REASONING_MODE,
+        "verdict": "CORRECT",
+    }
+    if any(audit.get(name) != value for name, value in expected.items()):
+        raise JudgeProtocolError(
+            "judge preflight audit does not match the pinned judge identity"
+        )
+    if not all(
+        isinstance(audit.get(name), str) and str(audit[name]).endswith("Z")
+        for name in ("started_at_utc", "completed_at_utc")
+    ):
+        raise JudgeProtocolError("judge preflight audit has invalid UTC timestamps")
+    if not isinstance(audit.get("raw_output_text"), str):
+        raise JudgeProtocolError("judge preflight audit is missing raw output")
 
 
 def judge_missing(
@@ -1057,7 +1155,7 @@ def _utc_now() -> str:
 def candidate_request(question: Question) -> dict[str, object]:
     """Return the pinned OpenAI-compatible candidate request."""
     return {
-        "model": "glm-5.3-w4afp8",
+        "model": CANDIDATE_MODEL,
         "messages": [{"role": "user", "content": question.prompt}],
         "max_tokens": CANDIDATE_MAX_TOKENS,
         "temperature": CANDIDATE_TEMPERATURE,
@@ -1255,10 +1353,13 @@ def fetch_server_identity(base_url: str) -> dict[str, object]:
     models = get_json("/v1/models")
     assert isinstance(info, dict) and isinstance(models, dict)
     data = models.get("data")
-    served_model = (
-        data[0].get("id")
-        if isinstance(data, list) and data and isinstance(data[0], dict)
-        else None
+    model_ids = (
+        [item.get("id") for item in data if isinstance(item, dict)]
+        if isinstance(data, list)
+        else []
+    )
+    served_model = CANDIDATE_MODEL if CANDIDATE_MODEL in model_ids else (
+        model_ids[0] if model_ids else None
     )
     speculative_aliases = {
         "speculative_algorithm",
@@ -1275,6 +1376,8 @@ def fetch_server_identity(base_url: str) -> dict[str, object]:
     return {
         "model_path": info.get("model_path"),
         "served_model": served_model,
+        "expected_served_model": CANDIDATE_MODEL,
+        "observed_served_model": served_model,
         "tp_size": info.get("tp_size"),
         "max_total_num_tokens": info.get("max_total_num_tokens"),
         "context_length": info.get("context_length"),
@@ -1283,6 +1386,18 @@ def fetch_server_identity(base_url: str) -> dict[str, object]:
         "reasoning_parser": info.get("reasoning_parser"),
         "speculative_settings": speculative_settings,
     }
+
+
+def _validate_candidate_identity(identity: Mapping[str, object]) -> None:
+    if (
+        identity.get("expected_served_model") != CANDIDATE_MODEL
+        or identity.get("observed_served_model") != CANDIDATE_MODEL
+        or identity.get("served_model") != CANDIDATE_MODEL
+    ):
+        raise CheckpointConflictError(
+            f"expected served model {CANDIDATE_MODEL!r}, observed "
+            f"{identity.get('observed_served_model')!r}"
+        )
 
 
 def generate_missing(
@@ -1307,8 +1422,16 @@ def generate_missing(
         raise CheckpointConflictError(
             "immutable run contract endpoint deployment identity must not be empty"
         )
+    if (
+        checkpoint.contract.candidate_model != CANDIDATE_MODEL
+        or checkpoint.contract.served_model != CANDIDATE_MODEL
+    ):
+        raise CheckpointConflictError(
+            f"candidate contract must use expected served model {CANDIDATE_MODEL!r}"
+        )
     before_identity = fetch_server_identity(base_url)
     checkpoint.record_server_snapshot("before", before_identity)
+    _validate_candidate_identity(before_identity)
     if before_identity != contract_identity:
         raise CheckpointConflictError(
             "server identity does not match immutable run contract"
@@ -1340,6 +1463,7 @@ def generate_missing(
     try:
         after_identity = fetch_server_identity(base_url)
         checkpoint.record_server_snapshot("after", after_identity)
+        _validate_candidate_identity(after_identity)
         if after_identity != before_identity:
             raise CheckpointConflictError(
                 "server identity changed during candidate generation"
@@ -1802,9 +1926,39 @@ def _validate_publication_population(
         raise IncompleteRunError("invalid judgments present; refusing headline")
 
 
+def _validate_publication_candidate_identity(checkpoint: Checkpoint) -> None:
+    contract_identity = dict(checkpoint.contract.endpoint_deployment_identity)
+    before_identity = checkpoint.server_snapshot("before")
+    after_identity = checkpoint.server_snapshot("after")
+    try:
+        if (
+            checkpoint.contract.candidate_model != CANDIDATE_MODEL
+            or checkpoint.contract.served_model != CANDIDATE_MODEL
+            or before_identity != contract_identity
+            or after_identity != contract_identity
+        ):
+            raise CheckpointConflictError("candidate identity records disagree")
+        _validate_candidate_identity(contract_identity)
+        assert before_identity is not None and after_identity is not None
+        _validate_candidate_identity(before_identity)
+        _validate_candidate_identity(after_identity)
+    except (AssertionError, CheckpointConflictError) as exc:
+        raise IncompleteRunError(
+            "candidate identity is incomplete or invalid; refusing headline"
+        ) from exc
+
+
 def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
     """Recompute every public metric from immutable checkpoint primitives."""
     judge_contract_hash = validate_judge_contract(checkpoint.contract)
+    _validate_publication_candidate_identity(checkpoint)
+    preflight = checkpoint.preflight_audit()
+    if preflight is None:
+        raise IncompleteRunError("judge preflight audit is absent; refusing headline")
+    try:
+        _validate_preflight_audit(preflight)
+    except JudgeProtocolError as exc:
+        raise IncompleteRunError("judge preflight audit is invalid") from exc
     candidates, judgments = _publication_rows(checkpoint, judge_contract_hash)
     _validate_publication_population(
         checkpoint, candidates, judgments, judge_contract_hash
@@ -1916,6 +2070,17 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
                 record.get("error") is not None for record in candidate_records
             ),
         },
+        "judge_retry_count": sum(
+            int(record["retry_count"])
+            for record in judgment_records
+            if isinstance(record.get("retry_count"), int)
+        )
+        + (
+            int(preflight["retry_count"])
+            if isinstance(preflight.get("retry_count"), int)
+            else 0
+        ),
+        "judge_terminal_failure_count": len(checkpoint.judge_failures()),
         "server_identity": {
             "contract": _json_value(checkpoint.contract.endpoint_deployment_identity),
             "before": checkpoint.server_snapshot("before"),
@@ -1925,6 +2090,8 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
             "model": checkpoint.contract.judge_model,
             "reasoning_effort": checkpoint.contract.judge_reasoning_effort,
             "reasoning_mode": checkpoint.contract.judge_reasoning_mode,
+            "endpoint": OPENAI_API_BASE_URL,
+            "preflight": preflight,
         },
         "limitations": [
             "Results are a public-methodology reproduction, not an official AA-LCR leaderboard score.",
@@ -2048,6 +2215,7 @@ def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]
                         "before": checkpoint.server_snapshot("before"),
                         "after": checkpoint.server_snapshot("after"),
                     },
+                    "judge_preflight": checkpoint.preflight_audit(),
                 }
             )
             + "\n",
@@ -2170,6 +2338,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
         default=CANDIDATE_CONCURRENCY,
     )
+    parser.add_argument("--canary", action="store_true")
     parser.add_argument("--judge-preflight", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
     return parser
@@ -2184,10 +2353,11 @@ def _prepare_run(args: argparse.Namespace) -> tuple[PreparedDataset, Checkpoint]
         raise ValueError("--plan-only requires --endpoint-identity-file")
     else:
         endpoint_identity = fetch_server_identity(args.candidate_base_url)
+    _validate_candidate_identity(endpoint_identity)
     contract = build_run_contract(
         prepared,
-        candidate_model="glm-5.3-w4afp8",
-        served_model="glm-5.3-w4afp8",
+        candidate_model=CANDIDATE_MODEL,
+        served_model=CANDIDATE_MODEL,
         endpoint_deployment_identity=endpoint_identity,
         code_revision=_code_revision(),
         candidate_concurrency=args.candidate_concurrency,
@@ -2211,16 +2381,89 @@ def _prepare_run(args: argparse.Namespace) -> tuple[PreparedDataset, Checkpoint]
     return prepared, checkpoint
 
 
+def _validate_population_mode(args: argparse.Namespace) -> None:
+    if args.canary:
+        if args.phase != "run":
+            raise ValueError("--canary is valid only with phase=run")
+        if args.plan_only:
+            raise ValueError("--canary cannot be combined with --plan-only")
+        if (args.limit, args.repeats) != (1, 1):
+            raise ValueError("--canary requires exactly --limit 1 --repeats 1")
+    elif args.phase == "run" and (args.limit, args.repeats) != (100, REPEATS):
+        raise ValueError(
+            "phase=run requires --limit 100 --repeats 3 unless exact --canary"
+        )
+
+
+def _canary_status(
+    checkpoint: Checkpoint, args: argparse.Namespace
+) -> dict[str, object]:
+    judge_contract_hash = validate_judge_contract(checkpoint.contract)
+    preflight_recorded = checkpoint.preflight_audit() is not None
+    with checkpoint._lock:
+        candidate_count = checkpoint._connection.execute(
+            "SELECT COUNT(*) FROM candidates"
+        ).fetchone()[0]
+        judgment_count = checkpoint._connection.execute(
+            "SELECT COUNT(*) FROM judgments WHERE judge_contract_hash = ?",
+            (judge_contract_hash,),
+        ).fetchone()[0]
+        terminal_failure_count = checkpoint._connection.execute(
+            "SELECT COUNT(*) FROM judge_failures"
+        ).fetchone()[0]
+    return {
+        "mode": "canary",
+        "status": (
+            "complete"
+            if (
+                preflight_recorded
+                and candidate_count == judgment_count == 1
+                and terminal_failure_count == 0
+            )
+            else "incomplete"
+        ),
+        "run_id": args.run_id,
+        "checkpoint": str(checkpoint.path),
+        "candidate_count": candidate_count,
+        "judgment_count": judgment_count,
+        "preflight_recorded": preflight_recorded,
+        "judge_terminal_failure_count": terminal_failure_count,
+        "published": False,
+    }
+
+
+def _ensure_preflight_audit(checkpoint: Checkpoint, client: object) -> None:
+    existing = checkpoint.preflight_audit()
+    if existing is not None:
+        _validate_preflight_audit(existing)
+        return
+    audit = preflight_judge(client)
+    checkpoint.record_preflight_audit(audit)
+
+
 def _run_phase(args: argparse.Namespace) -> int:
+    _validate_population_mode(args)
     prepared, checkpoint = _prepare_run(args)
     if args.plan_only:
+        return 0
+    if args.canary:
+        client = build_openai_client()
+        _ensure_preflight_audit(checkpoint, client)
+        generate_missing(
+            checkpoint,
+            prepared.questions,
+            args.candidate_base_url,
+            repeats=args.repeats,
+        )
+        judge_missing(checkpoint, prepared.questions, client)
+        print(canonical_json(_canary_status(checkpoint, args)))
         return 0
     destination = args.output_dir / args.run_id
     already_published = _ensure_published_result(checkpoint, destination)
     client: object | None = None
-    if args.phase in {"judge", "run"} and args.judge_preflight:
+    if args.phase == "run" or (args.phase == "judge" and args.judge_preflight):
         client = build_openai_client()
-        preflight_judge(client)
+        _ensure_preflight_audit(checkpoint, client)
     if args.phase in {"generate", "run"}:
         generate_missing(
             checkpoint,

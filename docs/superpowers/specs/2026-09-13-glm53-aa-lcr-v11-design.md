@@ -161,10 +161,18 @@ environment-variable and Secret names. Documentation provides a PowerShell
 stdin workflow that prompts securely and applies the Secret without writing
 the key to disk or shell history.
 
+The judge client always passes
+`base_url="https://api.openai.com/v1"` explicitly. An ambient
+`OPENAI_BASE_URL` cannot redirect the key. Every preflight and judgment audit,
+plus publication identity, records that exact endpoint.
+
 The preflight verifies access to `gpt-5.6-luna` and executes one synthetic
 judge canary. The recorded judge identity includes requested model, reasoning
 effort, returned model identifier, endpoint, SDK version, and UTC time. Because
 AA publishes no judge snapshot ID, any result records that exact limitation.
+The returned model must be exactly `gpt-5.6-luna`; a mismatch is a retryable
+judge protocol error and bounded exhaustion leaves the unit terminally
+incomplete.
 
 ## 5. Components and data flow
 
@@ -185,9 +193,15 @@ independent state:
 - `(question_id, repeat_index)` is the candidate primary key;
 - each terminal generation record is immutable;
 - each judgment is keyed by candidate identity plus a judge-contract hash;
+- one successful preflight audit is stored in an immutable singleton table;
 - changing dataset, prompts, generation policy, endpoint identity, or judge
   contract creates a new run fingerprint; and
 - resume fills only missing transport work under the same fingerprint.
+
+Candidate generation is pinned to `glm-5.3-w4afp8`. Both endpoint snapshots
+record expected and observed served model, `/v1/models` must resolve that exact
+identifier before generation and after generation, and every candidate request
+uses the same identifier.
 
 Published artifacts are:
 
@@ -196,13 +210,20 @@ Published artifacts are:
 - `judgments.jsonl`;
 - `summary.json`;
 - `report.md`; and
-- the SQLite checkpoint plus file-digest manifest.
+- a file-digest manifest.
 
 Publish exports atomically and without overwrite. The summary exists only when
 all 300 candidates and all 300 judgments are terminal and valid. Headline
 pass@1 is `CORRECT / 300`; also report question-macro accuracy, per-repeat
 accuracy, category breakdown, output-token distribution, truncations, empty
-answers, retries, and judge failures.
+answers, total judge retries (including preflight), and an explicit zero
+terminal-judge-failure count.
+
+`run --canary --limit 1 --repeats 1` is the only partial combined run. It
+preflights the judge before candidate generation, persists one candidate, one
+judgment, all audits, and prints a checkpoint status record. It intentionally
+never summarizes or publishes a headline bundle. Combined runs without
+`--canary` remain strict 100 × 3.
 
 ## 6. Failure and safety discipline
 
@@ -253,3 +274,7 @@ Live execution gates are:
 
 No live call, Kubernetes write, or GPU request is part of implementation
 itself; each is separately authorized at its execution gate.
+
+Low-severity limitation: the current CLI re-prepares the pinned official
+dataset for every phase, so `summarize` still requires dataset-network
+availability before it opens an otherwise complete checkpoint.

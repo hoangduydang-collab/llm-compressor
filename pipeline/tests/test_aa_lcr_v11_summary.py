@@ -1,10 +1,13 @@
 import errno
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from pipeline import aa_lcr_v11 as A
+from pipeline.tests.test_aa_lcr_v11_candidate import server_identity
+from pipeline.tests.test_aa_lcr_v11_checkpoint import preflight_audit
 
 
 def checkpoint_with_candidates_and_judgments(
@@ -18,9 +21,9 @@ def checkpoint_with_candidates_and_judgments(
             prompt_sha256="b" * 64,
             judge_system_prompt_sha256=A.sha256_text(A.JUDGE_SYSTEM_PROMPT),
             judge_user_prompt_sha256=A.sha256_text(A.JUDGE_USER_PROMPT_TEMPLATE),
-            candidate_model="candidate-model",
-            served_model="served-model",
-            endpoint_deployment_identity={"deployment": "candidate-v1"},
+            candidate_model=A.CANDIDATE_MODEL,
+            served_model=A.CANDIDATE_MODEL,
+            endpoint_deployment_identity=server_identity(),
             candidate_temperature=0.6,
             candidate_top_p=1.0,
             candidate_max_tokens=131_072,
@@ -35,6 +38,9 @@ def checkpoint_with_candidates_and_judgments(
             question_ids=tuple(range(1, 101)),
         ),
     )
+    checkpoint.record_preflight_audit(preflight_audit())
+    checkpoint.record_server_snapshot("before", server_identity())
+    checkpoint.record_server_snapshot("after", server_identity())
     judge_contract_hash = A.validate_judge_contract(checkpoint.contract)
     for unit in range(count):
         question_id = unit // 3 + 1
@@ -79,6 +85,26 @@ def test_incomplete_population_has_no_headline(tmp_path):
     checkpoint = checkpoint_with_candidates_and_judgments(tmp_path, count=299)
 
     with pytest.raises(A.IncompleteRunError, match="expected 300"):
+        A.build_summary(checkpoint)
+
+
+def test_missing_preflight_audit_has_no_headline(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    checkpoint._connection.execute("DELETE FROM judge_preflight")
+    checkpoint._connection.commit()
+
+    with pytest.raises(A.IncompleteRunError, match="preflight"):
+        A.build_summary(checkpoint)
+
+
+def test_wrong_candidate_contract_identity_has_no_headline(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    checkpoint.contract = replace(
+        checkpoint.contract,
+        candidate_model="glm-5.3-w4afp8-shadow",
+    )
+
+    with pytest.raises(A.IncompleteRunError, match="candidate identity"):
         A.build_summary(checkpoint)
 
 
@@ -293,6 +319,37 @@ def test_summary_recomputes_pass_at_one_and_diagnostics(tmp_path):
         "retry_count": 1,
         "persistent_failure_count": 0,
     }
+    assert summary["judge_retry_count"] == 0
+    assert summary["judge_terminal_failure_count"] == 0
+    assert summary["judge_identity"]["endpoint"] == A.OPENAI_API_BASE_URL
+    assert summary["judge_identity"]["preflight"] == preflight_audit()
+
+
+def test_summary_judge_retry_count_includes_successes_and_preflight(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    judgment_row = checkpoint._connection.execute(
+        "SELECT record_json FROM judgments WHERE question_id = 1 AND repeat_index = 0"
+    ).fetchone()
+    assert judgment_row is not None
+    judgment = json.loads(judgment_row[0])
+    judgment["retry_count"] = 3
+    checkpoint._connection.execute(
+        "UPDATE judgments SET record_json = ? "
+        "WHERE question_id = 1 AND repeat_index = 0",
+        (A.canonical_json(judgment),),
+    )
+    audit = preflight_audit()
+    audit["retry_count"] = 2
+    checkpoint._connection.execute(
+        "UPDATE judge_preflight SET record_json = ? WHERE singleton = 1",
+        (A.canonical_json(audit),),
+    )
+    checkpoint._connection.commit()
+
+    summary = A.build_summary(checkpoint)
+
+    assert summary["judge_retry_count"] == 5
+    assert summary["judge_terminal_failure_count"] == 0
 
 
 def test_summary_uses_checkpointed_document_categories(tmp_path):
@@ -332,5 +389,9 @@ def test_publish_is_atomic_includes_digests_and_no_clobber(tmp_path):
     assert {line.split("  ", 1)[1] for line in manifest.splitlines()} == (
         set(exports) - {"files.sha256"}
     )
+    run_manifest = json.loads(
+        (destination / "run-manifest.json").read_text(encoding="utf-8")
+    )
+    assert run_manifest["judge_preflight"] == preflight_audit()
     with pytest.raises(FileExistsError):
         A.publish_results(checkpoint, destination)

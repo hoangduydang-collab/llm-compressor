@@ -835,8 +835,8 @@ def judge_one(
     max_attempts: int = MAX_ATTEMPTS,
 ) -> JudgmentRecord:
     """Judge final candidate content, retrying transient failures independently."""
-    if max_attempts < 1:
-        raise ValueError("max_attempts must be at least one")
+    if not 1 <= max_attempts <= MAX_ATTEMPTS:
+        raise ValueError(f"max_attempts must be between 1 and {MAX_ATTEMPTS}")
     started_at_utc = _utc_now()
     contract_hash = judge_contract_hash or _judge_contract_hash()
     if candidate.content is None:

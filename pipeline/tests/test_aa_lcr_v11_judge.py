@@ -307,6 +307,20 @@ def test_missing_content_failure_persists_zero_attempts(tmp_path):
     assert checkpoint.judge_failures()[0].attempt_count == 0
 
 
+def test_judge_one_rejects_attempts_above_ceiling_before_api_call():
+    client = FakeOpenAI([judge_response()])
+
+    with pytest.raises(ValueError, match="between 1 and 30"):
+        A.judge_one(
+            client,
+            questions()[0],
+            candidate_record(),
+            max_attempts=A.MAX_ATTEMPTS + 1,
+        )
+
+    assert client.responses.calls == []
+
+
 def test_judge_missing_resumes_without_duplicate_calls(tmp_path):
     checkpoint = seeded_checkpoint(tmp_path)
     checkpoint.record_candidate(candidate_record())

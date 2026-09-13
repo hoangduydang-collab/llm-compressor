@@ -2,10 +2,12 @@
 
 import csv
 import hashlib
+import importlib
 import json
 import os
 import sqlite3
 import stat
+import sys
 import tempfile
 import threading
 import time
@@ -15,11 +17,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Callable, Collection, Mapping
+from typing import TYPE_CHECKING, Callable, Collection, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import tiktoken
+
+if TYPE_CHECKING:
+    from openai import OpenAI
 
 
 AA_LCR_VERSION = "1.1"
@@ -39,6 +44,7 @@ CANDIDATE_MAX_TOKENS = 131_072
 CANDIDATE_CONCURRENCY = 2
 JUDGE_MODEL = "gpt-5.6-luna"
 JUDGE_REASONING_EFFORT = "medium"
+JUDGE_REASONING_MODE = "standard"
 MAX_ATTEMPTS = 30
 
 CANDIDATE_PROMPT_TEMPLATE = """BEGIN INPUT DOCUMENTS
@@ -98,6 +104,10 @@ Reply as JSON, with a verdict of CORRECT or INCORRECT."""
 
 class JudgeProtocolError(ValueError):
     """Raised when the judge response violates the expected JSON protocol."""
+
+
+class CredentialError(ValueError):
+    """Raised when required judge credentials are unavailable."""
 
 
 class DatasetIntegrityError(ValueError):
@@ -185,6 +195,15 @@ class JudgmentRecord:
     started_at_utc: str
     completed_at_utc: str
     error: str | None
+    requested_model: str | None = None
+    returned_model: str | None = None
+    reasoning_effort: str | None = None
+    reasoning_mode: str | None = None
+    openai_sdk_version: str | None = None
+    response_id: str | None = None
+    request_id: str | None = None
+    usage: object = None
+    raw_output_text: str | None = None
 
 
 def build_run_contract(
@@ -426,6 +445,23 @@ class Checkpoint:
             judge_contract_hash=record.judge_contract_hash,
         )
 
+    def candidate_record(self, question_id: int, repeat_index: int) -> CandidateRecord:
+        """Return one persisted candidate required for a missing judgment."""
+        self._validate_unit(question_id, repeat_index)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT record_json FROM candidates WHERE question_id = ? AND repeat_index = ?",
+                (question_id, repeat_index),
+            ).fetchone()
+        if row is None:
+            raise CheckpointConflictError(
+                f"candidate is absent for judgment unit: ({question_id}, {repeat_index})"
+            )
+        payload = json.loads(row[0])
+        if not isinstance(payload, dict):
+            raise CheckpointConflictError("persisted candidate record is malformed")
+        return CandidateRecord(**payload)
+
 
 def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -492,6 +528,223 @@ def parse_judge_verdict(text: str) -> str:
     }:
         raise JudgeProtocolError("judge verdict must be CORRECT or INCORRECT")
     return verdict.upper()
+
+
+def build_openai_client() -> "OpenAI":
+    """Construct the official OpenAI client only when a credential is configured."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        raise CredentialError("OPENAI_API_KEY is not set")
+    try:
+        openai = importlib.import_module("openai")
+    except ImportError as exc:
+        raise CredentialError("openai package is required to run the judge") from exc
+    return openai.OpenAI(api_key=key, timeout=300.0, max_retries=0)
+
+
+def _judge_contract_hash(
+    model: str = JUDGE_MODEL,
+    effort: str = JUDGE_REASONING_EFFORT,
+) -> str:
+    return sha256_text(
+        canonical_json(
+            {
+                "model": model,
+                "reasoning_effort": effort,
+                "reasoning_mode": JUDGE_REASONING_MODE,
+                "system_prompt_sha256": sha256_text(JUDGE_SYSTEM_PROMPT),
+                "user_prompt_sha256": sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
+            }
+        )
+    )
+
+
+def _response_value(response: object, name: str, default: object = None) -> object:
+    return getattr(response, name, default)
+
+
+def _usage_value(usage: object) -> object:
+    if usage is None:
+        return None
+    if isinstance(usage, Mapping):
+        return {str(key): _json_value(value) for key, value in usage.items()}
+    model_dump = getattr(usage, "model_dump", None)
+    if callable(model_dump):
+        return _usage_value(model_dump())
+    values = {
+        name: getattr(usage, name)
+        for name in ("input_tokens", "output_tokens", "total_tokens")
+        if hasattr(usage, name)
+    }
+    return values or None
+
+
+def _judge_error_record(
+    question: Question,
+    candidate: CandidateRecord,
+    judge_contract_hash: str,
+    retry_count: int,
+    started_at_utc: str,
+    error: str,
+    raw_output_text: str | None = None,
+) -> JudgmentRecord:
+    return JudgmentRecord(
+        question_id=question.question_id,
+        repeat_index=candidate.repeat_index,
+        judge_contract_hash=judge_contract_hash,
+        raw_response=(
+            {"output_text": raw_output_text} if raw_output_text is not None else None
+        ),
+        verdict=None,
+        retry_count=retry_count,
+        started_at_utc=started_at_utc,
+        completed_at_utc=_utc_now(),
+        error=error,
+        requested_model=JUDGE_MODEL,
+        reasoning_effort=JUDGE_REASONING_EFFORT,
+        reasoning_mode=JUDGE_REASONING_MODE,
+        raw_output_text=raw_output_text,
+    )
+
+
+def _exception_status(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", getattr(exc, "status", None))
+    return status if isinstance(status, int) else None
+
+
+def judge_one(
+    client: object,
+    question: Question,
+    candidate: CandidateRecord,
+    *,
+    judge_contract_hash: str | None = None,
+    max_attempts: int = MAX_ATTEMPTS,
+) -> JudgmentRecord:
+    """Judge final candidate content, retrying transient failures independently."""
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least one")
+    started_at_utc = _utc_now()
+    contract_hash = judge_contract_hash or _judge_contract_hash()
+    if candidate.content is None:
+        return _judge_error_record(
+            question, candidate, contract_hash, 0, started_at_utc,
+            "candidate has no final content",
+        )
+    judge_user_prompt = build_judge_user_prompt(
+        question.question, question.official_answer, candidate.content
+    )
+    for attempt in range(max_attempts):
+        output_text: str | None = None
+        try:
+            response = client.responses.create(
+                model=JUDGE_MODEL,
+                input=[
+                    {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                    {"role": "user", "content": judge_user_prompt},
+                ],
+                reasoning={
+                    "effort": JUDGE_REASONING_EFFORT,
+                    "mode": JUDGE_REASONING_MODE,
+                },
+                store=False,
+            )
+            output_text = _response_value(response, "output_text")
+            if not isinstance(output_text, str):
+                raise JudgeProtocolError("judge response has no output text")
+            verdict = parse_judge_verdict(output_text)
+        except Exception as exc:
+            status = _exception_status(exc)
+            retryable = (
+                isinstance(exc, (JudgeProtocolError, OSError, TimeoutError, URLError))
+                or status is None
+                or _is_retryable_status(status)
+            )
+            if retryable and attempt + 1 < max_attempts:
+                time.sleep(_retry_delay(attempt))
+                continue
+            status_text = f" HTTP {status}" if status is not None else ""
+            return _judge_error_record(
+                question, candidate, contract_hash, attempt, started_at_utc,
+                f"judge failed after {attempt + 1} attempts: {type(exc).__name__}{status_text}",
+                output_text,
+            )
+        return JudgmentRecord(
+            question_id=question.question_id,
+            repeat_index=candidate.repeat_index,
+            judge_contract_hash=contract_hash,
+            raw_response={"output_text": output_text},
+            verdict=verdict,
+            retry_count=attempt,
+            started_at_utc=started_at_utc,
+            completed_at_utc=_utc_now(),
+            error=None,
+            requested_model=JUDGE_MODEL,
+            returned_model=_response_value(response, "model"),
+            reasoning_effort=JUDGE_REASONING_EFFORT,
+            reasoning_mode=JUDGE_REASONING_MODE,
+            openai_sdk_version=getattr(sys.modules.get("openai"), "__version__", None),
+            response_id=_response_value(response, "id"),
+            request_id=_response_value(response, "_request_id"),
+            usage=_usage_value(_response_value(response, "usage")),
+            raw_output_text=output_text,
+        )
+    raise AssertionError("unreachable")
+
+
+def preflight_judge(client: object) -> dict[str, object]:
+    """Confirm the requested judge model is reachable and obeys the verdict protocol."""
+    model = client.models.retrieve(JUDGE_MODEL)
+    question = Question(
+        question_id=0,
+        category="preflight",
+        document_set_id="preflight",
+        question="What is 2 + 2?",
+        official_answer="4",
+        document_filenames=(),
+        prompt="",
+        cl100k_tokens=0,
+    )
+    candidate = CandidateRecord(
+        question_id=0, repeat_index=0, http_status=200, raw_response=None,
+        usage=None, finish_reason=None, content="4", reasoning_content=None,
+        retry_count=0, started_at_utc=_utc_now(), completed_at_utc=_utc_now(),
+        error=None,
+    )
+    record = judge_one(client, question, candidate)
+    if record.verdict != "CORRECT":
+        raise JudgeProtocolError("judge preflight did not return CORRECT")
+    return {
+        "requested_model": JUDGE_MODEL,
+        "returned_model": _response_value(model, "id"),
+        "response_id": record.response_id,
+        "request_id": record.request_id,
+        "verdict": record.verdict,
+    }
+
+
+def judge_missing(
+    checkpoint: Checkpoint,
+    questions: Collection[Question],
+    client: object,
+) -> None:
+    """Persist judgments only for currently absent candidates under this judge contract."""
+    question_by_id = {question.question_id: question for question in questions}
+    judge_contract_hash = _judge_contract_hash(
+        checkpoint.contract.judge_model, checkpoint.contract.judge_reasoning_effort
+    )
+    missing = checkpoint.missing_judgments(judge_contract_hash)
+    if any(question_id not in question_by_id for question_id, _ in missing):
+        raise CheckpointConflictError("questions do not cover immutable run contract")
+    for question_id, repeat_index in missing:
+        candidate = checkpoint.candidate_record(question_id, repeat_index)
+        record = judge_one(
+            client,
+            question_by_id[question_id],
+            candidate,
+            judge_contract_hash=judge_contract_hash,
+            max_attempts=checkpoint.contract.judge_max_attempts,
+        )
+        checkpoint.record_judgment(record)
 
 
 def _utc_now() -> str:

@@ -26,6 +26,7 @@ spec:
           image: python:3.12-slim
           env:
             - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: TIKTOKEN_CACHE_DIR, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"}
             - name: AA_LCR_CODE_REVISION
               valueFrom:
                 configMapKeyRef:
@@ -43,6 +44,7 @@ spec:
               LOCK=/workspace/pipeline/requirements-aa-lcr-v11.lock
               DIGEST=$(sha256sum "$LOCK" | awk '{print $1}')
               VENV=/mnt/cephfs/hoangduy/venvs/aa-lcr-v11-py312-${DIGEST:0:12}
+              mkdir -p "$TIKTOKEN_CACHE_DIR"
               if [ ! -d "$VENV" ]; then
                 python -m venv "$VENV"
                 "$VENV/bin/python" -m pip install --require-hashes -r "$LOCK"
@@ -51,6 +53,10 @@ spec:
                 printf '%s\n' "$DIGEST" > "$VENV/requirements-sha256.txt"
               fi
               test "$(cat "$VENV/requirements-sha256.txt")" = "$DIGEST"
+              "$VENV/bin/python" -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
+              find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print -quit | grep -q .
+              find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print0 | sort -z | xargs -0 sha256sum > "$VENV/tiktoken-cache-sha256.txt"
+              test -s "$VENV/tiktoken-cache-sha256.txt"
               # Candidate endpoint: http://glm-5-3-w4afp8-sglang:30000/v1/chat/completions
               echo "AA-LCR v1.1 environment staged at $VENV"
           volumeMounts:

@@ -96,7 +96,15 @@ py -3.12 -m venv .venv-aa-lcr-lock
 Review and commit the generated lock before creating the ConfigMap. The staging
 Job derives its venv name from the lock SHA-256, never deletes an existing
 environment, installs with `--require-hashes`, and records the digest, Python
-version, and `pip freeze`.
+version, and `pip freeze`. It also materializes the pinned `cl100k_base`
+vocabulary into the shared versioned cache
+`/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken`. This prefetch runs even when
+the lock-derived venv already exists, records nonempty cache-file SHA-256
+inventory in `tiktoken-cache-sha256.txt`, and does not print cache contents.
+Canary and full Jobs use that same `TIKTOKEN_CACHE_DIR` and fail closed before
+the runner if it has no nonempty artifact. Do not disable TLS or certificate
+verification: `tiktoken.get_encoding("cl100k_base")` verifies the upstream
+vocabulary's expected hash.
 
 The finding that `httpx2` is a legacy or invalid replacement is rejected.
 On 2026-09-13, the official `openai==3.8.0` metadata resolved maintained

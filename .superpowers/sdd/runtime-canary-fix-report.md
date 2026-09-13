@@ -55,3 +55,17 @@ canonical collision checks are unchanged.
 **Final verification:** Dataset/CLI tests: `39 passed`. Full clean-venv AA-LCR
 suite: `140 passed in 37.80s`; Ruff passed. `git diff --check` passed before
 the separate follow-up commit.
+
+## Tiktoken runtime reproducibility follow-up
+
+**Root cause:** `tiktoken==0.14.0` fetches the `cl100k_base` vocabulary lazily.
+The local real-prepare CA failure proved that the lock installation alone does
+not stage it, while canary and full Jobs each have a fresh temporary cache.
+
+**RED/GREEN:** Static manifest and runbook tests initially failed because no
+shared `TIKTOKEN_CACHE_DIR`, prefetch, SHA-256 inventory, or fail-closed
+consumer check existed. They pass after stage now materializes the vocabulary
+on every run and consumers require a nonempty shared artifact before the
+runner. Dataset/manifest tests: `27 passed in 1.19s`. Full clean-venv AA-LCR
+suite: `141 passed in 39.34s`; Ruff passed. The credential scan and
+`git diff --check` passed.

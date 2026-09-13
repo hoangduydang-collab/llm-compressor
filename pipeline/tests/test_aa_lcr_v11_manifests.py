@@ -10,6 +10,7 @@ STAGE = K8S / "stage-aa-lcr-v11.yaml"
 CANARY = K8S / "hd-aa-lcr-v11-canary.yaml"
 FULL = K8S / "hd-aa-lcr-v11-full.yaml"
 EVAL_MANIFESTS = (CANARY, FULL)
+TIKTOKEN_CACHE_DIR = "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"
 
 
 def load_container(path: Path) -> dict[str, object]:
@@ -92,6 +93,27 @@ def test_canary_and_full_have_pinned_population_and_concurrency():
     assert "--candidate-concurrency 2" in full
 
 
+def test_manifests_stage_and_verify_shared_tiktoken_vocabulary_cache():
+    for path in (STAGE, *EVAL_MANIFESTS):
+        container = load_container(path)
+        environment = {item["name"]: item.get("value") for item in container["env"]}
+        assert environment["TIKTOKEN_CACHE_DIR"] == TIKTOKEN_CACHE_DIR
+
+    stage = STAGE.read_text(encoding="utf-8")
+    assert 'mkdir -p "$TIKTOKEN_CACHE_DIR"' in stage
+    assert 'tiktoken.get_encoding("cl100k_base")' in stage
+    assert 'find "$TIKTOKEN_CACHE_DIR" -type f -size +0' in stage
+    assert 'tiktoken-cache-sha256.txt' in stage
+
+    for path in EVAL_MANIFESTS:
+        text = path.read_text(encoding="utf-8")
+        assert 'test -d "$TIKTOKEN_CACHE_DIR"' in text
+        assert 'find "$TIKTOKEN_CACHE_DIR" -type f -size +0' in text
+        assert text.index('test -d "$TIKTOKEN_CACHE_DIR"') < text.index(
+            '"$VENV/bin/python" -m pipeline.aa_lcr_v11 run'
+        )
+
+
 def test_runbook_renders_immutable_configmaps_and_resumable_jobs():
     text = RUNBOOK.read_text(encoding="utf-8")
 
@@ -117,6 +139,10 @@ def test_runbook_renders_immutable_configmaps_and_resumable_jobs():
         "glm53-w4afp8-aa-lcr-v11-canary-r1/run.sqlite"
     ) in text
     assert "The canary intentionally does not publish a headline bundle." in text
+    assert TIKTOKEN_CACHE_DIR in text
+    assert 'tiktoken.get_encoding("cl100k_base")' in text
+    assert "tiktoken-cache-sha256.txt" in text
+    assert "fail closed" in text
 
 
 def test_runbook_rejects_nonterminal_same_run_job_before_creation():

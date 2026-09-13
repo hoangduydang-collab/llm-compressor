@@ -26,12 +26,14 @@ recovers to decomposed `Başev.txt`, whose NFC form matches the CSV's
 apostrophe. Separately, `Start-AaLcrJob` only inspected Pods before creating a
 Job, allowing a same-run Job with no Pod yet to bypass the active-run guard.
 
-**Long-term fix:** ZIP validation now preserves correctly flagged UTF-8 names;
-for unflagged names it attempts CP437-byte-to-UTF-8 recovery and falls back
-only on conversion failure, then canonicalizes to Unicode NFC before path
-safety, expected-member, and collision checks. NUL detection still examines raw
-local-header bytes, and canonical collisions remain rejected. The generic
-extractor remains strict: `prepare_dataset` alone adds the single known,
+**Long-term fix:** ZIP validation preserves correctly flagged UTF-8 names and
+standard unflagged CP437 names. When an explicit expected-members contract is
+present, it prefers the standard CP437-decoded path and uses
+CP437-byte-to-UTF-8 recovery only when the recovered NFC path is explicitly
+expected. Generic extraction never heuristically renames unflagged members.
+Path safety, expected-member, and collision checks operate on the selected NFC
+path. NUL detection still examines raw local-header bytes, and canonical
+collisions remain rejected. `prepare_dataset` alone adds the single known,
 pinned unreferenced member
 `lcr/Legal/legal_eu_ai/Preparing for change_ How businesses can thrive under the EU_s AI Act _ Global law firm _ Norton Rose Fulbright.txt`
 to the CSV-derived contract. After recovery and NFC there are zero missing
@@ -42,6 +44,26 @@ and waits up to 180 seconds for the created Job's Pod before reading logs.
 **Tactical workaround:** None. No removal is needed: this is the durable
 decoder and the allowlist is explicitly bound to the immutable archive
 revision and digest.
+
+## AA-LCR tiktoken vocabulary staging (fixed, 2026-09-13)
+
+**Root cause:** The pinned dataset extraction completed, but real local
+preparation caused `tiktoken==0.14.0` to lazily fetch `cl100k_base` from
+`https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken`.
+The local CA failure showed that installing tiktoken does not materialize its
+vocabulary. Each canary and full Job also starts with a fresh `/tmp` cache, so
+the runtime contract was not reproducible.
+
+**Long-term fix:** Stage, canary, and full manifests now share
+`TIKTOKEN_CACHE_DIR=/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken`. Stage
+always materializes `tiktoken.get_encoding("cl100k_base")` after verifying the
+hash-locked venv, checks a nonempty cache artifact, and records only SHA-256
+inventory under the staged venv. Canary and full Jobs fail closed if that
+shared cache is absent or empty before invoking the runner. TLS and tiktoken's
+upstream expected vocabulary-hash verification remain enabled.
+
+**Tactical workaround:** None. No removal is needed: the shared, versioned
+cache is part of the immutable runtime staging contract.
 
 ## Pre-quantization gate: meta-device MoE linearization offload (fixed, 2026-07-13)
 

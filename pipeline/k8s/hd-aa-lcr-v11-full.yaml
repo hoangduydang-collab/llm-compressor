@@ -26,6 +26,7 @@ spec:
           image: python:3.12-slim
           env:
             - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: TIKTOKEN_CACHE_DIR, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"}
             - {name: CANDIDATE_COMPLETIONS_URL, value: "http://glm-5-3-w4afp8-sglang:30000/v1/chat/completions"}
             - name: OPENAI_API_KEY
               valueFrom:
@@ -49,6 +50,8 @@ spec:
               VENV=/mnt/cephfs/hoangduy/venvs/aa-lcr-v11-py312-${DIGEST:0:12}
               test -x "$VENV/bin/python"
               test "$(cat "$VENV/requirements-sha256.txt")" = "$DIGEST"
+              test -d "$TIKTOKEN_CACHE_DIR"
+              find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print -quit | grep -q .
               cd /workspace
               "$VENV/bin/python" -m pipeline.aa_lcr_v11 run \
                 --run-id glm53-w4afp8-aa-lcr-v11-full-r1 \

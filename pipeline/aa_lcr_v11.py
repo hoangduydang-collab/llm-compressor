@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import json
 import os
+import shutil
 import sqlite3
 import stat
 import sys
@@ -112,6 +113,10 @@ class CredentialError(ValueError):
 
 class IncompleteJudgmentError(RuntimeError):
     """Raised when a run contains a terminal, unscored judge failure."""
+
+
+class IncompleteRunError(RuntimeError):
+    """Raised when a checkpoint cannot support a valid public headline."""
 
 
 class JudgeContractError(ValueError):
@@ -319,7 +324,8 @@ class Checkpoint:
                     contract_json TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS questions (
-                    question_id INTEGER PRIMARY KEY
+                    question_id INTEGER PRIMARY KEY,
+                    category TEXT
                 );
                 CREATE TABLE IF NOT EXISTS candidates (
                     question_id INTEGER NOT NULL REFERENCES questions(question_id),
@@ -351,6 +357,11 @@ class Checkpoint:
                 );
                 """
             )
+            question_columns = {
+                row[1] for row in self._connection.execute("PRAGMA table_info(questions)")
+            }
+            if "category" not in question_columns:
+                self._connection.execute("ALTER TABLE questions ADD COLUMN category TEXT")
             contract_json = _canonical_dataclass(self.contract)
             row = self._connection.execute(
                 "SELECT fingerprint, contract_json FROM run WHERE singleton = 1"
@@ -446,6 +457,41 @@ class Checkpoint:
             (record.question_id, record.repeat_index),
             _canonical_dataclass(record),
         )
+
+    def record_question_categories(self, categories: Mapping[int, str]) -> None:
+        """Persist each contract question's category once for publication summaries."""
+        if set(categories) != self._expected_question_ids or any(
+            not isinstance(category, str) or not category for category in categories.values()
+        ):
+            raise CheckpointConflictError(
+                "question categories must cover the immutable run contract"
+            )
+        with self._lock, self._connection:
+            rows = dict(
+                self._connection.execute("SELECT question_id, category FROM questions")
+            )
+            for question_id, category in categories.items():
+                existing = rows.get(question_id)
+                if existing is not None and existing != category:
+                    raise CheckpointConflictError(
+                        f"conflicting immutable category for question {question_id}"
+                    )
+            self._connection.executemany(
+                "UPDATE questions SET category = ? WHERE question_id = ? AND category IS NULL",
+                ((category, question_id) for question_id, category in categories.items()),
+            )
+
+    def question_categories(self) -> dict[int, str] | None:
+        """Return checkpointed categories, or None for legacy checkpoints."""
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT question_id, category FROM questions ORDER BY question_id"
+            ).fetchall()
+        if len(rows) != len(self.contract.question_ids) or any(
+            not isinstance(category, str) or not category for _, category in rows
+        ):
+            return None
+        return {question_id: category for question_id, category in rows}
 
     def record_server_snapshot(self, stage: str, identity: Mapping[str, object]) -> None:
         """Persist an immutable, redacted server-identity snapshot."""
@@ -1188,6 +1234,9 @@ def generate_missing(
     if repeats != checkpoint.contract.repeats:
         raise CheckpointConflictError("repeats does not match immutable run contract")
     question_by_id = {question.question_id: question for question in questions}
+    checkpoint.record_question_categories(
+        {question.question_id: question.category for question in questions}
+    )
     missing = checkpoint.missing_candidates()
     if any(question_id not in question_by_id for question_id, _ in missing):
         raise CheckpointConflictError("questions do not cover immutable run contract")
@@ -1523,4 +1572,303 @@ def prepare_dataset(
         questions=questions,
         file_sha256=MappingProxyType(digests),
         prompt_sha256=prompt_sha256,
+    )
+
+
+def _publication_rows(
+    checkpoint: Checkpoint, judge_contract_hash: str
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Load the immutable primitive rows that define a publication."""
+    with checkpoint._lock:
+        candidate_rows = checkpoint._connection.execute(
+            "SELECT record_json FROM candidates ORDER BY question_id, repeat_index"
+        ).fetchall()
+        judgment_rows = checkpoint._connection.execute(
+            """
+            SELECT record_json FROM judgments
+            WHERE judge_contract_hash = ?
+            ORDER BY question_id, repeat_index
+            """,
+            (judge_contract_hash,),
+        ).fetchall()
+    return (
+        [json.loads(row[0]) for row in candidate_rows],
+        [json.loads(row[0]) for row in judgment_rows],
+    )
+
+
+def _distribution(values: Collection[int]) -> dict[str, float | int]:
+    numbers = list(values)
+    if not numbers:
+        return {"count": 0, "minimum": 0, "maximum": 0, "mean": 0.0, "total": 0}
+    total = sum(numbers)
+    return {
+        "count": len(numbers),
+        "minimum": min(numbers),
+        "maximum": max(numbers),
+        "mean": total / len(numbers),
+        "total": total,
+    }
+
+
+def _usage_tokens(record: Mapping[str, object], *names: str) -> int:
+    usage = record.get("usage")
+    if not isinstance(usage, Mapping):
+        return 0
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, int) and value >= 0:
+            return value
+    return 0
+
+
+def _text_token_count(value: object) -> int:
+    """Count a stable local whitespace-token proxy without loading remote BPE data."""
+    if not isinstance(value, str):
+        return 0
+    return len(value.split())
+
+
+def _validate_publication_population(
+    checkpoint: Checkpoint,
+    candidates: list[dict[str, object]],
+    judgments: list[dict[str, object]],
+    judge_contract_hash: str,
+) -> None:
+    expected = len(checkpoint.contract.question_ids) * checkpoint.contract.repeats
+    if expected != 300:
+        raise IncompleteRunError(
+            f"expected 300 contract units, found {expected}; refusing headline"
+        )
+    if len(candidates) != expected:
+        raise IncompleteRunError(
+            f"expected 300 successful candidate records, found {len(candidates)}"
+        )
+    if any(
+        record.get("error") is not None
+        or not isinstance(record.get("content"), str)
+        or not isinstance(record.get("http_status"), int)
+        or not 200 <= record["http_status"] < 300
+        for record in candidates
+    ):
+        raise IncompleteRunError("candidate failures present; refusing headline")
+    if checkpoint.incomplete_judgments(judge_contract_hash):
+        raise IncompleteRunError("judge failures present; refusing headline")
+    if len(judgments) != expected:
+        raise IncompleteRunError(
+            f"expected 300 valid judgments, found {len(judgments)}"
+        )
+    if any(record.get("verdict") not in {"CORRECT", "INCORRECT"} for record in judgments):
+        raise IncompleteRunError("invalid judgments present; refusing headline")
+
+
+def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
+    """Recompute every public metric from immutable checkpoint primitives."""
+    judge_contract_hash = validate_judge_contract(checkpoint.contract)
+    candidates, judgments = _publication_rows(checkpoint, judge_contract_hash)
+    _validate_publication_population(
+        checkpoint, candidates, judgments, judge_contract_hash
+    )
+    judgment_by_unit = {
+        (int(record["question_id"]), int(record["repeat_index"])): record
+        for record in judgments
+    }
+    correct = sum(record["verdict"] == "CORRECT" for record in judgments)
+    per_repeat: dict[str, dict[str, float | int]] = {}
+    for repeat_index in range(checkpoint.contract.repeats):
+        repeat_judgments = [
+            judgment_by_unit[(question_id, repeat_index)]
+            for question_id in checkpoint.contract.question_ids
+        ]
+        repeat_correct = sum(row["verdict"] == "CORRECT" for row in repeat_judgments)
+        per_repeat[str(repeat_index)] = {
+            "correct": repeat_correct,
+            "denominator": len(repeat_judgments),
+            "accuracy": repeat_correct / len(repeat_judgments),
+        }
+    question_accuracies = [
+        sum(
+            judgment_by_unit[(question_id, repeat_index)]["verdict"] == "CORRECT"
+            for repeat_index in range(checkpoint.contract.repeats)
+        )
+        / checkpoint.contract.repeats
+        for question_id in checkpoint.contract.question_ids
+    ]
+    finish_reasons: dict[str, int] = {}
+    for record in candidates:
+        finish_reason = record.get("finish_reason")
+        name = finish_reason if isinstance(finish_reason, str) else "missing"
+        finish_reasons[name] = finish_reasons.get(name, 0) + 1
+    categories = checkpoint.question_categories()
+    category_rows: dict[str, list[dict[str, object]]] = {}
+    if categories is None:
+        category_rows["unattributed"] = judgments
+    else:
+        for judgment in judgments:
+            category_rows.setdefault(
+                categories[int(judgment["question_id"])], []
+            ).append(judgment)
+    category_summary = {
+        category: {
+            "count": len(rows),
+            "correct": sum(row["verdict"] == "CORRECT" for row in rows),
+            "accuracy": sum(row["verdict"] == "CORRECT" for row in rows) / len(rows),
+        }
+        for category, rows in sorted(category_rows.items())
+    }
+    return {
+        "benchmark_claim": "AA-LCR v1.1 public-methodology reproduction",
+        "run_fingerprint": checkpoint.contract.fingerprint,
+        "judge_contract_hash": judge_contract_hash,
+        "headline": {
+            "correct": correct,
+            "denominator": len(judgments),
+            "pass_at_1": correct / len(judgments),
+        },
+        "question_macro_accuracy": sum(question_accuracies) / len(question_accuracies),
+        "per_repeat": per_repeat,
+        "document_categories": category_summary,
+        "token_distributions": {
+            "prompt": _distribution(
+                [_usage_tokens(record, "prompt_tokens", "input_tokens") for record in candidates]
+            ),
+            "answer": _distribution([_text_token_count(record.get("content")) for record in candidates]),
+            "reasoning": _distribution(
+                [_text_token_count(record.get("reasoning_content")) for record in candidates]
+            ),
+            "completion": _distribution(
+                [_usage_tokens(record, "completion_tokens", "output_tokens") for record in candidates]
+            ),
+            "text_token_method": "whitespace-token proxy; no tokenizer is loaded during publication",
+        },
+        "finish_reasons": dict(sorted(finish_reasons.items())),
+        "candidate_diagnostics": {
+            "truncation_count": sum(
+                record.get("finish_reason") == "length" for record in candidates
+            ),
+            "empty_answer_count": sum(record.get("content") == "" for record in candidates),
+            "retry_count": sum(
+                int(record["retry_count"])
+                for record in candidates
+                if isinstance(record.get("retry_count"), int)
+            ),
+            "persistent_failure_count": sum(
+                record.get("error") is not None for record in candidates
+            ),
+        },
+        "server_identity": {
+            "contract": _json_value(checkpoint.contract.endpoint_deployment_identity),
+            "before": checkpoint.server_snapshot("before"),
+            "after": checkpoint.server_snapshot("after"),
+        },
+        "judge_identity": {
+            "model": checkpoint.contract.judge_model,
+            "reasoning_effort": checkpoint.contract.judge_reasoning_effort,
+            "reasoning_mode": checkpoint.contract.judge_reasoning_mode,
+        },
+        "limitations": [
+            "Results are a public-methodology reproduction, not an official AA-LCR leaderboard score.",
+            *(
+                ["Document categories are unavailable for this legacy checkpoint."]
+                if categories is None
+                else []
+            ),
+        ],
+    }
+
+
+def _fsync_directory(path: Path) -> None:
+    """Durably persist directory entries where the platform supports it."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
+
+
+def _write_publication_file(path: Path, content: str) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as destination:
+        destination.write(content)
+        destination.flush()
+        os.fsync(destination.fileno())
+
+
+def _publication_report(summary: Mapping[str, object]) -> str:
+    headline = summary["headline"]
+    assert isinstance(headline, Mapping)
+    return (
+        "# AA-LCR v1.1 results\n\n"
+        f"{summary['benchmark_claim']}\n\n"
+        f"Pass@1: {headline['pass_at_1']:.4f} "
+        f"({headline['correct']}/{headline['denominator']})\n\n"
+        "See `summary.json` for all recomputed metrics and limitations.\n"
+    )
+
+
+def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]:
+    """Atomically publish an immutable, fully validated AA-LCR result bundle."""
+    destination = Path(out_dir)
+    if destination.exists():
+        raise FileExistsError(f"publication destination already exists: {destination}")
+    summary = build_summary(checkpoint)
+    judge_contract_hash = str(summary["judge_contract_hash"])
+    candidates, judgments = _publication_rows(checkpoint, judge_contract_hash)
+    parent = destination.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=parent))
+    names = (
+        "run-manifest.json",
+        "candidates.jsonl",
+        "judgments.jsonl",
+        "summary.json",
+        "report.md",
+    )
+    try:
+        _write_publication_file(
+            temporary / "run-manifest.json",
+            canonical_json(
+                {
+                    "aa_lcr_version": AA_LCR_VERSION,
+                    "run_fingerprint": checkpoint.contract.fingerprint,
+                    "run_contract": json.loads(_canonical_dataclass(checkpoint.contract)),
+                    "server_snapshots": {
+                        "before": checkpoint.server_snapshot("before"),
+                        "after": checkpoint.server_snapshot("after"),
+                    },
+                }
+            )
+            + "\n",
+        )
+        _write_publication_file(
+            temporary / "candidates.jsonl",
+            "".join(canonical_json(record) + "\n" for record in candidates),
+        )
+        _write_publication_file(
+            temporary / "judgments.jsonl",
+            "".join(canonical_json(record) + "\n" for record in judgments),
+        )
+        _write_publication_file(
+            temporary / "summary.json", canonical_json(summary) + "\n"
+        )
+        _write_publication_file(temporary / "report.md", _publication_report(summary))
+        _write_publication_file(
+            temporary / "files.sha256",
+            "".join(
+                f"{_sha256_file(temporary / name)}  {name}\n" for name in names
+            ),
+        )
+        _fsync_directory(temporary)
+        os.rename(temporary, destination)
+        _fsync_directory(parent)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
+    return MappingProxyType(
+        {name: destination / name for name in (*names, "files.sha256")}
     )

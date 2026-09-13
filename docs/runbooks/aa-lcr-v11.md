@@ -14,15 +14,42 @@ Job. It is informational only; the evaluation Jobs request no GPUs:
 & 'C:\Program Files\Git\bin\bash.exe' scripts/gpu-free.sh --verify
 ```
 
-Create/update the code ConfigMap from the reviewed commit. Do not include any
-key in the ConfigMap:
+Build an immutable, content-addressed code ConfigMap from a clean, committed
+tree. Do not include a key in the ConfigMap. `kubectl create` deliberately
+fails if the derived name already exists: never update a ConfigMap used by a
+run.
 
 ```powershell
-kubectl -n evaluation create configmap hd-aa-lcr-v11-code `
-  --from-file=aa_lcr_v11.py=pipeline/aa_lcr_v11.py `
-  --from-file=requirements-aa-lcr-v11.lock=pipeline/requirements-aa-lcr-v11.lock `
-  --dry-run=client -o yaml | kubectl apply -f -
+git diff --quiet
+if ($LASTEXITCODE -ne 0) { throw "Tracked working-tree files are dirty." }
+git diff --cached --quiet
+if ($LASTEXITCODE -ne 0) { throw "Tracked index files are dirty." }
+$revision = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw "Cannot resolve HEAD revision." }
+$configMap = "hd-aa-lcr-v11-code-$($revision.Substring(0, 12))"
+$existing = kubectl -n evaluation get configmap $configMap --ignore-not-found -o name
+if ($existing) { throw "Refusing to update existing immutable ConfigMap: $configMap" }
+
+$codeFile = (Resolve-Path pipeline/aa_lcr_v11.py).Path
+$lockFile = (Resolve-Path pipeline/requirements-aa-lcr-v11.lock).Path
+$code = [Convert]::ToBase64String([IO.File]::ReadAllBytes($codeFile))
+$lock = [Convert]::ToBase64String([IO.File]::ReadAllBytes($lockFile))
+@{
+  apiVersion = "v1"
+  kind = "ConfigMap"
+  metadata = @{ name = $configMap; namespace = "evaluation" }
+  immutable = $true
+  data = @{ AA_LCR_CODE_REVISION = $revision }
+  binaryData = @{
+    aa_lcr_v11.py = $code
+    "requirements-aa-lcr-v11.lock" = $lock
+  }
+} | ConvertTo-Json -Depth 6 | kubectl -n evaluation create -f -
 ```
+
+The Job templates contain the `AA_LCR_CODE_CONFIGMAP` token. Render it only
+with `$configMap` above; the runtime Job must contain neither that token nor
+any revision placeholder.
 
 Create the API-key Secret by typing the key only at the secure prompt. This
 command is shown for the operator and must not be executed by an agent without
@@ -61,6 +88,7 @@ py -3.12 -m venv .venv-aa-lcr-lock
 .\.venv-aa-lcr-lock\Scripts\pip-compile.exe `
   --generate-hashes `
   --resolver=backtracking `
+  --index-url https://pypi.org/simple `
   --output-file=pipeline/requirements-aa-lcr-v11.lock `
   pipeline/requirements-aa-lcr-v11.in
 ```
@@ -70,20 +98,53 @@ Job derives its venv name from the lock SHA-256, never deletes an existing
 environment, installs with `--require-hashes`, and records the digest, Python
 version, and `pip freeze`.
 
-## Stage and canary
-
-After authorization, create the CPU-only stage Job:
+The finding that `httpx2` is a legacy or invalid replacement is rejected.
+On 2026-09-13, the official `openai==3.8.0` metadata resolved maintained
+`pydantic`, `httpx2`, and `httpcore2`; a hash-checked dry run exited zero.
+Do not replace `httpx2` with legacy `httpx`. Sources:
+https://pypi.org/pypi/openai/3.8.0/json and
+https://pypi.org/pypi/httpx2/2.12.0/json.
 
 ```powershell
-kubectl apply -f pipeline/k8s/stage-aa-lcr-v11.yaml
-kubectl -n evaluation logs -f job/hd-stage-aa-lcr-v11
+py -3.12 -m pip install --dry-run --ignore-installed --require-hashes `
+  -r pipeline/requirements-aa-lcr-v11.lock
 ```
 
-Then authorize and apply the canary:
+## Stage and canary
+
+After authorization, render and create a fresh Job from its `generateName`
+template. Before every launch, the helper refuses to start if a Pending or
+Running Pod already owns that run ID, preventing concurrent SQLite access.
+Capture the generated name for logs; do not use `kubectl apply` for Jobs.
 
 ```powershell
-kubectl apply -f pipeline/k8s/hd-aa-lcr-v11-canary.yaml
-kubectl -n evaluation logs -f job/hd-aa-lcr-v11-canary
+function Start-AaLcrJob([string]$manifest, [string]$runId) {
+  $active = @(kubectl -n evaluation get pods -l "aa-lcr-run-id=$runId" `
+    --field-selector=status.phase=Pending,status.phase=Running -o name)
+  if ($active.Count -gt 0) {
+    throw "Run $runId already has an active Pod: $($active -join ', ')"
+  }
+  $rendered = (Get-Content $manifest -Raw).Replace(
+    "AA_LCR_CODE_CONFIGMAP", $configMap
+  )
+  if ($rendered -match "AA_LCR_CODE_CONFIGMAP|REPLACE_WITH_GIT_COMMIT") {
+    throw "Refusing to create a Job with unresolved runtime placeholders."
+  }
+  $jobName = $rendered | kubectl -n evaluation create -f - `
+    -o jsonpath='{.metadata.name}'
+  if (-not $jobName) { throw "Job creation did not return a name." }
+  Write-Host "Created $jobName for $runId"
+  kubectl -n evaluation logs -f "job/$jobName"
+}
+
+Start-AaLcrJob pipeline/k8s/stage-aa-lcr-v11.yaml aa-lcr-v11-stage
+```
+
+When staging has completed, authorize the canary:
+
+```powershell
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary.yaml `
+  glm53-w4afp8-aa-lcr-v11-canary-r1
 ```
 
 Inspect the canary before proceeding:
@@ -97,11 +158,11 @@ Inspect the canary before proceeding:
 
 ## Full run and resume
 
-Only after a reviewed canary, apply the full CPU-only Job:
+Only after a reviewed canary, create the full CPU-only Job:
 
 ```powershell
-kubectl apply -f pipeline/k8s/hd-aa-lcr-v11-full.yaml
-kubectl -n evaluation logs -f job/hd-aa-lcr-v11-full
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full.yaml `
+  glm53-w4afp8-aa-lcr-v11-full-r1
 ```
 
 The full result must contain 300 candidate rows and 300 valid judgments: 100
@@ -110,7 +171,8 @@ only missing candidate or judge rows, while preserving the immutable
 fingerprint:
 
 ```powershell
-kubectl apply -f pipeline/k8s/hd-aa-lcr-v11-full.yaml
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full.yaml `
+  glm53-w4afp8-aa-lcr-v11-full-r1
 ```
 
 Do not change the run ID, endpoint identity, code revision, model, repeat

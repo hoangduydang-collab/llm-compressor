@@ -1,16 +1,22 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: hd-aa-lcr-v11-full
+  generateName: hd-aa-lcr-v11-full-
   namespace: evaluation
-  labels: {owner: hoangduy.dang, purpose: aa-lcr-v11-full}
+  labels:
+    owner: hoangduy.dang
+    purpose: aa-lcr-v11-full
+    aa-lcr-run-id: glm53-w4afp8-aa-lcr-v11-full-r1
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   activeDeadlineSeconds: 43200
   template:
     metadata:
-      labels: {owner: hoangduy.dang, purpose: aa-lcr-v11-full}
+      labels:
+        owner: hoangduy.dang
+        purpose: aa-lcr-v11-full
+        aa-lcr-run-id: glm53-w4afp8-aa-lcr-v11-full-r1
     spec:
       restartPolicy: Never
       tolerations:
@@ -24,7 +30,11 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef: {name: hd-openai-aa-judge, key: OPENAI_API_KEY}
-            - {name: AA_LCR_CODE_REVISION, value: "REPLACE_WITH_GIT_COMMIT"}
+            - name: AA_LCR_CODE_REVISION
+              valueFrom:
+                configMapKeyRef:
+                  name: AA_LCR_CODE_CONFIGMAP
+                  key: AA_LCR_CODE_REVISION
           resources:
             requests: {cpu: "2", memory: "8Gi"}
             limits: {cpu: "4", memory: "16Gi"}
@@ -53,4 +63,4 @@ spec:
         - name: cephfs
           persistentVolumeClaim: {claimName: model-cache-shared}
         - name: code
-          configMap: {name: hd-aa-lcr-v11-code}
+          configMap: {name: AA_LCR_CODE_CONFIGMAP}

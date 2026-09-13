@@ -8,12 +8,16 @@ import sqlite3
 import stat
 import tempfile
 import threading
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Callable, Collection, Mapping
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import tiktoken
 
@@ -459,6 +463,232 @@ def parse_judge_verdict(text: str) -> str:
     }:
         raise JudgeProtocolError("judge verdict must be CORRECT or INCORRECT")
     return verdict.upper()
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def candidate_request(question: Question) -> dict[str, object]:
+    """Return the pinned OpenAI-compatible candidate request."""
+    return {
+        "model": "glm-5.3-w4afp8",
+        "messages": [{"role": "user", "content": question.prompt}],
+        "max_tokens": CANDIDATE_MAX_TOKENS,
+        "temperature": CANDIDATE_TEMPERATURE,
+        "top_p": CANDIDATE_TOP_P,
+        "chat_template_kwargs": {"enable_thinking": True},
+    }
+
+
+def _response_json(response: object) -> object:
+    payload = response.read()
+    try:
+        return json.loads(payload.decode("utf-8"))
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _candidate_record(
+    question_id: int,
+    repeat_index: int,
+    http_status: int,
+    raw_response: object,
+    retry_count: int,
+    started_at_utc: str,
+    *,
+    error: str | None = None,
+) -> CandidateRecord:
+    completed_at_utc = _utc_now()
+    if not isinstance(raw_response, dict):
+        return CandidateRecord(
+            question_id, repeat_index, http_status, raw_response, None, None, None,
+            None, retry_count, started_at_utc, completed_at_utc,
+            error or "malformed model response: response is not a JSON object",
+        )
+    choices = raw_response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return CandidateRecord(
+            question_id, repeat_index, http_status, raw_response,
+            raw_response.get("usage"), None, None, None, retry_count,
+            started_at_utc, completed_at_utc,
+            error or "malformed model response: missing choices[0].message",
+        )
+    choice = choices[0]
+    message = choice.get("message") if isinstance(choice, dict) else None
+    if not isinstance(message, dict):
+        return CandidateRecord(
+            question_id, repeat_index, http_status, raw_response,
+            raw_response.get("usage"), None, None, None, retry_count,
+            started_at_utc, completed_at_utc,
+            error or "malformed model response: missing choices[0].message",
+        )
+    content = message.get("content")
+    reasoning_content = message.get("reasoning_content")
+    if content is not None and not isinstance(content, str):
+        error = error or "malformed model response: message.content is not a string"
+        content = None
+    if reasoning_content is not None and not isinstance(reasoning_content, str):
+        error = error or "malformed model response: reasoning_content is not a string"
+        reasoning_content = None
+    return CandidateRecord(
+        question_id=question_id,
+        repeat_index=repeat_index,
+        http_status=http_status,
+        raw_response=raw_response,
+        usage=raw_response.get("usage"),
+        finish_reason=choice.get("finish_reason") if isinstance(choice, dict) else None,
+        content=content,
+        reasoning_content=reasoning_content,
+        retry_count=retry_count,
+        started_at_utc=started_at_utc,
+        completed_at_utc=completed_at_utc,
+        error=error,
+    )
+
+
+def candidate_from_response(
+    question_id: int,
+    repeat_index: int,
+    http_status: int,
+    response: object,
+) -> CandidateRecord:
+    """Build a terminal record, retaining reasoning apart from final content."""
+    return _candidate_record(
+        question_id, repeat_index, http_status, response, 0, _utc_now()
+    )
+
+
+def _retry_delay(retry_count: int) -> float:
+    return min(0.25 * (2**retry_count), 5.0)
+
+
+def _is_retryable_status(status: int) -> bool:
+    return status in {408, 409, 429} or 500 <= status <= 599
+
+
+def generate_one(
+    question: Question,
+    repeat_index: int,
+    base_url: str,
+    *,
+    max_attempts: int = MAX_ATTEMPTS,
+) -> CandidateRecord:
+    """Generate one candidate, retrying only transport and explicitly retryable HTTP."""
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least one")
+    started_at_utc = _utc_now()
+    request = Request(
+        f"{base_url.rstrip('/')}/v1/chat/completions",
+        data=canonical_json(candidate_request(question)).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    for attempt in range(max_attempts):
+        try:
+            with urlopen(request, timeout=120) as response:
+                status = int(getattr(response, "status", 200))
+                raw_response = _response_json(response)
+        except HTTPError as exc:
+            status = exc.code
+            raw_response = _response_json(exc)
+        except (OSError, TimeoutError, URLError) as exc:
+            if attempt + 1 == max_attempts:
+                return _candidate_record(
+                    question.question_id, repeat_index, 0, None, attempt,
+                    started_at_utc,
+                    error=(
+                        f"transport error after {max_attempts} attempts: "
+                        f"{type(exc).__name__}"
+                    ),
+                )
+            time.sleep(_retry_delay(attempt))
+            continue
+
+        if _is_retryable_status(status) and attempt + 1 < max_attempts:
+            time.sleep(_retry_delay(attempt))
+            continue
+        error = None
+        if status >= 400:
+            error = f"HTTP {status} response"
+        return _candidate_record(
+            question.question_id, repeat_index, status, raw_response, attempt,
+            started_at_utc, error=error,
+        )
+    raise AssertionError("unreachable")
+
+
+def fetch_server_identity(base_url: str) -> dict[str, object]:
+    """Fetch the SGLang deployment fields which define serving identity."""
+    def get_json(path: str) -> object:
+        with urlopen(f"{base_url.rstrip('/')}{path}", timeout=30) as response:
+            if int(getattr(response, "status", 200)) != 200:
+                raise CheckpointConflictError(f"server identity endpoint {path} failed")
+            payload = _response_json(response)
+        if not isinstance(payload, dict):
+            raise CheckpointConflictError(f"server identity endpoint {path} was malformed")
+        return payload
+
+    info = get_json("/get_server_info")
+    models = get_json("/v1/models")
+    assert isinstance(info, dict) and isinstance(models, dict)
+    data = models.get("data")
+    served_model = (
+        data[0].get("id")
+        if isinstance(data, list) and data and isinstance(data[0], dict)
+        else None
+    )
+    return {
+        "model_path": info.get("model_path"),
+        "served_model": served_model,
+        "tp_size": info.get("tp_size"),
+        "max_total_num_tokens": info.get("max_total_num_tokens"),
+        "context_length": info.get("context_length"),
+        "quantization": info.get("quantization"),
+        "kv_cache_dtype": info.get("kv_cache_dtype"),
+        "reasoning_parser": info.get("reasoning_parser"),
+        "speculative_algorithm": info.get("speculative_algorithm"),
+    }
+
+
+def generate_missing(
+    checkpoint: Checkpoint,
+    questions: Collection[Question],
+    base_url: str,
+    *,
+    repeats: int,
+) -> None:
+    """Fill only absent candidate units and reject a changing SGLang deployment."""
+    if repeats != checkpoint.contract.repeats:
+        raise CheckpointConflictError("repeats does not match immutable run contract")
+    question_by_id = {question.question_id: question for question in questions}
+    missing = checkpoint.missing_candidates()
+    if any(question_id not in question_by_id for question_id, _ in missing):
+        raise CheckpointConflictError("questions do not cover immutable run contract")
+    before_identity = fetch_server_identity(base_url)
+    contract_identity = dict(checkpoint.contract.endpoint_deployment_identity)
+    if contract_identity and before_identity != contract_identity:
+        raise CheckpointConflictError("server identity does not match immutable run contract")
+
+    def generate_and_record(question_id: int, repeat_index: int) -> None:
+        record = generate_one(
+            question_by_id[question_id],
+            repeat_index,
+            base_url,
+            max_attempts=checkpoint.contract.candidate_max_attempts,
+        )
+        checkpoint.record_candidate(record)
+
+    with ThreadPoolExecutor(max_workers=CANDIDATE_CONCURRENCY) as executor:
+        futures = [
+            executor.submit(generate_and_record, question_id, repeat_index)
+            for question_id, repeat_index in missing
+        ]
+        for future in futures:
+            future.result()
+
+    if fetch_server_identity(base_url) != before_identity:
+        raise CheckpointConflictError("server identity changed during candidate generation")
 
 
 def _safe_member_path(name: str, *, is_directory: bool) -> PurePosixPath:

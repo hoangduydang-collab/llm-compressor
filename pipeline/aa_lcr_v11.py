@@ -1,5 +1,6 @@
-"""Pinned AA-LCR v1.1 identity and prompt contract."""
+"""Pinned AA-LCR v1.1 identity, execution, and publication contract."""
 
+import argparse
 import csv
 import ctypes
 import errno
@@ -1263,7 +1264,9 @@ def generate_missing(
 
     worker_error: BaseException | None = None
     try:
-        with ThreadPoolExecutor(max_workers=CANDIDATE_CONCURRENCY) as executor:
+        with ThreadPoolExecutor(
+            max_workers=checkpoint.contract.candidate_concurrency
+        ) as executor:
             futures = [
                 executor.submit(generate_and_record, question_id, repeat_index)
                 for question_id, repeat_index in missing
@@ -1996,3 +1999,177 @@ def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]
     return MappingProxyType(
         {name: destination / name for name in (*names, "files.sha256")}
     )
+
+
+DEFAULT_CANDIDATE_BASE_URL = "http://glm-5-3-w4afp8-sglang:30000"
+
+
+def _bounded_int(name: str, minimum: int, maximum: int) -> Callable[[str], int]:
+    def convert(value: str) -> int:
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"{name} must be an integer") from exc
+        if not minimum <= parsed <= maximum:
+            raise argparse.ArgumentTypeError(
+                f"{name} must be between {minimum} and {maximum}"
+            )
+        return parsed
+
+    return convert
+
+
+def _load_endpoint_identity(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid endpoint identity file: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("endpoint identity file must contain a JSON object")
+    return payload
+
+
+def _select_questions(prepared: PreparedDataset, limit: int) -> PreparedDataset:
+    questions = prepared.questions[:limit]
+    if len(questions) != limit:
+        raise DatasetIntegrityError(f"dataset has fewer than {limit} questions")
+    return PreparedDataset(
+        revision=prepared.revision,
+        questions=questions,
+        file_sha256=prepared.file_sha256,
+        prompt_sha256=sha256_text(canonical_json([item.prompt for item in questions])),
+    )
+
+
+def _code_revision() -> str:
+    return os.environ.get("AA_LCR_CODE_REVISION", "unknown")
+
+
+def _ensure_published_result(checkpoint: Checkpoint, destination: Path) -> bool:
+    manifest = destination / "run-manifest.json"
+    if not destination.exists():
+        return False
+    if not manifest.is_file():
+        raise CheckpointConflictError("result directory exists without a run manifest")
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        fingerprint = payload["run_fingerprint"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise CheckpointConflictError("result manifest is unreadable") from exc
+    if fingerprint != checkpoint.contract.fingerprint:
+        raise CheckpointConflictError("result directory belongs to another fingerprint")
+    return True
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "phase",
+        choices=("prepare", "generate", "judge", "summarize", "run"),
+    )
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--work-dir", type=Path, default=Path("aa-lcr-work"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("results") / "glm53-aa-lcr-v11",
+    )
+    parser.add_argument("--candidate-base-url", default=DEFAULT_CANDIDATE_BASE_URL)
+    parser.add_argument("--endpoint-identity-file", type=Path)
+    parser.add_argument("--limit", type=_bounded_int("limit", 1, 100), default=100)
+    parser.add_argument(
+        "--repeats",
+        type=_bounded_int("repeats", 1, REPEATS),
+        default=REPEATS,
+    )
+    parser.add_argument(
+        "--candidate-concurrency",
+        type=_bounded_int(
+            "candidate-concurrency",
+            CANDIDATE_CONCURRENCY,
+            CANDIDATE_CONCURRENCY,
+        ),
+        default=CANDIDATE_CONCURRENCY,
+    )
+    parser.add_argument("--judge-preflight", action="store_true")
+    parser.add_argument("--plan-only", action="store_true")
+    return parser
+
+
+def _prepare_run(args: argparse.Namespace) -> tuple[PreparedDataset, Checkpoint]:
+    run_dir = args.work_dir / args.run_id
+    prepared = _select_questions(prepare_dataset(run_dir / "dataset"), args.limit)
+    if args.endpoint_identity_file is not None:
+        endpoint_identity = _load_endpoint_identity(args.endpoint_identity_file)
+    elif args.plan_only:
+        raise ValueError("--plan-only requires --endpoint-identity-file")
+    else:
+        endpoint_identity = fetch_server_identity(args.candidate_base_url)
+    contract = build_run_contract(
+        prepared,
+        candidate_model="glm-5.3-w4afp8",
+        served_model="glm-5.3-w4afp8",
+        endpoint_deployment_identity=endpoint_identity,
+        code_revision=_code_revision(),
+        candidate_concurrency=args.candidate_concurrency,
+        repeats=args.repeats,
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint = Checkpoint(run_dir / "run.sqlite", contract)
+    if args.plan_only:
+        (run_dir / "plan.json").write_text(
+            canonical_json(
+                {
+                    "run_id": args.run_id,
+                    "run_fingerprint": contract.fingerprint,
+                    "question_count": len(prepared.questions),
+                    "repeats": args.repeats,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return prepared, checkpoint
+
+
+def _run_phase(args: argparse.Namespace) -> int:
+    prepared, checkpoint = _prepare_run(args)
+    if args.plan_only:
+        return 0
+    destination = args.output_dir / args.run_id
+    already_published = _ensure_published_result(checkpoint, destination)
+    if args.phase in {"generate", "run"}:
+        generate_missing(
+            checkpoint,
+            prepared.questions,
+            args.candidate_base_url,
+            repeats=args.repeats,
+        )
+    if args.phase in {"judge", "run"}:
+        client = build_openai_client()
+        if args.judge_preflight:
+            preflight_judge(client)
+        judge_missing(checkpoint, prepared.questions, client)
+    if args.phase in {"summarize", "run"}:
+        if not already_published:
+            publish_results(checkpoint, destination)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run one resumable AA-LCR phase with the external OpenAI API judge only."""
+    args = _parser().parse_args(argv)
+    try:
+        return _run_phase(args)
+    except (
+        CheckpointConflictError,
+        CredentialError,
+        DatasetIntegrityError,
+        ValueError,
+    ) as exc:
+        _parser().error(str(exc))
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

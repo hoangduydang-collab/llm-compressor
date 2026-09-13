@@ -271,6 +271,10 @@ class Checkpoint:
                     FOREIGN KEY (question_id, repeat_index)
                         REFERENCES candidates(question_id, repeat_index)
                 );
+                CREATE TABLE IF NOT EXISTS server_snapshots (
+                    stage TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL
+                );
                 """
             )
             contract_json = _canonical_dataclass(self.contract)
@@ -366,6 +370,31 @@ class Checkpoint:
             (record.question_id, record.repeat_index),
             _canonical_dataclass(record),
         )
+
+    def record_server_snapshot(self, stage: str, identity: Mapping[str, object]) -> None:
+        """Persist an immutable, redacted server-identity snapshot."""
+        payload_json = canonical_json(identity)
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT payload_json FROM server_snapshots WHERE stage = ?", (stage,)
+            ).fetchone()
+            if row is None:
+                self._connection.execute(
+                    "INSERT INTO server_snapshots (stage, payload_json) VALUES (?, ?)",
+                    (stage, payload_json),
+                )
+            elif row[0] != payload_json:
+                raise CheckpointConflictError(
+                    f"conflicting immutable server snapshot for {stage!r}"
+                )
+
+    def server_snapshot(self, stage: str) -> dict[str, object] | None:
+        """Return a persisted server-identity snapshot, if one exists."""
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload_json FROM server_snapshots WHERE stage = ?", (stage,)
+            ).fetchone()
+        return json.loads(row[0]) if row is not None else None
 
     def missing_judgments(self, judge_contract_hash: str) -> list[tuple[int, int]]:
         with self._lock:
@@ -638,6 +667,18 @@ def fetch_server_identity(base_url: str) -> dict[str, object]:
         if isinstance(data, list) and data and isinstance(data[0], dict)
         else None
     )
+    speculative_aliases = {
+        "speculative_algorithm",
+        "num_steps",
+        "eagle_topk",
+        "num_draft_tokens",
+        "draft_model_path",
+    }
+    speculative_settings = {
+        name: info[name]
+        for name in sorted(info)
+        if name.startswith("speculative_") or name in speculative_aliases
+    }
     return {
         "model_path": info.get("model_path"),
         "served_model": served_model,
@@ -647,7 +688,7 @@ def fetch_server_identity(base_url: str) -> dict[str, object]:
         "quantization": info.get("quantization"),
         "kv_cache_dtype": info.get("kv_cache_dtype"),
         "reasoning_parser": info.get("reasoning_parser"),
-        "speculative_algorithm": info.get("speculative_algorithm"),
+        "speculative_settings": speculative_settings,
     }
 
 
@@ -665,9 +706,14 @@ def generate_missing(
     missing = checkpoint.missing_candidates()
     if any(question_id not in question_by_id for question_id, _ in missing):
         raise CheckpointConflictError("questions do not cover immutable run contract")
-    before_identity = fetch_server_identity(base_url)
     contract_identity = dict(checkpoint.contract.endpoint_deployment_identity)
-    if contract_identity and before_identity != contract_identity:
+    if not contract_identity:
+        raise CheckpointConflictError(
+            "immutable run contract endpoint deployment identity must not be empty"
+        )
+    before_identity = fetch_server_identity(base_url)
+    checkpoint.record_server_snapshot("before", before_identity)
+    if before_identity != contract_identity:
         raise CheckpointConflictError("server identity does not match immutable run contract")
 
     def generate_and_record(question_id: int, repeat_index: int) -> None:
@@ -679,16 +725,29 @@ def generate_missing(
         )
         checkpoint.record_candidate(record)
 
-    with ThreadPoolExecutor(max_workers=CANDIDATE_CONCURRENCY) as executor:
-        futures = [
-            executor.submit(generate_and_record, question_id, repeat_index)
-            for question_id, repeat_index in missing
-        ]
-        for future in futures:
-            future.result()
+    worker_error: BaseException | None = None
+    try:
+        with ThreadPoolExecutor(max_workers=CANDIDATE_CONCURRENCY) as executor:
+            futures = [
+                executor.submit(generate_and_record, question_id, repeat_index)
+                for question_id, repeat_index in missing
+            ]
+            for future in futures:
+                future.result()
+    except BaseException as exc:
+        worker_error = exc
 
-    if fetch_server_identity(base_url) != before_identity:
-        raise CheckpointConflictError("server identity changed during candidate generation")
+    try:
+        after_identity = fetch_server_identity(base_url)
+        checkpoint.record_server_snapshot("after", after_identity)
+        if after_identity != before_identity:
+            raise CheckpointConflictError("server identity changed during candidate generation")
+    except BaseException as post_identity_error:
+        if worker_error is not None:
+            raise worker_error from post_identity_error
+        raise
+    if worker_error is not None:
+        raise worker_error
 
 
 def _safe_member_path(name: str, *, is_directory: bool) -> PurePosixPath:

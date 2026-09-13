@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import threading
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,22 +10,50 @@ import pytest
 from pipeline import aa_lcr_v11 as A
 
 
-def questions() -> tuple[A.Question, ...]:
-    return (
+def questions(count: int = 1) -> tuple[A.Question, ...]:
+    return tuple(
         A.Question(
-            question_id=1,
+            question_id=question_id,
             category="category",
             document_set_id="set",
-            question="Question?",
+            question=f"Question {question_id}?",
             official_answer="Answer",
             document_filenames=("document.txt",),
-            prompt="candidate prompt",
+            prompt=f"candidate prompt {question_id}",
             cl100k_tokens=2,
-        ),
+        )
+        for question_id in range(1, count + 1)
     )
 
 
-def seeded_checkpoint(path: Path, *, repeats: int = 1) -> A.Checkpoint:
+def server_identity(version: int = 1) -> dict[str, object]:
+    return {
+        "model_path": f"/models/glm-{version}",
+        "served_model": "glm-5.3-w4afp8",
+        "tp_size": 2,
+        "max_total_num_tokens": 32768,
+        "context_length": 32768,
+        "quantization": "w4afp8",
+        "kv_cache_dtype": "fp8_e4m3fn",
+        "reasoning_parser": "glm45",
+        "speculative_settings": {
+            "draft_model_path": "/models/draft",
+            "eagle_topk": 8,
+            "num_draft_tokens": 4,
+            "num_steps": 3,
+            "speculative_algorithm": "EAGLE",
+            "speculative_extra_knob": "enabled",
+        },
+    }
+
+
+def seeded_checkpoint(
+    path: Path,
+    *,
+    repeats: int = 1,
+    question_count: int = 1,
+    endpoint_identity: dict[str, object] | None = None,
+) -> A.Checkpoint:
     return A.Checkpoint(
         path / "run.sqlite",
         A.RunContract(
@@ -35,7 +64,9 @@ def seeded_checkpoint(path: Path, *, repeats: int = 1) -> A.Checkpoint:
             judge_user_prompt_sha256="d" * 64,
             candidate_model="glm-5.3-w4afp8",
             served_model="glm-5.3-w4afp8",
-            endpoint_deployment_identity={},
+            endpoint_deployment_identity=(
+                server_identity() if endpoint_identity is None else endpoint_identity
+            ),
             candidate_temperature=0.6,
             candidate_top_p=1.0,
             candidate_max_tokens=131_072,
@@ -47,7 +78,7 @@ def seeded_checkpoint(path: Path, *, repeats: int = 1) -> A.Checkpoint:
             judge_max_attempts=30,
             repeats=repeats,
             code_revision="test",
-            question_ids=(1,),
+            question_ids=tuple(range(1, question_count + 1)),
         ),
     )
 
@@ -58,6 +89,11 @@ class FakeServer:
         self.chat_calls = 0
         self.requests: list[dict[str, object]] = []
         self.identity_version = 1
+        self.active_requests = 0
+        self.max_active_requests = 0
+        self.block_requests = False
+        self.release_requests = threading.Event()
+        self._active_lock = threading.Lock()
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -73,7 +109,12 @@ class FakeServer:
                             "quantization": "w4afp8",
                             "kv_cache_dtype": "fp8_e4m3fn",
                             "reasoning_parser": "glm45",
-                            "speculative_algorithm": None,
+                            "speculative_algorithm": "EAGLE",
+                            "num_steps": 3,
+                            "eagle_topk": 8,
+                            "num_draft_tokens": 4,
+                            "draft_model_path": "/models/draft",
+                            "speculative_extra_knob": "enabled",
                         },
                     )
                 elif self.path == "/v1/models":
@@ -94,11 +135,22 @@ class FakeServer:
                     }
                 )
                 owner.chat_calls += 1
-                status, body = owner.responses.pop(0)
-                if status == 0:
-                    self.connection.close()
-                    return
-                self._send_json(status, body)
+                with owner._active_lock:
+                    owner.active_requests += 1
+                    owner.max_active_requests = max(
+                        owner.max_active_requests, owner.active_requests
+                    )
+                try:
+                    if owner.block_requests:
+                        owner.release_requests.wait(timeout=2)
+                    status, body = owner.responses.pop(0)
+                    if status == 0:
+                        self.connection.close()
+                        return
+                    self._send_json(status, body)
+                finally:
+                    with owner._active_lock:
+                        owner.active_requests -= 1
 
             def _send_json(self, status: int, body: object) -> None:
                 encoded = json.dumps(body).encode()
@@ -159,7 +211,7 @@ def test_candidate_request_is_glm_max_contract():
 
     assert body == {
         "model": "glm-5.3-w4afp8",
-        "messages": [{"role": "user", "content": "candidate prompt"}],
+        "messages": [{"role": "user", "content": "candidate prompt 1"}],
         "max_tokens": 131072,
         "temperature": 0.6,
         "top_p": 1.0,
@@ -185,7 +237,7 @@ def test_resume_does_not_regenerate_terminal_candidate(tmp_path, fake_server):
     assert fake_server.chat_calls == 1
 
 
-@pytest.mark.parametrize("status", [408, 429, 500])
+@pytest.mark.parametrize("status", [408, 409, 429, 500])
 def test_retryable_http_statuses_are_retried(status, monkeypatch):
     server = FakeServer([(status, {"error": {"message": "retry"}}), (200, successful_response())])
     server.start()
@@ -269,17 +321,7 @@ def test_length_finish_reason_is_terminal_model_record():
 def test_server_identity_contains_bound_fields(fake_server):
     identity = A.fetch_server_identity(fake_server.url)
 
-    assert identity == {
-        "model_path": "/models/glm-1",
-        "served_model": "glm-5.3-w4afp8",
-        "tp_size": 2,
-        "max_total_num_tokens": 32768,
-        "context_length": 32768,
-        "quantization": "w4afp8",
-        "kv_cache_dtype": "fp8_e4m3fn",
-        "reasoning_parser": "glm45",
-        "speculative_algorithm": None,
-    }
+    assert identity == server_identity()
 
 
 def test_identity_change_invalidates_generation(tmp_path, fake_server):
@@ -294,4 +336,90 @@ def test_identity_change_invalidates_generation(tmp_path, fake_server):
 
     with pytest.raises(A.CheckpointConflictError, match="server identity changed"):
         A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert checkpoint.server_snapshot("before") == server_identity()
+    assert checkpoint.server_snapshot("after") == server_identity(version=2)
+
+
+def test_generation_requires_identity_matching_run_contract(tmp_path, fake_server):
+    checkpoint = seeded_checkpoint(tmp_path, endpoint_identity=server_identity(version=2))
+
+    with pytest.raises(A.CheckpointConflictError, match="does not match"):
+        A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert checkpoint.server_snapshot("before") == server_identity()
+    assert checkpoint.server_snapshot("after") is None
+    assert fake_server.chat_calls == 0
+
+
+def test_generation_rejects_empty_contract_identity(tmp_path, fake_server):
+    checkpoint = seeded_checkpoint(tmp_path, endpoint_identity={})
+
+    with pytest.raises(A.CheckpointConflictError, match="must not be empty"):
+        A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert fake_server.chat_calls == 0
+
+
+def test_server_snapshots_are_durable_and_immutable(tmp_path):
+    checkpoint = seeded_checkpoint(tmp_path)
+    identity = server_identity()
+
+    checkpoint.record_server_snapshot("before", identity)
+    reopened = A.Checkpoint(checkpoint.path, checkpoint.contract)
+
+    assert reopened.server_snapshot("before") == identity
+    with pytest.raises(A.CheckpointConflictError, match="conflicting immutable"):
+        reopened.record_server_snapshot("before", server_identity(version=2))
+
+
+def test_generation_uses_at_most_two_simultaneous_requests(tmp_path, fake_server):
+    checkpoint = seeded_checkpoint(tmp_path, question_count=2)
+    fake_server.responses = [(200, successful_response()), (200, successful_response())]
+    fake_server.block_requests = True
+    releaser = threading.Timer(0.2, fake_server.release_requests.set)
+    releaser.start()
+    try:
+        A.generate_missing(checkpoint, questions(2), fake_server.url, repeats=1)
+    finally:
+        releaser.cancel()
+
+    assert fake_server.max_active_requests == 2
+
+
+def test_sqlite_payloads_exclude_response_headers_and_environment(
+    tmp_path, fake_server, monkeypatch
+):
+    checkpoint = seeded_checkpoint(tmp_path)
+    monkeypatch.setenv("CANDIDATE_SECRET", "environment-secret")
+
+    A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    with sqlite3.connect(checkpoint.path) as connection:
+        persisted = "\n".join(
+            row[0]
+            for row in connection.execute(
+                "SELECT record_json FROM candidates UNION ALL "
+                "SELECT payload_json FROM server_snapshots"
+            )
+        )
+    assert "response-secret" not in persisted
+    assert "environment-secret" not in persisted
+    assert "X-Secret" not in persisted
+    assert "Content-Type" not in persisted
+
+
+def test_post_snapshot_is_recorded_after_worker_failure(tmp_path, fake_server):
+    checkpoint = seeded_checkpoint(tmp_path)
+
+    def fail_record(_record):
+        raise RuntimeError("checkpoint write failed")
+
+    checkpoint.record_candidate = fail_record  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="checkpoint write failed"):
+        A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert checkpoint.server_snapshot("before") == server_identity()
+    assert checkpoint.server_snapshot("after") == server_identity()
 

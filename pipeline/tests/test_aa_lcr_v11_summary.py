@@ -170,7 +170,8 @@ def test_tampered_payload_units_are_rejected_as_incomplete(tmp_path, table):
     record = json.loads(row[0])
     record["question_id"] = 2
     checkpoint._connection.execute(
-        f"UPDATE {table} SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        f"UPDATE {table} SET record_json = ? "
+        "WHERE question_id = 1 AND repeat_index = 0",
         (A.canonical_json(record),),
     )
     checkpoint._connection.commit()
@@ -188,7 +189,8 @@ def test_non_integer_serialized_unit_is_rejected_as_incomplete(tmp_path):
     record = json.loads(row[0])
     record["question_id"] = 1.0
     checkpoint._connection.execute(
-        "UPDATE candidates SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        "UPDATE candidates SET record_json = ? "
+        "WHERE question_id = 1 AND repeat_index = 0",
         (A.canonical_json(record),),
     )
     checkpoint._connection.commit()
@@ -221,7 +223,8 @@ def test_extra_sql_unit_is_rejected_as_incomplete(tmp_path):
 def test_malformed_serialized_row_is_rejected_as_incomplete(tmp_path):
     checkpoint = complete_checkpoint(tmp_path, correct=225)
     checkpoint._connection.execute(
-        "UPDATE candidates SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        "UPDATE candidates SET record_json = ? "
+        "WHERE question_id = 1 AND repeat_index = 0",
         ("not JSON",),
     )
     checkpoint._connection.commit()
@@ -262,7 +265,8 @@ def test_candidate_without_final_content_has_no_headline(tmp_path):
     record = json.loads(row[0])
     record["content"] = None
     checkpoint._connection.execute(
-        "UPDATE candidates SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        "UPDATE candidates SET record_json = ? "
+        "WHERE question_id = 1 AND repeat_index = 0",
         (A.canonical_json(record),),
     )
     checkpoint._connection.commit()
@@ -281,9 +285,7 @@ def test_summary_recomputes_pass_at_one_and_diagnostics(tmp_path):
         "denominator": 300,
         "pass_at_1": 0.75,
     }
-    assert summary["benchmark_claim"] == (
-        "AA-LCR v1.1 public-methodology reproduction"
-    )
+    assert summary["benchmark_claim"] == ("AA-LCR v1.1 public-methodology reproduction")
     assert summary["finish_reasons"] == {"length": 1, "stop": 299}
     assert summary["candidate_diagnostics"] == {
         "truncation_count": 1,

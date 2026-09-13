@@ -1,7 +1,8 @@
+# ruff: noqa: E501
+
 import pytest
 
 from pipeline import aa_lcr_v11 as A
-
 
 EXPECTED_CANDIDATE_PROMPT = """BEGIN INPUT DOCUMENTS
 
@@ -85,7 +86,9 @@ def test_v11_prompts_match_pinned_revision_verbatim():
 
 def test_candidate_prompt_preserves_document_order_and_boundaries():
     prompt = A.build_candidate_prompt(["first", "second"], "Which one?")
-    assert prompt == """BEGIN INPUT DOCUMENTS
+    assert (
+        prompt
+        == """BEGIN INPUT DOCUMENTS
 
 BEGIN DOCUMENT 1:
 first
@@ -105,6 +108,7 @@ Which one?
 
 END QUESTION
 """
+    )
 
 
 def test_judge_user_prompt_interpolates_without_trailing_text():

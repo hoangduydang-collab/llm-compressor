@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Pinned AA-LCR v1.1 identity, execution, and publication contract."""
 
 import argparse
@@ -38,8 +39,7 @@ CSV_FILENAME = "AA-LCR_Dataset.csv"
 ZIP_FILENAME = "extracted_text/AA-LCR_extracted-text.zip"
 ZIP_SHA256 = "5e839249826f6b9bd5324f0d139089c9dc481ccb3f212a6dfad00c51045d9d8a"
 HF_RESOLVE = (
-    "https://huggingface.co/datasets/"
-    f"{DATASET_REPO}/resolve/{DATASET_REVISION}"
+    f"https://huggingface.co/datasets/{DATASET_REPO}/resolve/{DATASET_REVISION}"
 )
 REPEATS = 3
 CANDIDATE_TEMPERATURE = 0.6
@@ -298,7 +298,9 @@ def build_run_contract(
         judge_max_attempts=judge_max_attempts,
         repeats=repeats,
         code_revision=code_revision,
-        question_ids=tuple(question.question_id for question in prepared_dataset.questions),
+        question_ids=tuple(
+            question.question_id for question in prepared_dataset.questions
+        ),
         judge_reasoning_mode=judge_reasoning_mode,
     )
 
@@ -361,10 +363,13 @@ class Checkpoint:
                 """
             )
             question_columns = {
-                row[1] for row in self._connection.execute("PRAGMA table_info(questions)")
+                row[1]
+                for row in self._connection.execute("PRAGMA table_info(questions)")
             }
             if "category" not in question_columns:
-                self._connection.execute("ALTER TABLE questions ADD COLUMN category TEXT")
+                self._connection.execute(
+                    "ALTER TABLE questions ADD COLUMN category TEXT"
+                )
             contract_json = _canonical_dataclass(self.contract)
             row = self._connection.execute(
                 "SELECT fingerprint, contract_json FROM run WHERE singleton = 1"
@@ -389,8 +394,7 @@ class Checkpoint:
             or not 0 <= repeat_index < self.contract.repeats
         ):
             raise CheckpointConflictError(
-                "record unit is outside run contract: "
-                f"({question_id}, {repeat_index})"
+                f"record unit is outside run contract: ({question_id}, {repeat_index})"
             )
 
     def _record(
@@ -464,7 +468,8 @@ class Checkpoint:
     def record_question_categories(self, categories: Mapping[int, str]) -> None:
         """Persist each contract question's category once for publication summaries."""
         if set(categories) != self._expected_question_ids or any(
-            not isinstance(category, str) or not category for category in categories.values()
+            not isinstance(category, str) or not category
+            for category in categories.values()
         ):
             raise CheckpointConflictError(
                 "question categories must cover the immutable run contract"
@@ -481,7 +486,10 @@ class Checkpoint:
                     )
             self._connection.executemany(
                 "UPDATE questions SET category = ? WHERE question_id = ? AND category IS NULL",
-                ((category, question_id) for question_id, category in categories.items()),
+                (
+                    (category, question_id)
+                    for question_id, category in categories.items()
+                ),
             )
 
     def question_categories(self) -> dict[int, str] | None:
@@ -496,7 +504,9 @@ class Checkpoint:
             return None
         return {question_id: category for question_id, category in rows}
 
-    def record_server_snapshot(self, stage: str, identity: Mapping[str, object]) -> None:
+    def record_server_snapshot(
+        self, stage: str, identity: Mapping[str, object]
+    ) -> None:
         """Persist an immutable, redacted server-identity snapshot."""
         payload_json = canonical_json(identity)
         with self._lock, self._connection:
@@ -612,12 +622,7 @@ def canonical_json(value: object) -> str:
 
 def _canonical_dataclass(value: object) -> str:
     fields = getattr(value, "__dataclass_fields__")
-    return canonical_json(
-        {
-            name: _json_value(getattr(value, name))
-            for name in fields
-        }
-    )
+    return canonical_json({name: _json_value(getattr(value, name)) for name in fields})
 
 
 def _json_value(value: object) -> object:
@@ -685,8 +690,7 @@ def build_openai_client() -> "OpenAI":
     return openai.OpenAI(api_key=key, timeout=300.0, max_retries=0)
 
 
-def _judge_contract_hash(
-) -> str:
+def _judge_contract_hash() -> str:
     return sha256_text(
         canonical_json(
             {
@@ -891,7 +895,11 @@ def judge_one(
     if candidate.content is None:
         error = JudgeProtocolError("candidate has no final content")
         return _judge_error_record(
-            question, candidate, contract_hash, 0, started_at_utc,
+            question,
+            candidate,
+            contract_hash,
+            0,
+            started_at_utc,
             "candidate has no final content",
             exc=error,
             attempt_count=0,
@@ -923,12 +931,18 @@ def judge_one(
             if _is_retryable_judge_exception(exc) and attempt + 1 < max_attempts:
                 time.sleep(_retry_delay(attempt))
                 continue
-            if not isinstance(exc, JudgeProtocolError) and not _is_known_api_exception(exc):
+            if not isinstance(exc, JudgeProtocolError) and not _is_known_api_exception(
+                exc
+            ):
                 raise
             status = _exception_status(exc)
             status_text = f" HTTP {status}" if status is not None else ""
             return _judge_error_record(
-                question, candidate, contract_hash, attempt, started_at_utc,
+                question,
+                candidate,
+                contract_hash,
+                attempt,
+                started_at_utc,
                 f"judge failed after {attempt + 1} attempts: {type(exc).__name__}{status_text}",
                 output_text,
                 exc,
@@ -976,9 +990,17 @@ def preflight_judge(client: object) -> dict[str, object]:
         cl100k_tokens=0,
     )
     candidate = CandidateRecord(
-        question_id=0, repeat_index=0, http_status=200, raw_response=None,
-        usage=None, finish_reason=None, content="4", reasoning_content=None,
-        retry_count=0, started_at_utc=_utc_now(), completed_at_utc=_utc_now(),
+        question_id=0,
+        repeat_index=0,
+        http_status=200,
+        raw_response=None,
+        usage=None,
+        finish_reason=None,
+        content="4",
+        reasoning_content=None,
+        retry_count=0,
+        started_at_utc=_utc_now(),
+        completed_at_utc=_utc_now(),
         error=None,
     )
     record = judge_one(client, question, candidate)
@@ -1065,25 +1087,50 @@ def _candidate_record(
     completed_at_utc = _utc_now()
     if not isinstance(raw_response, dict):
         return CandidateRecord(
-            question_id, repeat_index, http_status, raw_response, None, None, None,
-            None, retry_count, started_at_utc, completed_at_utc,
+            question_id,
+            repeat_index,
+            http_status,
+            raw_response,
+            None,
+            None,
+            None,
+            None,
+            retry_count,
+            started_at_utc,
+            completed_at_utc,
             error or "malformed model response: response is not a JSON object",
         )
     choices = raw_response.get("choices")
     if not isinstance(choices, list) or not choices:
         return CandidateRecord(
-            question_id, repeat_index, http_status, raw_response,
-            raw_response.get("usage"), None, None, None, retry_count,
-            started_at_utc, completed_at_utc,
+            question_id,
+            repeat_index,
+            http_status,
+            raw_response,
+            raw_response.get("usage"),
+            None,
+            None,
+            None,
+            retry_count,
+            started_at_utc,
+            completed_at_utc,
             error or "malformed model response: missing choices[0].message",
         )
     choice = choices[0]
     message = choice.get("message") if isinstance(choice, dict) else None
     if not isinstance(message, dict):
         return CandidateRecord(
-            question_id, repeat_index, http_status, raw_response,
-            raw_response.get("usage"), None, None, None, retry_count,
-            started_at_utc, completed_at_utc,
+            question_id,
+            repeat_index,
+            http_status,
+            raw_response,
+            raw_response.get("usage"),
+            None,
+            None,
+            None,
+            retry_count,
+            started_at_utc,
+            completed_at_utc,
             error or "malformed model response: missing choices[0].message",
         )
     content = message.get("content")
@@ -1158,7 +1205,11 @@ def generate_one(
         except (OSError, TimeoutError, URLError) as exc:
             if attempt + 1 == max_attempts:
                 return _candidate_record(
-                    question.question_id, repeat_index, 0, None, attempt,
+                    question.question_id,
+                    repeat_index,
+                    0,
+                    None,
+                    attempt,
                     started_at_utc,
                     error=(
                         f"transport error after {max_attempts} attempts: "
@@ -1175,21 +1226,29 @@ def generate_one(
         if status >= 400:
             error = f"HTTP {status} response"
         return _candidate_record(
-            question.question_id, repeat_index, status, raw_response, attempt,
-            started_at_utc, error=error,
+            question.question_id,
+            repeat_index,
+            status,
+            raw_response,
+            attempt,
+            started_at_utc,
+            error=error,
         )
     raise AssertionError("unreachable")
 
 
 def fetch_server_identity(base_url: str) -> dict[str, object]:
     """Fetch the SGLang deployment fields which define serving identity."""
+
     def get_json(path: str) -> object:
         with urlopen(f"{base_url.rstrip('/')}{path}", timeout=30) as response:
             if int(getattr(response, "status", 200)) != 200:
                 raise CheckpointConflictError(f"server identity endpoint {path} failed")
             payload = _response_json(response)
         if not isinstance(payload, dict):
-            raise CheckpointConflictError(f"server identity endpoint {path} was malformed")
+            raise CheckpointConflictError(
+                f"server identity endpoint {path} was malformed"
+            )
         return payload
 
     info = get_json("/get_server_info")
@@ -1251,7 +1310,9 @@ def generate_missing(
     before_identity = fetch_server_identity(base_url)
     checkpoint.record_server_snapshot("before", before_identity)
     if before_identity != contract_identity:
-        raise CheckpointConflictError("server identity does not match immutable run contract")
+        raise CheckpointConflictError(
+            "server identity does not match immutable run contract"
+        )
 
     def generate_and_record(question_id: int, repeat_index: int) -> None:
         record = generate_one(
@@ -1280,7 +1341,9 @@ def generate_missing(
         after_identity = fetch_server_identity(base_url)
         checkpoint.record_server_snapshot("after", after_identity)
         if after_identity != before_identity:
-            raise CheckpointConflictError("server identity changed during candidate generation")
+            raise CheckpointConflictError(
+                "server identity changed during candidate generation"
+            )
     except BaseException as post_identity_error:
         if worker_error is not None:
             raise worker_error from post_identity_error
@@ -1358,7 +1421,9 @@ def safe_extract_zip(
         extracted_file_names: set[str] = set()
         for member in archive.infolist():
             if _member_has_nul_name(archive, member):
-                raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
+                raise DatasetIntegrityError(
+                    f"unsafe archive member: {member.filename!r}"
+                )
             path = _member_path(member)
             normalized = path.as_posix()
             if normalized in names:
@@ -1387,7 +1452,9 @@ def safe_extract_zip(
                 resolved_parent.is_relative_to(resolved_destination)
                 and resolved_target.is_relative_to(resolved_destination)
             ):
-                raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
+                raise DatasetIntegrityError(
+                    f"unsafe archive member: {member.filename!r}"
+                )
             target.parent.mkdir(parents=True, exist_ok=True)
             if member.is_dir():
                 target.mkdir(exist_ok=True)
@@ -1524,9 +1591,7 @@ def _load_questions(
                     category=_row_value(row, "category"),
                     document_set_id=document_set_id,
                     question=question_text,
-                    official_answer=_row_value(
-                        row, "official_answer", "answer"
-                    ),
+                    official_answer=_row_value(row, "official_answer", "answer"),
                     document_filenames=filenames,
                     prompt=prompt,
                     cl100k_tokens=tokens,
@@ -1613,10 +1678,7 @@ def _publication_rows(
         ]
     except (TypeError, json.JSONDecodeError) as exc:
         raise IncompleteRunError("malformed serialized publication row") from exc
-    if any(
-        not isinstance(record, dict)
-        for _, _, record in (*candidates, *judgments)
-    ):
+    if any(not isinstance(record, dict) for _, _, record in (*candidates, *judgments)):
         raise IncompleteRunError("malformed serialized publication row")
     return candidates, judgments
 
@@ -1668,13 +1730,23 @@ def _validate_publication_population(
         raise IncompleteRunError(
             f"expected 300 contract units, found {len(expected_units)}; refusing headline"
         )
-    candidate_keys = [(question_id, repeat_index) for question_id, repeat_index, _ in candidates]
-    judgment_keys = [(question_id, repeat_index) for question_id, repeat_index, _ in judgments]
-    if len(candidate_keys) != len(set(candidate_keys)) or set(candidate_keys) != expected_units:
+    candidate_keys = [
+        (question_id, repeat_index) for question_id, repeat_index, _ in candidates
+    ]
+    judgment_keys = [
+        (question_id, repeat_index) for question_id, repeat_index, _ in judgments
+    ]
+    if (
+        len(candidate_keys) != len(set(candidate_keys))
+        or set(candidate_keys) != expected_units
+    ):
         raise IncompleteRunError(
             "expected 300 candidate SQL units matching the contract population"
         )
-    if len(judgment_keys) != len(set(judgment_keys)) or set(judgment_keys) != expected_units:
+    if (
+        len(judgment_keys) != len(set(judgment_keys))
+        or set(judgment_keys) != expected_units
+    ):
         raise IncompleteRunError(
             "expected 300 judgment SQL units matching the contract population"
         )
@@ -1716,7 +1788,9 @@ def _validate_publication_population(
     if failure_count:
         raise IncompleteRunError("judge failures present; refusing headline")
     if all_judge_hashes != {judge_contract_hash}:
-        raise IncompleteRunError("unexpected judge hash rows present; refusing headline")
+        raise IncompleteRunError(
+            "unexpected judge hash rows present; refusing headline"
+        )
     if len(judgments) != len(expected_units):
         raise IncompleteRunError(
             f"expected 300 valid judgments, found {len(judgments)}"
@@ -1804,7 +1878,10 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
                 ]
             ),
             "answer": _distribution(
-                [_text_token_count(record.get("content")) for record in candidate_records]
+                [
+                    _text_token_count(record.get("content"))
+                    for record in candidate_records
+                ]
             ),
             "reasoning": _distribution(
                 [
@@ -1827,7 +1904,9 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
             "truncation_count": sum(
                 record.get("finish_reason") == "length" for record in candidate_records
             ),
-            "empty_answer_count": sum(record.get("content") == "" for record in candidate_records),
+            "empty_answer_count": sum(
+                record.get("content") == "" for record in candidate_records
+            ),
             "retry_count": sum(
                 int(record["retry_count"])
                 for record in candidate_records
@@ -1962,7 +2041,9 @@ def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]
                 {
                     "aa_lcr_version": AA_LCR_VERSION,
                     "run_fingerprint": checkpoint.contract.fingerprint,
-                    "run_contract": json.loads(_canonical_dataclass(checkpoint.contract)),
+                    "run_contract": json.loads(
+                        _canonical_dataclass(checkpoint.contract)
+                    ),
                     "server_snapshots": {
                         "before": checkpoint.server_snapshot("before"),
                         "after": checkpoint.server_snapshot("after"),
@@ -1985,9 +2066,7 @@ def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]
         _write_publication_file(temporary / "report.md", _publication_report(summary))
         _write_publication_file(
             temporary / "files.sha256",
-            "".join(
-                f"{_sha256_file(temporary / name)}  {name}\n" for name in names
-            ),
+            "".join(f"{_sha256_file(temporary / name)}  {name}\n" for name in names),
         )
         _fsync_directory(temporary)
         _rename_no_replace(temporary, destination)

@@ -1,9 +1,7 @@
-import json
 import sqlite3
 import sys
 from dataclasses import replace
-from types import ModuleType
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -34,7 +32,9 @@ class FakeResponses:
 
 
 class FakeOpenAI:
-    def __init__(self, outcomes: list[object], *, model_id: str = A.JUDGE_MODEL) -> None:
+    def __init__(
+        self, outcomes: list[object], *, model_id: str = A.JUDGE_MODEL
+    ) -> None:
         self.responses = FakeResponses(outcomes)
         self.models = SimpleNamespace(
             retrieve=lambda model: SimpleNamespace(
@@ -170,7 +170,9 @@ def test_preflight_rejects_unrelated_retrieved_model():
 
 
 def test_malformed_judge_output_retries_then_records_normalized_verdict(monkeypatch):
-    client = FakeOpenAI([judge_response("not json"), judge_response('{"verdict":"incorrect"}')])
+    client = FakeOpenAI(
+        [judge_response("not json"), judge_response('{"verdict":"incorrect"}')]
+    )
     monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
 
     record = A.judge_one(client, questions()[0], candidate_record())
@@ -276,7 +278,9 @@ def test_sdk_transport_exception_retries_without_status(monkeypatch):
 
 def test_judge_exhaustion_records_only_safe_error(monkeypatch):
     secret = "sk-do-not-record"
-    client = FakeOpenAI([FakeAPIError(status_code=429, request_id=secret)] * A.MAX_ATTEMPTS)
+    client = FakeOpenAI(
+        [FakeAPIError(status_code=429, request_id=secret)] * A.MAX_ATTEMPTS
+    )
     monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
 
     record = A.judge_one(client, questions()[0], candidate_record())
@@ -383,7 +387,9 @@ def test_failed_judgment_is_incomplete_and_failure_audit_is_append_only(
 ):
     checkpoint = seeded_checkpoint(tmp_path)
     checkpoint.record_candidate(candidate_record())
-    client = FakeOpenAI([FakeAPIError(status_code=429, request_id="req_failure")] * A.MAX_ATTEMPTS)
+    client = FakeOpenAI(
+        [FakeAPIError(status_code=429, request_id="req_failure")] * A.MAX_ATTEMPTS
+    )
     monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
 
     with pytest.raises(A.IncompleteJudgmentError, match="incomplete"):

@@ -1,7 +1,6 @@
 import json
 import sqlite3
 import threading
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -239,7 +238,9 @@ def test_resume_does_not_regenerate_terminal_candidate(tmp_path, fake_server):
 
 @pytest.mark.parametrize("status", [408, 409, 429, 500])
 def test_retryable_http_statuses_are_retried(status, monkeypatch):
-    server = FakeServer([(status, {"error": {"message": "retry"}}), (200, successful_response())])
+    server = FakeServer(
+        [(status, {"error": {"message": "retry"}}), (200, successful_response())]
+    )
     server.start()
     monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
     try:
@@ -342,7 +343,9 @@ def test_identity_change_invalidates_generation(tmp_path, fake_server):
 
 
 def test_generation_requires_identity_matching_run_contract(tmp_path, fake_server):
-    checkpoint = seeded_checkpoint(tmp_path, endpoint_identity=server_identity(version=2))
+    checkpoint = seeded_checkpoint(
+        tmp_path, endpoint_identity=server_identity(version=2)
+    )
 
     with pytest.raises(A.CheckpointConflictError, match="does not match"):
         A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
@@ -422,4 +425,3 @@ def test_post_snapshot_is_recorded_after_worker_failure(tmp_path, fake_server):
 
     assert checkpoint.server_snapshot("before") == server_identity()
     assert checkpoint.server_snapshot("after") == server_identity()
-

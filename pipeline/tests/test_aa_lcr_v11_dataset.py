@@ -38,7 +38,9 @@ def make_special_zip(path: Path, name: str, mode: int) -> Path:
 
 def make_nul_filename_zip(path: Path) -> Path:
     archive = make_zip(path, {"nulXmember.txt": b"x"})
-    archive.write_bytes(archive.read_bytes().replace(b"nulXmember.txt", b"nul\x00member.txt"))
+    archive.write_bytes(
+        archive.read_bytes().replace(b"nulXmember.txt", b"nul\x00member.txt")
+    )
     return archive
 
 
@@ -61,10 +63,7 @@ def fixture_payloads() -> dict[str, bytes]:
     for question_id in range(1, 101):
         filenames = "b.txt;a.txt" if question_id == 1 else "a.txt"
         prompt = A.build_candidate_prompt(
-            [
-                documents[filename].decode("utf-8")
-                for filename in filenames.split(";")
-            ],
+            [documents[filename].decode("utf-8") for filename in filenames.split(";")],
             f"Question {question_id}?",
         )
         rows.append(
@@ -75,7 +74,9 @@ def fixture_payloads() -> dict[str, bytes]:
                 "question": f"Question {question_id}?",
                 "official_answer": f"Answer {question_id}",
                 "data_source_filenames": filenames,
-                "input_tokens": len(A.tiktoken.get_encoding("cl100k_base").encode(prompt)),
+                "input_tokens": len(
+                    A.tiktoken.get_encoding("cl100k_base").encode(prompt)
+                ),
             }
         )
     csv_file = io.StringIO(newline="")
@@ -217,9 +218,10 @@ def test_prepare_fixture_preserves_csv_filename_order(tmp_path, monkeypatch):
         "lcr/synthetic/set-1/b.txt",
     }
     payloads = fixture_payloads()
-    assert prepared.file_sha256[A.CSV_FILENAME] == hashlib.sha256(
-        payloads[A.CSV_FILENAME]
-    ).hexdigest()
+    assert (
+        prepared.file_sha256[A.CSV_FILENAME]
+        == hashlib.sha256(payloads[A.CSV_FILENAME]).hexdigest()
+    )
     assert all(
         (
             tmp_path

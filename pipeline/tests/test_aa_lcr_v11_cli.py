@@ -32,18 +32,21 @@ def test_plan_only_validates_local_fixture_without_endpoint_or_judge(
     )
     monkeypatch.setattr(A, "build_openai_client", lambda: pytest.fail("judge"))
 
-    assert A.main(
-        [
-            "prepare",
-            "--run-id",
-            "local-plan",
-            "--work-dir",
-            str(tmp_path / "work"),
-            "--endpoint-identity-file",
-            str(identity_path),
-            "--plan-only",
-        ]
-    ) == 0
+    assert (
+        A.main(
+            [
+                "prepare",
+                "--run-id",
+                "local-plan",
+                "--work-dir",
+                str(tmp_path / "work"),
+                "--endpoint-identity-file",
+                str(identity_path),
+                "--plan-only",
+            ]
+        )
+        == 0
+    )
     assert (tmp_path / "work" / "local-plan" / "plan.json").is_file()
 
 

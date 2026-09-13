@@ -119,10 +119,22 @@ Capture the generated name for logs; do not use `kubectl apply` for Jobs.
 
 ```powershell
 function Start-AaLcrJob([string]$manifest, [string]$runId) {
-  $active = @(kubectl -n evaluation get pods -l "aa-lcr-run-id=$runId" `
-    --field-selector=status.phase=Pending,status.phase=Running -o name)
+  $podsJson = kubectl -n evaluation get pods -l "aa-lcr-run-id=$runId" -o json
+  if ($LASTEXITCODE -ne 0) {
+    throw "Cannot determine whether run $runId already has an active Pod."
+  }
+  try {
+    $pods = $podsJson | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw "Kubectl returned malformed Pod JSON for run $runId: $($_.Exception.Message)"
+  }
+  $active = @(
+    $pods.items | Where-Object {
+      @('Pending', 'Running') -contains $_.status.phase
+    }
+  )
   if ($active.Count -gt 0) {
-    throw "Run $runId already has an active Pod: $($active -join ', ')"
+    throw "Run $runId already has an active Pod: $($active.metadata.name -join ', ')"
   }
   $rendered = (Get-Content $manifest -Raw).Replace(
     "AA_LCR_CODE_CONFIGMAP", $configMap

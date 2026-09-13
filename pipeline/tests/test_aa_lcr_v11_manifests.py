@@ -102,7 +102,11 @@ def test_runbook_renders_immutable_configmaps_and_resumable_jobs():
     assert "binaryData" in text
     assert "create -f -" in text
     assert "generateName" in text
-    assert "status.phase=Pending,status.phase=Running" in text
+    assert 'get pods -l "aa-lcr-run-id=$runId" -o json' in text
+    assert "--field-selector" not in text
+    assert "$LASTEXITCODE -ne 0" in text
+    assert "ConvertFrom-Json -ErrorAction Stop" in text
+    assert "@('Pending', 'Running') -contains $_.status.phase" in text
     assert "httpx2" in text
     assert "https://pypi.org/pypi/openai/3.8.0/json" in text
     assert "https://pypi.org/pypi/httpx2/2.12.0/json" in text

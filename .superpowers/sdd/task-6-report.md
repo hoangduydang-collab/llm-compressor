@@ -62,3 +62,39 @@ the categories immutably before candidate work. Historical complete checkpoints
 cannot reconstruct category labels from their stored primitives, so their
 published category breakdown is explicitly `unattributed` with a limitation
 banner; their headline is unaffected.
+
+## Review-fix follow-up
+
+Implemented all Task 6 review findings:
+
+- Publication uses `_rename_no_replace`. Linux calls libc `renameat2` with
+  `RENAME_NOREPLACE` through `ctypes` and fails closed when unavailable; Windows
+  uses its no-replace rename behavior. `EEXIST` and `ENOTEMPTY` map to
+  `FileExistsError`.
+- Removed the preflight destination existence check as the no-clobber guarantee.
+  A regression test creates the destination immediately before the rename and
+  confirms its sentinel file remains unchanged.
+- Any judge failure, regardless of hash, blocks publication. Judgment rows must
+  contain exactly the contract-derived hash and no alternate-hash rows.
+- SQL primary-key units and serialized record units must each exactly match the
+  300-unit run contract. Malformed JSON, wrong IDs, non-integer IDs, and extra
+  units produce controlled `IncompleteRunError`.
+
+RED:
+
+```text
+py -3.12 -m pytest -q pipeline/tests/test_aa_lcr_v11_summary.py -k "alternate_judge_hash or tampered_payload or rename_no_replace or destination_appearing"
+6 failed
+```
+
+GREEN:
+
+```text
+py -3.12 -m pytest -q pipeline/tests/test_aa_lcr_v11_summary.py
+15 passed in 18.63s
+
+py -3.12 -m pytest -q pipeline/tests/test_aa_lcr_v11_candidate.py pipeline/tests/test_aa_lcr_v11_checkpoint.py pipeline/tests/test_aa_lcr_v11_dataset.py pipeline/tests/test_aa_lcr_v11_identity.py pipeline/tests/test_aa_lcr_v11_judge.py pipeline/tests/test_aa_lcr_v11_summary.py
+96 passed in 30.38s
+```
+
+Follow-up self-review: `git diff --check` and edited-file diagnostics were clean.

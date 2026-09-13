@@ -1,6 +1,8 @@
 """Pinned AA-LCR v1.1 identity and prompt contract."""
 
 import csv
+import ctypes
+import errno
 import hashlib
 import importlib
 import json
@@ -1577,24 +1579,43 @@ def prepare_dataset(
 
 def _publication_rows(
     checkpoint: Checkpoint, judge_contract_hash: str
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+) -> tuple[
+    list[tuple[int, int, dict[str, object]]],
+    list[tuple[int, int, dict[str, object]]],
+]:
     """Load the immutable primitive rows that define a publication."""
     with checkpoint._lock:
         candidate_rows = checkpoint._connection.execute(
-            "SELECT record_json FROM candidates ORDER BY question_id, repeat_index"
+            """
+            SELECT question_id, repeat_index, record_json FROM candidates
+            ORDER BY question_id, repeat_index
+            """
         ).fetchall()
         judgment_rows = checkpoint._connection.execute(
             """
-            SELECT record_json FROM judgments
+            SELECT question_id, repeat_index, record_json FROM judgments
             WHERE judge_contract_hash = ?
             ORDER BY question_id, repeat_index
             """,
             (judge_contract_hash,),
         ).fetchall()
-    return (
-        [json.loads(row[0]) for row in candidate_rows],
-        [json.loads(row[0]) for row in judgment_rows],
-    )
+    try:
+        candidates = [
+            (question_id, repeat_index, json.loads(record_json))
+            for question_id, repeat_index, record_json in candidate_rows
+        ]
+        judgments = [
+            (question_id, repeat_index, json.loads(record_json))
+            for question_id, repeat_index, record_json in judgment_rows
+        ]
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise IncompleteRunError("malformed serialized publication row") from exc
+    if any(
+        not isinstance(record, dict)
+        for _, _, record in (*candidates, *judgments)
+    ):
+        raise IncompleteRunError("malformed serialized publication row")
+    return candidates, judgments
 
 
 def _distribution(values: Collection[int]) -> dict[str, float | int]:
@@ -1631,34 +1652,76 @@ def _text_token_count(value: object) -> int:
 
 def _validate_publication_population(
     checkpoint: Checkpoint,
-    candidates: list[dict[str, object]],
-    judgments: list[dict[str, object]],
+    candidates: list[tuple[int, int, dict[str, object]]],
+    judgments: list[tuple[int, int, dict[str, object]]],
     judge_contract_hash: str,
 ) -> None:
-    expected = len(checkpoint.contract.question_ids) * checkpoint.contract.repeats
-    if expected != 300:
+    expected_units = {
+        (question_id, repeat_index)
+        for question_id in checkpoint.contract.question_ids
+        for repeat_index in range(checkpoint.contract.repeats)
+    }
+    if len(expected_units) != 300:
         raise IncompleteRunError(
-            f"expected 300 contract units, found {expected}; refusing headline"
+            f"expected 300 contract units, found {len(expected_units)}; refusing headline"
         )
-    if len(candidates) != expected:
+    candidate_keys = [(question_id, repeat_index) for question_id, repeat_index, _ in candidates]
+    judgment_keys = [(question_id, repeat_index) for question_id, repeat_index, _ in judgments]
+    if len(candidate_keys) != len(set(candidate_keys)) or set(candidate_keys) != expected_units:
         raise IncompleteRunError(
-            f"expected 300 successful candidate records, found {len(candidates)}"
+            "expected 300 candidate SQL units matching the contract population"
         )
+    if len(judgment_keys) != len(set(judgment_keys)) or set(judgment_keys) != expected_units:
+        raise IncompleteRunError(
+            "expected 300 judgment SQL units matching the contract population"
+        )
+    for question_id, repeat_index, record in (*candidates, *judgments):
+        if (
+            not isinstance(record.get("question_id"), int)
+            or isinstance(record.get("question_id"), bool)
+            or not isinstance(record.get("repeat_index"), int)
+            or isinstance(record.get("repeat_index"), bool)
+            or record["question_id"] != question_id
+            or record["repeat_index"] != repeat_index
+        ):
+            raise IncompleteRunError(
+                "serialized record unit does not match its SQL primary key"
+            )
+    if any(
+        record.get("judge_contract_hash") != judge_contract_hash
+        for _, _, record in judgments
+    ):
+        raise IncompleteRunError("serialized judgment has an unexpected judge hash")
     if any(
         record.get("error") is not None
         or not isinstance(record.get("content"), str)
         or not isinstance(record.get("http_status"), int)
         or not 200 <= record["http_status"] < 300
-        for record in candidates
+        for _, _, record in candidates
     ):
         raise IncompleteRunError("candidate failures present; refusing headline")
-    if checkpoint.incomplete_judgments(judge_contract_hash):
+    with checkpoint._lock:
+        all_judge_hashes = {
+            row[0]
+            for row in checkpoint._connection.execute(
+                "SELECT DISTINCT judge_contract_hash FROM judgments"
+            )
+        }
+        failure_count = checkpoint._connection.execute(
+            "SELECT COUNT(*) FROM judge_failures"
+        ).fetchone()[0]
+    if failure_count:
         raise IncompleteRunError("judge failures present; refusing headline")
-    if len(judgments) != expected:
+    if all_judge_hashes != {judge_contract_hash}:
+        raise IncompleteRunError("unexpected judge hash rows present; refusing headline")
+    if len(judgments) != len(expected_units):
         raise IncompleteRunError(
             f"expected 300 valid judgments, found {len(judgments)}"
         )
-    if any(record.get("verdict") not in {"CORRECT", "INCORRECT"} for record in judgments):
+    if any(
+        record.get("verdict") not in {"CORRECT", "INCORRECT"}
+        for _, _, record in judgments
+    ):
         raise IncompleteRunError("invalid judgments present; refusing headline")
 
 
@@ -1669,11 +1732,13 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
     _validate_publication_population(
         checkpoint, candidates, judgments, judge_contract_hash
     )
+    candidate_records = [record for _, _, record in candidates]
+    judgment_records = [record for _, _, record in judgments]
     judgment_by_unit = {
         (int(record["question_id"]), int(record["repeat_index"])): record
-        for record in judgments
+        for record in judgment_records
     }
-    correct = sum(record["verdict"] == "CORRECT" for record in judgments)
+    correct = sum(record["verdict"] == "CORRECT" for record in judgment_records)
     per_repeat: dict[str, dict[str, float | int]] = {}
     for repeat_index in range(checkpoint.contract.repeats):
         repeat_judgments = [
@@ -1695,16 +1760,16 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         for question_id in checkpoint.contract.question_ids
     ]
     finish_reasons: dict[str, int] = {}
-    for record in candidates:
+    for record in candidate_records:
         finish_reason = record.get("finish_reason")
         name = finish_reason if isinstance(finish_reason, str) else "missing"
         finish_reasons[name] = finish_reasons.get(name, 0) + 1
     categories = checkpoint.question_categories()
     category_rows: dict[str, list[dict[str, object]]] = {}
     if categories is None:
-        category_rows["unattributed"] = judgments
+        category_rows["unattributed"] = judgment_records
     else:
-        for judgment in judgments:
+        for judgment in judgment_records:
             category_rows.setdefault(
                 categories[int(judgment["question_id"])], []
             ).append(judgment)
@@ -1722,38 +1787,51 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         "judge_contract_hash": judge_contract_hash,
         "headline": {
             "correct": correct,
-            "denominator": len(judgments),
-            "pass_at_1": correct / len(judgments),
+            "denominator": len(judgment_records),
+            "pass_at_1": correct / len(judgment_records),
         },
         "question_macro_accuracy": sum(question_accuracies) / len(question_accuracies),
         "per_repeat": per_repeat,
         "document_categories": category_summary,
         "token_distributions": {
             "prompt": _distribution(
-                [_usage_tokens(record, "prompt_tokens", "input_tokens") for record in candidates]
+                [
+                    _usage_tokens(record, "prompt_tokens", "input_tokens")
+                    for record in candidate_records
+                ]
             ),
-            "answer": _distribution([_text_token_count(record.get("content")) for record in candidates]),
+            "answer": _distribution(
+                [_text_token_count(record.get("content")) for record in candidate_records]
+            ),
             "reasoning": _distribution(
-                [_text_token_count(record.get("reasoning_content")) for record in candidates]
+                [
+                    _text_token_count(record.get("reasoning_content"))
+                    for record in candidate_records
+                ]
             ),
             "completion": _distribution(
-                [_usage_tokens(record, "completion_tokens", "output_tokens") for record in candidates]
+                [
+                    _usage_tokens(record, "completion_tokens", "output_tokens")
+                    for record in candidate_records
+                ]
             ),
-            "text_token_method": "whitespace-token proxy; no tokenizer is loaded during publication",
+            "text_token_method": (
+                "whitespace-token proxy; no tokenizer is loaded during publication"
+            ),
         },
         "finish_reasons": dict(sorted(finish_reasons.items())),
         "candidate_diagnostics": {
             "truncation_count": sum(
-                record.get("finish_reason") == "length" for record in candidates
+                record.get("finish_reason") == "length" for record in candidate_records
             ),
-            "empty_answer_count": sum(record.get("content") == "" for record in candidates),
+            "empty_answer_count": sum(record.get("content") == "" for record in candidate_records),
             "retry_count": sum(
                 int(record["retry_count"])
-                for record in candidates
+                for record in candidate_records
                 if isinstance(record.get("retry_count"), int)
             ),
             "persistent_failure_count": sum(
-                record.get("error") is not None for record in candidates
+                record.get("error") is not None for record in candidate_records
             ),
         },
         "server_identity": {
@@ -1791,6 +1869,49 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+def _raise_rename_no_replace_error(error_number: int, destination: Path) -> None:
+    """Map a platform rename failure to the public publication error contract."""
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise FileExistsError(
+            error_number, os.strerror(error_number), os.fspath(destination)
+        )
+    raise OSError(error_number, os.strerror(error_number), os.fspath(destination))
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """Atomically move a directory only when the destination does not exist."""
+    if os.name == "nt":
+        try:
+            os.rename(source, destination)
+        except OSError as exc:
+            error_number = exc.errno
+            if getattr(exc, "winerror", None) in {145, 183}:
+                error_number = errno.ENOTEMPTY
+            _raise_rename_no_replace_error(error_number or errno.EIO, destination)
+        return
+    try:
+        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+    except AttributeError as exc:
+        raise RuntimeError("renameat2 RENAME_NOREPLACE is unavailable") from exc
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        -100,
+        os.fsencode(source),
+        -100,
+        os.fsencode(destination),
+        1,
+    )
+    if result != 0:
+        _raise_rename_no_replace_error(ctypes.get_errno() or errno.EIO, destination)
+
+
 def _write_publication_file(path: Path, content: str) -> None:
     with path.open("w", encoding="utf-8", newline="\n") as destination:
         destination.write(content)
@@ -1813,11 +1934,14 @@ def _publication_report(summary: Mapping[str, object]) -> str:
 def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]:
     """Atomically publish an immutable, fully validated AA-LCR result bundle."""
     destination = Path(out_dir)
-    if destination.exists():
-        raise FileExistsError(f"publication destination already exists: {destination}")
     summary = build_summary(checkpoint)
     judge_contract_hash = str(summary["judge_contract_hash"])
     candidates, judgments = _publication_rows(checkpoint, judge_contract_hash)
+    _validate_publication_population(
+        checkpoint, candidates, judgments, judge_contract_hash
+    )
+    candidate_records = [record for _, _, record in candidates]
+    judgment_records = [record for _, _, record in judgments]
     parent = destination.parent
     parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=parent))
@@ -1846,11 +1970,11 @@ def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]
         )
         _write_publication_file(
             temporary / "candidates.jsonl",
-            "".join(canonical_json(record) + "\n" for record in candidates),
+            "".join(canonical_json(record) + "\n" for record in candidate_records),
         )
         _write_publication_file(
             temporary / "judgments.jsonl",
-            "".join(canonical_json(record) + "\n" for record in judgments),
+            "".join(canonical_json(record) + "\n" for record in judgment_records),
         )
         _write_publication_file(
             temporary / "summary.json", canonical_json(summary) + "\n"
@@ -1863,7 +1987,7 @@ def publish_results(checkpoint: Checkpoint, out_dir: Path) -> Mapping[str, Path]
             ),
         )
         _fsync_directory(temporary)
-        os.rename(temporary, destination)
+        _rename_no_replace(temporary, destination)
         _fsync_directory(parent)
     except Exception:
         if temporary.exists():

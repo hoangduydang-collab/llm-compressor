@@ -1,3 +1,4 @@
+import errno
 import json
 from pathlib import Path
 
@@ -108,6 +109,148 @@ def test_terminal_judge_failure_has_no_headline(tmp_path):
 
     with pytest.raises(A.IncompleteRunError, match="judge failures"):
         A.build_summary(checkpoint)
+
+
+def test_alternate_judge_hash_failure_has_no_headline(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    checkpoint.record_judge_failure(
+        A.JudgeFailureRecord(
+            question_id=1,
+            repeat_index=0,
+            judge_contract_hash="a" * 64,
+            requested_model=A.JUDGE_MODEL,
+            reasoning_effort=A.JUDGE_REASONING_EFFORT,
+            reasoning_mode=A.JUDGE_REASONING_MODE,
+            openai_sdk_version=None,
+            exception_class="TimeoutError",
+            http_status=None,
+            request_id=None,
+            retry_count=29,
+            attempt_count=30,
+            started_at_utc="2026-09-13T00:00:02Z",
+            completed_at_utc="2026-09-13T00:00:03Z",
+            raw_output_text=None,
+            returned_model=None,
+            response_id=None,
+            usage=None,
+        )
+    )
+
+    with pytest.raises(A.IncompleteRunError, match="judge failures"):
+        A.build_summary(checkpoint)
+
+
+def test_alternate_judge_hash_judgment_has_no_headline(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    checkpoint.record_judgment(
+        A.JudgmentRecord(
+            question_id=1,
+            repeat_index=0,
+            judge_contract_hash="a" * 64,
+            raw_response={"verdict": "CORRECT"},
+            verdict="CORRECT",
+            retry_count=0,
+            started_at_utc="2026-09-13T00:00:02Z",
+            completed_at_utc="2026-09-13T00:00:03Z",
+            error=None,
+        )
+    )
+
+    with pytest.raises(A.IncompleteRunError, match="unexpected judge hash"):
+        A.build_summary(checkpoint)
+
+
+@pytest.mark.parametrize("table", ["candidates", "judgments"])
+def test_tampered_payload_units_are_rejected_as_incomplete(tmp_path, table):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    row = checkpoint._connection.execute(
+        f"SELECT record_json FROM {table} WHERE question_id = 1 AND repeat_index = 0"
+    ).fetchone()
+    assert row is not None
+    record = json.loads(row[0])
+    record["question_id"] = 2
+    checkpoint._connection.execute(
+        f"UPDATE {table} SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        (A.canonical_json(record),),
+    )
+    checkpoint._connection.commit()
+
+    with pytest.raises(A.IncompleteRunError, match="serialized"):
+        A.build_summary(checkpoint)
+
+
+def test_non_integer_serialized_unit_is_rejected_as_incomplete(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    row = checkpoint._connection.execute(
+        "SELECT record_json FROM candidates WHERE question_id = 1 AND repeat_index = 0"
+    ).fetchone()
+    assert row is not None
+    record = json.loads(row[0])
+    record["question_id"] = 1.0
+    checkpoint._connection.execute(
+        "UPDATE candidates SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        (A.canonical_json(record),),
+    )
+    checkpoint._connection.commit()
+
+    with pytest.raises(A.IncompleteRunError, match="serialized"):
+        A.build_summary(checkpoint)
+
+
+def test_extra_sql_unit_is_rejected_as_incomplete(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    row = checkpoint._connection.execute(
+        "SELECT record_json FROM candidates WHERE question_id = 1 AND repeat_index = 0"
+    ).fetchone()
+    assert row is not None
+    candidate = json.loads(row[0])
+    candidate["repeat_index"] = 3
+    checkpoint._connection.execute(
+        """
+        INSERT INTO candidates (question_id, repeat_index, record_json)
+        VALUES (1, 3, ?)
+        """,
+        (A.canonical_json(candidate),),
+    )
+    checkpoint._connection.commit()
+
+    with pytest.raises(A.IncompleteRunError, match="candidate SQL units"):
+        A.build_summary(checkpoint)
+
+
+def test_malformed_serialized_row_is_rejected_as_incomplete(tmp_path):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    checkpoint._connection.execute(
+        "UPDATE candidates SET record_json = ? WHERE question_id = 1 AND repeat_index = 0",
+        ("not JSON",),
+    )
+    checkpoint._connection.commit()
+
+    with pytest.raises(A.IncompleteRunError, match="malformed serialized"):
+        A.build_summary(checkpoint)
+
+
+def test_rename_no_replace_maps_existing_directory_errors(tmp_path):
+    for error_number in (errno.EEXIST, errno.ENOTEMPTY):
+        with pytest.raises(FileExistsError):
+            A._raise_rename_no_replace_error(error_number, tmp_path / "published")
+
+
+def test_publish_never_replaces_destination_appearing_at_rename(tmp_path, monkeypatch):
+    checkpoint = complete_checkpoint(tmp_path, correct=225)
+    destination = tmp_path / "published"
+    original = A._rename_no_replace
+
+    def destination_appears(source, target):
+        target.mkdir()
+        (target / "sentinel").write_text("keep", encoding="utf-8")
+        original(source, target)
+
+    monkeypatch.setattr(A, "_rename_no_replace", destination_appears)
+
+    with pytest.raises(FileExistsError):
+        A.publish_results(checkpoint, destination)
+    assert (destination / "sentinel").read_text(encoding="utf-8") == "keep"
 
 
 def test_candidate_without_final_content_has_no_headline(tmp_path):

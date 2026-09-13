@@ -33,3 +33,25 @@ policy. No live API, Kubernetes, or model calls were made.
   pre-existing `sk-do-not-record` / `sk-test-do-not-serialize` negative-test
   sentinels, which are asserted not to enter artifacts.
 - `git diff --check` passed.
+
+## Medium review follow-up
+
+**Root cause:** The first decoder applied CP437-byte-to-UTF-8 recovery to every
+unflagged ZIP name. A valid CP437 name whose bytes are also valid UTF-8 could
+therefore be silently renamed outside the pinned archive contract.
+
+**RED:** Two new tests failed: an ambiguous valid unflagged CP437 member was
+renamed without `expected_members`, and rejected when its normal CP437 spelling
+was explicitly expected. The pre-existing pinned-style recovery test continued
+to specify the recovered NFC name as expected.
+
+**GREEN:** The extractor now computes the NFC-safe normal `zipfile` candidate
+first. It preserves that candidate with no expected-members contract, or when
+the normal candidate is expected. Only after a normal mismatch does it try the
+unflagged CP437-byte-to-UTF-8 candidate, selecting it only if that recovered
+NFC-safe path is explicitly expected. Raw-header NUL validation and selected
+canonical collision checks are unchanged.
+
+**Final verification:** Dataset/CLI tests: `39 passed`. Full clean-venv AA-LCR
+suite: `140 passed in 37.80s`; Ruff passed. `git diff --check` passed before
+the separate follow-up commit.

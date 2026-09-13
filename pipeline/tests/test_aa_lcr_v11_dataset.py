@@ -193,6 +193,40 @@ def test_safe_extract_rejects_duplicate_members(tmp_path):
         A.safe_extract_zip(archive, tmp_path / "out")
 
 
+def make_ambiguous_cp437_zip(path: Path) -> tuple[Path, str, str]:
+    placeholder_name = "lcr/category/set/nameXX.txt"
+    raw_suffix = b"\xc2\xa2"
+    cp437_name = f"lcr/category/set/name{raw_suffix.decode('cp437')}.txt"
+    utf8_name = "lcr/category/set/name¢.txt"
+    archive = make_zip(path, {placeholder_name: b"document"})
+    archive.write_bytes(
+        archive.read_bytes().replace(b"nameXX.txt", b"name" + raw_suffix + b".txt")
+    )
+    return archive, cp437_name, utf8_name
+
+
+def test_safe_extract_preserves_valid_unflagged_cp437_name_without_contract(tmp_path):
+    archive, cp437_name, _ = make_ambiguous_cp437_zip(tmp_path)
+
+    extracted = A.safe_extract_zip(archive, tmp_path / "out")
+
+    assert [path.relative_to(tmp_path / "out").as_posix() for path in extracted] == [
+        cp437_name
+    ]
+
+
+def test_safe_extract_prefers_expected_valid_unflagged_cp437_name(tmp_path):
+    archive, cp437_name, _ = make_ambiguous_cp437_zip(tmp_path)
+
+    extracted = A.safe_extract_zip(
+        archive, tmp_path / "out", expected_members={cp437_name}
+    )
+
+    assert [path.relative_to(tmp_path / "out").as_posix() for path in extracted] == [
+        cp437_name
+    ]
+
+
 def test_safe_extract_recovers_unflagged_utf8_name_and_normalizes_nfc(tmp_path):
     raw_name = "lcr/Marketing/mkt_gaming/402813954_17. 260-275 Sinem Bas\u0327ev.txt"
     expected_name = "lcr/Marketing/mkt_gaming/402813954_17. 260-275 Sinem Başev.txt"
@@ -208,6 +242,7 @@ def test_safe_extract_recovers_unflagged_utf8_name_and_normalizes_nfc(tmp_path):
 
 
 def test_safe_extract_rejects_canonical_name_collision(tmp_path):
+    expected_name = "lcr/Marketing/mkt_gaming/Sinem Başev.txt"
     archive = make_unflagged_utf8_zip(
         tmp_path,
         {
@@ -217,7 +252,9 @@ def test_safe_extract_rejects_canonical_name_collision(tmp_path):
     )
 
     with pytest.raises(A.DatasetIntegrityError, match="duplicate archive member"):
-        A.safe_extract_zip(archive, tmp_path / "out")
+        A.safe_extract_zip(
+            archive, tmp_path / "out", expected_members={expected_name}
+        )
 
 
 def test_safe_extract_rejects_member_outside_expected_contract(tmp_path):

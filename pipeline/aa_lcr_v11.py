@@ -1500,17 +1500,6 @@ def _safe_member_path(name: str, *, is_directory: bool) -> PurePosixPath:
     return PurePosixPath(*components)
 
 
-def _canonical_member_name(member: zipfile.ZipInfo) -> str:
-    """Recover legacy UTF-8 filenames and normalize their canonical spelling."""
-    name = member.filename
-    if not member.flag_bits & 0x800:
-        try:
-            name = name.encode("cp437").decode("utf-8")
-        except UnicodeError:
-            pass
-    return unicodedata.normalize("NFC", name)
-
-
 def _member_path(member: zipfile.ZipInfo, name: str) -> PurePosixPath:
     is_directory = member.is_dir()
     path = _safe_member_path(name, is_directory=is_directory)
@@ -1519,6 +1508,27 @@ def _member_path(member: zipfile.ZipInfo, name: str) -> PurePosixPath:
     if unix_type not in (0, allowed_type):
         raise DatasetIntegrityError(f"unsafe archive member: {member.filename!r}")
     return path
+
+
+def _select_member_path(
+    member: zipfile.ZipInfo, expected_paths: Collection[str] | None
+) -> PurePosixPath:
+    """Select a safe canonical name from the archive's explicit contract."""
+    normal_path = _member_path(member, unicodedata.normalize("NFC", member.filename))
+    if expected_paths is None or normal_path.as_posix() in expected_paths:
+        return normal_path
+    if member.flag_bits & 0x800:
+        return normal_path
+    try:
+        recovered_name = member.filename.encode("cp437").decode("utf-8")
+    except UnicodeError:
+        return normal_path
+    recovered_path = _member_path(
+        member, unicodedata.normalize("NFC", recovered_name)
+    )
+    if recovered_path.as_posix() in expected_paths:
+        return recovered_path
+    return normal_path
 
 
 def _member_has_nul_name(archive: zipfile.ZipFile, member: zipfile.ZipInfo) -> bool:
@@ -1568,7 +1578,12 @@ def safe_extract_zip(
                 raise DatasetIntegrityError(
                     f"unsafe archive member: {member.filename!r}"
                 )
-            path = _member_path(member, _canonical_member_name(member))
+            allowed = (
+                None
+                if expected_paths is None
+                else expected_directories if member.is_dir() else expected_paths
+            )
+            path = _select_member_path(member, allowed)
             normalized = path.as_posix()
             if normalized in names:
                 raise DatasetIntegrityError(
@@ -1576,7 +1591,6 @@ def safe_extract_zip(
                 )
             names.add(normalized)
             if expected_paths is not None:
-                allowed = expected_directories if member.is_dir() else expected_paths
                 if normalized not in allowed:
                     raise DatasetIntegrityError(
                         f"unexpected archive member: {member.filename!r}"

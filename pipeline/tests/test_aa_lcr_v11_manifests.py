@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -116,3 +117,31 @@ def test_runbook_renders_immutable_configmaps_and_resumable_jobs():
         "glm53-w4afp8-aa-lcr-v11-canary-r1/run.sqlite"
     ) in text
     assert "The canary intentionally does not publish a headline bundle." in text
+
+
+def test_runbook_rejects_nonterminal_same_run_job_before_creation():
+    text = RUNBOOK.read_text(encoding="utf-8")
+
+    jobs_query = 'get jobs -l "aa-lcr-run-id=$runId" -o json'
+    create_job = 'create -f - `'
+    assert jobs_query in text
+    assert "ConvertFrom-Json -ErrorAction Stop" in text
+    assert re.search(
+        r"\$jobs\.items\s*\|\s*Where-Object\s*\{(?s:.*?)"
+        r"@\(.*?Complete.*?Failed.*?\).*?status.*?True",
+        text,
+    )
+    assert text.index(jobs_query) < text.index(create_job)
+
+
+def test_runbook_waits_for_created_pod_before_following_job_logs():
+    text = RUNBOOK.read_text(encoding="utf-8")
+
+    created = 'Write-Host "Created $jobName for $runId"'
+    pod_creation_wait = (
+        'kubectl -n evaluation wait --for=create pod -l "job-name=$jobName" '
+        "--timeout=180s"
+    )
+    logs = 'kubectl -n evaluation logs -f "job/$jobName"'
+    assert pod_creation_wait in text
+    assert text.index(created) < text.index(pod_creation_wait) < text.index(logs)

@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -38,6 +39,12 @@ DATASET_REVISION = "9a77ef56b717057ade24ceab4d273712a0b4f19e"
 CSV_FILENAME = "AA-LCR_Dataset.csv"
 ZIP_FILENAME = "extracted_text/AA-LCR_extracted-text.zip"
 ZIP_SHA256 = "5e839249826f6b9bd5324f0d139089c9dc481ccb3f212a6dfad00c51045d9d8a"
+# The pinned 9a77ef56b717057ade24ceab4d273712a0b4f19e archive (ZIP_SHA256 above)
+# contains this one document not referenced by the CSV's 229 unique members.
+OFFICIAL_UNREFERENCED_MEMBER = (
+    "lcr/Legal/legal_eu_ai/Preparing for change_ How businesses can thrive "
+    "under the EU_s AI Act _ Global law firm _ Norton Rose Fulbright.txt"
+)
 HF_RESOLVE = (
     f"https://huggingface.co/datasets/{DATASET_REPO}/resolve/{DATASET_REVISION}"
 )
@@ -1493,9 +1500,20 @@ def _safe_member_path(name: str, *, is_directory: bool) -> PurePosixPath:
     return PurePosixPath(*components)
 
 
-def _member_path(member: zipfile.ZipInfo) -> PurePosixPath:
+def _canonical_member_name(member: zipfile.ZipInfo) -> str:
+    """Recover legacy UTF-8 filenames and normalize their canonical spelling."""
+    name = member.filename
+    if not member.flag_bits & 0x800:
+        try:
+            name = name.encode("cp437").decode("utf-8")
+        except UnicodeError:
+            pass
+    return unicodedata.normalize("NFC", name)
+
+
+def _member_path(member: zipfile.ZipInfo, name: str) -> PurePosixPath:
     is_directory = member.is_dir()
-    path = _safe_member_path(member.filename, is_directory=is_directory)
+    path = _safe_member_path(name, is_directory=is_directory)
     unix_type = stat.S_IFMT(member.external_attr >> 16)
     allowed_type = stat.S_IFDIR if is_directory else stat.S_IFREG
     if unix_type not in (0, allowed_type):
@@ -1523,7 +1541,9 @@ def safe_extract_zip(
     """Extract a ZIP only after validating every archive member."""
     expected_paths = (
         {
-            _safe_member_path(member, is_directory=False).as_posix()
+            _safe_member_path(
+                unicodedata.normalize("NFC", member), is_directory=False
+            ).as_posix()
             for member in expected_members
         }
         if expected_members is not None
@@ -1548,7 +1568,7 @@ def safe_extract_zip(
                 raise DatasetIntegrityError(
                     f"unsafe archive member: {member.filename!r}"
                 )
-            path = _member_path(member)
+            path = _member_path(member, _canonical_member_name(member))
             normalized = path.as_posix()
             if normalized in names:
                 raise DatasetIntegrityError(
@@ -1752,7 +1772,8 @@ def prepare_dataset(
     extracted_paths = safe_extract_zip(
         zip_path,
         documents_root,
-        expected_members=_document_member_paths(rows),
+        expected_members=_document_member_paths(rows)
+        | {OFFICIAL_UNREFERENCED_MEMBER},
     )
     for path in extracted_paths:
         digests[path.relative_to(documents_root).as_posix()] = _sha256_file(path)

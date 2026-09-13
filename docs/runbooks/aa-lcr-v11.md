@@ -114,11 +114,35 @@ py -3.12 -m pip install --dry-run --ignore-installed --require-hashes `
 
 After authorization, render and create a fresh Job from its `generateName`
 template. Before every launch, the helper refuses to start if a Pending or
-Running Pod already owns that run ID, preventing concurrent SQLite access.
+Running Pod or a nonterminal Job already owns that run ID, preventing concurrent
+SQLite access. A Job can exist before its Pod has been created, so checking Pods
+alone has a race.
 Capture the generated name for logs; do not use `kubectl apply` for Jobs.
 
 ```powershell
 function Start-AaLcrJob([string]$manifest, [string]$runId) {
+  $jobsJson = kubectl -n evaluation get jobs -l "aa-lcr-run-id=$runId" -o json
+  if ($LASTEXITCODE -ne 0) {
+    throw "Cannot determine whether run $runId already has an existing Job."
+  }
+  try {
+    $jobs = $jobsJson | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw "Kubectl returned malformed Job JSON for run $runId: $($_.Exception.Message)"
+  }
+  $nonterminalJobs = @(
+    $jobs.items | Where-Object {
+      $terminalConditions = @(
+        $_.status.conditions | Where-Object {
+          @('Complete', 'Failed') -contains $_.type -and $_.status -eq 'True'
+        }
+      )
+      $terminalConditions.Count -eq 0
+    }
+  )
+  if ($nonterminalJobs.Count -gt 0) {
+    throw "Run $runId already has a nonterminal Job: $($nonterminalJobs.metadata.name -join ', ')"
+  }
   $podsJson = kubectl -n evaluation get pods -l "aa-lcr-run-id=$runId" -o json
   if ($LASTEXITCODE -ne 0) {
     throw "Cannot determine whether run $runId already has an active Pod."
@@ -146,6 +170,10 @@ function Start-AaLcrJob([string]$manifest, [string]$runId) {
     -o jsonpath='{.metadata.name}'
   if (-not $jobName) { throw "Job creation did not return a name." }
   Write-Host "Created $jobName for $runId"
+  kubectl -n evaluation wait --for=create pod -l "job-name=$jobName" --timeout=180s
+  if ($LASTEXITCODE -ne 0) {
+    throw "Timed out waiting for a Pod created by Job $jobName."
+  }
   kubectl -n evaluation logs -f "job/$jobName"
 }
 

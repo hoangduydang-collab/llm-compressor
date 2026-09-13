@@ -1,0 +1,35 @@
+# AA-LCR Runtime Canary Fix Report
+
+## Scope
+
+This change repairs only the pinned AA-LCR archive-member contract and the
+offline `Start-AaLcrJob` runbook race. It does not alter the dataset revision,
+archive digest, judge contract, dependency lock, or generic unexpected-member
+policy. No live API, Kubernetes, or model calls were made.
+
+## RED evidence
+
+- `test_safe_extract_recovers_unflagged_utf8_name_and_normalizes_nfc` failed
+  because the unflagged filename was decoded as CP437 mojibake and rejected as
+  unexpected.
+- `test_safe_extract_rejects_canonical_name_collision` failed because
+  decomposed and NFC-equivalent unflagged names were treated as distinct.
+- `test_prepare_dataset_allows_only_pinned_official_unreferenced_member` failed
+  because the explicit archive allowlist constant did not exist.
+- `test_runbook_rejects_nonterminal_same_run_job_before_creation` failed
+  because the runbook made no same-run Job query.
+- `test_runbook_waits_for_created_pod_before_following_job_logs` failed because
+  the runbook followed logs immediately after Job creation.
+
+## GREEN evidence
+
+- The three new dataset tests passed: `3 passed`.
+- The two new runbook semantic tests passed: `2 passed`.
+- Focused dataset and CLI tests passed: `37 passed`.
+- All AA-LCR tests passed in a fresh Python 3.12 venv:
+  `138 passed in 38.06s`.
+- Ruff passed for `pipeline/aa_lcr_v11.py` and all AA-LCR test modules.
+- The credential scan found no credential literals. The scan excludes the two
+  pre-existing `sk-do-not-record` / `sk-test-do-not-serialize` negative-test
+  sentinels, which are asserted not to enter artifacts.
+- `git diff --check` passed.

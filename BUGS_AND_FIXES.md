@@ -12,6 +12,37 @@ canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
 
 # Bugs and fixes (llm-compressor pipeline)
 
+## AA-LCR runtime canary archive and Job-start blockers (fixed, 2026-09-13)
+
+**Root cause:** The official AA-LCR archive pinned at revision
+`9a77ef56b717057ade24ceab4d273712a0b4f19e` and SHA-256
+`5e839249826f6b9bd5324f0d139089c9dc481ccb3f212a6dfad00c51045d9d8a`
+contains 230 members, while the CSV references 229 unique documents. Four
+UTF-8 member names lack ZIP general-purpose bit 11, so `zipfile` decodes their
+raw UTF-8 bytes as CP437 mojibake. For example,
+`lcr/Marketing/mkt_gaming/402813954_17. 260-275 Sinem Eyice Bas╠ºev.txt`
+recovers to decomposed `Başev.txt`, whose NFC form matches the CSV's
+`Başev.txt`. The other recovered members use en dash, em dash, and right
+apostrophe. Separately, `Start-AaLcrJob` only inspected Pods before creating a
+Job, allowing a same-run Job with no Pod yet to bypass the active-run guard.
+
+**Long-term fix:** ZIP validation now preserves correctly flagged UTF-8 names;
+for unflagged names it attempts CP437-byte-to-UTF-8 recovery and falls back
+only on conversion failure, then canonicalizes to Unicode NFC before path
+safety, expected-member, and collision checks. NUL detection still examines raw
+local-header bytes, and canonical collisions remain rejected. The generic
+extractor remains strict: `prepare_dataset` alone adds the single known,
+pinned unreferenced member
+`lcr/Legal/legal_eu_ai/Preparing for change_ How businesses can thrive under the EU_s AI Act _ Global law firm _ Norton Rose Fulbright.txt`
+to the CSV-derived contract. After recovery and NFC there are zero missing
+expected members, one unexpected member (that exact allowlisted path), and no
+collisions. The runbook now rejects nonterminal same-run Jobs before creation
+and waits up to 180 seconds for the created Job's Pod before reading logs.
+
+**Tactical workaround:** None. No removal is needed: this is the durable
+decoder and the allowlist is explicitly bound to the immutable archive
+revision and digest.
+
 ## Pre-quantization gate: meta-device MoE linearization offload (fixed, 2026-07-13)
 
 **Symptom:** The first real MiniMax-M3 CLI run of the pre-quantization

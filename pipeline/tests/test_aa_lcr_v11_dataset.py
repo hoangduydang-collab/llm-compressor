@@ -27,6 +27,24 @@ def make_duplicate_zip(path: Path, name: str) -> Path:
     return archive
 
 
+def make_unflagged_utf8_zip(path: Path, members: dict[str, bytes]) -> Path:
+    """Create a fixture whose UTF-8 names incorrectly lack ZIP bit 11."""
+    archive = make_zip(path, members)
+    contents = bytearray(archive.read_bytes())
+    for signature, flag_offset in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        start = 0
+        while (offset := contents.find(signature, start)) != -1:
+            flags = int.from_bytes(
+                contents[offset + flag_offset : offset + flag_offset + 2]
+            )
+            contents[offset + flag_offset : offset + flag_offset + 2] = (
+                flags & ~0x800
+            ).to_bytes(2, "little")
+            start = offset + len(signature)
+    archive.write_bytes(contents)
+    return archive
+
+
 def make_special_zip(path: Path, name: str, mode: int) -> Path:
     archive = path / "special.zip"
     member = zipfile.ZipInfo(name)
@@ -57,7 +75,7 @@ def question(question_id: int) -> A.Question:
     )
 
 
-def fixture_payloads() -> dict[str, bytes]:
+def fixture_payloads(*, include_official_extra: bool = True) -> dict[str, bytes]:
     documents = {"b.txt": b"B", "a.txt": b"A"}
     rows = []
     for question_id in range(1, 101):
@@ -88,6 +106,8 @@ def fixture_payloads() -> dict[str, bytes]:
         for set_id in range(1, 31):
             zf.writestr(f"lcr/synthetic/set-{set_id}/a.txt", documents["a.txt"])
         zf.writestr("lcr/synthetic/set-1/b.txt", documents["b.txt"])
+        if include_official_extra:
+            zf.writestr(A.OFFICIAL_UNREFERENCED_MEMBER, b"official extra")
     return {
         A.CSV_FILENAME: csv_file.getvalue().encode("utf-8"),
         A.ZIP_FILENAME: archive.getvalue(),
@@ -110,11 +130,11 @@ class LocalCl100kEncoding:
 
 
 def prepare_synthetic_100_question_fixture(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, include_official_extra=True
 ) -> A.PreparedDataset:
     encoding = LocalCl100kEncoding()
     monkeypatch.setattr(A.tiktoken, "get_encoding", lambda name: encoding)
-    payloads = fixture_payloads()
+    payloads = fixture_payloads(include_official_extra=include_official_extra)
     monkeypatch.setattr(
         A,
         "ZIP_SHA256",
@@ -173,6 +193,33 @@ def test_safe_extract_rejects_duplicate_members(tmp_path):
         A.safe_extract_zip(archive, tmp_path / "out")
 
 
+def test_safe_extract_recovers_unflagged_utf8_name_and_normalizes_nfc(tmp_path):
+    raw_name = "lcr/Marketing/mkt_gaming/402813954_17. 260-275 Sinem Bas\u0327ev.txt"
+    expected_name = "lcr/Marketing/mkt_gaming/402813954_17. 260-275 Sinem Başev.txt"
+    archive = make_unflagged_utf8_zip(tmp_path, {raw_name: b"document"})
+
+    extracted = A.safe_extract_zip(
+        archive, tmp_path / "out", expected_members={expected_name}
+    )
+
+    assert [path.relative_to(tmp_path / "out").as_posix() for path in extracted] == [
+        expected_name
+    ]
+
+
+def test_safe_extract_rejects_canonical_name_collision(tmp_path):
+    archive = make_unflagged_utf8_zip(
+        tmp_path,
+        {
+            "lcr/Marketing/mkt_gaming/Sinem Başev.txt": b"first",
+            "lcr/Marketing/mkt_gaming/Sinem Bas\u0327ev.txt": b"second",
+        },
+    )
+
+    with pytest.raises(A.DatasetIntegrityError, match="duplicate archive member"):
+        A.safe_extract_zip(archive, tmp_path / "out")
+
+
 def test_safe_extract_rejects_member_outside_expected_contract(tmp_path):
     archive = make_zip(
         tmp_path,
@@ -187,6 +234,16 @@ def test_safe_extract_rejects_member_outside_expected_contract(tmp_path):
             tmp_path / "out",
             expected_members={"lcr/category/set/expected.txt"},
         )
+
+
+def test_prepare_dataset_allows_only_pinned_official_unreferenced_member(
+    tmp_path, monkeypatch
+):
+    prepared = prepare_synthetic_100_question_fixture(
+        tmp_path, monkeypatch, include_official_extra=True
+    )
+
+    assert A.OFFICIAL_UNREFERENCED_MEMBER in prepared.file_sha256
 
 
 def test_validate_questions_requires_exact_population():
@@ -216,6 +273,7 @@ def test_prepare_fixture_preserves_csv_filename_order(tmp_path, monkeypatch):
         A.ZIP_FILENAME,
         *(f"lcr/synthetic/set-{set_id}/a.txt" for set_id in range(1, 31)),
         "lcr/synthetic/set-1/b.txt",
+        A.OFFICIAL_UNREFERENCED_MEMBER,
     }
     payloads = fixture_payloads()
     assert (

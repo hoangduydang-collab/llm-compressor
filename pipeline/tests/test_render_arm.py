@@ -54,3 +54,24 @@ def test_render_arm_hold_after_persists(tmp_path: Path):
     assert env["HOLD_AFTER"] == "1"
     assert "sleep infinity" in doc["spec"]["containers"][0]["args"][0]
     assert "@@ARM@@" not in out.read_text(encoding="utf-8")
+
+
+def test_render_gptq_persists_native_context_tokenizer_revision_and_profile(tmp_path: Path):
+    out = tmp_path / "gptq.yaml"
+    revision = "a" * 64
+    rc = render_arm.main([
+        "--arm", "gptq",
+        "--model", "/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/checkpoint",
+        "--run-tag", "t",
+        "--ref", "deadbeef",
+        "--out", str(out),
+        "--context-length", "65536",
+        "--served-tokenizer-revision", revision,
+    ])
+    assert rc == 0
+    doc = yaml.safe_load(out.read_text(encoding="utf-8"))
+    env = {e["name"]: e.get("value") for e in doc["spec"]["containers"][0]["env"]
+           if "value" in e}
+    assert env["CTX"] == "65536"
+    assert env["SERVED_TOKENIZER_REVISION"] == revision
+    assert env["PROFILE"] == "configs/glm/glm-5.3-w4afp8-gptq.sh"

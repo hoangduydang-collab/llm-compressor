@@ -44,6 +44,9 @@ BENCH="${BENCH:-/mnt/cephfs/hoangduy/projects/benchmarks}"
 BVENV="${BVENV:-/mnt/cephfs/hoangduy/venvs/eval-sglang-0.5.17}"
 OURS="${OURS:-/mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint}"
 PHALA="${PHALA:-/mnt/cephfs/.hf-cache/models--PhalaCloud--GLM-5.3-W4AFP8/snapshots/7e77d7b5592d748778459a0dac802e7fd407e593}"
+# Optional native GPTQ arm. Leave unset to retain the established ours/phala
+# staging path unchanged.
+GPTQ="${GPTQ:-}"
 OUT="${OUT:-/mnt/cephfs/hoangduy/results/glm53-quality-paired}"
 # Default = the M3 "full4" seven, which the GLM-5.2 run also used. Both of the
 # tasks that used to be excluded are now runnable:
@@ -78,7 +81,7 @@ note() { echo "[stage $(date -u +%H:%M:%S)] $1"; }
 gate() { echo "$1=$2" >> "$OUT/stage-gates.txt"; note "gate $1=$2"
          [ "$2" = 0 ] || fail=1; }
 
-note "bench=$BENCH ours=$OURS phala=$PHALA"
+note "bench=$BENCH ours=$OURS phala=$PHALA gptq=${GPTQ:-'(disabled)'}"
 [ -d "$BENCH/quality" ] || { note "FATAL: benchmarks not staged at $BENCH (see header)"; exit 1; }
 
 # gpqa_diamond_zeroshot needs Idavidrein/gpqa, the general suite's one gated
@@ -210,8 +213,10 @@ gate scoring_pins $?
 # correct. Rebuilt every run so it can never drift from the checkpoints.
 note "step 0b: building tokenizer-only identity dirs"
 TOKDIR="$OUT/tok"
-for arm in ours phala; do
-  case "$arm" in ours) SRC="$OURS";; phala) SRC="$PHALA";; esac
+arms=(ours phala)
+[ -n "$GPTQ" ] && arms+=(gptq)
+for arm in "${arms[@]}"; do
+  case "$arm" in ours) SRC="$OURS";; phala) SRC="$PHALA";; gptq) SRC="$GPTQ";; esac
   rm -rf "$TOKDIR/$arm"; mkdir -p "$TOKDIR/$arm"
   for f in tokenizer.json tokenizer_config.json special_tokens_map.json \
            chat_template.jinja vocab.json merges.txt added_tokens.json; do
@@ -224,14 +229,24 @@ done
 # Print the digests the profiles must declare. A mismatch here is a fail-closed
 # refusal inside evidence.py, so surface the right values rather than making the
 # operator reverse-engineer them from a traceback.
-"$PY" - "$TOKDIR" <<'PY' | tee "$OUT/tok-digests.txt"
+"$PY" - "$TOKDIR" "${arms[@]}" <<'PY' | tee "$OUT/tok-digests.txt"
 import sys
 sys.path.insert(0, "/mnt/cephfs/hoangduy/projects/benchmarks")
 from quality.general.evidence import _sha256_dir
-for arm in ("ours", "phala"):
+for arm in sys.argv[2:]:
     dg, n = _sha256_dir(f"{sys.argv[1]}/{arm}")
     print(f"SERVED_TOKENIZER_REVISION[{arm}] = {dg}  ({n} files)")
 PY
+GPTQ_SERVED_TOKENIZER_REVISION=""
+if [ -n "$GPTQ" ]; then
+  GPTQ_SERVED_TOKENIZER_REVISION="$("$PY" - "$TOKDIR/gptq" <<'PY'
+import sys
+sys.path.insert(0, "/mnt/cephfs/hoangduy/projects/benchmarks")
+from quality.general.evidence import _sha256_dir
+print(_sha256_dir(sys.argv[1])[0])
+PY
+)"
+fi
 
 # ---- 1. datasets -----------------------------------------------------------
 # Downloaded ONCE here, with the network available, then frozen. The arms run
@@ -353,7 +368,7 @@ note "step 2: arm parity (protocol fields must be identical)"
 # --model_args parser would split on. That cost a full staging round, and it
 # presented as "PROTOCOL DIVERGENCE" rather than "this file has CRLF" -- so check
 # it explicitly and say so.
-for arm in ours phala; do
+for arm in "${arms[@]}"; do
   f="$BENCH/configs/glm/glm-5.3-w4afp8-$arm.sh"
   if grep -qU $'\r' "$f" 2>/dev/null; then
     note "FATAL: $f has CRLF line endings; bash keeps the CR inside every value"
@@ -375,8 +390,11 @@ gate profile_line_endings 0
 # a protocol divergence and the operator goes looking for a config difference
 # that does not exist.
 render_rc=0
-for arm in ours phala; do
-  ( cd "$BENCH" && GENERAL_TASKS="$TASKS" "$PY" -m quality.orchestrator \
+for arm in "${arms[@]}"; do
+  served_tokenizer_revision=""
+  [ "$arm" = gptq ] && served_tokenizer_revision="$GPTQ_SERVED_TOKENIZER_REVISION"
+  ( cd "$BENCH" && GENERAL_TASKS="$TASKS" \
+      SERVED_TOKENIZER_REVISION="$served_tokenizer_revision" "$PY" -m quality.orchestrator \
       --profile "configs/glm/glm-5.3-w4afp8-$arm.sh" \
       --dry-run --suite general ) > "$OUT/dryrun-$arm.txt" 2>&1
   rc=$?
@@ -396,10 +414,10 @@ fi
 # QUOTED heredoc + argv. An unquoted <<PY makes bash expand the body, and a
 # backtick in a COMMENT is then run as a command -- `is_local` in step 3 below
 # did exactly that. Nothing here needs shell expansion, so nothing gets it.
-"$PY" - "$OUT" "$OURS" "$PHALA" <<'PY'
+"$PY" - "$OUT" "$OURS" "$PHALA" "$GPTQ" <<'PY'
 import difflib, re, sys
 from pathlib import Path
-out, ours, phala = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+out, ours, phala, gptq = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
 
 # Normalise away everything that is ARM IDENTITY, so that whatever remains is a
 # PROTOCOL difference -- the only kind that invalidates the comparison.
@@ -414,7 +432,8 @@ _SHA64 = re.compile(r"\b[0-9a-f]{64}\b")
 
 def norm(p):
     t = p.read_text(encoding="utf-8", errors="replace")
-    for ident in ("glm-5.3-w4afp8-ours", "glm-5.3-w4afp8-phala", ours, phala):
+    for ident in ("glm-5.3-w4afp8-ours", "glm-5.3-w4afp8-phala",
+                  "glm-5.3-w4afp8-gptq", ours, phala, gptq):
         t = t.replace(ident, "<ARM>")
     lines = []
     for line in t.splitlines():
@@ -422,8 +441,8 @@ def norm(p):
         # Per-arm served-tokenizer identity: the directory and its content
         # digest are meant to differ, and the digest is a bare 64-hex token.
         if "served tokenizer:" in line or "served revision:" in line:
-            line = _SHA64.sub("<DIGEST>", line).replace("/tok/ours", "/tok/<ARM>") \
-                         .replace("/tok/phala", "/tok/<ARM>")
+            line = _SHA64.sub("<DIGEST>", line)
+            line = re.sub(r"/tok/(ours|phala|gptq)\b", "/tok/<ARM>", line)
         # NOT normalised, deliberately: `served template sha256` must be EQUAL,
         # because that is what decides both arms see the same prompt text.
         if "<ARM>" in line and not ("--tasks" in line or "model_args" in line):
@@ -432,23 +451,31 @@ def norm(p):
     return lines
 
 
-a, b = norm(out / "dryrun-ours.txt"), norm(out / "dryrun-phala.txt")
-if a == b:
+arms = ["ours", "phala"] + (["gptq"] if gptq else [])
+base = norm(out / "dryrun-ours.txt")
+diffs = []
+for arm in arms[1:]:
+    rendered = norm(out / f"dryrun-{arm}.txt")
+    if base != rendered:
+        diffs.extend(difflib.unified_diff(base, rendered, "ours", arm,
+                                          lineterm="", n=1))
+if not diffs:
     print("[parity] identical after identity normalisation")
     sys.exit(0)
-d = list(difflib.unified_diff(a, b, "ours", "phala", lineterm="", n=1))
 print("[parity] PROTOCOL DIVERGENCE - the arms are not comparable:")
-print("\n".join(d[:60]))
+print("\n".join(diffs[:60]))
 sys.exit(1)
 PY
 gate arm_parity $?
 
 # ---- 3. tokenizer / chat template across the two checkpoints ---------------
 note "step 3: tokenizer + chat-template identity across checkpoints"
-"$PY" - "$OURS" "$PHALA" <<'PY' | tee "$OUT/template-parity.json"
+"$PY" - "$OURS" "$PHALA" "$GPTQ" <<'PY' | tee "$OUT/template-parity.json"
 import hashlib, json, sys
 from pathlib import Path
-OURS, PHALA = sys.argv[1], sys.argv[2]
+roots = {"ours": sys.argv[1], "phala": sys.argv[2]}
+if sys.argv[3]:
+    roots["gptq"] = sys.argv[3]
 FILES = ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja",
          "special_tokens_map.json", "generation_config.json")
 def digests(root):
@@ -458,13 +485,17 @@ def digests(root):
         p = r / f
         out[f] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
     return out
-a, b = digests(OURS), digests(PHALA)
+all_digests = {arm: digests(root) for arm, root in roots.items()}
 # tokenizer.json and chat_template.jinja decide what text the model is shown, so a
 # byte difference there blocks. generation_config.json does NOT (the server's flags
 # and the task's pinned kwargs govern decoding here), so it is recorded only.
 BLOCKING = ("tokenizer.json", "chat_template.jinja")
-diff = {f: {"ours": a[f], "phala": b[f]} for f in FILES if a[f] != b[f]}
-blocking = sorted(f for f in diff if f in BLOCKING)
+blocking = []
+for arm, digest in all_digests.items():
+    if arm == "ours":
+        continue
+    blocking.extend(f"{arm}:{f}" for f in BLOCKING
+                    if all_digests["ours"][f] != digest[f])
 
 # tokenizer_config.json is compared SEMANTICALLY rather than by digest. Measured
 # on these two checkpoints, it differs only in is_local / local_files_only --
@@ -475,23 +506,28 @@ blocking = sorted(f for f in diff if f in BLOCKING)
 INERT = {"is_local", "local_files_only", "_name_or_path", "name_or_path",
          "tokenizer_file", "auto_map"}
 cfg_note = None
-try:
-    ca = json.loads((Path(OURS) / "tokenizer_config.json").read_text(encoding="utf-8"))
-    cb = json.loads((Path(PHALA) / "tokenizer_config.json").read_text(encoding="utf-8"))
-    semantic = sorted(k for k in set(ca) | set(cb)
-                      if k not in INERT and ca.get(k) != cb.get(k))
-    inert_diff = sorted(k for k in set(ca) | set(cb)
-                        if k in INERT and ca.get(k) != cb.get(k))
-    cfg_note = {"semantic_differences": semantic, "inert_differences": inert_diff,
-                "keys_compared": len(set(ca) | set(cb))}
-    if semantic:
-        blocking.append("tokenizer_config.json:" + ",".join(semantic))
-except Exception as e:
-    cfg_note = {"error": "%s: %s" % (type(e).__name__, e)}
-    blocking.append("tokenizer_config.json:unreadable")
+cfg_note = {}
+for arm, root in roots.items():
+    if arm == "ours":
+        continue
+    try:
+        ca = json.loads((Path(roots["ours"]) / "tokenizer_config.json").read_text(encoding="utf-8"))
+        cb = json.loads((Path(root) / "tokenizer_config.json").read_text(encoding="utf-8"))
+        semantic = sorted(k for k in set(ca) | set(cb)
+                          if k not in INERT and ca.get(k) != cb.get(k))
+        inert_diff = sorted(k for k in set(ca) | set(cb)
+                            if k in INERT and ca.get(k) != cb.get(k))
+        cfg_note[arm] = {"semantic_differences": semantic,
+                         "inert_differences": inert_diff,
+                         "keys_compared": len(set(ca) | set(cb))}
+        if semantic:
+            blocking.append(arm + ":tokenizer_config.json:" + ",".join(semantic))
+    except Exception as e:
+        cfg_note[arm] = {"error": "%s: %s" % (type(e).__name__, e)}
+        blocking.append(arm + ":tokenizer_config.json:unreadable")
 
-res = {"ours": a, "phala": b, "differs": sorted(diff),
-       "tokenizer_config": cfg_note, "blocking_differences": blocking}
+res = {"digests": all_digests, "tokenizer_config": cfg_note,
+       "blocking_differences": sorted(blocking)}
 print(json.dumps(res, indent=2))
 sys.exit(1 if blocking else 0)
 PY

@@ -36,11 +36,13 @@ _PLACEHOLDER = re.compile(r"@@[A-Z_]+@@")
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arm", required=True, choices=["ours", "phala"])
+    ap.add_argument("--arm", required=True, choices=["ours", "phala", "gptq"])
     ap.add_argument("--model", required=True, help="absolute /mnt path to the checkpoint")
     ap.add_argument("--run-tag", required=True)
     ap.add_argument("--ref", required=True, help="llm-compressor commit to pin")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--context-length", default="")
+    ap.add_argument("--served-tokenizer-revision", default="")
     ap.add_argument("--reasoning", default="", choices=["", "reasoning", "nonreasoning"])
     ap.add_argument("--limit", default="", help="items per general task; empty = full populations")
     ap.add_argument("--tasks", default="", help="GENERAL_TASKS override; empty = profile default")
@@ -61,6 +63,15 @@ def main(argv: list[str] | None = None) -> int:
               "an environment variable rather than argv.", file=sys.stderr)
         return 2
 
+    if a.arm == "gptq":
+        if a.context_length != "65536":
+            print("REFUSING: GPTQ requires --context-length 65536.", file=sys.stderr)
+            return 2
+        if not re.fullmatch(r"[0-9a-f]{64}", a.served_tokenizer_revision):
+            print("REFUSING: GPTQ requires a lowercase 64-hex "
+                  "--served-tokenizer-revision.", file=sys.stderr)
+            return 2
+
     # An EMPTY selector must still be a valid mapping entry. Emitting a bare "{}"
     # here produced `  {}` on its own line, which is a YAML scanner error in a
     # mapping context -- caught by this module's own safe_load, which is the whole
@@ -73,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
         "@@MODEL@@": a.model,
         "@@RUN_TAG@@": a.run_tag,
         "@@REF@@": a.ref,
+        "@@CTX@@": a.context_length,
+        "@@SERVED_TOKENIZER_REVISION@@": a.served_tokenizer_revision,
         "@@LIMIT@@": a.limit,
         "@@TASKS@@": a.tasks,
         "@@AA_GPQA@@": a.aa_gpqa,

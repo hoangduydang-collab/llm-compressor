@@ -4,8 +4,10 @@ import csv
 import hashlib
 import json
 import os
+import sqlite3
 import stat
 import tempfile
+import threading
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -98,6 +100,10 @@ class DatasetIntegrityError(ValueError):
     """Raised when the pinned AA-LCR dataset cannot be verified."""
 
 
+class CheckpointConflictError(ValueError):
+    """Raised when immutable checkpoint data conflicts with existing data."""
+
+
 @dataclass(frozen=True)
 class Question:
     question_id: int
@@ -118,8 +124,283 @@ class PreparedDataset:
     prompt_sha256: str
 
 
+@dataclass(frozen=True)
+class RunContract:
+    """Every input that defines an AA-LCR measurement."""
+
+    dataset_revision: str
+    dataset_file_sha256: Mapping[str, str]
+    prompt_sha256: str
+    judge_system_prompt_sha256: str
+    judge_user_prompt_sha256: str
+    candidate_model: str
+    served_model: str
+    endpoint_deployment_identity: Mapping[str, object]
+    candidate_temperature: float
+    candidate_top_p: float
+    candidate_max_tokens: int
+    candidate_concurrency: int
+    candidate_reasoning_enabled: bool
+    candidate_max_attempts: int
+    judge_model: str
+    judge_reasoning_effort: str
+    judge_max_attempts: int
+    repeats: int
+    code_revision: str
+    question_ids: tuple[int, ...]
+
+    @property
+    def fingerprint(self) -> str:
+        return sha256_text(_canonical_dataclass(self))
+
+
+@dataclass(frozen=True)
+class CandidateRecord:
+    question_id: int
+    repeat_index: int
+    http_status: int
+    raw_response: object
+    usage: object
+    finish_reason: str | None
+    content: str | None
+    reasoning_content: str | None
+    retry_count: int
+    started_at_utc: str
+    completed_at_utc: str
+    error: str | None
+
+
+@dataclass(frozen=True)
+class JudgmentRecord:
+    question_id: int
+    repeat_index: int
+    judge_contract_hash: str
+    raw_response: object
+    verdict: str | None
+    retry_count: int
+    started_at_utc: str
+    completed_at_utc: str
+    error: str | None
+
+
+def build_run_contract(
+    prepared_dataset: PreparedDataset,
+    *,
+    candidate_model: str,
+    served_model: str,
+    endpoint_deployment_identity: Mapping[str, object],
+    code_revision: str,
+    candidate_temperature: float = CANDIDATE_TEMPERATURE,
+    candidate_top_p: float = CANDIDATE_TOP_P,
+    candidate_max_tokens: int = CANDIDATE_MAX_TOKENS,
+    candidate_concurrency: int = CANDIDATE_CONCURRENCY,
+    candidate_reasoning_enabled: bool = True,
+    candidate_max_attempts: int = MAX_ATTEMPTS,
+    judge_model: str = JUDGE_MODEL,
+    judge_reasoning_effort: str = JUDGE_REASONING_EFFORT,
+    judge_max_attempts: int = MAX_ATTEMPTS,
+    repeats: int = REPEATS,
+) -> RunContract:
+    """Build the immutable identity contract before any endpoint traffic."""
+    return RunContract(
+        dataset_revision=prepared_dataset.revision,
+        dataset_file_sha256=prepared_dataset.file_sha256,
+        prompt_sha256=prepared_dataset.prompt_sha256,
+        judge_system_prompt_sha256=sha256_text(JUDGE_SYSTEM_PROMPT),
+        judge_user_prompt_sha256=sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
+        candidate_model=candidate_model,
+        served_model=served_model,
+        endpoint_deployment_identity=endpoint_deployment_identity,
+        candidate_temperature=candidate_temperature,
+        candidate_top_p=candidate_top_p,
+        candidate_max_tokens=candidate_max_tokens,
+        candidate_concurrency=candidate_concurrency,
+        candidate_reasoning_enabled=candidate_reasoning_enabled,
+        candidate_max_attempts=candidate_max_attempts,
+        judge_model=judge_model,
+        judge_reasoning_effort=judge_reasoning_effort,
+        judge_max_attempts=judge_max_attempts,
+        repeats=repeats,
+        code_revision=code_revision,
+        question_ids=tuple(question.question_id for question in prepared_dataset.questions),
+    )
+
+
+class Checkpoint:
+    """Durable, immutable SQLite storage for a single run contract."""
+
+    def __init__(self, path: Path, contract: RunContract) -> None:
+        self.path = Path(path)
+        self.contract = contract
+        self._lock = threading.Lock()
+        self._connection = sqlite3.connect(self.path, check_same_thread=False)
+        self._connection.execute("PRAGMA journal_mode=WAL")
+        self._connection.execute("PRAGMA synchronous=FULL")
+        self._connection.execute("PRAGMA foreign_keys=ON")
+        self._initialize()
+
+    def _initialize(self) -> None:
+        with self._lock, self._connection:
+            self._connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS run (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    fingerprint TEXT NOT NULL,
+                    contract_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS questions (
+                    question_id INTEGER PRIMARY KEY
+                );
+                CREATE TABLE IF NOT EXISTS candidates (
+                    question_id INTEGER NOT NULL REFERENCES questions(question_id),
+                    repeat_index INTEGER NOT NULL,
+                    record_json TEXT NOT NULL,
+                    PRIMARY KEY (question_id, repeat_index)
+                );
+                CREATE TABLE IF NOT EXISTS judgments (
+                    question_id INTEGER NOT NULL,
+                    repeat_index INTEGER NOT NULL,
+                    judge_contract_hash TEXT NOT NULL,
+                    record_json TEXT NOT NULL,
+                    PRIMARY KEY (question_id, repeat_index, judge_contract_hash),
+                    FOREIGN KEY (question_id, repeat_index)
+                        REFERENCES candidates(question_id, repeat_index)
+                );
+                """
+            )
+            contract_json = _canonical_dataclass(self.contract)
+            row = self._connection.execute(
+                "SELECT fingerprint, contract_json FROM run WHERE singleton = 1"
+            ).fetchone()
+            if row is None:
+                self._connection.execute(
+                    "INSERT INTO run (singleton, fingerprint, contract_json) VALUES (1, ?, ?)",
+                    (self.contract.fingerprint, contract_json),
+                )
+                self._connection.executemany(
+                    "INSERT INTO questions (question_id) VALUES (?)",
+                    ((question_id,) for question_id in self.contract.question_ids),
+                )
+            elif row != (self.contract.fingerprint, contract_json):
+                raise CheckpointConflictError(
+                    "checkpoint belongs to a different immutable run contract"
+                )
+
+    def _record(
+        self,
+        table: str,
+        key: tuple[object, ...],
+        record_json: str,
+        *,
+        judge_contract_hash: str | None = None,
+    ) -> None:
+        if table == "candidates":
+            query = (
+                "SELECT record_json FROM candidates "
+                "WHERE question_id = ? AND repeat_index = ?"
+            )
+            insert = (
+                "INSERT INTO candidates (question_id, repeat_index, record_json) "
+                "VALUES (?, ?, ?)"
+            )
+            parameters = (*key, record_json)
+        else:
+            query = (
+                "SELECT record_json FROM judgments WHERE question_id = ? "
+                "AND repeat_index = ? AND judge_contract_hash = ?"
+            )
+            insert = (
+                "INSERT INTO judgments "
+                "(question_id, repeat_index, judge_contract_hash, record_json) "
+                "VALUES (?, ?, ?, ?)"
+            )
+            assert judge_contract_hash is not None
+            parameters = (*key, judge_contract_hash, record_json)
+            key = (*key, judge_contract_hash)
+        with self._lock, self._connection:
+            row = self._connection.execute(query, key).fetchone()
+            if row is None:
+                try:
+                    self._connection.execute(insert, parameters)
+                except sqlite3.IntegrityError as exc:
+                    raise CheckpointConflictError(
+                        f"invalid immutable {table[:-1]} key: {key!r}"
+                    ) from exc
+            elif row[0] != record_json:
+                raise CheckpointConflictError(
+                    f"conflicting immutable {table[:-1]} record for {key!r}"
+                )
+
+    def missing_candidates(self) -> list[tuple[int, int]]:
+        with self._lock:
+            return [
+                (question_id, repeat_index)
+                for question_id in self.contract.question_ids
+                for repeat_index in range(self.contract.repeats)
+                if self._connection.execute(
+                    "SELECT 1 FROM candidates WHERE question_id = ? AND repeat_index = ?",
+                    (question_id, repeat_index),
+                ).fetchone()
+                is None
+            ]
+
+    def record_candidate(self, record: CandidateRecord) -> None:
+        self._record(
+            "candidates",
+            (record.question_id, record.repeat_index),
+            _canonical_dataclass(record),
+        )
+
+    def missing_judgments(self, judge_contract_hash: str) -> list[tuple[int, int]]:
+        with self._lock:
+            return [
+                (int(question_id), int(repeat_index))
+                for question_id, repeat_index in self._connection.execute(
+                    """
+                    SELECT c.question_id, c.repeat_index
+                    FROM candidates AS c
+                    LEFT JOIN judgments AS j
+                      ON j.question_id = c.question_id
+                     AND j.repeat_index = c.repeat_index
+                     AND j.judge_contract_hash = ?
+                    WHERE j.question_id IS NULL
+                    ORDER BY c.question_id, c.repeat_index
+                    """,
+                    (judge_contract_hash,),
+                )
+            ]
+
+    def record_judgment(self, record: JudgmentRecord) -> None:
+        self._record(
+            "judgments",
+            (record.question_id, record.repeat_index),
+            _canonical_dataclass(record),
+            judge_contract_hash=record.judge_contract_hash,
+        )
+
+
 def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_dataclass(value: object) -> str:
+    fields = getattr(value, "__dataclass_fields__")
+    return canonical_json(
+        {
+            name: _json_value(getattr(value, name))
+            for name in fields
+        }
+    )
+
+
+def _json_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_value(item) for item in value]
+    if isinstance(value, list):
+        return [_json_value(item) for item in value]
+    return value
 
 
 def sha256_text(value: str) -> str:

@@ -2138,6 +2138,10 @@ def _run_phase(args: argparse.Namespace) -> int:
         return 0
     destination = args.output_dir / args.run_id
     already_published = _ensure_published_result(checkpoint, destination)
+    client: object | None = None
+    if args.phase in {"judge", "run"} and args.judge_preflight:
+        client = build_openai_client()
+        preflight_judge(client)
     if args.phase in {"generate", "run"}:
         generate_missing(
             checkpoint,
@@ -2146,9 +2150,8 @@ def _run_phase(args: argparse.Namespace) -> int:
             repeats=args.repeats,
         )
     if args.phase in {"judge", "run"}:
-        client = build_openai_client()
-        if args.judge_preflight:
-            preflight_judge(client)
+        if client is None:
+            client = build_openai_client()
         judge_missing(checkpoint, prepared.questions, client)
     if args.phase in {"summarize", "run"}:
         if not already_published:

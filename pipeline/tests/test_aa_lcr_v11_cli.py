@@ -67,3 +67,76 @@ def test_cli_rejects_invalid_population_values(option, value, message, capsys):
 def test_cli_requires_run_id():
     with pytest.raises(SystemExit, match="2"):
         A.main(["prepare", "--plan-only"])
+
+
+def test_run_preflight_failure_precedes_candidate_generation(tmp_path, monkeypatch):
+    prepared = A.PreparedDataset("revision", (), {}, "prompt")
+    checkpoint = object()
+    calls: list[str] = []
+    monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
+    monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
+    monkeypatch.setattr(
+        A, "build_openai_client", lambda: calls.append("client") or object()
+    )
+
+    def fail_preflight(_client):
+        calls.append("preflight")
+        raise A.JudgeProtocolError("preflight failed")
+
+    monkeypatch.setattr(A, "preflight_judge", fail_preflight)
+    monkeypatch.setattr(
+        A, "generate_missing", lambda *_args, **_kwargs: calls.append("generate")
+    )
+    monkeypatch.setattr(A, "judge_missing", lambda *_args: calls.append("judge"))
+
+    with pytest.raises(A.JudgeProtocolError, match="preflight failed"):
+        A._run_phase(
+            A._parser().parse_args(["run", "--run-id", "run-r1", "--judge-preflight"])
+        )
+
+    assert calls == ["client", "preflight"]
+
+
+def test_judge_preflight_failure_precedes_judgment(tmp_path, monkeypatch):
+    prepared = A.PreparedDataset("revision", (), {}, "prompt")
+    checkpoint = object()
+    calls: list[str] = []
+    monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
+    monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
+    monkeypatch.setattr(
+        A, "build_openai_client", lambda: calls.append("client") or object()
+    )
+
+    def fail_preflight(_client):
+        calls.append("preflight")
+        raise A.JudgeProtocolError("preflight failed")
+
+    monkeypatch.setattr(A, "preflight_judge", fail_preflight)
+    monkeypatch.setattr(A, "judge_missing", lambda *_args: calls.append("judge"))
+
+    with pytest.raises(A.JudgeProtocolError, match="preflight failed"):
+        A._run_phase(
+            A._parser().parse_args(
+                ["judge", "--run-id", "judge-r1", "--judge-preflight"]
+            )
+        )
+
+    assert calls == ["client", "preflight"]
+
+
+def test_generate_phase_does_not_construct_judge_client(monkeypatch):
+    prepared = A.PreparedDataset("revision", (), {}, "prompt")
+    checkpoint = object()
+    calls: list[str] = []
+    monkeypatch.setattr(A, "_prepare_run", lambda _args: (prepared, checkpoint))
+    monkeypatch.setattr(A, "_ensure_published_result", lambda *_args: False)
+    monkeypatch.setattr(
+        A, "build_openai_client", lambda: pytest.fail("generate needs no judge key")
+    )
+    monkeypatch.setattr(
+        A, "generate_missing", lambda *_args, **_kwargs: calls.append("generate")
+    )
+
+    args = A._parser().parse_args(["generate", "--run-id", "generate-r1"])
+    assert A._run_phase(args) == 0
+    assert calls == ["generate"]

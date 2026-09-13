@@ -44,6 +44,7 @@ BENCH="${BENCH:-/mnt/cephfs/hoangduy/projects/benchmarks}"
 BVENV="${BVENV:-/mnt/cephfs/hoangduy/venvs/eval-sglang-0.5.17}"
 OURS="${OURS:-/mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint}"
 PHALA="${PHALA:-/mnt/cephfs/.hf-cache/models--PhalaCloud--GLM-5.3-W4AFP8/snapshots/7e77d7b5592d748778459a0dac802e7fd407e593}"
+GPTQ_CHECKPOINT="/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/20260912-184239/checkpoint"
 # Optional native GPTQ arm. Leave unset to retain the established ours/phala
 # staging path unchanged.
 GPTQ="${GPTQ:-}"
@@ -83,6 +84,10 @@ gate() { echo "$1=$2" >> "$OUT/stage-gates.txt"; note "gate $1=$2"
 
 note "bench=$BENCH ours=$OURS phala=$PHALA gptq=${GPTQ:-'(disabled)'}"
 [ -d "$BENCH/quality" ] || { note "FATAL: benchmarks not staged at $BENCH (see header)"; exit 1; }
+if [ -n "$GPTQ" ] && [ "$GPTQ" != "$GPTQ_CHECKPOINT" ]; then
+  note "FATAL: GPTQ must be exactly $GPTQ_CHECKPOINT"
+  exit 1
+fi
 
 # gpqa_diamond_zeroshot needs Idavidrein/gpqa, the general suite's one gated
 # dataset. Say so up front rather than letting the download fail 40 lines later.
@@ -246,6 +251,7 @@ from quality.general.evidence import _sha256_dir
 print(_sha256_dir(sys.argv[1])[0])
 PY
 )"
+  printf '%s\n' "$GPTQ_SERVED_TOKENIZER_REVISION" > "$OUT/gptq-tokenizer-revision.txt"
 fi
 
 # ---- 1. datasets -----------------------------------------------------------

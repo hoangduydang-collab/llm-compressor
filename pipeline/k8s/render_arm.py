@@ -32,6 +32,11 @@ import sys
 
 _TMPL = pathlib.Path(__file__).with_name("glm53-quality-arm.yaml.tmpl")
 _PLACEHOLDER = re.compile(r"@@[A-Z_]+@@")
+_GPTQ_CHECKPOINT = (
+    "/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/"
+    "20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/"
+    "20260912-184239/checkpoint"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if a.arm == "gptq":
+        if a.model != _GPTQ_CHECKPOINT:
+            print("REFUSING: GPTQ requires its dedicated candidate checkpoint.",
+                  file=sys.stderr)
+            return 2
         if a.context_length != "65536":
             print("REFUSING: GPTQ requires --context-length 65536.", file=sys.stderr)
             return 2

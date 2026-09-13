@@ -199,6 +199,36 @@ import json, lm_eval, openai, sys
 print(json.dumps({"lm_eval": lm_eval.__version__, "openai": openai.__version__}))
 PY
 
+# Native GPTQ is one immutable candidate artifact, not a generic W4AFP8 arm.
+# This reads only its metadata files; heavyweight tensor validation completed in
+# the quantization job and deliberately does not run before this quality serve.
+if [ "$ARM" = "gptq" ]; then
+  "$BVENV/bin/python" - "$MODEL_PATH" <<'PY' | tee -a "$CLIENT/client.log"
+import json, sys
+from pathlib import Path
+
+checkpoint = Path(sys.argv[1])
+marker = checkpoint / ".native_mtp_incomplete.json"
+if marker.exists() or marker.is_symlink():
+    raise SystemExit("incomplete native MTP marker exists")
+manifest = json.loads((checkpoint / "native_sglang_manifest.json").read_text())
+config = json.loads((checkpoint / "config.json").read_text())
+quant = config.get("quantization_config", {})
+if manifest.get("format") != "sglang-w4afp8":
+    raise SystemExit("native manifest format is not sglang-w4afp8")
+if (
+    quant.get("quant_method") != "w4afp8"
+    or quant.get("group_size") != 128
+    or quant.get("weight_block_size") != [128, 128]
+):
+    raise SystemExit("native config is not W4AFP8 group-128 block-[128,128]")
+print("native GPTQ metadata format OK")
+PY
+  gate gptq_source_format "${PIPESTATUS[0]}"
+  grep -q '^gptq_source_format=0$' "$CLIENT/gates.txt" || {
+    note "FATAL: native GPTQ source-only format gate failed"; exit 1; }
+fi
+
 # The scoring closure and the corpora, checked BEFORE the GPU is touched. Each of
 # these is a hard refusal inside the general suite; discovering any of them after
 # the weight load costs ~45 minutes of 8xH100 time and produces no measurement.

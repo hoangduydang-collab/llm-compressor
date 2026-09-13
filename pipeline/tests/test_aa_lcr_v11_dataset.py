@@ -77,7 +77,10 @@ def question(question_id: int) -> A.Question:
 
 
 def fixture_payloads(
-    *, include_official_extra: bool = True, include_trailing_question: bool = False
+    *,
+    include_official_extra: bool = True,
+    include_trailing_question: bool = False,
+    include_trailing_answer: bool = False,
 ) -> dict[str, bytes]:
     documents = {"b.txt": b"B", "a.txt": b"A"}
     rows = []
@@ -86,6 +89,9 @@ def fixture_payloads(
         question_text = f"Question {question_id}?"
         if include_trailing_question and question_id == 1:
             question_text += " \u200b "
+        answer = f"Answer {question_id}"
+        if include_trailing_answer and question_id == 1:
+            answer += "  "
         prompt = A.build_candidate_prompt(
             [documents[filename].decode("utf-8") for filename in filenames.split(";")],
             question_text,
@@ -97,7 +103,7 @@ def fixture_payloads(
                 "document_set_id": f"set-{(question_id - 1) % 30 + 1}",
                 "question_id": question_id,
                 "question": question_text,
-                "answer": f"Answer {question_id}",
+                "answer": answer,
                 "data_source_filenames": filenames,
                 "data_source_urls": "",
                 "input_tokens": len(
@@ -143,6 +149,7 @@ def prepare_synthetic_100_question_fixture(
     *,
     include_official_extra=True,
     include_trailing_question=False,
+    include_trailing_answer=False,
 ) -> A.PreparedDataset:
     encoding = LocalCl100kEncoding()
     monkeypatch.setattr(A.tiktoken, "get_encoding", lambda name: encoding)
@@ -150,6 +157,7 @@ def prepare_synthetic_100_question_fixture(
     payloads = fixture_payloads(
         include_official_extra=include_official_extra,
         include_trailing_question=include_trailing_question,
+        include_trailing_answer=include_trailing_answer,
     )
     monkeypatch.setattr(
         A,
@@ -319,6 +327,16 @@ def test_prepare_fixture_preserves_raw_question_trailing_whitespace(
         "START QUESTION\n\nQuestion 1? \u200b \n\nEND QUESTION"
         in prepared.questions[0].prompt
     )
+
+
+def test_prepare_fixture_preserves_raw_official_answer_trailing_whitespace(
+    tmp_path, monkeypatch
+):
+    prepared = prepare_synthetic_100_question_fixture(
+        tmp_path, monkeypatch, include_trailing_answer=True
+    )
+
+    assert prepared.questions[0].official_answer == "Answer 1  "
 
 
 def test_pinned_input_token_discrepancies_are_accepted_exactly():

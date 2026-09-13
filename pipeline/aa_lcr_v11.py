@@ -1801,7 +1801,7 @@ def _load_questions(
                     category=_row_value(row, "document_category", "category"),
                     document_set_id=document_set_id,
                     question=question_text,
-                    official_answer=_row_value(row, "answer", "official_answer"),
+                    official_answer=_raw_row_value(row, "answer"),
                     document_filenames=filenames,
                     prompt=prompt,
                     cl100k_tokens=tokens,

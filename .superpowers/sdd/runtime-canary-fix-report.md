@@ -114,3 +114,11 @@ contract, and publication summary retain published versus actual prompt-token
 provenance. Targeted dataset/summary tests: `41 passed in 26.23s`; full
 clean-venv AA-LCR suite: `147 passed in 43.22s`; Ruff, credential, and
 `git diff --check` scans passed.
+
+## Raw official answer follow-up
+
+**RED/GREEN:** An official-schema fixture with trailing answer spaces failed
+while the loader used the stripping metadata helper. The production path now
+loads official `answer` with `_raw_row_value`, preserving judge input exactly.
+Dataset tests: `23 passed in 2.21s`; full clean-venv AA-LCR suite:
+`148 passed in 36.43s`; Ruff and `git diff --check` passed.

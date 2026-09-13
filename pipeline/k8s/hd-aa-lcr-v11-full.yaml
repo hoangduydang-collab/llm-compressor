@@ -27,6 +27,9 @@ spec:
           env:
             - {name: PYTHONUNBUFFERED, value: "1"}
             - {name: TIKTOKEN_CACHE_DIR, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"}
+            - {name: CL100K_CACHE_FILE, value: "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"}
+            - {name: CL100K_BPE_SHA256, value: "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"}
+            - {name: TIKTOKEN_READY_MARKER, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken/cl100k_base.ready"}
             - {name: CANDIDATE_COMPLETIONS_URL, value: "http://glm-5-3-w4afp8-sglang:30000/v1/chat/completions"}
             - name: OPENAI_API_KEY
               valueFrom:
@@ -51,7 +54,10 @@ spec:
               test -x "$VENV/bin/python"
               test "$(cat "$VENV/requirements-sha256.txt")" = "$DIGEST"
               test -d "$TIKTOKEN_CACHE_DIR"
-              find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print -quit | grep -q .
+              test -s "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"
+              test -s "$TIKTOKEN_READY_MARKER"
+              test "$(cat "$TIKTOKEN_READY_MARKER")" = "$CL100K_CACHE_FILE $CL100K_BPE_SHA256"
+              test "$(sha256sum "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE" | awk '{print $1}')" = "$CL100K_BPE_SHA256"
               cd /workspace
               "$VENV/bin/python" -m pipeline.aa_lcr_v11 run \
                 --run-id glm53-w4afp8-aa-lcr-v11-full-r1 \

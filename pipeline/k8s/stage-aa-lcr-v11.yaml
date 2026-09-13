@@ -27,6 +27,9 @@ spec:
           env:
             - {name: PYTHONUNBUFFERED, value: "1"}
             - {name: TIKTOKEN_CACHE_DIR, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"}
+            - {name: CL100K_CACHE_FILE, value: "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"}
+            - {name: CL100K_BPE_SHA256, value: "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"}
+            - {name: TIKTOKEN_READY_MARKER, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken/cl100k_base.ready"}
             - name: AA_LCR_CODE_REVISION
               valueFrom:
                 configMapKeyRef:
@@ -54,7 +57,11 @@ spec:
               fi
               test "$(cat "$VENV/requirements-sha256.txt")" = "$DIGEST"
               "$VENV/bin/python" -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
-              find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print -quit | grep -q .
+              test -s "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"
+              test "$(sha256sum "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE" | awk '{print $1}')" = "$CL100K_BPE_SHA256"
+              MARKER_TMP="$TIKTOKEN_READY_MARKER.tmp.$$"
+              printf '%s %s\n' "$CL100K_CACHE_FILE" "$CL100K_BPE_SHA256" > "$MARKER_TMP"
+              mv "$MARKER_TMP" "$TIKTOKEN_READY_MARKER"
               find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print0 | sort -z | xargs -0 sha256sum > "$VENV/tiktoken-cache-sha256.txt"
               test -s "$VENV/tiktoken-cache-sha256.txt"
               # Candidate endpoint: http://glm-5-3-w4afp8-sglang:30000/v1/chat/completions

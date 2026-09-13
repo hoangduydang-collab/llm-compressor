@@ -69,3 +69,19 @@ on every run and consumers require a nonempty shared artifact before the
 runner. Dataset/manifest tests: `27 passed in 1.19s`. Full clean-venv AA-LCR
 suite: `141 passed in 39.34s`; Ruff passed. The credential scan and
 `git diff --check` passed.
+
+## Pinned tokenizer readiness follow-up
+
+**Scope:** Readiness is now the exact `tiktoken==0.14.0` `cl100k_base` cache
+file `9b5ad71b2ce5302211f9c61530b329a4922fc6a4`, with BPE SHA-256
+`223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`.
+Stage verifies that file after `get_encoding`, atomically writes the exact
+filename-and-hash marker, and retains the broader inventory only as audit
+metadata. Canary and full verify both marker contents and recomputed file
+digest; unrelated or stale nonempty files cannot satisfy readiness.
+
+**RED/GREEN:** The exact-cache test initially failed because
+`CL100K_CACHE_FILE` was absent. It passed after all three manifests received
+identical path, filename, digest, and marker environment values. Final
+dataset/manifest tests: `27 passed in 1.27s`; full clean-venv AA-LCR suite:
+`141 passed in 34.42s`; Ruff and `git diff --check` passed.

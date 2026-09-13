@@ -11,6 +11,9 @@ CANARY = K8S / "hd-aa-lcr-v11-canary.yaml"
 FULL = K8S / "hd-aa-lcr-v11-full.yaml"
 EVAL_MANIFESTS = (CANARY, FULL)
 TIKTOKEN_CACHE_DIR = "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"
+CL100K_CACHE_FILE = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+CL100K_BPE_SHA256 = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+TIKTOKEN_READY_MARKER = f"{TIKTOKEN_CACHE_DIR}/cl100k_base.ready"
 
 
 def load_container(path: Path) -> dict[str, object]:
@@ -97,18 +100,36 @@ def test_manifests_stage_and_verify_shared_tiktoken_vocabulary_cache():
     for path in (STAGE, *EVAL_MANIFESTS):
         container = load_container(path)
         environment = {item["name"]: item.get("value") for item in container["env"]}
-        assert environment["TIKTOKEN_CACHE_DIR"] == TIKTOKEN_CACHE_DIR
+        assert {
+            name: environment[name]
+            for name in (
+                "TIKTOKEN_CACHE_DIR",
+                "CL100K_CACHE_FILE",
+                "CL100K_BPE_SHA256",
+                "TIKTOKEN_READY_MARKER",
+            )
+        } == {
+            "TIKTOKEN_CACHE_DIR": TIKTOKEN_CACHE_DIR,
+            "CL100K_CACHE_FILE": CL100K_CACHE_FILE,
+            "CL100K_BPE_SHA256": CL100K_BPE_SHA256,
+            "TIKTOKEN_READY_MARKER": TIKTOKEN_READY_MARKER,
+        }
 
     stage = STAGE.read_text(encoding="utf-8")
     assert 'mkdir -p "$TIKTOKEN_CACHE_DIR"' in stage
     assert 'tiktoken.get_encoding("cl100k_base")' in stage
-    assert 'find "$TIKTOKEN_CACHE_DIR" -type f -size +0' in stage
+    assert 'test -s "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"' in stage
+    assert 'sha256sum "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"' in stage
+    assert 'mv "$MARKER_TMP" "$TIKTOKEN_READY_MARKER"' in stage
     assert 'tiktoken-cache-sha256.txt' in stage
 
     for path in EVAL_MANIFESTS:
         text = path.read_text(encoding="utf-8")
         assert 'test -d "$TIKTOKEN_CACHE_DIR"' in text
-        assert 'find "$TIKTOKEN_CACHE_DIR" -type f -size +0' in text
+        assert 'test -s "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"' in text
+        assert 'test "$(cat "$TIKTOKEN_READY_MARKER")"' in text
+        assert 'sha256sum "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"' in text
+        assert 'find "$TIKTOKEN_CACHE_DIR" -type f -size +0 -print -quit' not in text
         assert text.index('test -d "$TIKTOKEN_CACHE_DIR"') < text.index(
             '"$VENV/bin/python" -m pipeline.aa_lcr_v11 run'
         )

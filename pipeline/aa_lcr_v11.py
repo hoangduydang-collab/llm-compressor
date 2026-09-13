@@ -114,6 +114,10 @@ class IncompleteJudgmentError(RuntimeError):
     """Raised when a run contains a terminal, unscored judge failure."""
 
 
+class JudgeContractError(ValueError):
+    """Raised when a run's judge request contract differs from AA-LCR v1.1."""
+
+
 class DatasetIntegrityError(ValueError):
     """Raised when the pinned AA-LCR dataset cannot be verified."""
 
@@ -166,6 +170,7 @@ class RunContract:
     repeats: int
     code_revision: str
     question_ids: tuple[int, ...]
+    judge_reasoning_mode: str = JUDGE_REASONING_MODE
 
     @property
     def fingerprint(self) -> str:
@@ -211,6 +216,7 @@ class JudgmentRecord:
     raw_output_text: str | None = None
     exception_class: str | None = None
     http_status: int | None = None
+    attempt_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -230,6 +236,10 @@ class JudgeFailureRecord:
     started_at_utc: str
     completed_at_utc: str
     raw_output_text: str | None
+    returned_model: str | None
+    response_id: str | None
+    usage: object
+    verdict: None = None
 
 
 def build_run_contract(
@@ -247,10 +257,18 @@ def build_run_contract(
     candidate_max_attempts: int = MAX_ATTEMPTS,
     judge_model: str = JUDGE_MODEL,
     judge_reasoning_effort: str = JUDGE_REASONING_EFFORT,
+    judge_reasoning_mode: str = JUDGE_REASONING_MODE,
     judge_max_attempts: int = MAX_ATTEMPTS,
     repeats: int = REPEATS,
 ) -> RunContract:
     """Build the immutable identity contract before any endpoint traffic."""
+    _validate_judge_request_contract(
+        judge_model=judge_model,
+        judge_reasoning_effort=judge_reasoning_effort,
+        judge_reasoning_mode=judge_reasoning_mode,
+        judge_system_prompt_sha256=sha256_text(JUDGE_SYSTEM_PROMPT),
+        judge_user_prompt_sha256=sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
+    )
     return RunContract(
         dataset_revision=prepared_dataset.revision,
         dataset_file_sha256=prepared_dataset.file_sha256,
@@ -272,6 +290,7 @@ def build_run_contract(
         repeats=repeats,
         code_revision=code_revision,
         question_ids=tuple(question.question_id for question in prepared_dataset.questions),
+        judge_reasoning_mode=judge_reasoning_mode,
     )
 
 
@@ -617,20 +636,56 @@ def build_openai_client() -> "OpenAI":
 
 
 def _judge_contract_hash(
-    model: str = JUDGE_MODEL,
-    effort: str = JUDGE_REASONING_EFFORT,
 ) -> str:
     return sha256_text(
         canonical_json(
             {
-                "model": model,
-                "reasoning_effort": effort,
+                "model": JUDGE_MODEL,
+                "reasoning_effort": JUDGE_REASONING_EFFORT,
                 "reasoning_mode": JUDGE_REASONING_MODE,
                 "system_prompt_sha256": sha256_text(JUDGE_SYSTEM_PROMPT),
                 "user_prompt_sha256": sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
             }
         )
     )
+
+
+def _validate_judge_request_contract(
+    *,
+    judge_model: str,
+    judge_reasoning_effort: str,
+    judge_reasoning_mode: str,
+    judge_system_prompt_sha256: str,
+    judge_user_prompt_sha256: str,
+) -> None:
+    expected = {
+        "judge_model": JUDGE_MODEL,
+        "judge_reasoning_effort": JUDGE_REASONING_EFFORT,
+        "judge_reasoning_mode": JUDGE_REASONING_MODE,
+        "judge_system_prompt_sha256": sha256_text(JUDGE_SYSTEM_PROMPT),
+        "judge_user_prompt_sha256": sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
+    }
+    actual = {
+        "judge_model": judge_model,
+        "judge_reasoning_effort": judge_reasoning_effort,
+        "judge_reasoning_mode": judge_reasoning_mode,
+        "judge_system_prompt_sha256": judge_system_prompt_sha256,
+        "judge_user_prompt_sha256": judge_user_prompt_sha256,
+    }
+    if actual != expected:
+        raise JudgeContractError("judge run contract differs from pinned AA-LCR v1.1")
+
+
+def validate_judge_contract(contract: RunContract) -> str:
+    """Validate the exact judge request contract before any judge API call."""
+    _validate_judge_request_contract(
+        judge_model=contract.judge_model,
+        judge_reasoning_effort=contract.judge_reasoning_effort,
+        judge_reasoning_mode=contract.judge_reasoning_mode,
+        judge_system_prompt_sha256=contract.judge_system_prompt_sha256,
+        judge_user_prompt_sha256=contract.judge_user_prompt_sha256,
+    )
+    return _judge_contract_hash()
 
 
 def _response_value(response: object, name: str, default: object = None) -> object:
@@ -673,6 +728,8 @@ def _judge_error_record(
     error: str,
     raw_output_text: str | None = None,
     exc: Exception | None = None,
+    response: object | None = None,
+    attempt_count: int = 0,
 ) -> JudgmentRecord:
     return JudgmentRecord(
         question_id=question.question_id,
@@ -687,13 +744,19 @@ def _judge_error_record(
         completed_at_utc=_utc_now(),
         error=error,
         requested_model=JUDGE_MODEL,
+        returned_model=_response_value(response, "model"),
         reasoning_effort=JUDGE_REASONING_EFFORT,
         reasoning_mode=JUDGE_REASONING_MODE,
         openai_sdk_version=_sdk_version(),
-        request_id=_safe_request_id(getattr(exc, "request_id", None)),
+        response_id=_response_value(response, "id"),
+        request_id=_safe_request_id(
+            getattr(exc, "request_id", _response_value(response, "_request_id"))
+        ),
+        usage=_usage_value(_response_value(response, "usage")),
         raw_output_text=raw_output_text,
         exception_class=type(exc).__name__ if exc is not None else None,
         http_status=_exception_status(exc) if exc is not None else None,
+        attempt_count=attempt_count,
     )
 
 
@@ -747,6 +810,9 @@ def _judge_failure_record(record: JudgmentRecord) -> JudgeFailureRecord:
         started_at_utc=record.started_at_utc,
         completed_at_utc=record.completed_at_utc,
         raw_output_text=record.raw_output_text,
+        returned_model=record.returned_model,
+        response_id=record.response_id,
+        usage=record.usage,
     )
 
 
@@ -769,11 +835,13 @@ def judge_one(
             question, candidate, contract_hash, 0, started_at_utc,
             "candidate has no final content",
             exc=error,
+            attempt_count=0,
         )
     judge_user_prompt = build_judge_user_prompt(
         question.question, question.official_answer, candidate.content
     )
     for attempt in range(max_attempts):
+        response: object | None = None
         output_text: str | None = None
         try:
             response = client.responses.create(
@@ -805,6 +873,8 @@ def judge_one(
                 f"judge failed after {attempt + 1} attempts: {type(exc).__name__}{status_text}",
                 output_text,
                 exc,
+                response,
+                attempt + 1,
             )
         return JudgmentRecord(
             question_id=question.question_id,
@@ -825,6 +895,7 @@ def judge_one(
             request_id=_response_value(response, "_request_id"),
             usage=_usage_value(_response_value(response, "usage")),
             raw_output_text=output_text,
+            attempt_count=attempt + 1,
         )
     raise AssertionError("unreachable")
 
@@ -870,9 +941,7 @@ def judge_missing(
 ) -> None:
     """Persist judgments only for currently absent candidates under this judge contract."""
     question_by_id = {question.question_id: question for question in questions}
-    judge_contract_hash = _judge_contract_hash(
-        checkpoint.contract.judge_model, checkpoint.contract.judge_reasoning_effort
-    )
+    judge_contract_hash = validate_judge_contract(checkpoint.contract)
     incomplete = checkpoint.incomplete_judgments(judge_contract_hash)
     if incomplete:
         raise IncompleteJudgmentError(

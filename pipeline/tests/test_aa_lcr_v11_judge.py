@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import sys
+from dataclasses import replace
 from types import ModuleType
 from types import SimpleNamespace
 
@@ -190,6 +191,25 @@ def test_exhausted_malformed_output_persists_raw_output(monkeypatch):
     assert record.raw_response == {"output_text": "not json"}
 
 
+def test_malformed_output_failure_retains_received_response_metadata(monkeypatch):
+    client = FakeOpenAI([judge_response("not json")] * A.MAX_ATTEMPTS)
+    monkeypatch.setattr(A.time, "sleep", lambda _seconds: None)
+
+    record = A.judge_one(client, questions()[0], candidate_record())
+    failure = A._judge_failure_record(record)
+
+    assert failure.verdict is None
+    assert failure.returned_model == A.JUDGE_MODEL
+    assert failure.response_id == "resp_123"
+    assert failure.request_id == "req_123"
+    assert failure.usage == {
+        "input_tokens": 10,
+        "output_tokens": 4,
+        "total_tokens": 14,
+    }
+    assert failure.attempt_count == A.MAX_ATTEMPTS
+
+
 @pytest.mark.parametrize(
     "error",
     [
@@ -274,6 +294,7 @@ def test_missing_final_candidate_content_is_not_sent(fake_openai):
     assert fake_openai.responses.calls == []
     assert record.verdict is None
     assert record.error == "candidate has no final content"
+    assert record.attempt_count == 0
 
 
 def test_judge_missing_resumes_without_duplicate_calls(tmp_path):
@@ -287,6 +308,30 @@ def test_judge_missing_resumes_without_duplicate_calls(tmp_path):
     assert len(client.responses.calls) == 1
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"judge_model": "not-luna"},
+        {"judge_reasoning_effort": "low"},
+        {"judge_reasoning_mode": "other"},
+        {"judge_system_prompt_sha256": "0" * 64},
+        {"judge_user_prompt_sha256": "0" * 64},
+    ],
+)
+def test_judge_missing_rejects_invalid_request_contract_before_api_call(
+    tmp_path, changes
+):
+    checkpoint = seeded_checkpoint(tmp_path)
+    checkpoint.contract = replace(checkpoint.contract, **changes)
+    checkpoint.record_candidate(candidate_record())
+    client = FakeOpenAI([judge_response()])
+
+    with pytest.raises(A.JudgeContractError):
+        A.judge_missing(checkpoint, questions(), client)
+
+    assert client.responses.calls == []
+
+
 def test_failed_judgment_is_incomplete_and_failure_audit_is_append_only(
     tmp_path, monkeypatch
 ):
@@ -298,9 +343,7 @@ def test_failed_judgment_is_incomplete_and_failure_audit_is_append_only(
     with pytest.raises(A.IncompleteJudgmentError, match="incomplete"):
         A.judge_missing(checkpoint, questions(), client)
 
-    contract_hash = A._judge_contract_hash(
-        checkpoint.contract.judge_model, checkpoint.contract.judge_reasoning_effort
-    )
+    contract_hash = A._judge_contract_hash()
     assert checkpoint.missing_judgments(contract_hash) == [(1, 0)]
     failures = checkpoint.judge_failures()
     assert len(failures) == 1

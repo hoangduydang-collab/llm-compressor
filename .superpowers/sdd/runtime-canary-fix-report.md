@@ -100,3 +100,17 @@ uses official `document_category` for `Question.category` and official
 `answer` for `Question.official_answer`, retaining the old aliases only for
 fixture compatibility. Dataset tests: `18 passed in 1.83s`; full clean-venv
 AA-LCR suite: `142 passed in 38.46s`; Ruff and `git diff --check` passed.
+
+## Pinned input-token metadata follow-up
+
+**Root cause:** Five upstream v1.1 `input_tokens` values are stale metadata,
+not prompt or tiktoken-version drift. The official loader preserves raw
+`row["question"]`, whereas the former local helper stripped trailing text.
+
+**Contract:** Candidate prompts and judge answers now preserve raw CSV text.
+Only the five pinned published/actual tuples are accepted; new, missing, or
+changed discrepancies fail closed. `Question`, the immutable checkpoint
+contract, and publication summary retain published versus actual prompt-token
+provenance. Targeted dataset/summary tests: `41 passed in 26.23s`; full
+clean-venv AA-LCR suite: `147 passed in 43.22s`; Ruff, credential, and
+`git diff --check` scans passed.

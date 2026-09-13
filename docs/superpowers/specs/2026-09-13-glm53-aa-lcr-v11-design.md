@@ -60,8 +60,10 @@ The run fails before endpoint traffic unless the dataset has exactly:
 - every referenced document present;
 - document order matching the semicolon-separated
   `data_source_filenames`; and
-- prompts whose `cl100k_base` counts reproduce the dataset's published
-  `input_tokens`.
+- prompts built from the exact raw CSV question text and audited with
+  `cl100k_base`. Five pinned v1.1 `input_tokens` values are stale upstream
+  metadata; their exact published/actual pairs are recorded in the immutable
+  run contract and any other discrepancy fails closed.
 
 NVIDIA NeMo Skills is prior art for prompt construction and dataset loading,
 but is not the execution dependency. Its current `aalcr` path follows mutable

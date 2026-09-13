@@ -11,7 +11,12 @@ from pipeline.tests.test_aa_lcr_v11_checkpoint import preflight_audit
 
 
 def checkpoint_with_candidates_and_judgments(
-    path: Path, *, count: int, correct: int = 0
+    path: Path,
+    *,
+    count: int,
+    correct: int = 0,
+    input_token_discrepancies: dict[int, tuple[int, int]] | None = None,
+    question_input_tokens: dict[int, tuple[int, int]] | None = None,
 ) -> A.Checkpoint:
     checkpoint = A.Checkpoint(
         path / "run.sqlite",
@@ -36,6 +41,8 @@ def checkpoint_with_candidates_and_judgments(
             repeats=3,
             code_revision="test",
             question_ids=tuple(range(1, 101)),
+            input_token_discrepancies=input_token_discrepancies or {},
+            question_input_tokens=question_input_tokens or {},
         ),
     )
     checkpoint.record_preflight_audit(preflight_audit())
@@ -79,6 +86,24 @@ def checkpoint_with_candidates_and_judgments(
 
 def complete_checkpoint(path: Path, *, correct: int) -> A.Checkpoint:
     return checkpoint_with_candidates_and_judgments(path, count=300, correct=correct)
+
+
+def test_summary_exposes_pinned_input_token_discrepancies(tmp_path):
+    checkpoint = checkpoint_with_candidates_and_judgments(
+        tmp_path,
+        count=300,
+        input_token_discrepancies={5: (113266, 113264)},
+        question_input_tokens={5: (113266, 113264)},
+    )
+
+    summary = A.build_summary(checkpoint)
+
+    assert summary["token_provenance"]["input_token_discrepancies"] == {
+        "5": {"published_input_tokens": 113266, "actual_prompt_tokens": 113264}
+    }
+    assert summary["token_provenance"]["question_input_tokens"] == {
+        "5": {"published_input_tokens": 113266, "actual_prompt_tokens": 113264}
+    }
 
 
 def test_incomplete_population_has_no_headline(tmp_path):

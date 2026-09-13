@@ -65,6 +65,31 @@ upstream expected vocabulary-hash verification remain enabled.
 **Tactical workaround:** None. No removal is needed: the shared, versioned
 cache is part of the immutable runtime staging contract.
 
+## AA-LCR v1.1 stale input-token metadata (fixed, 2026-09-13)
+
+**Root cause:** The official dataset card's prompt matches
+`build_candidate_prompt` exactly and specifies `cl100k`, but five published
+v1.1 `input_tokens` metadata values are stale. The official reference loader
+uses raw `row["question"]` and does not validate those values; our stripping
+helper altered trailing question text and initially masked that distinction.
+The same five affected questions and published counts exist in v1.0 revision
+`bdae010` and the pinned v1.1 revision, and tiktoken 0.9.0 through 0.14.0
+tokenize them identically.
+
+**Long-term fix:** Candidate prompts and judge answers retain exact raw CSV
+text; stripping is limited to metadata and paths. The pinned v1.1 contract
+accepts only these `(question_id, published_input_tokens,
+actual_cl100k_prompt_tokens)` tuples: 5 `(113266, 113264)`, 21 `(96038,
+96035)`, 62 `(107441, 107438)`, 65 `(89459, 89456)`, and 81 `(109091,
+109086)`. Any added, missing, or changed discrepancy fails closed. Both token
+values are retained in `Question` provenance; the discrepancy map is
+immutable checkpoint/run-contract and publication provenance. Candidate
+requests use actual prompt tokens, never stale metadata.
+
+**Tactical workaround:** None. Keep the pinned validation until a newly pinned
+upstream revision corrects the five published counts; that revision is the
+removal criterion.
+
 ## Pre-quantization gate: meta-device MoE linearization offload (fixed, 2026-07-13)
 
 **Symptom:** The first real MiniMax-M3 CLI run of the pre-quantization

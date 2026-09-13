@@ -106,6 +106,15 @@ the runner if it has no nonempty artifact. Do not disable TLS or certificate
 verification: `tiktoken.get_encoding("cl100k_base")` verifies the upstream
 vocabulary's expected hash.
 
+AA-LCR candidate prompts preserve raw CSV question text, including trailing
+whitespace and zero-width characters, exactly as the official loader does.
+The five upstream v1.1 `input_tokens` metadata discrepancies (questions 5,
+21, 62, 65, and 81) are pinned and validated as exact published/actual
+`cl100k_base` tuples before endpoint traffic. Actual prompt tokens—not the
+stale published metadata—define request length. The immutable run contract
+and published `summary.json` expose the discrepancy map. Keep this validation
+until a newly pinned upstream revision corrects those counts.
+
 The finding that `httpx2` is a legacy or invalid replacement is rejected.
 On 2026-09-13, the official `openai==3.8.0` metadata resolved maintained
 `pydantic`, `httpx2`, and `httpcore2`; a hash-checked dry run exited zero.

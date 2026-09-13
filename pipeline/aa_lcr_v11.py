@@ -19,7 +19,7 @@ import time
 import unicodedata
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
@@ -39,6 +39,16 @@ DATASET_REVISION = "9a77ef56b717057ade24ceab4d273712a0b4f19e"
 CSV_FILENAME = "AA-LCR_Dataset.csv"
 ZIP_FILENAME = "extracted_text/AA-LCR_extracted-text.zip"
 ZIP_SHA256 = "5e839249826f6b9bd5324f0d139089c9dc481ccb3f212a6dfad00c51045d9d8a"
+# Exact v1.1 prompt/tokenizer exceptions observed with the pinned cl100k artifact.
+PINNED_INPUT_TOKEN_DISCREPANCIES = MappingProxyType(
+    {
+        5: (113266, 113264),
+        21: (96038, 96035),
+        62: (107441, 107438),
+        65: (89459, 89456),
+        81: (109091, 109086),
+    }
+)
 # The pinned 9a77ef56b717057ade24ceab4d273712a0b4f19e archive (ZIP_SHA256 above)
 # contains this one document not referenced by the CSV's 229 unique members.
 OFFICIAL_UNREFERENCED_MEMBER = (
@@ -153,6 +163,7 @@ class Question:
     document_filenames: tuple[str, ...]
     prompt: str
     cl100k_tokens: int
+    published_input_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -161,6 +172,12 @@ class PreparedDataset:
     questions: tuple[Question, ...]
     file_sha256: Mapping[str, str]
     prompt_sha256: str
+    input_token_discrepancies: Mapping[int, tuple[int, int]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    question_input_tokens: Mapping[int, tuple[int, int]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
 
 @dataclass(frozen=True)
@@ -188,6 +205,12 @@ class RunContract:
     code_revision: str
     question_ids: tuple[int, ...]
     judge_reasoning_mode: str = JUDGE_REASONING_MODE
+    input_token_discrepancies: Mapping[int, tuple[int, int]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    question_input_tokens: Mapping[int, tuple[int, int]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     @property
     def fingerprint(self) -> str:
@@ -313,6 +336,8 @@ def build_run_contract(
             question.question_id for question in prepared_dataset.questions
         ),
         judge_reasoning_mode=judge_reasoning_mode,
+        input_token_discrepancies=prepared_dataset.input_token_discrepancies,
+        question_input_tokens=prepared_dataset.question_input_tokens,
     )
 
 
@@ -1681,6 +1706,34 @@ def _row_value(row: Mapping[str, str], *names: str) -> str:
     raise DatasetIntegrityError(f"CSV is missing a value for {names[0]}")
 
 
+def _raw_row_value(row: Mapping[str, str], *names: str) -> str:
+    normalized = {
+        key.strip().lower().replace(" ", "_"): value
+        for key, value in row.items()
+        if key is not None and value is not None
+    }
+    for name in names:
+        if (value := normalized.get(name)) is not None:
+            return value
+    raise DatasetIntegrityError(f"CSV is missing a value for {names[0]}")
+
+
+def _validate_input_token_discrepancies(
+    observed: Mapping[int, tuple[int, int]]
+) -> None:
+    """Fail closed unless the pinned CSV's known stale counts are exact."""
+    unexpected = {
+        question_id: value
+        for question_id, value in observed.items()
+        if PINNED_INPUT_TOKEN_DISCREPANCIES.get(question_id) != value
+    }
+    missing = set(PINNED_INPUT_TOKEN_DISCREPANCIES) - set(observed)
+    if unexpected:
+        raise DatasetIntegrityError("unexpected input_tokens discrepancy")
+    if missing:
+        raise DatasetIntegrityError("missing pinned input_tokens discrepancy")
+
+
 def _read_dataset_rows(csv_path: Path) -> list[dict[str, str]]:
     with csv_path.open(encoding="utf-8-sig", newline="") as source:
         return list(csv.DictReader(source))
@@ -1704,13 +1757,14 @@ def _document_member_paths(rows: Collection[Mapping[str, str]]) -> set[str]:
 
 def _load_questions(
     documents_root: Path, rows: Collection[Mapping[str, str]]
-) -> tuple[Question, ...]:
+) -> tuple[tuple[Question, ...], Mapping[int, tuple[int, int]]]:
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
     except Exception as exc:
         raise DatasetIntegrityError("cl100k_base tokenizer is unavailable") from exc
 
     questions: list[Question] = []
+    discrepancies: dict[int, tuple[int, int]] = {}
     for row in rows:
         try:
             question_id = int(_row_value(row, "question_id", "id"))
@@ -1735,14 +1789,12 @@ def _load_questions(
                         f"referenced document is missing: {member.as_posix()}"
                     )
                 documents.append(document_path.read_text(encoding="utf-8"))
-            question_text = _row_value(row, "question")
+            question_text = _raw_row_value(row, "question")
             prompt = build_candidate_prompt(documents, question_text)
             tokens = len(encoding.encode(prompt))
             expected_tokens = int(_row_value(row, "input_tokens"))
             if tokens != expected_tokens:
-                raise DatasetIntegrityError(
-                    f"cl100k_base token mismatch for question {question_id}"
-                )
+                discrepancies[question_id] = (expected_tokens, tokens)
             questions.append(
                 Question(
                     question_id=question_id,
@@ -1753,13 +1805,15 @@ def _load_questions(
                     document_filenames=filenames,
                     prompt=prompt,
                     cl100k_tokens=tokens,
+                    published_input_tokens=expected_tokens,
                 )
             )
         except (TypeError, ValueError) as exc:
             if isinstance(exc, DatasetIntegrityError):
                 raise
             raise DatasetIntegrityError("invalid dataset CSV row") from exc
-    return tuple(questions)
+    _validate_input_token_discrepancies(discrepancies)
+    return tuple(questions), MappingProxyType(discrepancies)
 
 
 def validate_questions(questions: list[Question] | tuple[Question, ...]) -> None:
@@ -1791,7 +1845,7 @@ def prepare_dataset(
     )
     for path in extracted_paths:
         digests[path.relative_to(documents_root).as_posix()] = _sha256_file(path)
-    questions = _load_questions(documents_root, rows)
+    questions, input_token_discrepancies = _load_questions(documents_root, rows)
     validate_questions(questions)
     prompt_sha256 = sha256_text(
         canonical_json([question.prompt for question in questions])
@@ -1801,6 +1855,16 @@ def prepare_dataset(
         questions=questions,
         file_sha256=MappingProxyType(digests),
         prompt_sha256=prompt_sha256,
+        input_token_discrepancies=input_token_discrepancies,
+        question_input_tokens=MappingProxyType(
+            {
+                question.question_id: (
+                    question.published_input_tokens,
+                    question.cl100k_tokens,
+                )
+                for question in questions
+            }
+        ),
     )
 
 
@@ -2059,6 +2123,27 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         "question_macro_accuracy": sum(question_accuracies) / len(question_accuracies),
         "per_repeat": per_repeat,
         "document_categories": category_summary,
+        "token_provenance": {
+            "tokenizer": "cl100k_base",
+            "input_token_discrepancies": {
+                str(question_id): {
+                    "published_input_tokens": published,
+                    "actual_prompt_tokens": actual,
+                }
+                for question_id, (published, actual) in sorted(
+                    checkpoint.contract.input_token_discrepancies.items()
+                )
+            },
+            "question_input_tokens": {
+                str(question_id): {
+                    "published_input_tokens": published,
+                    "actual_prompt_tokens": actual,
+                }
+                for question_id, (published, actual) in sorted(
+                    checkpoint.contract.question_input_tokens.items()
+                )
+            },
+        },
         "token_distributions": {
             "prompt": _distribution(
                 [
@@ -2320,6 +2405,20 @@ def _select_questions(prepared: PreparedDataset, limit: int) -> PreparedDataset:
         questions=questions,
         file_sha256=prepared.file_sha256,
         prompt_sha256=sha256_text(canonical_json([item.prompt for item in questions])),
+        input_token_discrepancies=MappingProxyType(
+            {
+                question_id: values
+                for question_id, values in prepared.input_token_discrepancies.items()
+                if question_id in {question.question_id for question in questions}
+            }
+        ),
+        question_input_tokens=MappingProxyType(
+            {
+                question_id: values
+                for question_id, values in prepared.question_input_tokens.items()
+                if question_id in {question.question_id for question in questions}
+            }
+        ),
     )
 
 

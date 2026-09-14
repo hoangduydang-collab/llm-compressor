@@ -92,6 +92,96 @@ def test_plan_only_rejects_wrong_candidate_identity(tmp_path, monkeypatch):
     assert not (tmp_path / "work" / "bad-plan" / "run.sqlite").exists()
 
 
+def test_cli_defaults_candidate_sampling_to_aa_reasoning_convention():
+    args = A._parser().parse_args(["prepare", "--run-id", "aa-default"])
+
+    assert args.candidate_temperature == 0.6
+    assert args.candidate_top_p == 1.0
+
+
+def test_cli_accepts_phala_sampling():
+    args = A._parser().parse_args(
+        [
+            "prepare",
+            "--run-id",
+            "phala",
+            "--candidate-temperature",
+            "1.0",
+            "--candidate-top-p",
+            "0.95",
+        ]
+    )
+
+    assert args.candidate_temperature == 1.0
+    assert args.candidate_top_p == 0.95
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("-0.1", "candidate-temperature must be between 0 and 2"),
+        ("2.1", "candidate-temperature must be between 0 and 2"),
+        ("nan", "candidate-temperature must be a finite number"),
+        ("1.1", "candidate-top-p must be between 0 and 1"),
+    ],
+)
+def test_cli_rejects_invalid_candidate_sampling(value, message, capsys):
+    flag = (
+        "--candidate-top-p"
+        if "top-p" in message
+        else "--candidate-temperature"
+    )
+    with pytest.raises(SystemExit, match="2"):
+        A.main(
+            [
+                "prepare",
+                "--run-id",
+                "bad-sampling",
+                flag,
+                value,
+                "--plan-only",
+            ]
+        )
+
+    assert message in capsys.readouterr().err
+
+
+def test_prepare_run_pins_overridden_temperature_in_contract(tmp_path, monkeypatch):
+    prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_text(
+        json.dumps(
+            {
+                "served_model": A.CANDIDATE_MODEL,
+                "expected_served_model": A.CANDIDATE_MODEL,
+                "observed_served_model": A.CANDIDATE_MODEL,
+            }
+        )
+    )
+    monkeypatch.setattr(A, "prepare_dataset", lambda _path: prepared)
+
+    args = A._parser().parse_args(
+        [
+            "prepare",
+            "--run-id",
+            "t1-plan",
+            "--work-dir",
+            str(tmp_path / "work"),
+            "--endpoint-identity-file",
+            str(identity_path),
+            "--candidate-temperature",
+            "1.0",
+            "--candidate-top-p",
+            "0.95",
+            "--plan-only",
+        ]
+    )
+    _prepared, checkpoint = A._prepare_run(args)
+
+    assert checkpoint.contract.candidate_temperature == 1.0
+    assert checkpoint.contract.candidate_top_p == 0.95
+
+
 @pytest.mark.parametrize(
     ("option", "value", "message"),
     [

@@ -204,6 +204,24 @@ Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary.yaml `
   glm53-w4afp8-aa-lcr-v11-canary-r1
 ```
 
+Temperature `1.0` / `top_p=0.95` matches PhalaCloud's published AA-LCR
+sampling. It is a sampling ablation, not the public-methodology default
+(`0.6` / `1.0`), and must not resume the `0.6` checkpoint. After a committed
+code ConfigMap, authorize:
+
+```powershell
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary-t1.yaml `
+  glm53-w4afp8-aa-lcr-v11-canary-t1p95-r1
+```
+
+Inspect `/mnt/cephfs/hoangduy/aa-lcr-v11-work/glm53-w4afp8-aa-lcr-v11-canary-t1p95-r1/run.sqlite`
+for contract temperature `1.0` and `top_p` `0.95` before the 300-unit job:
+
+```powershell
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full-t1.yaml `
+  glm53-w4afp8-aa-lcr-v11-full-t1p95-r1
+```
+
 Inspect the canary before proceeding:
 
 - Job succeeded with `backoffLimit: 0`; logs contain no environment values.

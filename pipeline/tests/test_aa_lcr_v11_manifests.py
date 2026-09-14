@@ -9,7 +9,9 @@ RUNBOOK = ROOT / "docs" / "runbooks" / "aa-lcr-v11.md"
 STAGE = K8S / "stage-aa-lcr-v11.yaml"
 CANARY = K8S / "hd-aa-lcr-v11-canary.yaml"
 FULL = K8S / "hd-aa-lcr-v11-full.yaml"
-EVAL_MANIFESTS = (CANARY, FULL)
+CANARY_T1 = K8S / "hd-aa-lcr-v11-canary-t1.yaml"
+FULL_T1 = K8S / "hd-aa-lcr-v11-full-t1.yaml"
+EVAL_MANIFESTS = (CANARY, FULL, CANARY_T1, FULL_T1)
 TIKTOKEN_CACHE_DIR = "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"
 CL100K_CACHE_FILE = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
 CL100K_BPE_SHA256 = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
@@ -94,6 +96,23 @@ def test_canary_and_full_have_pinned_population_and_concurrency():
     assert "--limit 100" in full
     assert "--repeats 3" in full
     assert "--candidate-concurrency 2" in full
+
+
+def test_phala_sampling_jobs_pin_new_run_ids_and_1_0_0_95():
+    canary = CANARY_T1.read_text(encoding="utf-8")
+    full = FULL_T1.read_text(encoding="utf-8")
+
+    assert "glm53-w4afp8-aa-lcr-v11-canary-t1p95-r1" in canary
+    assert "glm53-w4afp8-aa-lcr-v11-full-t1p95-r1" in full
+    assert "--candidate-temperature 1.0" in canary
+    assert "--candidate-temperature 1.0" in full
+    assert "--candidate-top-p 0.95" in canary
+    assert "--candidate-top-p 0.95" in full
+    assert "--canary" in canary
+    assert "--limit 100" in full
+    assert "--repeats 3" in full
+    assert "glm53-w4afp8-aa-lcr-v11-full-r1" not in full
+    assert "glm53-w4afp8-aa-lcr-v11-canary-r1" not in canary
 
 
 def test_manifests_stage_and_verify_shared_tiktoken_vocabulary_cache():

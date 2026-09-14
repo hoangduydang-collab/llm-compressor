@@ -72,6 +72,9 @@ def test_official_v11_identity_is_immutable():
     assert A.CANDIDATE_TEMPERATURE == 0.6
     assert A.CANDIDATE_TOP_P == 1.0
     assert A.CANDIDATE_MAX_TOKENS == 131_072
+    assert A.PUBLIC_METHODOLOGY_CLAIM == (
+        "AA-LCR v1.1 public-methodology reproduction"
+    )
     assert A.CANDIDATE_CONCURRENCY == 2
     assert A.CANDIDATE_HTTP_TIMEOUT_SECONDS == 7200
     assert A.JUDGE_MODEL == "gpt-5.6-luna"

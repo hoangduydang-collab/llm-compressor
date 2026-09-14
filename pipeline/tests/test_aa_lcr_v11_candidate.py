@@ -54,6 +54,8 @@ def seeded_checkpoint(
     repeats: int = 1,
     question_count: int = 1,
     endpoint_identity: dict[str, object] | None = None,
+    candidate_temperature: float = 0.6,
+    candidate_top_p: float = 1.0,
 ) -> A.Checkpoint:
     return A.Checkpoint(
         path / "run.sqlite",
@@ -68,8 +70,8 @@ def seeded_checkpoint(
             endpoint_deployment_identity=(
                 server_identity() if endpoint_identity is None else endpoint_identity
             ),
-            candidate_temperature=0.6,
-            candidate_top_p=1.0,
+            candidate_temperature=candidate_temperature,
+            candidate_top_p=candidate_top_p,
             candidate_max_tokens=131_072,
             candidate_concurrency=2,
             candidate_reasoning_enabled=True,
@@ -249,6 +251,13 @@ def test_candidate_request_is_glm_max_contract():
     }
 
 
+def test_candidate_request_honors_phala_sampling_override():
+    body = A.candidate_request(questions()[0], temperature=1.0, top_p=0.95)
+
+    assert body["temperature"] == 1.0
+    assert body["top_p"] == 0.95
+
+
 def test_only_final_content_is_selected():
     record = A.candidate_from_response(1, 0, 200, successful_response())
 
@@ -256,6 +265,17 @@ def test_only_final_content_is_selected():
     assert record.reasoning_content == "private reasoning"
     assert record.finish_reason == "stop"
     assert record.usage == {"prompt_tokens": 100, "completion_tokens": 20}
+
+
+def test_generate_missing_sends_contract_sampling(tmp_path, fake_server):
+    checkpoint = seeded_checkpoint(
+        tmp_path, candidate_temperature=1.0, candidate_top_p=0.95
+    )
+
+    A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
+
+    assert fake_server.requests[0]["body"]["temperature"] == 1.0
+    assert fake_server.requests[0]["body"]["top_p"] == 0.95
 
 
 def test_resume_does_not_regenerate_terminal_candidate(tmp_path, fake_server):
@@ -291,7 +311,8 @@ def test_resume_retries_transport_error_candidate(tmp_path, fake_server):
     assert fake_server.chat_calls == 1
     record = json.loads(
         sqlite3.connect(checkpoint.path).execute(
-            "SELECT record_json FROM candidates WHERE question_id = 1 AND repeat_index = 0"
+            "SELECT record_json FROM candidates "
+            "WHERE question_id = 1 AND repeat_index = 0"
         ).fetchone()[0]
     )
     assert record["error"] is None

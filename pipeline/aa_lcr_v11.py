@@ -8,6 +8,7 @@ import errno
 import hashlib
 import importlib
 import json
+import math
 import os
 import shutil
 import sqlite3
@@ -63,6 +64,7 @@ CANDIDATE_MODEL = "glm-5.3-w4afp8"
 CANDIDATE_TEMPERATURE = 0.6
 CANDIDATE_TOP_P = 1.0
 CANDIDATE_MAX_TOKENS = 131_072
+PUBLIC_METHODOLOGY_CLAIM = "AA-LCR v1.1 public-methodology reproduction"
 CANDIDATE_CONCURRENCY = 2
 # Non-streaming chat/completions sends no bytes until prefill+decode finish.
 # AA-LCR prompts are ~90k-113k tokens, so 120s is shorter than first-byte time.
@@ -218,6 +220,14 @@ class RunContract:
     @property
     def fingerprint(self) -> str:
         return sha256_text(_canonical_dataclass(self))
+
+    @property
+    def uses_public_methodology_sampling(self) -> bool:
+        return (
+            self.candidate_temperature == CANDIDATE_TEMPERATURE
+            and self.candidate_top_p == CANDIDATE_TOP_P
+            and self.candidate_max_tokens == CANDIDATE_MAX_TOKENS
+        )
 
 
 @dataclass(frozen=True)
@@ -1217,14 +1227,20 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def candidate_request(question: Question) -> dict[str, object]:
-    """Return the pinned OpenAI-compatible candidate request."""
+def candidate_request(
+    question: Question,
+    *,
+    temperature: float = CANDIDATE_TEMPERATURE,
+    top_p: float = CANDIDATE_TOP_P,
+    max_tokens: int = CANDIDATE_MAX_TOKENS,
+) -> dict[str, object]:
+    """Return the OpenAI-compatible candidate request for this run's sampling."""
     return {
         "model": CANDIDATE_MODEL,
         "messages": [{"role": "user", "content": question.prompt}],
-        "max_tokens": CANDIDATE_MAX_TOKENS,
-        "temperature": CANDIDATE_TEMPERATURE,
-        "top_p": CANDIDATE_TOP_P,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
         "chat_template_kwargs": {"enable_thinking": True},
     }
 
@@ -1346,6 +1362,9 @@ def generate_one(
     base_url: str,
     *,
     max_attempts: int = MAX_ATTEMPTS,
+    temperature: float = CANDIDATE_TEMPERATURE,
+    top_p: float = CANDIDATE_TOP_P,
+    max_tokens: int = CANDIDATE_MAX_TOKENS,
 ) -> CandidateRecord:
     """Generate one candidate, retrying only transport and explicitly retryable HTTP."""
     if max_attempts < 1:
@@ -1353,7 +1372,14 @@ def generate_one(
     started_at_utc = _utc_now()
     request = Request(
         f"{base_url.rstrip('/')}/v1/chat/completions",
-        data=canonical_json(candidate_request(question)).encode("utf-8"),
+        data=canonical_json(
+            candidate_request(
+                question,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+            )
+        ).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -1508,6 +1534,9 @@ def generate_missing(
             repeat_index,
             base_url,
             max_attempts=checkpoint.contract.candidate_max_attempts,
+            temperature=checkpoint.contract.candidate_temperature,
+            top_p=checkpoint.contract.candidate_top_p,
+            max_tokens=checkpoint.contract.candidate_max_tokens,
         )
         checkpoint.record_candidate(record)
 
@@ -2144,8 +2173,32 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         }
         for category, rows in sorted(category_rows.items())
     }
+    sampling = {
+        "temperature": checkpoint.contract.candidate_temperature,
+        "top_p": checkpoint.contract.candidate_top_p,
+        "max_tokens": checkpoint.contract.candidate_max_tokens,
+    }
+    if checkpoint.contract.uses_public_methodology_sampling:
+        claim = PUBLIC_METHODOLOGY_CLAIM
+        limitations = [
+            "Results are a public-methodology reproduction, not an official AA-LCR leaderboard score.",
+        ]
+    else:
+        claim = (
+            "AA-LCR v1.1 sampling ablation "
+            f"(temperature={checkpoint.contract.candidate_temperature:g}, "
+            f"top_p={checkpoint.contract.candidate_top_p:g})"
+        )
+        limitations = [
+            "Results are a sampling ablation of AA-LCR v1.1, not a public-methodology reproduction.",
+            "Candidate sampling differs from AA's published reasoning defaults (temperature 0.6, top_p 1.0).",
+        ]
+    if categories is None:
+        limitations.append(
+            "Document categories are unavailable for this legacy checkpoint."
+        )
     return {
-        "benchmark_claim": "AA-LCR v1.1 public-methodology reproduction",
+        "benchmark_claim": claim,
         "run_fingerprint": checkpoint.contract.fingerprint,
         "judge_contract_hash": judge_contract_hash,
         "headline": {
@@ -2156,6 +2209,7 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         "question_macro_accuracy": sum(question_accuracies) / len(question_accuracies),
         "per_repeat": per_repeat,
         "document_categories": category_summary,
+        "candidate_sampling": sampling,
         "token_provenance": {
             "tokenizer": "cl100k_base",
             "input_token_discrepancies": {
@@ -2246,14 +2300,7 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
             "endpoint": OPENAI_API_BASE_URL,
             "preflight": preflight,
         },
-        "limitations": [
-            "Results are a public-methodology reproduction, not an official AA-LCR leaderboard score.",
-            *(
-                ["Document categories are unavailable for this legacy checkpoint."]
-                if categories is None
-                else []
-            ),
-        ],
+        "limitations": limitations,
     }
 
 
@@ -2455,6 +2502,23 @@ def _bounded_int(name: str, minimum: int, maximum: int) -> Callable[[str], int]:
     return convert
 
 
+def _bounded_float(name: str, minimum: float, maximum: float) -> Callable[[str], float]:
+    def convert(value: str) -> float:
+        try:
+            parsed = float(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"{name} must be a number") from exc
+        if not math.isfinite(parsed):
+            raise argparse.ArgumentTypeError(f"{name} must be a finite number")
+        if not minimum <= parsed <= maximum:
+            raise argparse.ArgumentTypeError(
+                f"{name} must be between {minimum:g} and {maximum:g}"
+            )
+        return parsed
+
+    return convert
+
+
 def _load_endpoint_identity(path: Path) -> dict[str, object]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -2541,6 +2605,16 @@ def _parser() -> argparse.ArgumentParser:
         ),
         default=CANDIDATE_CONCURRENCY,
     )
+    parser.add_argument(
+        "--candidate-temperature",
+        type=_bounded_float("candidate-temperature", 0.0, 2.0),
+        default=CANDIDATE_TEMPERATURE,
+    )
+    parser.add_argument(
+        "--candidate-top-p",
+        type=_bounded_float("candidate-top-p", 0.0, 1.0),
+        default=CANDIDATE_TOP_P,
+    )
     parser.add_argument("--canary", action="store_true")
     parser.add_argument("--judge-preflight", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
@@ -2563,6 +2637,8 @@ def _prepare_run(args: argparse.Namespace) -> tuple[PreparedDataset, Checkpoint]
         served_model=CANDIDATE_MODEL,
         endpoint_deployment_identity=endpoint_identity,
         code_revision=_code_revision(),
+        candidate_temperature=args.candidate_temperature,
+        candidate_top_p=args.candidate_top_p,
         candidate_concurrency=args.candidate_concurrency,
         repeats=args.repeats,
     )

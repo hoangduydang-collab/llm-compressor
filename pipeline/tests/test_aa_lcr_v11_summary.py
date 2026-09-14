@@ -18,6 +18,8 @@ def checkpoint_with_candidates_and_judgments(
     correct: int = 0,
     input_token_discrepancies: dict[int, tuple[int, int]] | None = None,
     question_input_tokens: dict[int, tuple[int, int]] | None = None,
+    candidate_temperature: float = 0.6,
+    candidate_top_p: float = 1.0,
 ) -> A.Checkpoint:
     checkpoint = A.Checkpoint(
         path / "run.sqlite",
@@ -30,8 +32,8 @@ def checkpoint_with_candidates_and_judgments(
             candidate_model=A.CANDIDATE_MODEL,
             served_model=A.CANDIDATE_MODEL,
             endpoint_deployment_identity=server_identity(),
-            candidate_temperature=0.6,
-            candidate_top_p=1.0,
+            candidate_temperature=candidate_temperature,
+            candidate_top_p=candidate_top_p,
             candidate_max_tokens=131_072,
             candidate_concurrency=2,
             candidate_reasoning_enabled=True,
@@ -85,8 +87,20 @@ def checkpoint_with_candidates_and_judgments(
     return checkpoint
 
 
-def complete_checkpoint(path: Path, *, correct: int) -> A.Checkpoint:
-    return checkpoint_with_candidates_and_judgments(path, count=300, correct=correct)
+def complete_checkpoint(
+    path: Path,
+    *,
+    correct: int,
+    candidate_temperature: float = 0.6,
+    candidate_top_p: float = 1.0,
+) -> A.Checkpoint:
+    return checkpoint_with_candidates_and_judgments(
+        path,
+        count=300,
+        correct=correct,
+        candidate_temperature=candidate_temperature,
+        candidate_top_p=candidate_top_p,
+    )
 
 
 def test_summary_exposes_pinned_input_token_discrepancies(tmp_path):
@@ -397,6 +411,11 @@ def test_summary_recomputes_pass_at_one_and_diagnostics(tmp_path):
         "pass_at_1": 0.75,
     }
     assert summary["benchmark_claim"] == ("AA-LCR v1.1 public-methodology reproduction")
+    assert summary["candidate_sampling"] == {
+        "temperature": 0.6,
+        "top_p": 1.0,
+        "max_tokens": 131072,
+    }
     assert summary["finish_reasons"] == {"length": 1, "stop": 299}
     assert summary["candidate_diagnostics"] == {
         "truncation_count": 1,
@@ -408,6 +427,26 @@ def test_summary_recomputes_pass_at_one_and_diagnostics(tmp_path):
     assert summary["judge_terminal_failure_count"] == 0
     assert summary["judge_identity"]["endpoint"] == A.OPENAI_API_BASE_URL
     assert summary["judge_identity"]["preflight"] == preflight_audit()
+
+
+def test_summary_claim_is_sampling_ablation_for_phala_recipe(tmp_path):
+    checkpoint = complete_checkpoint(
+        tmp_path,
+        correct=225,
+        candidate_temperature=1.0,
+        candidate_top_p=0.95,
+    )
+
+    summary = A.build_summary(checkpoint)
+
+    assert summary["benchmark_claim"] == (
+        "AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95)"
+    )
+    assert summary["candidate_sampling"] == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "max_tokens": 131072,
+    }
 
 
 def test_summary_judge_retry_count_includes_successes_and_preflight(tmp_path):

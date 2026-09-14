@@ -1,3 +1,4 @@
+import ctypes
 import errno
 import json
 from dataclasses import replace
@@ -288,6 +289,65 @@ def test_rename_no_replace_maps_existing_directory_errors(tmp_path):
     for error_number in (errno.EEXIST, errno.ENOTEMPTY):
         with pytest.raises(FileExistsError):
             A._raise_rename_no_replace_error(error_number, tmp_path / "published")
+
+
+def _renameat2_unsupported(_olddir, _oldpath, _newdir, _newpath, flags):
+    assert flags == 1
+    ctypes.set_errno(errno.EINVAL)
+    return -1
+
+
+def test_posix_rename_falls_back_when_renameat2_flags_unsupported(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "src"
+    destination = tmp_path / "dest"
+    source.mkdir()
+    (source / "payload.txt").write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(A, "_renameat2", _renameat2_unsupported)
+
+    A._posix_rename_no_replace(source, destination)
+
+    assert (destination / "payload.txt").read_text(encoding="utf-8") == "ok"
+    assert not source.exists()
+
+
+def test_posix_rename_does_not_clobber_when_flags_unsupported_and_dest_exists(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "src"
+    destination = tmp_path / "dest"
+    source.mkdir()
+    (source / "payload.txt").write_text("new", encoding="utf-8")
+    destination.mkdir()
+    (destination / "sentinel").write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(A, "_renameat2", _renameat2_unsupported)
+
+    with pytest.raises(FileExistsError):
+        A._posix_rename_no_replace(source, destination)
+
+    assert (destination / "sentinel").read_text(encoding="utf-8") == "keep"
+    assert (source / "payload.txt").read_text(encoding="utf-8") == "new"
+
+
+def test_posix_rename_does_not_fallback_on_eexist(tmp_path, monkeypatch):
+    source = tmp_path / "src"
+    destination = tmp_path / "dest"
+    source.mkdir()
+    (source / "payload.txt").write_text("new", encoding="utf-8")
+    destination.mkdir()
+    (destination / "sentinel").write_text("keep", encoding="utf-8")
+
+    def already_exists(*_args):
+        ctypes.set_errno(errno.EEXIST)
+        return -1
+
+    monkeypatch.setattr(A, "_renameat2", already_exists)
+
+    with pytest.raises(FileExistsError):
+        A._posix_rename_no_replace(source, destination)
+
+    assert (destination / "sentinel").read_text(encoding="utf-8") == "keep"
 
 
 def test_publish_never_replaces_destination_appearing_at_rename(tmp_path, monkeypatch):

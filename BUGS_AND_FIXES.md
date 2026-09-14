@@ -12,6 +12,27 @@ canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
 
 # Bugs and fixes (llm-compressor pipeline)
 
+## AA-LCR publish renameat2 RENAME_NOREPLACE rejected on CephFS (fixed, 2026-09-14)
+
+**Root cause:** `publish_results` moves the temporary bundle with Linux
+`renameat2(..., RENAME_NOREPLACE)` so an existing result directory is never
+replaced. CephFS implements `rename` but not that flag: the syscall returns
+`EINVAL` even when the destination is absent. The 300/300 AA-LCR checkpoint
+therefore finished judging and then failed at publication, leaving
+`/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/` empty.
+
+**Long-term fix:** Keep `renameat2` + `RENAME_NOREPLACE` when the filesystem
+supports it. On `EINVAL` / `ENOSYS` / `ENOTSUP` / `EOPNOTSUPP`, refuse if the
+destination already exists, then `os.rename` the temporary directory. Do not
+fall back on `EEXIST`/`ENOTEMPTY`. Resume publish with `summarize` and the
+checkpoint's original `AA_LCR_CODE_REVISION`; do not start a new run ID.
+
+**Tactical workaround:** None. The sqlite checkpoint is the durable record;
+republish from it after this fix.
+
+**Removal criteria:** Keep the fallback until CephFS supports
+`RENAME_NOREPLACE`, or until results are published on a filesystem that does.
+
 ## AA-LCR candidate HTTP timeout too short for non-streaming long context (fixed, 2026-09-13)
 
 **Root cause:** `generate_one` called `urlopen(..., timeout=120)` and does not

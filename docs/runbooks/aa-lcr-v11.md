@@ -244,6 +244,14 @@ count, or judge contract when resuming. The CLI rejects checkpoints and result
 directories that belong to another fingerprint, and refuses to summarize or
 publish an incomplete run.
 
+Publication prefers `renameat2(..., RENAME_NOREPLACE)`. CephFS returns
+`EINVAL` for that flag; the runner then `os.rename`s only when the destination
+is absent. To republish a finished checkpoint after a publish-only failure,
+mount newer runner code but keep `AA_LCR_CODE_REVISION` equal to the
+checkpoint fingerprint, extract the stored server snapshot as
+`--endpoint-identity-file`, and run phase `summarize` against the same run ID.
+Do not create a new run ID and do not replace an existing result directory.
+
 Current low-severity limitation: every CLI phase, including `summarize`,
 re-prepares the official pinned dataset before opening the checkpoint.
 Therefore `summarize` currently needs dataset-network availability even though

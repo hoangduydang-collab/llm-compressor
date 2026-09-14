@@ -2271,6 +2271,20 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+_AT_FDCWD = -100
+_RENAME_NOREPLACE = 1
+_UNSUPPORTED_RENAMEAT2_FLAGS = frozenset(
+    value
+    for value in (
+        errno.EINVAL,
+        errno.ENOSYS,
+        getattr(errno, "ENOTSUP", None),
+        getattr(errno, "EOPNOTSUPP", None),
+    )
+    if isinstance(value, int)
+)
+
+
 def _raise_rename_no_replace_error(error_number: int, destination: Path) -> None:
     """Map a platform rename failure to the public publication error contract."""
     if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
@@ -2278,6 +2292,48 @@ def _raise_rename_no_replace_error(error_number: int, destination: Path) -> None
             error_number, os.strerror(error_number), os.fspath(destination)
         )
     raise OSError(error_number, os.strerror(error_number), os.fspath(destination))
+
+
+def _renameat2(
+    olddir: int, oldpath: bytes, newdir: int, newpath: bytes, flags: int
+) -> int:
+    """Call Linux renameat2; return 0 on success and -1 on failure."""
+    try:
+        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
+    except AttributeError as exc:
+        raise RuntimeError("renameat2 RENAME_NOREPLACE is unavailable") from exc
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    return int(renameat2(olddir, oldpath, newdir, newpath, flags))
+
+
+def _posix_rename_no_replace(source: Path, destination: Path) -> None:
+    """Move a directory without replacing dest, including CephFS EINVAL fallback."""
+    result = _renameat2(
+        _AT_FDCWD,
+        os.fsencode(source),
+        _AT_FDCWD,
+        os.fsencode(destination),
+        _RENAME_NOREPLACE,
+    )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno() or errno.EIO
+    if error_number in _UNSUPPORTED_RENAMEAT2_FLAGS:
+        if destination.exists():
+            _raise_rename_no_replace_error(errno.EEXIST, destination)
+        try:
+            os.rename(source, destination)
+        except OSError as exc:
+            _raise_rename_no_replace_error(exc.errno or errno.EIO, destination)
+        return
+    _raise_rename_no_replace_error(error_number, destination)
 
 
 def _rename_no_replace(source: Path, destination: Path) -> None:
@@ -2291,27 +2347,7 @@ def _rename_no_replace(source: Path, destination: Path) -> None:
                 error_number = errno.ENOTEMPTY
             _raise_rename_no_replace_error(error_number or errno.EIO, destination)
         return
-    try:
-        renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
-    except AttributeError as exc:
-        raise RuntimeError("renameat2 RENAME_NOREPLACE is unavailable") from exc
-    renameat2.argtypes = (
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_uint,
-    )
-    renameat2.restype = ctypes.c_int
-    result = renameat2(
-        -100,
-        os.fsencode(source),
-        -100,
-        os.fsencode(destination),
-        1,
-    )
-    if result != 0:
-        _raise_rename_no_replace_error(ctypes.get_errno() or errno.EIO, destination)
+    _posix_rename_no_replace(source, destination)
 
 
 def _write_publication_file(path: Path, content: str) -> None:

@@ -98,6 +98,17 @@ def test_canary_and_full_have_pinned_population_and_concurrency():
     assert "--candidate-concurrency 2" in full
 
 
+def test_full_jobs_use_24h_deadline():
+    # 12h was enough only because the 0.6 campaign resumed into a second Job.
+    # A from-scratch 300-unit run needs the extra headroom.
+    for path in (FULL, FULL_T1):
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert document["spec"]["activeDeadlineSeconds"] == 86400
+    for path in (CANARY, CANARY_T1):
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert document["spec"]["activeDeadlineSeconds"] == 7200
+
+
 def test_phala_sampling_jobs_pin_new_run_ids_and_1_0_0_95():
     canary = CANARY_T1.read_text(encoding="utf-8")
     full = FULL_T1.read_text(encoding="utf-8")
@@ -179,6 +190,7 @@ def test_runbook_renders_immutable_configmaps_and_resumable_jobs():
         "glm53-w4afp8-aa-lcr-v11-canary-r1/run.sqlite"
     ) in text
     assert "The canary intentionally does not publish a headline bundle." in text
+    assert "activeDeadlineSeconds: 86400" in text
     assert TIKTOKEN_CACHE_DIR in text
     assert 'tiktoken.get_encoding("cl100k_base")' in text
     assert "tiktoken-cache-sha256.txt" in text

@@ -248,9 +248,12 @@ Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full.yaml `
 ```
 
 The full result must contain 300 candidate rows and 300 valid judgments: 100
-questions × 3 repeats. The CLI is resumable; rerun the same command to fill
-only missing candidate or judge rows, while preserving the immutable
-fingerprint:
+questions × 3 repeats. Full Jobs use `activeDeadlineSeconds: 86400` (24h)
+because a from-scratch 300-unit run did not fit in 12h; the 0.6 campaign
+only finished after a resume reset the Job clock. If a Job still dies on
+deadline, sqlite is intact: relaunch the same run ID. The CLI is resumable;
+rerun the same command to fill only missing candidate or judge rows, while
+preserving the immutable fingerprint:
 
 ```powershell
 Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full.yaml `

@@ -280,6 +280,15 @@ all scoring primitives already exist in SQLite. This does not change the
 published metric, but a future cleanup may load the existing checkpoint
 without re-downloading the dataset.
 
+## Published 0.6 public-methodology result
+
+In-house W4AFP8, temperature 0.6, top_p 1.0, 100×3, Luna medium:
+
+**Pass@1 71.33% (214/300).** Write-up:
+[`docs/status/2026-09-14-glm53-aa-lcr-v11.md`](../status/2026-09-14-glm53-aa-lcr-v11.md).
+Bundle:
+`/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/glm53-w4afp8-aa-lcr-v11-full-r1/`.
+
 When the result is retained and no further evaluation needs the credential,
 the operator may remove it:
 

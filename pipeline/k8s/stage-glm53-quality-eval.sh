@@ -494,16 +494,64 @@ def digests(root):
         out[f] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
     return out
 all_digests = {arm: digests(root) for arm, root in roots.items()}
-# tokenizer.json and chat_template.jinja decide what text the model is shown, so a
-# byte difference there blocks. generation_config.json does NOT (the server's flags
-# and the task's pinned kwargs govern decoding here), so it is recorded only.
-BLOCKING = ("tokenizer.json", "chat_template.jinja")
+# chat_template.jinja decides what text the model is shown, so a byte difference
+# there blocks outright -- it IS the prompt. generation_config.json does NOT (the
+# server's flags and the task's pinned kwargs govern decoding here), so it is
+# recorded only. tokenizer.json gets the SEMANTIC treatment below.
+BLOCKING = ("chat_template.jinja",)
 blocking = []
 for arm, digest in all_digests.items():
     if arm == "ours":
         continue
     blocking.extend(f"{arm}:{f}" for f in BLOCKING
                     if all_digests["ours"][f] != digest[f])
+
+# tokenizer.json is compared SEMANTICALLY, for the same reason tokenizer_config
+# already is: a raw digest fails comparisons that are in fact sound.
+#
+# Measured 2026-09-17 on these three checkpoints. The native GPTQ checkpoint's
+# tokenizer.json carries a `truncation` block -- {'direction': 'Right',
+# 'max_length': 2048, 'strategy': 'LongestFirst', 'stride': 0} -- where ours and
+# PhalaCloud's have null. That 2048 is a fingerprint of the GPTQ calibration run
+# (ultrachat_200k, 256 x 2048): the tokenizer was serialized with the truncation
+# state left enabled from calibration. Everything that DECIDES tokenization is
+# byte-equal across all three: vocab (154,820), merges (321,649), normalizer,
+# pre_tokenizer, post_processor, decoder, and all 36 added_tokens.
+#
+# It is inert on this harness's paths, and that was MEASURED, not assumed:
+# transformers' PreTrainedTokenizerFast resets backend truncation per call
+# (set_truncation_and_padding -> no_truncation() when truncation is not
+# requested), so `backend_tokenizer.truncation` loads as None for BOTH, and a
+# 6,401-token string encodes to IDENTICAL ids through both `encode()` and
+# `__call__()` -- well past the baked 2048 ceiling. This is what the check exists
+# to protect: the loglikelihood path tokenizes CLIENT-side, so a tokenizer that
+# really truncated at 2048 would silently cut MMLU's 5-shot prompts on one arm
+# only. It does not.
+#
+# Anything outside the inert set still blocks, because then the arms really would
+# be tokenizing differently. Keep `truncation`/`padding` here only: they are
+# runtime state the library overrides per request, not vocabulary.
+TOK_INERT = {"truncation", "padding"}
+tok_note = {}
+for arm, root in roots.items():
+    if arm == "ours":
+        continue
+    try:
+        ta = json.loads((Path(roots["ours"]) / "tokenizer.json").read_text(encoding="utf-8"))
+        tb = json.loads((Path(root) / "tokenizer.json").read_text(encoding="utf-8"))
+        semantic = sorted(k for k in set(ta) | set(tb)
+                          if k not in TOK_INERT and ta.get(k) != tb.get(k))
+        inert_diff = sorted(k for k in set(ta) | set(tb)
+                            if k in TOK_INERT and ta.get(k) != tb.get(k))
+        tok_note[arm] = {"semantic_differences": semantic,
+                         "inert_differences": inert_diff,
+                         "digest_equal": all_digests["ours"]["tokenizer.json"]
+                                         == all_digests[arm]["tokenizer.json"]}
+        if semantic:
+            blocking.append(arm + ":tokenizer.json:" + ",".join(semantic))
+    except Exception as e:
+        tok_note[arm] = {"error": "%s: %s" % (type(e).__name__, e)}
+        blocking.append(arm + ":tokenizer.json:unreadable")
 
 # tokenizer_config.json is compared SEMANTICALLY rather than by digest. Measured
 # on these two checkpoints, it differs only in is_local / local_files_only --
@@ -533,7 +581,8 @@ for arm, root in roots.items():
         cfg_note[arm] = {"error": "%s: %s" % (type(e).__name__, e)}
         blocking.append(arm + ":tokenizer_config.json:unreadable")
 
-res = {"digests": all_digests, "tokenizer_config": cfg_note,
+res = {"digests": all_digests, "tokenizer_json": tok_note,
+       "tokenizer_config": cfg_note,
        "blocking_differences": sorted(blocking)}
 print(json.dumps(res, indent=2))
 sys.exit(1 if blocking else 0)

@@ -18,6 +18,7 @@
 # Env (optional): MODEL_PATH TP CTX RUN_ID MEM_FRAC CHUNKED_PREFILL LIMIT
 #                 REASONING_PARSER TOOL_PARSER SUITE AA_GPQA AA_GPQA_ONLY
 #                 AA_VENV AA_MODEL_ID AA_TEMPERATURE AA_TOP_P AA_N_SAMPLES
+#                 SERVE_HEALTH_TIMEOUT_S THROUGHPUT_FLOOR THROUGHPUT_PROBE_N
 set -uo pipefail
 
 ARM=${ARM:?}; PROFILE=${PROFILE:?}; PORT=${PORT:?}; ROOT=${ROOT:?}
@@ -345,18 +346,38 @@ note "step 1: serve on SGLang"
 SERVER_PID=$!
 echo "$SERVER_PID" > "$CLIENT/serve.pid"
 
-# 270*10s = 45 min. cephfs pages in a 394 GB checkpoint at roughly 20-30 MB/s
-# per stream and SGLang mmaps the shards, so "loading shards: 100%" is followed
-# by a long silent page-in with no log line at all (see the cluster notes in
+# cephfs pages in a 394 GB checkpoint at roughly 20-30 MB/s per stream and
+# SGLang mmaps the shards, so "loading shards: 100%" is followed by a long
+# silent page-in with no log line at all (see the cluster notes in
 # BUGS_AND_FIXES.md). Do not shorten this on the assumption the server hung.
+#
+# 270 (45 min) was calibrated on weight load ALONE and is NOT enough: startup
+# also pays DeepGEMM JIT pre-compile and CUDA graph capture, neither of which
+# is weight I/O. Measured 2026-09-16 on gpu04 at CTX=164800 (run
+# 20260916t080334z): load ~40 min + DeepGEMM JIT ~8 min + graph capture 4m13s.
+# The gate gave up at 45m04s and the server reported ready at ~45m25s — it
+# missed by 20 seconds, threw away a correct 400 GB load, and left an orphaned
+# healthy server behind (the failure path below does not kill it).
+# 120 min is now the budget: ~2.5x the measured startup, still far short of any
+# plausible run, and overridable for arms that pre-compile DeepGEMM.
+SERVE_HEALTH_TIMEOUT_S="${SERVE_HEALTH_TIMEOUT_S:-7200}"
 healthy=1
-for i in $(seq 1 270); do
+for i in $(seq 1 $((SERVE_HEALTH_TIMEOUT_S / 10))); do
   kill -0 "$SERVER_PID" 2>/dev/null || { note "server died during startup"; break; }
   curl -sf "http://localhost:$PORT/health_generate" >/dev/null 2>&1 && { healthy=0; break; }
   sleep 10
 done
 gate serve_healthy "$healthy"
-[ "$healthy" = 0 ] || { tail -60 "$CLIENT/serve.log"; exit 1; }
+[ "$healthy" = 0 ] || {
+  tail -60 "$CLIENT/serve.log"
+  # Do NOT strand the server. This path used to `exit 1` while leaving it
+  # running, which on 2026-09-16 left a healthy orphan holding ~68 GB on all 8
+  # GPUs; the next arm exec'd into the same held pod would have OOM'd starting
+  # its own. Step 4 never runs from here, so the kill has to be local.
+  note "server not healthy in ${SERVE_HEALTH_TIMEOUT_S}s; killing pid=$SERVER_PID to free the GPUs"
+  kill "$SERVER_PID" 2>/dev/null; sleep 10; kill -9 "$SERVER_PID" 2>/dev/null
+  exit 1
+}
 note "server healthy after ~$((i*10))s"
 
 # ---- step 1b: decode throughput floor --------------------------------------

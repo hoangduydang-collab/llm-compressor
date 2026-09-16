@@ -5,11 +5,19 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "pipeline" / "k8s"))
 import render_arm  # noqa: E402
+
+
+_GPTQ_CHECKPOINT = (
+    "/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/"
+    "20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/"
+    "20260912-184239/checkpoint"
+)
 
 
 def test_render_arm_persists_aa_gpqa(tmp_path: Path):
@@ -54,3 +62,47 @@ def test_render_arm_hold_after_persists(tmp_path: Path):
     assert env["HOLD_AFTER"] == "1"
     assert "sleep infinity" in doc["spec"]["containers"][0]["args"][0]
     assert "@@ARM@@" not in out.read_text(encoding="utf-8")
+
+
+def test_render_gptq_persists_native_context_tokenizer_revision_and_profile(tmp_path: Path):
+    out = tmp_path / "gptq.yaml"
+    revision = "a" * 64
+    rc = render_arm.main([
+        "--arm", "gptq",
+        "--model", _GPTQ_CHECKPOINT,
+        "--run-tag", "t",
+        "--ref", "deadbeef",
+        "--out", str(out),
+        "--context-length", "65536",
+        "--served-tokenizer-revision", revision,
+    ])
+    assert rc == 0
+    doc = yaml.safe_load(out.read_text(encoding="utf-8"))
+    env = {e["name"]: e.get("value") for e in doc["spec"]["containers"][0]["env"]
+           if "value" in e}
+    assert env["CTX"] == "65536"
+    assert env["SERVED_TOKENIZER_REVISION"] == revision
+    assert env["PROFILE"] == "configs/glm/glm-5.3-w4afp8-gptq.sh"
+
+
+@pytest.mark.parametrize(
+    ("model", "context_length", "revision"),
+    [
+        ("/mnt/cephfs/hoangduy/results/other/checkpoint", "65536", "a" * 64),
+        (_GPTQ_CHECKPOINT, "", "a" * 64),
+        (_GPTQ_CHECKPOINT, "32768", "a" * 64),
+        (_GPTQ_CHECKPOINT, "65536", ""),
+        (_GPTQ_CHECKPOINT, "65536", "A" * 64),
+    ],
+)
+def test_render_gptq_refuses_unpinned_launch_inputs(
+        tmp_path: Path, model: str, context_length: str, revision: str):
+    assert render_arm.main([
+        "--arm", "gptq",
+        "--model", model,
+        "--run-tag", "t",
+        "--ref", "deadbeef",
+        "--out", str(tmp_path / "gptq.yaml"),
+        "--context-length", context_length,
+        "--served-tokenizer-revision", revision,
+    ]) == 2

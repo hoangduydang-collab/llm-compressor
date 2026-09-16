@@ -32,15 +32,22 @@ import sys
 
 _TMPL = pathlib.Path(__file__).with_name("glm53-quality-arm.yaml.tmpl")
 _PLACEHOLDER = re.compile(r"@@[A-Z_]+@@")
+_GPTQ_CHECKPOINT = (
+    "/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/"
+    "20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/"
+    "20260912-184239/checkpoint"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arm", required=True, choices=["ours", "phala"])
+    ap.add_argument("--arm", required=True, choices=["ours", "phala", "gptq"])
     ap.add_argument("--model", required=True, help="absolute /mnt path to the checkpoint")
     ap.add_argument("--run-tag", required=True)
     ap.add_argument("--ref", required=True, help="llm-compressor commit to pin")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--context-length", default="")
+    ap.add_argument("--served-tokenizer-revision", default="")
     ap.add_argument("--reasoning", default="", choices=["", "reasoning", "nonreasoning"])
     ap.add_argument("--limit", default="", help="items per general task; empty = full populations")
     ap.add_argument("--tasks", default="", help="GENERAL_TASKS override; empty = profile default")
@@ -61,6 +68,19 @@ def main(argv: list[str] | None = None) -> int:
               "an environment variable rather than argv.", file=sys.stderr)
         return 2
 
+    if a.arm == "gptq":
+        if a.model != _GPTQ_CHECKPOINT:
+            print("REFUSING: GPTQ requires its dedicated candidate checkpoint.",
+                  file=sys.stderr)
+            return 2
+        if a.context_length != "65536":
+            print("REFUSING: GPTQ requires --context-length 65536.", file=sys.stderr)
+            return 2
+        if not re.fullmatch(r"[0-9a-f]{64}", a.served_tokenizer_revision):
+            print("REFUSING: GPTQ requires a lowercase 64-hex "
+                  "--served-tokenizer-revision.", file=sys.stderr)
+            return 2
+
     # An EMPTY selector must still be a valid mapping entry. Emitting a bare "{}"
     # here produced `  {}` on its own line, which is a YAML scanner error in a
     # mapping context -- caught by this module's own safe_load, which is the whole
@@ -73,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
         "@@MODEL@@": a.model,
         "@@RUN_TAG@@": a.run_tag,
         "@@REF@@": a.ref,
+        "@@CTX@@": a.context_length,
+        "@@SERVED_TOKENIZER_REVISION@@": a.served_tokenizer_revision,
         "@@LIMIT@@": a.limit,
         "@@TASKS@@": a.tasks,
         "@@AA_GPQA@@": a.aa_gpqa,

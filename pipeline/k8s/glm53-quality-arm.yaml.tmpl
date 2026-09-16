@@ -7,6 +7,8 @@
 #   @@MODEL@@     absolute checkpoint path on cephfs
 #   @@RUN_TAG@@   run tag, e.g. 20260830t1400z
 #   @@REF@@       llm-compressor commit to pin the code to
+#   @@CTX@@       context length, or "" for the existing arm default
+#   @@SERVED_TOKENIZER_REVISION@@ local tokenizer content digest, or "" for existing defaults
 #   @@LIMIT@@     items per general task, or "" for full populations
 #   @@AA_GPQA@@        1 to run NVIDIA gpqa_diamond_aa_v3, or "" to skip
 #   @@AA_GPQA_ONLY@@   1 to skip the lm-eval general suite after AA GPQA
@@ -47,6 +49,8 @@ spec:
         - {name: MODEL_PATH, value: "@@MODEL@@"}
         - {name: REPO_REF, value: "@@REF@@"}
         - {name: RUN_TAG, value: "@@RUN_TAG@@"}
+        - {name: CTX, value: "@@CTX@@"}
+        - {name: SERVED_TOKENIZER_REVISION, value: "@@SERVED_TOKENIZER_REVISION@@"}
         - {name: LIMIT, value: "@@LIMIT@@"}
         - {name: GENERAL_TASKS, value: "@@TASKS@@"}
         # NVIDIA gpqa_diamond_aa_v3 (nvidia-simple-evals==26.3). Empty = skip

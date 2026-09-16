@@ -54,8 +54,9 @@ def test_write_run_config_glm_max_overrides_and_thinking(tmp_path: Path):
     assert on_disk == cfg
     assert cfg["config"]["type"] == TASK_NAME
     params = cfg["config"]["params"]
-    assert params["temperature"] == TEMPERATURE == 0.6
-    assert params["top_p"] == TOP_P == 1.0
+    # Z.ai's recommended config: the lab-override branch of AA's sampling rule.
+    assert params["temperature"] == TEMPERATURE == 1.0
+    assert params["top_p"] == TOP_P == 0.95
     assert params["max_new_tokens"] == MAX_NEW_TOKENS == 131072
     assert params["request_timeout"] == REQUEST_TIMEOUT == 3600
     assert params["limit_samples"] is None
@@ -69,7 +70,24 @@ def test_write_run_config_glm_max_overrides_and_thinking(tmp_path: Path):
     }
 
 
-def test_write_run_config_canary_limit(tmp_path: Path):
+def test_write_run_config_diag_overrides(tmp_path: Path):
+    path = tmp_path / "diag.yml"
+    cfg = write_run_config(
+        path,
+        url="http://svc/v1/chat/completions",
+        model_id="glm-5.3-w4afp8",
+        output_dir="/tmp/aa-caphit70",
+        max_new_tokens=262144,
+        request_timeout=14400,
+        parallelism=2,
+    )
+    params = cfg["config"]["params"]
+    assert params["max_new_tokens"] == 262144
+    assert params["request_timeout"] == 14400
+    assert params["parallelism"] == 2
+    assert params["temperature"] == 1.0
+    assert params["extra"]["n_samples"] == 5
+
     path = tmp_path / "canary.yml"
     cfg = write_run_config(
         path,
@@ -79,6 +97,68 @@ def test_write_run_config_canary_limit(tmp_path: Path):
         limit_samples=2,
     )
     assert cfg["config"]["params"]["limit_samples"] == 2
+
+
+def test_write_run_config_sampling_is_overridable(tmp_path: Path):
+    """Reproducing the Sep-11 contract must be possible without editing code."""
+    cfg = write_run_config(
+        tmp_path / "sep11.yml",
+        url="http://127.0.0.1:30000/v1/chat/completions",
+        model_id="glm",
+        output_dir="/tmp/aa-gpqa-v3",
+        temperature=0.6,
+        top_p=1.0,
+    )
+    params = cfg["config"]["params"]
+    assert params["temperature"] == 0.6
+    assert params["top_p"] == 1.0
+
+
+def test_canary_reduces_repeats_and_is_marked_non_formal(tmp_path: Path):
+    cfg = write_run_config(
+        tmp_path / "canary.yml",
+        url="http://127.0.0.1:30000/v1/chat/completions",
+        model_id="glm",
+        output_dir="/tmp/aa-canary",
+        n_samples=1,
+    )
+    # All 198 items, one repeat — not a first-N `limit_samples` subset.
+    assert cfg["config"]["params"]["extra"]["n_samples"] == 1
+    assert cfg["config"]["params"]["limit_samples"] is None
+
+    man = write_manifest(tmp_path / "canary.json", arm="ours", n_samples=1)
+    assert man["n_samples"] == 1
+    assert man["is_formal_aa_protocol"] is False
+
+
+def test_manifest_formal_only_when_full_items_and_repeats(tmp_path: Path):
+    assert write_manifest(tmp_path / "a.json")["is_formal_aa_protocol"] is True
+    # A limited item subset is not formal even at 5 repeats.
+    man = write_manifest(tmp_path / "b.json", limit_samples=40)
+    assert man["is_formal_aa_protocol"] is False
+
+
+def test_manifest_labels_zai_lab_override_branch(tmp_path: Path):
+    man = write_manifest(tmp_path / "m.json", arm="ours")
+    assert man["temperature"] == 1.0
+    assert man["top_p"] == 0.95
+    assert "Z.ai" in man["sampling_provenance"]
+    # A Z.ai-config run is NOT poolable with the Sep-11 formal scores.
+    assert man["comparable_to_sep11_formal_198_c8"] is False
+
+
+def test_manifest_labels_aa_default_branch(tmp_path: Path):
+    man = write_manifest(tmp_path / "m.json", arm="ours", temperature=0.6, top_p=1.0)
+    assert man["sampling_provenance"] == (
+        "AA published default (no lab override applied)"
+    )
+    assert man["comparable_to_sep11_formal_198_c8"] is True
+
+
+def test_manifest_flags_a_config_that_is_neither(tmp_path: Path):
+    man = write_manifest(tmp_path / "m.json", temperature=0.7, top_p=0.8)
+    assert man["sampling_provenance"].startswith("custom:")
+    assert man["comparable_to_sep11_formal_198_c8"] is False
 
 
 def test_build_run_eval_argv_uses_run_config_not_eval_type_flag():
@@ -116,8 +196,8 @@ def test_write_manifest_records_pin_and_honesty(tmp_path: Path):
     assert man["package"] == PACKAGE_PIN
     assert man["task"] == TASK_NAME
     assert man["n_samples"] == 5
-    assert man["temperature"] == 0.6
-    assert man["top_p"] == 1.0
+    assert man["temperature"] == 1.0
+    assert man["top_p"] == 0.95
     assert man["max_new_tokens"] == 131072
     assert man["request_timeout"] == 3600
     assert man["enable_thinking"] is True

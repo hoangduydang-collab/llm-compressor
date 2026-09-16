@@ -17,7 +17,7 @@
 # Env (required): ARM PROFILE PORT ROOT
 # Env (optional): MODEL_PATH TP CTX RUN_ID MEM_FRAC CHUNKED_PREFILL LIMIT
 #                 REASONING_PARSER TOOL_PARSER SUITE AA_GPQA AA_GPQA_ONLY
-#                 AA_VENV AA_MODEL_ID
+#                 AA_VENV AA_MODEL_ID AA_TEMPERATURE AA_TOP_P AA_N_SAMPLES
 set -uo pipefail
 
 ARM=${ARM:?}; PROFILE=${PROFILE:?}; PORT=${PORT:?}; ROOT=${ROOT:?}
@@ -503,13 +503,32 @@ if [ "${AA_GPQA:-}" = "1" ]; then
     require-task --ls-file "$AA_OUT/nemo-evaluator-ls.txt" || exit 1
   AA_URL="http://127.0.0.1:${PORT}/v1/chat/completions"
   AA_MODEL_ID="${AA_MODEL_ID:-glm}"
+  # Sampling defaults live in pipeline/aa_gpqa_v3.py (Z.ai's recommended
+  # config, the lab-override branch of AA's rule). Set these only to
+  # deliberately depart from it — e.g. AA_TEMPERATURE=0.6 AA_TOP_P=1.0 to
+  # reproduce the Sep-11 formal contract. Empty = module default, so there is
+  # one source of truth. Both land in harness_manifest.json either way.
+  AA_SAMPLING_ARGS=""
+  [ -n "${AA_TEMPERATURE:-}" ] && \
+    AA_SAMPLING_ARGS="$AA_SAMPLING_ARGS --temperature $AA_TEMPERATURE"
+  [ -n "${AA_TOP_P:-}" ] && \
+    AA_SAMPLING_ARGS="$AA_SAMPLING_ARGS --top-p $AA_TOP_P"
+  # AA_N_SAMPLES=1 is the cost canary (198 completions, not 990). It makes the
+  # run non-formal; harness_manifest.json records is_formal_aa_protocol=false.
+  [ -n "${AA_N_SAMPLES:-}" ] && \
+    AA_SAMPLING_ARGS="$AA_SAMPLING_ARGS --n-samples $AA_N_SAMPLES"
   PYTHONPATH="$REPO" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 write-config \
     --out "$AA_OUT/run.yml" --url "$AA_URL" --model-id "$AA_MODEL_ID" \
-    --output-dir "$AA_OUT/results" --limit "${LIMIT:-}"
+    --output-dir "$AA_OUT/results" --limit "${LIMIT:-}" $AA_SAMPLING_ARGS
   PYTHONPATH="$REPO" "$AA_VENV/bin/python" -m pipeline.aa_gpqa_v3 write-manifest \
     --out "$AA_OUT/harness_manifest.json" --arm "$ARM" --run-id "$RUN_ID" \
-    --url "$AA_URL" --model-id "$AA_MODEL_ID" --limit "${LIMIT:-}"
+    --url "$AA_URL" --model-id "$AA_MODEL_ID" --limit "${LIMIT:-}" $AA_SAMPLING_ARGS
   note "aa-gpqa-v3 config: $AA_OUT/run.yml"
+  note "aa-gpqa-v3 sampling: $(PYTHONPATH="$REPO" "$AA_VENV/bin/python" -c '
+import json,sys
+m=json.load(open(sys.argv[1]))
+print(f"temp={m[\"temperature\"]} top_p={m[\"top_p\"]} ({m[\"sampling_provenance\"]})")
+' "$AA_OUT/harness_manifest.json")"
   scrape_metrics aa_before
   # nemo-evaluator renders `simple_evals ...` into a shell. That binary lives
   # in $AA_VENV/bin; without it on PATH the subprocess exits 127

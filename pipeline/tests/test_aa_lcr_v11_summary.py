@@ -20,6 +20,7 @@ def checkpoint_with_candidates_and_judgments(
     question_input_tokens: dict[int, tuple[int, int]] | None = None,
     candidate_temperature: float = 0.6,
     candidate_top_p: float = 1.0,
+    candidate_max_tokens: int = 131_072,
 ) -> A.Checkpoint:
     checkpoint = A.Checkpoint(
         path / "run.sqlite",
@@ -34,7 +35,7 @@ def checkpoint_with_candidates_and_judgments(
             endpoint_deployment_identity=server_identity(),
             candidate_temperature=candidate_temperature,
             candidate_top_p=candidate_top_p,
-            candidate_max_tokens=131_072,
+            candidate_max_tokens=candidate_max_tokens,
             candidate_concurrency=2,
             candidate_reasoning_enabled=True,
             candidate_max_attempts=30,
@@ -93,6 +94,7 @@ def complete_checkpoint(
     correct: int,
     candidate_temperature: float = 0.6,
     candidate_top_p: float = 1.0,
+    candidate_max_tokens: int = 131_072,
 ) -> A.Checkpoint:
     return checkpoint_with_candidates_and_judgments(
         path,
@@ -100,6 +102,7 @@ def complete_checkpoint(
         correct=correct,
         candidate_temperature=candidate_temperature,
         candidate_top_p=candidate_top_p,
+        candidate_max_tokens=candidate_max_tokens,
     )
 
 
@@ -440,13 +443,35 @@ def test_summary_claim_is_sampling_ablation_for_phala_recipe(tmp_path):
     summary = A.build_summary(checkpoint)
 
     assert summary["benchmark_claim"] == (
-        "AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95)"
+        "AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95, max_tokens=131072)"
     )
     assert summary["candidate_sampling"] == {
         "temperature": 1.0,
         "top_p": 0.95,
         "max_tokens": 131072,
     }
+    assert not any("Output cap" in item for item in summary["limitations"])
+
+
+def test_summary_discloses_a_raised_output_cap_as_not_aa_comparable(tmp_path):
+    checkpoint = complete_checkpoint(
+        tmp_path,
+        correct=225,
+        candidate_temperature=1.0,
+        candidate_top_p=0.95,
+        candidate_max_tokens=262_144,
+    )
+
+    summary = A.build_summary(checkpoint)
+
+    assert summary["benchmark_claim"] == (
+        "AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95, max_tokens=262144)"
+    )
+    assert summary["candidate_sampling"]["max_tokens"] == 262_144
+    assert any(
+        "Output cap is 262144 tokens" in item and "not comparable" in item
+        for item in summary["limitations"]
+    )
 
 
 def test_summary_judge_retry_count_includes_successes_and_preflight(tmp_path):

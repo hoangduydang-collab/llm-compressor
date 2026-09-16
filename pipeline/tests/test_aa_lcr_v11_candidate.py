@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -511,6 +512,62 @@ def test_generation_uses_at_most_two_simultaneous_requests(tmp_path, fake_server
         releaser.cancel()
 
     assert fake_server.max_active_requests == 2
+
+
+def _admitted_after(
+    gate: A._AdmissionGate, timeout: float
+) -> tuple[bool, threading.Thread]:
+    opened = threading.Event()
+    done = threading.Event()
+
+    def occupy() -> None:
+        with gate.attempt():
+            opened.set()
+            done.wait(timeout=5)
+
+    worker = threading.Thread(target=occupy, daemon=True)
+    worker.start()
+    admitted = opened.wait(timeout)
+    done.set()
+    return admitted, worker
+
+
+def test_admission_gate_admits_the_ceiling_while_attempts_are_young():
+    gate = A._AdmissionGate(2, 60)
+
+    with gate.attempt():
+        admitted, worker = _admitted_after(gate, 1.0)
+
+    worker.join(timeout=5)
+    assert admitted
+    assert gate.downgrade_waits == 0
+
+
+def test_admission_gate_holds_at_one_while_an_attempt_runs_long():
+    gate = A._AdmissionGate(2, 0.05)
+
+    with gate.attempt():
+        time.sleep(0.15)
+        admitted, worker = _admitted_after(gate, 0.3)
+
+    worker.join(timeout=5)
+    assert not admitted
+    assert gate.downgrade_waits >= 1
+
+
+def test_admission_gate_always_admits_when_nothing_is_in_flight():
+    gate = A._AdmissionGate(2, 0.001)
+    time.sleep(0.01)
+
+    with gate.attempt():
+        pass
+
+    assert gate.downgrade_waits == 0
+
+
+def test_admission_gate_rejects_a_zero_ceiling():
+    with pytest.raises(ValueError, match="ceiling"):
+        A._AdmissionGate(0, 60)
 
 
 def test_sqlite_payloads_exclude_response_headers_and_environment(

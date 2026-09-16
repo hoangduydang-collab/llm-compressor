@@ -20,11 +20,12 @@ import time
 import unicodedata
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Callable, Collection, Mapping
+from typing import TYPE_CHECKING, Callable, Collection, Iterator, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -65,7 +66,13 @@ CANDIDATE_TEMPERATURE = 0.6
 CANDIDATE_TOP_P = 1.0
 CANDIDATE_MAX_TOKENS = 131_072
 PUBLIC_METHODOLOGY_CLAIM = "AA-LCR v1.1 public-methodology reproduction"
+# A ceiling, not a fixed width: the admission gate below drops to one in-flight
+# attempt whenever an attempt has already run a long time.
 CANDIDATE_CONCURRENCY = 2
+# At the measured ~80 tok/s per stream a 131,072-token trace takes ~27 min, so
+# 15 min marks the cap-bound tail without throttling the ~89% of AA-LCR attempts
+# that stop far short of it (mean completion on the 0.6 run was 16,929 tokens).
+CANDIDATE_LONG_ATTEMPT_SECONDS = 900
 # Non-streaming chat/completions sends no bytes until prefill+decode finish.
 # AA-LCR prompts are ~90k-113k tokens, so 120s is shorter than first-byte time.
 CANDIDATE_HTTP_TIMEOUT_SECONDS = 7200
@@ -210,6 +217,9 @@ class RunContract:
     code_revision: str
     question_ids: tuple[int, ...]
     judge_reasoning_mode: str = JUDGE_REASONING_MODE
+    # `candidate_concurrency` is the admission ceiling; the gate runs at one
+    # in-flight attempt while any attempt has exceeded this age.
+    candidate_long_attempt_seconds: int = CANDIDATE_LONG_ATTEMPT_SECONDS
     input_token_discrepancies: Mapping[int, tuple[int, int]] = field(
         default_factory=lambda: MappingProxyType({})
     )
@@ -297,6 +307,36 @@ class JudgeFailureRecord:
     verdict: None = None
 
 
+def _validate_candidate_token_budget(
+    prepared_dataset: PreparedDataset,
+    endpoint_deployment_identity: Mapping[str, object],
+    candidate_max_tokens: int,
+) -> None:
+    """Reject a cap whose worst-case single trace cannot fit the serve's KV pool.
+
+    Prompt lengths here are cl100k counts, a proxy for what the GLM tokenizer
+    will actually produce, so this is a floor on the real footprint rather than
+    an exact one. It exists to fail closed before GPU spend on an impossible
+    cap, not to certify a possible one.
+    """
+    pool = endpoint_deployment_identity.get("max_total_num_tokens")
+    if isinstance(pool, bool) or not isinstance(pool, int) or pool <= 0:
+        return
+    prompt_tokens = [
+        actual for _published, actual in prepared_dataset.question_input_tokens.values()
+    ]
+    if not prompt_tokens:
+        return
+    largest_prompt = max(prompt_tokens)
+    worst_case = largest_prompt + candidate_max_tokens
+    if worst_case > pool:
+        raise CheckpointConflictError(
+            f"candidate max_tokens {candidate_max_tokens} plus the largest prompt "
+            f"{largest_prompt} needs {worst_case} KV tokens, but the serve reports "
+            f"max_total_num_tokens {pool}"
+        )
+
+
 def build_run_contract(
     prepared_dataset: PreparedDataset,
     *,
@@ -308,6 +348,7 @@ def build_run_contract(
     candidate_top_p: float = CANDIDATE_TOP_P,
     candidate_max_tokens: int = CANDIDATE_MAX_TOKENS,
     candidate_concurrency: int = CANDIDATE_CONCURRENCY,
+    candidate_long_attempt_seconds: int = CANDIDATE_LONG_ATTEMPT_SECONDS,
     candidate_reasoning_enabled: bool = True,
     candidate_max_attempts: int = MAX_ATTEMPTS,
     judge_model: str = JUDGE_MODEL,
@@ -325,6 +366,9 @@ def build_run_contract(
         judge_user_prompt_sha256=sha256_text(JUDGE_USER_PROMPT_TEMPLATE),
         judge_max_attempts=judge_max_attempts,
     )
+    _validate_candidate_token_budget(
+        prepared_dataset, endpoint_deployment_identity, candidate_max_tokens
+    )
     return RunContract(
         dataset_revision=prepared_dataset.revision,
         dataset_file_sha256=prepared_dataset.file_sha256,
@@ -338,6 +382,7 @@ def build_run_contract(
         candidate_top_p=candidate_top_p,
         candidate_max_tokens=candidate_max_tokens,
         candidate_concurrency=candidate_concurrency,
+        candidate_long_attempt_seconds=candidate_long_attempt_seconds,
         candidate_reasoning_enabled=candidate_reasoning_enabled,
         candidate_max_attempts=candidate_max_attempts,
         judge_model=judge_model,
@@ -1348,6 +1393,56 @@ def candidate_from_response(
     )
 
 
+class _AdmissionGate:
+    """Admit up to `ceiling` concurrent attempts, holding at one while any
+    in-flight attempt has run longer than `long_attempt_seconds`.
+
+    Non-streaming chat/completions returns nothing until prefill and decode
+    finish, so elapsed time is the only in-flight signal that a trace is heading
+    for the token cap. The gate is therefore reactive: it refuses to open a
+    *second* slot while a long attempt runs, but cannot undo co-residency that
+    already exists. One attempt is always admitted when nothing is in flight, so
+    the run cannot stall.
+    """
+
+    def __init__(self, ceiling: int, long_attempt_seconds: float) -> None:
+        if ceiling < 1:
+            raise ValueError("admission ceiling must be at least one")
+        if long_attempt_seconds <= 0:
+            raise ValueError("long_attempt_seconds must be positive")
+        self._ceiling = ceiling
+        self._long_attempt_seconds = long_attempt_seconds
+        self._condition = threading.Condition()
+        self._in_flight: dict[int, float] = {}
+        self._next_ticket = 0
+        self.downgrade_waits = 0
+
+    def _admitted_width(self, now: float) -> int:
+        oldest = min(self._in_flight.values(), default=now)
+        if now - oldest >= self._long_attempt_seconds:
+            return 1
+        return self._ceiling
+
+    @contextmanager
+    def attempt(self) -> Iterator[None]:
+        with self._condition:
+            while self._in_flight and len(self._in_flight) >= self._admitted_width(
+                time.monotonic()
+            ):
+                if len(self._in_flight) < self._ceiling:
+                    self.downgrade_waits += 1
+                self._condition.wait()
+            ticket = self._next_ticket
+            self._next_ticket += 1
+            self._in_flight[ticket] = time.monotonic()
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._in_flight.pop(ticket, None)
+                self._condition.notify_all()
+
+
 def _retry_delay(retry_count: int) -> float:
     return min(0.25 * (2**retry_count), 5.0)
 
@@ -1365,6 +1460,7 @@ def generate_one(
     temperature: float = CANDIDATE_TEMPERATURE,
     top_p: float = CANDIDATE_TOP_P,
     max_tokens: int = CANDIDATE_MAX_TOKENS,
+    admission: "_AdmissionGate | None" = None,
 ) -> CandidateRecord:
     """Generate one candidate, retrying only transport and explicitly retryable HTTP."""
     if max_attempts < 1:
@@ -1385,7 +1481,12 @@ def generate_one(
     )
     for attempt in range(max_attempts):
         try:
-            with urlopen(request, timeout=CANDIDATE_HTTP_TIMEOUT_SECONDS) as response:
+            # The gate is held for the whole attempt, including the body read,
+            # because that is exactly the window the request occupies KV.
+            slot = nullcontext() if admission is None else admission.attempt()
+            with slot, urlopen(
+                request, timeout=CANDIDATE_HTTP_TIMEOUT_SECONDS
+            ) as response:
                 status = int(getattr(response, "status", 200))
                 raw_response = _response_json(response)
         except HTTPError as exc:
@@ -1528,6 +1629,11 @@ def generate_missing(
             "server identity does not match immutable run contract"
         )
 
+    admission = _AdmissionGate(
+        checkpoint.contract.candidate_concurrency,
+        checkpoint.contract.candidate_long_attempt_seconds,
+    )
+
     def generate_and_record(question_id: int, repeat_index: int) -> None:
         record = generate_one(
             question_by_id[question_id],
@@ -1537,6 +1643,7 @@ def generate_missing(
             temperature=checkpoint.contract.candidate_temperature,
             top_p=checkpoint.contract.candidate_top_p,
             max_tokens=checkpoint.contract.candidate_max_tokens,
+            admission=admission,
         )
         checkpoint.record_candidate(record)
 
@@ -1553,6 +1660,14 @@ def generate_missing(
                 future.result()
     except BaseException as exc:
         worker_error = exc
+
+    print(
+        "admission gate: ceiling "
+        f"{checkpoint.contract.candidate_concurrency}, held at 1 in-flight "
+        f"{admission.downgrade_waits} times past "
+        f"{checkpoint.contract.candidate_long_attempt_seconds}s",
+        flush=True,
+    )
 
     try:
         after_identity = fetch_server_identity(base_url)
@@ -2187,12 +2302,19 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         claim = (
             "AA-LCR v1.1 sampling ablation "
             f"(temperature={checkpoint.contract.candidate_temperature:g}, "
-            f"top_p={checkpoint.contract.candidate_top_p:g})"
+            f"top_p={checkpoint.contract.candidate_top_p:g}, "
+            f"max_tokens={checkpoint.contract.candidate_max_tokens})"
         )
         limitations = [
             "Results are a sampling ablation of AA-LCR v1.1, not a public-methodology reproduction.",
             "Candidate sampling differs from AA's published reasoning defaults (temperature 0.6, top_p 1.0).",
         ]
+        if checkpoint.contract.candidate_max_tokens != CANDIDATE_MAX_TOKENS:
+            limitations.append(
+                f"Output cap is {checkpoint.contract.candidate_max_tokens} tokens, not the "
+                f"{CANDIDATE_MAX_TOKENS} of AA's published recipe, so this score is not "
+                "comparable to a 131,072-cap AA-LCR result."
+            )
     if categories is None:
         limitations.append(
             "Document categories are unavailable for this legacy checkpoint."
@@ -2598,12 +2720,21 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--candidate-concurrency",
-        type=_bounded_int(
-            "candidate-concurrency",
-            CANDIDATE_CONCURRENCY,
-            CANDIDATE_CONCURRENCY,
-        ),
+        type=_bounded_int("candidate-concurrency", 1, CANDIDATE_CONCURRENCY),
         default=CANDIDATE_CONCURRENCY,
+        help="admission ceiling; the gate holds at 1 while an attempt runs long",
+    )
+    parser.add_argument(
+        "--candidate-long-attempt-seconds",
+        type=_bounded_int(
+            "candidate-long-attempt-seconds", 1, CANDIDATE_HTTP_TIMEOUT_SECONDS
+        ),
+        default=CANDIDATE_LONG_ATTEMPT_SECONDS,
+    )
+    parser.add_argument(
+        "--candidate-max-tokens",
+        type=_bounded_int("candidate-max-tokens", 1, 524_288),
+        default=CANDIDATE_MAX_TOKENS,
     )
     parser.add_argument(
         "--candidate-temperature",
@@ -2639,7 +2770,9 @@ def _prepare_run(args: argparse.Namespace) -> tuple[PreparedDataset, Checkpoint]
         code_revision=_code_revision(),
         candidate_temperature=args.candidate_temperature,
         candidate_top_p=args.candidate_top_p,
+        candidate_max_tokens=args.candidate_max_tokens,
         candidate_concurrency=args.candidate_concurrency,
+        candidate_long_attempt_seconds=args.candidate_long_attempt_seconds,
         repeats=args.repeats,
     )
     run_dir.mkdir(parents=True, exist_ok=True)

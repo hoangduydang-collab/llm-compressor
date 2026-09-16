@@ -11,7 +11,9 @@ CANARY = K8S / "hd-aa-lcr-v11-canary.yaml"
 FULL = K8S / "hd-aa-lcr-v11-full.yaml"
 CANARY_T1 = K8S / "hd-aa-lcr-v11-canary-t1.yaml"
 FULL_T1 = K8S / "hd-aa-lcr-v11-full-t1.yaml"
-EVAL_MANIFESTS = (CANARY, FULL, CANARY_T1, FULL_T1)
+CANARY_T1_2X = K8S / "hd-aa-lcr-v11-canary-t1-2x.yaml"
+FULL_T1_2X = K8S / "hd-aa-lcr-v11-full-t1-2x.yaml"
+EVAL_MANIFESTS = (CANARY, FULL, CANARY_T1, FULL_T1, CANARY_T1_2X, FULL_T1_2X)
 TIKTOKEN_CACHE_DIR = "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"
 CL100K_CACHE_FILE = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
 CL100K_BPE_SHA256 = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
@@ -104,9 +106,37 @@ def test_full_jobs_use_24h_deadline():
     for path in (FULL, FULL_T1):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert document["spec"]["activeDeadlineSeconds"] == 86400
-    for path in (CANARY, CANARY_T1):
+    for path in (CANARY, CANARY_T1, CANARY_T1_2X):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert document["spec"]["activeDeadlineSeconds"] == 7200
+
+
+def test_doubled_cap_full_job_gets_48h():
+    # Twice the output cap is roughly twice the generated-token volume, and the
+    # admission gate serialises the long tail that the cap raise exists to reach.
+    document = yaml.safe_load(FULL_T1_2X.read_text(encoding="utf-8"))
+
+    assert document["spec"]["activeDeadlineSeconds"] == 172800
+
+
+def test_doubled_cap_jobs_pin_new_run_ids_cap_and_adaptive_concurrency():
+    canary = CANARY_T1_2X.read_text(encoding="utf-8")
+    full = FULL_T1_2X.read_text(encoding="utf-8")
+
+    for text in (canary, full):
+        assert "--candidate-temperature 1.0" in text
+        assert "--candidate-top-p 0.95" in text
+        assert "--candidate-max-tokens 262144" in text
+        # Ceiling 2 with the gate free to hold at 1 while an attempt runs long.
+        assert "--candidate-concurrency 2" in text
+        assert "--candidate-long-attempt-seconds 900" in text
+    assert "--canary" in canary
+    assert "--limit 100" in full
+    assert "--repeats 3" in full
+    # A raised cap is a different measurement, so it gets its own run ids and
+    # cannot land on the 131k checkpoints or their published result directories.
+    assert "--run-id glm53-w4afp8-aa-lcr-v11-canary-t1p95-2x-r1" in canary
+    assert "--run-id glm53-w4afp8-aa-lcr-v11-full-t1p95-2x-r1" in full
 
 
 def test_phala_sampling_jobs_pin_new_run_ids_and_1_0_0_95():

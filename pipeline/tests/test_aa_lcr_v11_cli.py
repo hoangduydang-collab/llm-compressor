@@ -182,6 +182,133 @@ def test_prepare_run_pins_overridden_temperature_in_contract(tmp_path, monkeypat
     assert checkpoint.contract.candidate_top_p == 0.95
 
 
+def test_cli_defaults_output_cap_and_concurrency_to_the_aa_recipe():
+    args = A._parser().parse_args(["prepare", "--run-id", "aa-default"])
+
+    assert args.candidate_max_tokens == 131_072
+    assert args.candidate_concurrency == 2
+    assert args.candidate_long_attempt_seconds == 900
+
+
+def test_cli_accepts_a_doubled_output_cap_and_a_single_slot():
+    args = A._parser().parse_args(
+        [
+            "prepare",
+            "--run-id",
+            "cap-2x",
+            "--candidate-max-tokens",
+            "262144",
+            "--candidate-concurrency",
+            "1",
+            "--candidate-long-attempt-seconds",
+            "1200",
+        ]
+    )
+
+    assert args.candidate_max_tokens == 262_144
+    assert args.candidate_concurrency == 1
+    assert args.candidate_long_attempt_seconds == 1200
+
+
+@pytest.mark.parametrize(
+    ("option", "value", "message"),
+    [
+        ("--candidate-max-tokens", "0", "candidate-max-tokens must be between"),
+        ("--candidate-max-tokens", "524289", "candidate-max-tokens must be between"),
+        ("--candidate-concurrency", "0", "candidate-concurrency must be between"),
+        ("--candidate-concurrency", "3", "candidate-concurrency must be between"),
+    ],
+)
+def test_cli_rejects_out_of_range_cap_and_concurrency(option, value, message, capsys):
+    with pytest.raises(SystemExit, match="2"):
+        A.main(["prepare", "--run-id", "test-run", option, value, "--plan-only"])
+
+    assert message in capsys.readouterr().err
+
+
+def test_prepare_run_pins_overridden_cap_and_gate_in_contract(tmp_path, monkeypatch):
+    prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_text(
+        json.dumps(
+            {
+                "served_model": A.CANDIDATE_MODEL,
+                "expected_served_model": A.CANDIDATE_MODEL,
+                "observed_served_model": A.CANDIDATE_MODEL,
+                "max_total_num_tokens": 598848,
+            }
+        )
+    )
+    monkeypatch.setattr(A, "prepare_dataset", lambda _path: prepared)
+
+    args = A._parser().parse_args(
+        [
+            "prepare",
+            "--run-id",
+            "cap-2x-plan",
+            "--work-dir",
+            str(tmp_path / "work"),
+            "--endpoint-identity-file",
+            str(identity_path),
+            "--candidate-max-tokens",
+            "262144",
+            "--candidate-long-attempt-seconds",
+            "1200",
+            "--plan-only",
+        ]
+    )
+    _prepared, checkpoint = A._prepare_run(args)
+
+    assert checkpoint.contract.candidate_max_tokens == 262_144
+    assert checkpoint.contract.candidate_long_attempt_seconds == 1200
+    assert not checkpoint.contract.uses_public_methodology_sampling
+
+
+def _budget_dataset(prompt_tokens: int) -> A.PreparedDataset:
+    return A.PreparedDataset(
+        revision="revision",
+        questions=(),
+        file_sha256={},
+        prompt_sha256="b" * 64,
+        question_input_tokens={1: (prompt_tokens, prompt_tokens)},
+    )
+
+
+def _budget_contract(prompt_tokens: int, pool: int, cap: int) -> A.RunContract:
+    return A.build_run_contract(
+        _budget_dataset(prompt_tokens),
+        candidate_model=A.CANDIDATE_MODEL,
+        served_model=A.CANDIDATE_MODEL,
+        endpoint_deployment_identity={"max_total_num_tokens": pool},
+        code_revision="test",
+        candidate_max_tokens=cap,
+    )
+
+
+def test_build_run_contract_rejects_a_cap_the_kv_pool_cannot_hold():
+    with pytest.raises(A.CheckpointConflictError, match="max_total_num_tokens"):
+        _budget_contract(prompt_tokens=114_611, pool=598_848, cap=524_288)
+
+
+def test_build_run_contract_accepts_the_doubled_cap_on_the_two_node_pool():
+    contract = _budget_contract(prompt_tokens=114_611, pool=598_848, cap=262_144)
+
+    assert contract.candidate_max_tokens == 262_144
+
+
+def test_build_run_contract_skips_the_budget_check_without_a_reported_pool():
+    contract = A.build_run_contract(
+        _budget_dataset(114_611),
+        candidate_model=A.CANDIDATE_MODEL,
+        served_model=A.CANDIDATE_MODEL,
+        endpoint_deployment_identity={"tp_size": 16},
+        code_revision="test",
+        candidate_max_tokens=524_288,
+    )
+
+    assert contract.candidate_max_tokens == 524_288
+
+
 @pytest.mark.parametrize(
     ("option", "value", "message"),
     [

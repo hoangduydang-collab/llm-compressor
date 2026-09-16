@@ -222,6 +222,51 @@ Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full-t1.yaml `
   glm53-w4afp8-aa-lcr-v11-full-t1p95-r1
 ```
 
+### Phala sampling at a doubled output cap
+
+32 of the 300 traces in the 0.6 run hit the 131,072 cap with empty answers, so
+the `-t1-2x` pair reruns Phala sampling at `--candidate-max-tokens 262144`. It
+is a **fresh measurement, not a resume**: the cap is in the run contract, so it
+changes the fingerprint and gets its own `…-t1p95-2x-r1` run ids. The published
+claim becomes `AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95,
+max_tokens=262144)` with an explicit limitation that it is not comparable to a
+131,072-cap AA-LCR result. Upper bound on what the extra budget can buy: the
+0.6 run's 32 truncations, i.e. 246/300 = 82.0%.
+
+```powershell
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary-t1-2x.yaml `
+  glm53-w4afp8-aa-lcr-v11-canary-t1p95-2x-r1
+Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full-t1-2x.yaml `
+  glm53-w4afp8-aa-lcr-v11-full-t1p95-2x-r1
+```
+
+Two knobs exist because the doubled cap does not fit two concurrent requests:
+
+- `--candidate-concurrency` is an **admission ceiling** (1–2, default 2), not a
+  fixed width. AA-LCR prompts run 76,820–114,611 tokens, so a worst-case
+  262,144-cap request needs ~376,755 KV tokens and two of them need ~753,510 —
+  over the 598,848-token pool of the TP=16 serve. At the 131,072 cap two fit
+  (~491,366) and the ceiling is reached normally.
+- `--candidate-long-attempt-seconds` (default 900) is when the gate stops
+  admitting a second attempt. Non-streaming `chat/completions` returns nothing
+  until decode finishes, so elapsed time is the only in-flight signal that a
+  trace is heading for the cap. The gate is reactive: it refuses to open a
+  *second* slot while a long attempt runs, and cannot undo co-residency that
+  already exists. Each `generate` phase prints an `admission gate:` line
+  recording how often it held at one.
+
+`build_run_contract` also fails closed before any endpoint traffic when
+`largest prompt + max_tokens` exceeds the serve's reported
+`max_total_num_tokens`. That guard rejects a 524,288 cap on this pool
+(638,899 > 598,848) and accepts 262,144. Prompt lengths there are cl100k
+counts, a proxy for the GLM tokenizer, so treat it as a floor on the real
+footprint rather than a certificate.
+
+The `-t1-2x` full Job gets `activeDeadlineSeconds: 172800` (48h) rather than
+24h: doubling the cap roughly doubles generated-token volume and the gate
+serialises exactly the long tail the cap raise exists to reach. Resume still
+works if it dies on deadline — relaunch the same run id.
+
 Inspect the canary before proceeding:
 
 - Job succeeded with `backoffLimit: 0`; logs contain no environment values.

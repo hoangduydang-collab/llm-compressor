@@ -100,6 +100,16 @@ def test_canary_and_full_have_pinned_population_and_concurrency():
     assert "--candidate-concurrency 2" in full
 
 
+def test_base_jobs_pin_aa_generic_sampling_explicitly():
+    # The module default moved to Z.ai's recommended 1.0/0.95 (the lab-override
+    # branch of AA's rule). These run ids published 0.6/1.0 results, so they must
+    # state it rather than inherit a default that no longer means that.
+    for path in (CANARY, FULL):
+        text = path.read_text(encoding="utf-8")
+        assert "--candidate-temperature 0.6" in text
+        assert "--candidate-top-p 1.0" in text
+
+
 def test_full_jobs_use_24h_deadline():
     # 12h was enough only because the 0.6 campaign resumed into a second Job.
     # A from-scratch 300-unit run needs the extra headroom.

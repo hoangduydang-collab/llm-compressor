@@ -55,8 +55,8 @@ def seeded_checkpoint(
     repeats: int = 1,
     question_count: int = 1,
     endpoint_identity: dict[str, object] | None = None,
-    candidate_temperature: float = 0.6,
-    candidate_top_p: float = 1.0,
+    candidate_temperature: float = 1.0,
+    candidate_top_p: float = 0.95,
 ) -> A.Checkpoint:
     return A.Checkpoint(
         path / "run.sqlite",
@@ -246,17 +246,17 @@ def test_candidate_request_is_glm_max_contract():
         "model": "glm-5.3-w4afp8",
         "messages": [{"role": "user", "content": "candidate prompt 1"}],
         "max_tokens": 131072,
-        "temperature": 0.6,
-        "top_p": 1.0,
+        "temperature": 1.0,
+        "top_p": 0.95,
         "chat_template_kwargs": {"enable_thinking": True},
     }
 
 
-def test_candidate_request_honors_phala_sampling_override():
-    body = A.candidate_request(questions()[0], temperature=1.0, top_p=0.95)
+def test_candidate_request_honors_aa_generic_sampling_override():
+    body = A.candidate_request(questions()[0], temperature=0.6, top_p=1.0)
 
-    assert body["temperature"] == 1.0
-    assert body["top_p"] == 0.95
+    assert body["temperature"] == 0.6
+    assert body["top_p"] == 1.0
 
 
 def test_only_final_content_is_selected():
@@ -270,13 +270,13 @@ def test_only_final_content_is_selected():
 
 def test_generate_missing_sends_contract_sampling(tmp_path, fake_server):
     checkpoint = seeded_checkpoint(
-        tmp_path, candidate_temperature=1.0, candidate_top_p=0.95
+        tmp_path, candidate_temperature=0.6, candidate_top_p=1.0
     )
 
     A.generate_missing(checkpoint, questions(), fake_server.url, repeats=1)
 
-    assert fake_server.requests[0]["body"]["temperature"] == 1.0
-    assert fake_server.requests[0]["body"]["top_p"] == 0.95
+    assert fake_server.requests[0]["body"]["temperature"] == 0.6
+    assert fake_server.requests[0]["body"]["top_p"] == 1.0
 
 
 def test_resume_does_not_regenerate_terminal_candidate(tmp_path, fake_server):

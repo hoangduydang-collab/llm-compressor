@@ -92,28 +92,30 @@ def test_plan_only_rejects_wrong_candidate_identity(tmp_path, monkeypatch):
     assert not (tmp_path / "work" / "bad-plan" / "run.sqlite").exists()
 
 
-def test_cli_defaults_candidate_sampling_to_aa_reasoning_convention():
+def test_cli_defaults_candidate_sampling_to_the_lab_override_branch():
+    # AA's generic default is 0.6/1.0, but its own rule defers to the model
+    # creator when the lab publishes a config, and Z.ai publishes 1.0/0.95.
     args = A._parser().parse_args(["prepare", "--run-id", "aa-default"])
 
-    assert args.candidate_temperature == 0.6
-    assert args.candidate_top_p == 1.0
+    assert args.candidate_temperature == 1.0
+    assert args.candidate_top_p == 0.95
 
 
-def test_cli_accepts_phala_sampling():
+def test_cli_accepts_aa_generic_sampling():
     args = A._parser().parse_args(
         [
             "prepare",
             "--run-id",
-            "phala",
+            "aa-generic",
             "--candidate-temperature",
-            "1.0",
+            "0.6",
             "--candidate-top-p",
-            "0.95",
+            "1.0",
         ]
     )
 
-    assert args.candidate_temperature == 1.0
-    assert args.candidate_top_p == 0.95
+    assert args.candidate_temperature == 0.6
+    assert args.candidate_top_p == 1.0
 
 
 @pytest.mark.parametrize(
@@ -164,22 +166,23 @@ def test_prepare_run_pins_overridden_temperature_in_contract(tmp_path, monkeypat
         [
             "prepare",
             "--run-id",
-            "t1-plan",
+            "generic-plan",
             "--work-dir",
             str(tmp_path / "work"),
             "--endpoint-identity-file",
             str(identity_path),
             "--candidate-temperature",
-            "1.0",
+            "0.6",
             "--candidate-top-p",
-            "0.95",
+            "1.0",
             "--plan-only",
         ]
     )
     _prepared, checkpoint = A._prepare_run(args)
 
-    assert checkpoint.contract.candidate_temperature == 1.0
-    assert checkpoint.contract.candidate_top_p == 0.95
+    assert checkpoint.contract.candidate_temperature == 0.6
+    assert checkpoint.contract.candidate_top_p == 1.0
+    assert not checkpoint.contract.uses_public_methodology_sampling
 
 
 def test_cli_defaults_output_cap_and_concurrency_to_the_aa_recipe():

@@ -64,6 +64,8 @@ spec:
                 --work-dir /mnt/cephfs/hoangduy/aa-lcr-v11-work \
                 --output-dir /mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11 \
                 --candidate-base-url "${CANDIDATE_COMPLETIONS_URL%/v1/chat/completions}" \
+                --candidate-temperature 0.6 \
+                --candidate-top-p 1.0 \
                 --limit 100 --repeats 3 --candidate-concurrency 2 --judge-preflight
           volumeMounts:
             - {name: cephfs, mountPath: /mnt/cephfs}

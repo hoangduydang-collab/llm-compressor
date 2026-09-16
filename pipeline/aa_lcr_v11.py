@@ -62,8 +62,19 @@ HF_RESOLVE = (
 )
 REPEATS = 3
 CANDIDATE_MODEL = "glm-5.3-w4afp8"
-CANDIDATE_TEMPERATURE = 0.6
-CANDIDATE_TOP_P = 1.0
+# AA publishes a default sampling config, temperature 0.6 / top_p 1.0, and
+# overrides it with the model creator's recommended config whenever the lab
+# publishes one. Z.ai, the creator of GLM-5.3, recommends temperature 1.0 /
+# top_p 0.95, so for this model the lab-override branch applies and 1.0/0.95 is
+# the AA-faithful setting. Same rule the AA GPQA arm moved onto in 189e3ac7;
+# this runner was left on AA's generic default until 2026-09-16.
+CANDIDATE_TEMPERATURE = 1.0
+CANDIDATE_TOP_P = 0.95
+AA_GENERIC_TEMPERATURE = 0.6
+AA_GENERIC_TOP_P = 1.0
+# NOT an AA-published number. AA requests the maximum output the model creator
+# allows; Z.ai discloses a 128K output maximum for GLM-5.3, so the AA-policy
+# budget is 131,072. Generating past it leaves what Z.ai claims to support.
 CANDIDATE_MAX_TOKENS = 131_072
 PUBLIC_METHODOLOGY_CLAIM = "AA-LCR v1.1 public-methodology reproduction"
 # A ceiling, not a fixed width: the admission gate below drops to one in-flight
@@ -2288,10 +2299,39 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
         }
         for category, rows in sorted(category_rows.items())
     }
+    temperature = checkpoint.contract.candidate_temperature
+    top_p = checkpoint.contract.candidate_top_p
+    max_tokens = checkpoint.contract.candidate_max_tokens
+    if (temperature, top_p) == (CANDIDATE_TEMPERATURE, CANDIDATE_TOP_P):
+        sampling_provenance = (
+            "Z.ai (GLM-5.3 creator) recommended config, the lab-override branch of "
+            "AA's sampling rule"
+        )
+    elif (temperature, top_p) == (AA_GENERIC_TEMPERATURE, AA_GENERIC_TOP_P):
+        sampling_provenance = (
+            "AA's generic default config, which AA's own rule overrides whenever the "
+            "model creator publishes a recommended config — Z.ai does for GLM-5.3"
+        )
+    else:
+        sampling_provenance = (
+            "neither AA's generic default nor Z.ai's recommended config for GLM-5.3"
+        )
+    if max_tokens == CANDIDATE_MAX_TOKENS:
+        max_tokens_provenance = (
+            "AA's max-output policy applied to Z.ai's disclosed 128K output maximum "
+            "for GLM-5.3 (not an AA-published figure)"
+        )
+    else:
+        max_tokens_provenance = (
+            f"{max_tokens} tokens, departing from the {CANDIDATE_MAX_TOKENS} implied by "
+            "AA's max-output policy under Z.ai's disclosed 128K output maximum"
+        )
     sampling = {
-        "temperature": checkpoint.contract.candidate_temperature,
-        "top_p": checkpoint.contract.candidate_top_p,
-        "max_tokens": checkpoint.contract.candidate_max_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
+        "max_tokens": max_tokens,
+        "sampling_provenance": sampling_provenance,
+        "max_tokens_provenance": max_tokens_provenance,
     }
     if checkpoint.contract.uses_public_methodology_sampling:
         claim = PUBLIC_METHODOLOGY_CLAIM
@@ -2301,19 +2341,20 @@ def build_summary(checkpoint: Checkpoint) -> dict[str, object]:
     else:
         claim = (
             "AA-LCR v1.1 sampling ablation "
-            f"(temperature={checkpoint.contract.candidate_temperature:g}, "
-            f"top_p={checkpoint.contract.candidate_top_p:g}, "
-            f"max_tokens={checkpoint.contract.candidate_max_tokens})"
+            f"(temperature={temperature:g}, top_p={top_p:g}, max_tokens={max_tokens})"
         )
         limitations = [
             "Results are a sampling ablation of AA-LCR v1.1, not a public-methodology reproduction.",
-            "Candidate sampling differs from AA's published reasoning defaults (temperature 0.6, top_p 1.0).",
         ]
-        if checkpoint.contract.candidate_max_tokens != CANDIDATE_MAX_TOKENS:
+        if (temperature, top_p) != (CANDIDATE_TEMPERATURE, CANDIDATE_TOP_P):
             limitations.append(
-                f"Output cap is {checkpoint.contract.candidate_max_tokens} tokens, not the "
-                f"{CANDIDATE_MAX_TOKENS} of AA's published recipe, so this score is not "
-                "comparable to a 131,072-cap AA-LCR result."
+                f"Candidate sampling is {sampling_provenance}; AA's rule for GLM-5.3 "
+                f"selects temperature {CANDIDATE_TEMPERATURE:g} / top_p {CANDIDATE_TOP_P:g}."
+            )
+        if max_tokens != CANDIDATE_MAX_TOKENS:
+            limitations.append(
+                f"Output cap is {max_tokens_provenance}, so this score is not comparable "
+                f"to a {CANDIDATE_MAX_TOKENS}-cap AA-LCR result."
             )
     if categories is None:
         limitations.append(

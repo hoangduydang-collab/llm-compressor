@@ -69,8 +69,14 @@ def test_official_v11_identity_is_immutable():
         "5e839249826f6b9bd5324f0d139089c9dc481ccb3f212a6dfad00c51045d9d8a"
     )
     assert A.REPEATS == 3
-    assert A.CANDIDATE_TEMPERATURE == 0.6
-    assert A.CANDIDATE_TOP_P == 1.0
+    # AA overrides its generic 0.6/1.0 default with the model creator's
+    # recommended config; Z.ai recommends 1.0/0.95 for GLM-5.3, so the
+    # lab-override branch is the default here.
+    assert A.CANDIDATE_TEMPERATURE == 1.0
+    assert A.CANDIDATE_TOP_P == 0.95
+    assert A.AA_GENERIC_TEMPERATURE == 0.6
+    assert A.AA_GENERIC_TOP_P == 1.0
+    # AA's max-output policy under Z.ai's disclosed 128K output maximum.
     assert A.CANDIDATE_MAX_TOKENS == 131_072
     assert A.PUBLIC_METHODOLOGY_CLAIM == (
         "AA-LCR v1.1 public-methodology reproduction"

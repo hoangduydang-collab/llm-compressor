@@ -204,10 +204,32 @@ Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary.yaml `
   glm53-w4afp8-aa-lcr-v11-canary-r1
 ```
 
-Temperature `1.0` / `top_p=0.95` matches PhalaCloud's published AA-LCR
-sampling. It is a sampling ablation, not the public-methodology default
-(`0.6` / `1.0`), and must not resume the `0.6` checkpoint. After a committed
-code ConfigMap, authorize:
+### Sampling provenance — read before labelling any result
+
+AA publishes a generic default sampling config, temperature `0.6` / `top_p 1.0`,
+and **overrides it with the model creator's recommended config whenever the lab
+publishes one**. Z.ai recommends temperature `1.0` / `top_p 0.95` for GLM-5.3,
+so for this model the lab-override branch applies and **`1.0` / `0.95` is the
+AA-faithful setting**. The AA GPQA arm moved onto this rule in `189e3ac7`; this
+runner stayed on AA's generic default until 2026-09-16, which is why earlier
+docs and bundles call `0.6` / `1.0` "AA's published reasoning defaults". They
+are wrong. `0.6` / `1.0` is the ablation for GLM-5.3.
+
+The `131,072` output cap is likewise **not an AA-published figure**. AA requests
+the maximum output the model creator allows; Z.ai discloses a 128K output
+maximum for GLM-5.3, so the AA-policy budget is `131,072`. Generating past it
+leaves what Z.ai claims the model supports. Never describe `131,072` as "AA's
+recipe" — describe it as AA's max-output policy under Z.ai's disclosure.
+
+`summary.json` now records both derivations as `candidate_sampling
+.sampling_provenance` and `.max_tokens_provenance`, so a bundle states its own
+provenance instead of leaving a reader to infer it.
+
+The `-t1` pair pins `1.0` / `0.95` explicitly even though it now matches the
+default, and the base pair pins `0.6` / `1.0` explicitly so the already
+published `…-full-r1` / `…-canary-r1` run ids keep meaning what they measured.
+A changed cap or sampling changes the fingerprint and must not resume another
+run's checkpoint. After a committed code ConfigMap, authorize:
 
 ```powershell
 Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary-t1.yaml `
@@ -225,13 +247,22 @@ Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-full-t1.yaml `
 ### Phala sampling at a doubled output cap
 
 32 of the 300 traces in the 0.6 run hit the 131,072 cap with empty answers, so
-the `-t1-2x` pair reruns Phala sampling at `--candidate-max-tokens 262144`. It
-is a **fresh measurement, not a resume**: the cap is in the run contract, so it
-changes the fingerprint and gets its own `…-t1p95-2x-r1` run ids. The published
-claim becomes `AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95,
-max_tokens=262144)` with an explicit limitation that it is not comparable to a
-131,072-cap AA-LCR result. Upper bound on what the extra budget can buy: the
-0.6 run's 32 truncations, i.e. 246/300 = 82.0%.
+the `-t1-2x` pair reran Z.ai-recommended sampling at
+`--candidate-max-tokens 262144`. It is a **fresh measurement, not a resume**:
+the cap is in the run contract, so it changes the fingerprint and gets its own
+`…-t1p95-2x-r1` run ids. A raised cap is still an ablation — it departs from
+AA's max-output policy under Z.ai's 128K disclosure — so the bundle carries an
+explicit non-comparability limitation.
+
+**Result (2026-09-16): it was not worth it.** 233/300 = 77.67% vs the 0.6 run's
+71.33%, but only **2 of 300** completions exceeded 131,072, both ran to the full
+262,144, and both scored INCORRECT. The raised cap converted zero items; the
+entire +6.33 pp came from the sampling change. Total generated tokens *fell*
+from 5,078,829 to 2,060,660 (−59%) despite the doubled cap, because at
+temperature 0.6 / top_p 1.0 thirty-two traces ran away into the 64k–131k band
+and all hit the wall, whereas at 1.0 / 0.95 that band is empty. Do not raise the
+cap again without new evidence: prefer 131,072 and treat a long tail as a
+sampling problem, not a budget problem.
 
 ```powershell
 Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary-t1-2x.yaml `

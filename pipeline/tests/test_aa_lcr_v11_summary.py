@@ -1,4 +1,4 @@
-import ctypes
+﻿import ctypes
 import errno
 import json
 from dataclasses import replace
@@ -18,8 +18,8 @@ def checkpoint_with_candidates_and_judgments(
     correct: int = 0,
     input_token_discrepancies: dict[int, tuple[int, int]] | None = None,
     question_input_tokens: dict[int, tuple[int, int]] | None = None,
-    candidate_temperature: float = 0.6,
-    candidate_top_p: float = 1.0,
+    candidate_temperature: float = 1.0,
+    candidate_top_p: float = 0.95,
     candidate_max_tokens: int = 131_072,
 ) -> A.Checkpoint:
     checkpoint = A.Checkpoint(
@@ -92,8 +92,8 @@ def complete_checkpoint(
     path: Path,
     *,
     correct: int,
-    candidate_temperature: float = 0.6,
-    candidate_top_p: float = 1.0,
+    candidate_temperature: float = 1.0,
+    candidate_top_p: float = 0.95,
     candidate_max_tokens: int = 131_072,
 ) -> A.Checkpoint:
     return checkpoint_with_candidates_and_judgments(
@@ -414,11 +414,14 @@ def test_summary_recomputes_pass_at_one_and_diagnostics(tmp_path):
         "pass_at_1": 0.75,
     }
     assert summary["benchmark_claim"] == ("AA-LCR v1.1 public-methodology reproduction")
-    assert summary["candidate_sampling"] == {
-        "temperature": 0.6,
-        "top_p": 1.0,
-        "max_tokens": 131072,
-    }
+    assert summary["candidate_sampling"]["temperature"] == 1.0
+    assert summary["candidate_sampling"]["top_p"] == 0.95
+    assert summary["candidate_sampling"]["max_tokens"] == 131072
+    assert "Z.ai" in summary["candidate_sampling"]["sampling_provenance"]
+    assert "lab-override" in summary["candidate_sampling"]["sampling_provenance"]
+    assert "not an AA-published figure" in (
+        summary["candidate_sampling"]["max_tokens_provenance"]
+    )
     assert summary["finish_reasons"] == {"length": 1, "stop": 299}
     assert summary["candidate_diagnostics"] == {
         "truncation_count": 1,
@@ -432,33 +435,33 @@ def test_summary_recomputes_pass_at_one_and_diagnostics(tmp_path):
     assert summary["judge_identity"]["preflight"] == preflight_audit()
 
 
-def test_summary_claim_is_sampling_ablation_for_phala_recipe(tmp_path):
+def test_summary_claim_is_sampling_ablation_for_aa_generic_default(tmp_path):
+    # 0.6/1.0 is AA's generic default, which AA's own rule overrides for GLM-5.3
+    # because Z.ai publishes a recommended config. It is therefore the ablation.
     checkpoint = complete_checkpoint(
         tmp_path,
         correct=225,
-        candidate_temperature=1.0,
-        candidate_top_p=0.95,
+        candidate_temperature=0.6,
+        candidate_top_p=1.0,
     )
 
     summary = A.build_summary(checkpoint)
 
     assert summary["benchmark_claim"] == (
-        "AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95, max_tokens=131072)"
+        "AA-LCR v1.1 sampling ablation (temperature=0.6, top_p=1, max_tokens=131072)"
     )
-    assert summary["candidate_sampling"] == {
-        "temperature": 1.0,
-        "top_p": 0.95,
-        "max_tokens": 131072,
-    }
+    assert "generic default" in summary["candidate_sampling"]["sampling_provenance"]
+    assert any(
+        "AA's rule for GLM-5.3 selects temperature 1 / top_p 0.95" in item
+        for item in summary["limitations"]
+    )
     assert not any("Output cap" in item for item in summary["limitations"])
 
 
-def test_summary_discloses_a_raised_output_cap_as_not_aa_comparable(tmp_path):
+def test_summary_discloses_a_raised_output_cap_as_not_comparable(tmp_path):
     checkpoint = complete_checkpoint(
         tmp_path,
         correct=225,
-        candidate_temperature=1.0,
-        candidate_top_p=0.95,
         candidate_max_tokens=262_144,
     )
 
@@ -468,10 +471,15 @@ def test_summary_discloses_a_raised_output_cap_as_not_aa_comparable(tmp_path):
         "AA-LCR v1.1 sampling ablation (temperature=1, top_p=0.95, max_tokens=262144)"
     )
     assert summary["candidate_sampling"]["max_tokens"] == 262_144
+    # The cap is ours, derived from Z.ai's disclosure, so the limitation must not
+    # claim AA published 131,072.
     assert any(
-        "Output cap is 262144 tokens" in item and "not comparable" in item
+        "Output cap is 262144 tokens" in item
+        and "AA's max-output policy" in item
+        and "not comparable" in item
         for item in summary["limitations"]
     )
+    assert not any("AA's published recipe" in item for item in summary["limitations"])
 
 
 def test_summary_judge_retry_count_includes_successes_and_preflight(tmp_path):

@@ -153,12 +153,19 @@ def test_phala_sampling_jobs_pin_new_run_ids_and_1_0_0_95():
     canary = CANARY_T1.read_text(encoding="utf-8")
     full = FULL_T1.read_text(encoding="utf-8")
 
-    assert "glm53-w4afp8-aa-lcr-v11-canary-t1p95-r1" in canary
-    assert "glm53-w4afp8-aa-lcr-v11-full-t1p95-r1" in full
+    # r1 died 9 minutes in and cannot resume (code revision and serve identity
+    # both moved), so the pair points at a fresh r2.
+    assert "--run-id glm53-w4afp8-aa-lcr-v11-canary-t1p95-r2" in canary
+    assert "--run-id glm53-w4afp8-aa-lcr-v11-full-t1p95-r2" in full
+    assert "t1p95-r1" not in canary
+    assert "t1p95-r1" not in full
     assert "--candidate-temperature 1.0" in canary
     assert "--candidate-temperature 1.0" in full
     assert "--candidate-top-p 0.95" in canary
     assert "--candidate-top-p 0.95" in full
+    # AA's max-output policy under Z.ai's 128K disclosure: the comparable cap.
+    assert "--candidate-max-tokens 131072" in canary
+    assert "--candidate-max-tokens 131072" in full
     assert "--canary" in canary
     assert "--limit 100" in full
     assert "--repeats 3" in full

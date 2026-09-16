@@ -12,6 +12,127 @@ canonical HTTP serving; CUDA graphs remain out of scope until quality passes.
 
 # Bugs and fixes (llm-compressor pipeline)
 
+## AA-LCR publish renameat2 RENAME_NOREPLACE rejected on CephFS (fixed, 2026-09-14)
+
+**Root cause:** `publish_results` moves the temporary bundle with Linux
+`renameat2(..., RENAME_NOREPLACE)` so an existing result directory is never
+replaced. CephFS implements `rename` but not that flag: the syscall returns
+`EINVAL` even when the destination is absent. The 300/300 AA-LCR checkpoint
+therefore finished judging and then failed at publication, leaving
+`/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/` empty.
+
+**Long-term fix:** Keep `renameat2` + `RENAME_NOREPLACE` when the filesystem
+supports it. On `EINVAL` / `ENOSYS` / `ENOTSUP` / `EOPNOTSUPP`, refuse if the
+destination already exists, then `os.rename` the temporary directory. Do not
+fall back on `EEXIST`/`ENOTEMPTY`. Resume publish with `summarize` and the
+checkpoint's original `AA_LCR_CODE_REVISION`; do not start a new run ID.
+
+**Tactical workaround:** None. The sqlite checkpoint is the durable record;
+republish from it after this fix.
+
+**Removal criteria:** Keep the fallback until CephFS supports
+`RENAME_NOREPLACE`, or until results are published on a filesystem that does.
+
+## AA-LCR candidate HTTP timeout too short for non-streaming long context (fixed, 2026-09-13)
+
+**Root cause:** `generate_one` called `urlopen(..., timeout=120)` and does not
+stream. SGLang therefore sends no HTTP body until prefill and decode finish.
+AA-LCR prompts are about 90k-113k tokens with thinking enabled and
+`max_tokens=131072`. First-byte time routinely exceeds 120s after the short
+question-1 samples, so the client timed out, retried up to 30 times, and wrote
+no new sqlite rows.
+
+**Long-term fix:** Wait `CANDIDATE_HTTP_TIMEOUT_SECONDS = 7200` per candidate
+request. This is a client transport setting, not an AA scoring-contract field,
+so it is not added to the run fingerprint. A new code revision still changes
+`code_revision` in the contract; resume of an in-flight run must keep the
+existing checkpoint's `code_revision` or start a new run ID.
+
+**Tactical workaround:** None. Do not skip later questions. Resume may
+replace a stored transport-error candidate with a later successful
+generation; successful answers remain insert-once.
+
+**Removal criteria:** Keep the 7200s timeout until the candidate client uses
+streaming and an idle-read timeout instead of a total first-byte timeout.
+
+## AA-LCR runtime canary archive and Job-start blockers (fixed, 2026-09-13)
+
+**Root cause:** The official AA-LCR archive pinned at revision
+`9a77ef56b717057ade24ceab4d273712a0b4f19e` and SHA-256
+`5e839249826f6b9bd5324f0d139089c9dc481ccb3f212a6dfad00c51045d9d8a`
+contains 230 members, while the CSV references 229 unique documents. Four
+UTF-8 member names lack ZIP general-purpose bit 11, so `zipfile` decodes their
+raw UTF-8 bytes as CP437 mojibake. For example,
+`lcr/Marketing/mkt_gaming/402813954_17. 260-275 Sinem Eyice Bas╠ºev.txt`
+recovers to decomposed `Başev.txt`, whose NFC form matches the CSV's
+`Başev.txt`. The other recovered members use en dash, em dash, and right
+apostrophe. Separately, `Start-AaLcrJob` only inspected Pods before creating a
+Job, allowing a same-run Job with no Pod yet to bypass the active-run guard.
+
+**Long-term fix:** ZIP validation preserves correctly flagged UTF-8 names and
+standard unflagged CP437 names. When an explicit expected-members contract is
+present, it prefers the standard CP437-decoded path and uses
+CP437-byte-to-UTF-8 recovery only when the recovered NFC path is explicitly
+expected. Generic extraction never heuristically renames unflagged members.
+Path safety, expected-member, and collision checks operate on the selected NFC
+path. NUL detection still examines raw local-header bytes, and canonical
+collisions remain rejected. `prepare_dataset` alone adds the single known,
+pinned unreferenced member
+`lcr/Legal/legal_eu_ai/Preparing for change_ How businesses can thrive under the EU_s AI Act _ Global law firm _ Norton Rose Fulbright.txt`
+to the CSV-derived contract. After recovery and NFC there are zero missing
+expected members, one unexpected member (that exact allowlisted path), and no
+collisions. The runbook now rejects nonterminal same-run Jobs before creation
+and waits up to 180 seconds for the created Job's Pod before reading logs.
+
+**Tactical workaround:** None. No removal is needed: this is the durable
+decoder and the allowlist is explicitly bound to the immutable archive
+revision and digest.
+
+## AA-LCR tiktoken vocabulary staging (fixed, 2026-09-13)
+
+**Root cause:** The pinned dataset extraction completed, but real local
+preparation caused `tiktoken==0.14.0` to lazily fetch `cl100k_base` from
+`https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken`.
+The local CA failure showed that installing tiktoken does not materialize its
+vocabulary. Each canary and full Job also starts with a fresh `/tmp` cache, so
+the runtime contract was not reproducible.
+
+**Long-term fix:** Stage, canary, and full manifests now share
+`TIKTOKEN_CACHE_DIR=/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken`. Stage
+always materializes `tiktoken.get_encoding("cl100k_base")` after verifying the
+hash-locked venv, checks a nonempty cache artifact, and records only SHA-256
+inventory under the staged venv. Canary and full Jobs fail closed if that
+shared cache is absent or empty before invoking the runner. TLS and tiktoken's
+upstream expected vocabulary-hash verification remain enabled.
+
+**Tactical workaround:** None. No removal is needed: the shared, versioned
+cache is part of the immutable runtime staging contract.
+
+## AA-LCR v1.1 stale input-token metadata (fixed, 2026-09-13)
+
+**Root cause:** The official dataset card's prompt matches
+`build_candidate_prompt` exactly and specifies `cl100k`, but five published
+v1.1 `input_tokens` metadata values are stale. The official reference loader
+uses raw `row["question"]` and does not validate those values; our stripping
+helper altered trailing question text and initially masked that distinction.
+The same five affected questions and published counts exist in v1.0 revision
+`bdae010` and the pinned v1.1 revision, and tiktoken 0.9.0 through 0.14.0
+tokenize them identically.
+
+**Long-term fix:** Candidate prompts and judge answers retain exact raw CSV
+text; stripping is limited to metadata and paths. The pinned v1.1 contract
+accepts only these `(question_id, published_input_tokens,
+actual_cl100k_prompt_tokens)` tuples: 5 `(113266, 113264)`, 21 `(96038,
+96035)`, 62 `(107441, 107438)`, 65 `(89459, 89456)`, and 81 `(109091,
+109086)`. Any added, missing, or changed discrepancy fails closed. Both token
+values are retained in `Question` provenance; the discrepancy map is
+immutable checkpoint/run-contract and publication provenance. Candidate
+requests use actual prompt tokens, never stale metadata.
+
+**Tactical workaround:** None. Keep the pinned validation until a newly pinned
+upstream revision corrects the five published counts; that revision is the
+removal criterion.
+
 ## Pre-quantization gate: meta-device MoE linearization offload (fixed, 2026-07-13)
 
 **Symptom:** The first real MiniMax-M3 CLI run of the pre-quantization

@@ -254,15 +254,19 @@ the cap is in the run contract, so it changes the fingerprint and gets its own
 AA's max-output policy under Z.ai's 128K disclosure — so the bundle carries an
 explicit non-comparability limitation.
 
-**Result (2026-09-16): it was not worth it.** 233/300 = 77.67% vs the 0.6 run's
-71.33%, but only **2 of 300** completions exceeded 131,072, both ran to the full
-262,144, and both scored INCORRECT. The raised cap converted zero items; the
-entire +6.33 pp came from the sampling change. Total generated tokens *fell*
-from 5,078,829 to 2,060,660 (−59%) despite the doubled cap, because at
-temperature 0.6 / top_p 1.0 thirty-two traces ran away into the 64k–131k band
-and all hit the wall, whereas at 1.0 / 0.95 that band is empty. Do not raise the
-cap again without new evidence: prefer 131,072 and treat a long tail as a
-sampling problem, not a budget problem.
+**Result (2026-09-16): it was not worth it, and the follow-up settled it.** The
+262k run scored 233/300 = 77.67%, but only **2 of 300** completions exceeded
+131,072, both ran to the full cap and both scored INCORRECT — the raised cap
+converted zero items. The same config at 131,072 (`…-t1p95-r2`) then scored
+**237/300 = 79.00%**, i.e. *higher*, on 7% fewer generated tokens and with the
+same 2/300 truncation count. The extra budget was pure waste.
+
+Total generated tokens fell from 5,078,829 (0.6/1.0) to 2,060,660 (262k) to
+1,908,829 (131k). At temperature 0.6 / top_p 1.0 thirty-two traces ran away into
+the 64k–131k band and all hit the wall; at 1.0 / 0.95 that band is empty and 99%
+of attempts finish under 50k tokens. Do not raise the cap again: a long tail here
+is a sampling problem, not a budget problem. The `-t1-2x` pair is retained only
+as the record of that ablation.
 
 ```powershell
 Start-AaLcrJob pipeline/k8s/hd-aa-lcr-v11-canary-t1-2x.yaml `
@@ -356,14 +360,27 @@ all scoring primitives already exist in SQLite. This does not change the
 published metric, but a future cleanup may load the existing checkpoint
 without re-downloading the dataset.
 
-## Published 0.6 public-methodology result
+## Published results
 
-In-house W4AFP8, temperature 0.6, top_p 1.0, 100×3, Luna medium:
+In-house W4AFP8, 100×3, GPT-5.6 Luna medium judge throughout.
 
-**Pass@1 71.33% (214/300).** Write-up:
-[`docs/status/2026-09-14-glm53-aa-lcr-v11.md`](../status/2026-09-14-glm53-aa-lcr-v11.md).
-Bundle:
-`/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/glm53-w4afp8-aa-lcr-v11-full-r1/`.
+| Config | Run id | pass@1 | Claim |
+|---|---|---:|---|
+| **1.0/0.95 @131,072** | `…-full-t1p95-r2` | **237/300 = 79.00%** | public-methodology reproduction |
+| 1.0/0.95 @262,144 | `…-full-t1p95-2x-r1` | 233/300 = 77.67% | raised-cap ablation |
+| 0.6/1.0 @131,072 | `…-full-r1` | 214/300 = 71.33% | generic-sampling ablation |
+
+**The headline is 79.00%** — Z.ai's recommended sampling at AA's max-output
+policy, i.e. AA's own rule on both axes. AA's published GLM-5.3 figure is 80%.
+Write-up:
+[`docs/status/2026-09-16-glm53-aa-lcr-v11-zai-sampling.md`](../status/2026-09-16-glm53-aa-lcr-v11-zai-sampling.md).
+Bundles live under
+`/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/<run id>/`.
+
+Do not raise the output cap. The 131k run beat the 262k run on 7% fewer
+generated tokens with the same truncation count (2/300), and 99% of attempts
+finish under 50k tokens (p50 2,214 / p90 15,649 / p99 49,895). The 0.6 run's 32
+truncations were a low-temperature runaway artifact, not a budget shortfall.
 
 When the result is retained and no further evaluation needs the credential,
 the operator may remove it:

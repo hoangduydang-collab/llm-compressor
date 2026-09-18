@@ -90,7 +90,7 @@ difference this size, and why future arms should be compared paired.
 Use the paired test, not the headline delta, for any future arm comparison on
 this benchmark.
 
-### GPTQ spends fewer output tokens than AWQ, and the gap grows with generation length
+### GPTQ spends fewer output tokens than AWQ
 
 On AA-LCR the GPTQ checkpoint generated **18.2% fewer** completion tokens than
 AWQ for the same 300 units and the same prompts, and finished **25 minutes
@@ -119,12 +119,22 @@ full7 suite in
 | In-house AWQ | 5,281,637 | — |
 | Phala | 5,490,247 | +4.0% |
 
-**The effect scales with generation length.** full7 averages ~47 generated
-tokens per request (5.11 M over 108,963 requests); AA-LCR averages ~5,200 — two
-orders of magnitude longer — and the GPTQ advantage grows from 3.2% to 18.2%.
-Short-generation and loglikelihood-scored tasks barely expose it; long-form
-reasoning exposes it strongly. That is the regime where it matters commercially,
-since output tokens dominate serving cost and latency.
+and, on the formal AA GPQA Diamond protocol
+([2026-09-18 note](2026-09-18-glm53-aa-sampling-and-gptq-arm.md), key result 3),
+**−5.5%** against our AWQ at 13,944 mean completion tokens.
+
+**The direction repeats; the magnitude is not a function of output length.**
+
+| Instrument | Mean gen tokens/request | GPTQ vs AWQ | Where the saving sits |
+|---|---:|---:|---|
+| full7 suite | ~47 | −3.2% | n/a, almost no generation |
+| AA GPQA Diamond | 13,944 | −5.5% | median (p50 −16%), tail flat |
+| **AA-LCR v1.1** | 5,202 | **−18.2%** | tail (p90 −18%, p50 −6%) |
+
+AA-LCR shows the largest gap on the *shorter* mean, so there is no
+"scales with generation length" law here — an earlier draft of this note claimed
+one and was wrong. Treat it as a repeated property of the GPTQ path whose size
+is benchmark-dependent, and do not extrapolate a constant.
 
 Interpretation and caveats:
 
@@ -135,10 +145,10 @@ Interpretation and caveats:
 - **It costs nothing in quality here** (p ≈ 0.87), so on this benchmark GPTQ is
   the better operational choice: same score, 18% fewer output tokens, 16% less
   wall clock.
-- **n=300, single unseeded draw per arm.** The direction now agrees across two
-  independent instruments (full7 and AA-LCR), which is what makes it worth
-  recording; the magnitude on any one benchmark should not be quoted as a
-  constant.
+- **n=300, single unseeded draw per arm.** The direction now agrees across three
+  independent instruments (full7, AA GPQA Diamond, AA-LCR), which is what makes
+  it worth recording; the magnitude on any one benchmark should not be quoted as
+  a constant.
 - **Reasoning tokens are 98% of all completion tokens on both arms**, so this is
   a difference in *thinking* length, not answer length. `reasoning_effort` is
   unset on both serves (GLM-5.3 default `max`), so the comparison is fair, but

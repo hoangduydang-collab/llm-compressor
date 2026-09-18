@@ -94,17 +94,6 @@ The rerun also made the sampling config an explicit, recorded setting in that
 suite rather than an implicit default, so every future run states the decoding it
 actually used.
 
-### Blocking: GPU resources
-
-- **Single-node pool is full** — 6 of 72 free, zero fully-free nodes. This binds
-  full7 and the AA GPQA arms, which are one node per arm. `gpu07` was taken by
-  another namespace minutes after our last arm released it.
-- **AA-LCR is not capacity-blocked** — it runs on Zhou Yu's two nodes, the only
-  setup with enough memory to hold a full-length answer for this benchmark. Its
-  constraint is serial, not scarce: one checkpoint at a time, ~2 h 34 m per arm
-  plus reload.
-- Quantization still needs its own predictable 8-GPU allocation.
-
 ### Plan for next week
 
 - **Land GPTQ's two AA arms** (both in flight) and **run AA-LCR for PhalaCloud** —

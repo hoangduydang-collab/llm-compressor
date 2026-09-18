@@ -1,5 +1,30 @@
 # Sep 7 - Sep 11
 
+> ## ⚠ CORRECTION (2026-09-18) — these GPQA scores used the wrong branch of AA's own rule
+>
+> The 81.82% / 79.39% pair below was measured at temperature 0.6 / top_p 1.0,
+> which this note treats as "AA methodology". That is AA's **generic** default;
+> AA overrides it with the model creator's recommended config whenever the lab
+> publishes one, and Z.ai recommends **1.0 / 0.95** for GLM-5.3. So 0.6 / 1.0 is
+> the ablation for this model.
+>
+> Rerun at the correct config: **ours 91.52% ±0.87, PhalaCloud 91.11% ±0.85**
+> against AA's published ~91.7% — a **0.2 pp** gap, not 9.9 pp. The
+> measurements below stand; their provenance label does not.
+>
+> This note's hypothesis that "truncation is probably most of the gap to AA's
+> 91.7%" was right, and the cause is now identified: the truncation was a
+> **sampling artifact, not too small a budget.** Cap hits fell 120/990 → 4/990
+> (ours) and 155/990 → 14/992 (Phala), avg completion tokens fell ~44%, and the
+> pair got ~3x cheaper (83 h → ~25 h).
+>
+> Also superseded: the "Plan for next week" claim that Zhou Yu's two serving
+> nodes let paired arms run concurrently and halve the 83 h. There is one
+> server, it serves our checkpoint only, and no Phala arm ran on it. The actual
+> speedup came from the sampling fix.
+>
+> See [`2026-09-18-glm53-aa-sampling-and-gptq-arm.md`](2026-09-18-glm53-aa-sampling-and-gptq-arm.md).
+
 ## Duy
 
 ### What I worked on

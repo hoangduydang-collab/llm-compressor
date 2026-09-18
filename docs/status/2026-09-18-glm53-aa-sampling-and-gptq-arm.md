@@ -96,7 +96,9 @@ profile declared a temperature that reached only other runners.
 ### Plan for next week
 
 - **Land GPTQ's two AA arms** (both in flight) and **run AA-LCR for PhalaCloud** —
-  the last missing cell.
+  the last missing cell. That completes the three-way on both AA benchmarks.
+- **Write and publish the technical blog.** The AA-comparable three-way table is
+  the material, and the sampling-config finding is the story worth telling.
 - **HLE text-only** (2,158 questions) — carried over, not started; still needs
   the AA equality-checker judge, the one dependency outside our cluster.
 - **Re-add GPQA to full7** for a three-way on the cheap instrument. Needs

@@ -1,13 +1,18 @@
-# Sep 16
+# Sep 16 – Sep 18
 
 ## Duy
 
 ### What this note is
 
-First **AA-faithful** GLM-5.3 W4AFP8 score on AA-LCR v1.1: Z.ai's recommended
+**AA-faithful** GLM-5.3 W4AFP8 scores on AA-LCR v1.1: Z.ai's recommended
 sampling (temperature 1.0 / top_p 0.95) at AA's max-output policy (131,072),
-i.e. AA's own rule applied on both axes. Includes the raised-cap ablation that
-established the cap buys nothing.
+i.e. AA's own rule applied on both axes. Covers four runs:
+
+1. the headline in-house **AWQ** result;
+2. a raised-cap ablation that established the cap buys nothing;
+3. the mislabelled 0.6 / 1.0 generic-sampling baseline; and
+4. an in-house **GPTQ** arm on a byte-identical serve — a controlled
+   quantization A/B (§GPTQ vs AWQ).
 
 Supersedes the provenance labels in
 [`2026-09-14-glm53-aa-lcr-v11.md`](2026-09-14-glm53-aa-lcr-v11.md) (see its
@@ -16,20 +21,28 @@ leaderboard score.
 
 ### Key result
 
-**Pass@1: 79.00% (237 / 300).** AA's published GLM-5.3 figure is **80%** — a
-**1.0 pp** gap, down from 8.7 pp on the mislabelled 0.6 baseline.
+**AWQ pass@1: 79.00% (237 / 300).** AA's published GLM-5.3 figure is **80%** — a
+**1.0 pp** gap, down from 8.7 pp on the mislabelled 0.6 baseline. **GPTQ scores
+78.33% (235/300)**, statistically indistinguishable (paired McNemar p ≈ 0.87).
 
-| Config | pass@1 | Truncated | >131k | Gen tokens | Untrunc. acc |
+| Arm / config | pass@1 | Truncated | >131k | Gen tokens | Untrunc. acc |
 |---|---:|---:|---:|---:|---:|
-| **1.0/0.95 @131,072** | **237/300 = 79.00%** | 2 | 0 | **1,908,829** | 237/298 |
-| 1.0/0.95 @262,144 | 233/300 = 77.67% | 2 | 2 | 2,060,660 | 233/298 |
-| 0.6/1.0 @131,072 | 214/300 = 71.33% | 32 | 0 | 5,078,829 | 213/268 |
+| **AWQ, 1.0/0.95 @131,072** | **237/300 = 79.00%** | 2 | 0 | 1,908,829 | 237/298 |
+| **GPTQ, 1.0/0.95 @131,072** | **235/300 = 78.33%** | 1 | 0 | **1,560,828** | 235/299 |
+| AWQ, 1.0/0.95 @262,144 | 233/300 = 77.67% | 2 | 2 | 2,060,660 | 233/298 |
+| AWQ, 0.6/1.0 @131,072 | 214/300 = 71.33% | 32 | 0 | 5,078,829 | 213/268 |
 
-Headline run: id `glm53-w4afp8-aa-lcr-v11-full-t1p95-r2`, fingerprint
+Sampling moved the score by **7.67 pp**. Quantization method moved it by
+**0.67 pp at p ≈ 0.87**. The knob that matters is sampling, not the quantizer.
+
+Headline AWQ run: id `glm53-w4afp8-aa-lcr-v11-full-t1p95-r2`, fingerprint
 `b027edecfa9eebb0d90b38a9b7fe078faae75d7ad66ea5c40c50c6f00d2c7508`, code
-revision `5f090bd636753795a4d36d0a4733f200d1f95d4f`, 2 h 34 m wall clock, serve
-TP=16 / EAGLE 3-1-4 / fp8 KV / pool 598,848. Zero candidate errors, zero judge
-retries, zero judge failures on all three runs.
+revision `5f090bd636753795a4d36d0a4733f200d1f95d4f`, 2 h 34 m wall clock.
+GPTQ arm: id `glm53-gptq-aa-lcr-v11-full-t1p95-r1`, fingerprint
+`20984ca6b7881bd739fce82e44904ed46589e71c6b39de8fb042d7e7c88a7ca7`, code
+revision `5807665c25e75eb05481377388857de3b5b25a66`, 2 h 09 m wall clock.
+Both on serve TP=16 / EAGLE 3-1-4 / fp8 KV / pool 598,848. Zero candidate
+errors and zero judge failures on all four runs (GPTQ had 1 judge retry).
 
 Question-macro accuracy is also 79.00%. Per-repeat: 76 / 79 / 82.
 
@@ -45,6 +58,91 @@ Question-macro accuracy is also 79.00%. Per-repeat: 76 / 79 / 82.
 
 Legal is the standing weak spot — flat at 61.1% across both sampling configs, so
 it is not a sampling artifact. Marketing moved down but n=18.
+
+### GPTQ vs AWQ — a controlled A/B, and no detectable quality difference
+
+The GPTQ arm ran on the *same endpoint* after the collaborator swapped the
+checkpoint. Every serving variable was identical — Service, `tp_size` 16, 2
+nodes, EAGLE 3-1-4, `fp8_e4m3` KV, `mem_fraction_static` 0.80,
+`max_total_num_tokens` 598,848, SGLang 0.5.17 — as were sampling, cap,
+concurrency, gate, dataset revision and judge contract. **Only the checkpoint
+differed**, which makes this a genuinely controlled comparison rather than two
+runs put side by side.
+
+Because both arms cover the same 300 units, the arms are compared **paired**
+rather than by each headline's binomial stderr:
+
+| | |
+|---|---:|
+| Both correct | 218 |
+| GPTQ correct, AWQ wrong | 17 |
+| AWQ correct, GPTQ wrong | 19 |
+| Neither | 46 |
+| Discordant pairs | **36** |
+| McNemar exact, two-sided | **p ≈ 0.87** |
+
+**There is no detectable quality difference between the two quantizations on
+this benchmark.** Note the shape: 36 of 300 units (12%) flip between arms while
+the *net* difference is 2 units. Unseeded sampling churns far more items than
+the quantizer does — which is also why a single unpaired run cannot resolve a
+difference this size, and why future arms should be compared paired.
+
+Use the paired test, not the headline delta, for any future arm comparison on
+this benchmark.
+
+### GPTQ spends fewer output tokens than AWQ, and the gap grows with generation length
+
+On AA-LCR the GPTQ checkpoint generated **18.2% fewer** completion tokens than
+AWQ for the same 300 units and the same prompts, and finished **25 minutes
+sooner** at identical effective concurrency:
+
+| | GPTQ | AWQ | Δ |
+|---|---:|---:|---:|
+| Total completion tokens | **1,560,828** | 1,908,829 | **−18.2%** |
+| Mean completion tokens | 5,203 | 6,362 | −18.2% |
+| Median completion tokens | 2,088 | 2,205 | −5.3% |
+| Truncated at 131,072 | 1 | 2 | — |
+| Reasoning share of completion | 97.9% | 98.3% | — |
+| Prompt cache hit rate | 99.70% | 99.70% | — |
+| Effective concurrency | 2.00 | 2.00 | — |
+| p50 request latency | 23.9 s | 27.6 s | −13% |
+| Wall clock | **2 h 09 m** | 2 h 34 m | −16% |
+
+This is consistent with, and much larger than, the same effect measured on the
+full7 suite in
+[`2026-09-14-glm53-ep-gptq-w4afp8-and-full7.md`](2026-09-14-glm53-ep-gptq-w4afp8-and-full7.md)
+(§Whole-suite tokens), where identical prompts and request counts gave:
+
+| Arm | Generated tokens | vs AWQ |
+|---|---:|---:|
+| GPTQ | 5,112,329 | **−3.2%** |
+| In-house AWQ | 5,281,637 | — |
+| Phala | 5,490,247 | +4.0% |
+
+**The effect scales with generation length.** full7 averages ~47 generated
+tokens per request (5.11 M over 108,963 requests); AA-LCR averages ~5,200 — two
+orders of magnitude longer — and the GPTQ advantage grows from 3.2% to 18.2%.
+Short-generation and loglikelihood-scored tasks barely expose it; long-form
+reasoning exposes it strongly. That is the regime where it matters commercially,
+since output tokens dominate serving cost and latency.
+
+Interpretation and caveats:
+
+- **It is a verbosity difference, not a truncation artifact.** Both arms
+  truncated ~1–2 of 300, and the median moved only −5.3% while the mean moved
+  −18.2%, so the saving comes from a thinner long tail rather than uniformly
+  shorter answers.
+- **It costs nothing in quality here** (p ≈ 0.87), so on this benchmark GPTQ is
+  the better operational choice: same score, 18% fewer output tokens, 16% less
+  wall clock.
+- **n=300, single unseeded draw per arm.** The direction now agrees across two
+  independent instruments (full7 and AA-LCR), which is what makes it worth
+  recording; the magnitude on any one benchmark should not be quoted as a
+  constant.
+- **Reasoning tokens are 98% of all completion tokens on both arms**, so this is
+  a difference in *thinking* length, not answer length. `reasoning_effort` is
+  unset on both serves (GLM-5.3 default `max`), so the comparison is fair, but
+  that knob is the obvious lever if output cost needs reducing further.
 
 ### The raised cap bought nothing — settled
 
@@ -161,11 +259,29 @@ The r2 bundle is the first to publish as
 
 | | Path |
 |---|---|
-| Headline bundle | `/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/glm53-w4afp8-aa-lcr-v11-full-t1p95-r2/` |
+| Headline bundle (AWQ) | `/mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11/glm53-w4afp8-aa-lcr-v11-full-t1p95-r2/` |
+| GPTQ arm | `…/glm53-gptq-aa-lcr-v11-full-t1p95-r1/` |
 | Cap ablation | `…/glm53-w4afp8-aa-lcr-v11-full-t1p95-2x-r1/` |
 | Generic-sampling ablation | `…/glm53-w4afp8-aa-lcr-v11-full-r1/` |
 | Checkpoints | `/mnt/cephfs/hoangduy/aa-lcr-v11-work/<run id>/run.sqlite` |
 | Runbook | [`docs/runbooks/aa-lcr-v11.md`](../runbooks/aa-lcr-v11.md) |
+
+Served checkpoints, from each bundle's
+`run-manifest.json` → `run_contract.endpoint_deployment_identity.model_path`:
+
+| Arm | Checkpoint |
+|---|---|
+| AWQ | `/mnt/cephfs/hoangduy/results/glm53-w4afp8-mtp/checkpoint` |
+| GPTQ | `/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/20260912-184239/checkpoint` |
+
+**Reporting hazard:** the GPTQ serve reuses `--served-model-name glm-5.3-w4afp8`
+and `--quantization w4afp8`, so `summary.json` records
+`candidate_model: "glm-5.3-w4afp8"` for *both* arms — the runner's served-model
+identity check cannot distinguish them, and a fresh run would not catch a
+wrong-checkpoint mix-up (only a resume would, via the fingerprint). The arms are
+identified by run id and by `model_path` above. The GPTQ manifests therefore
+assert `EXPECT_MODEL_PATH_SUBSTRING=gptq-W4AFP8` against `/get_server_info` and
+exit 12 before generation if it does not match.
 
 Bundle files each: `summary.json`, `report.md`, `candidates.jsonl`,
 `judgments.jsonl`, `run-manifest.json`, `files.sha256`.

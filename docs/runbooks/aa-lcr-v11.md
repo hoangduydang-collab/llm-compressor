@@ -364,11 +364,19 @@ without re-downloading the dataset.
 
 In-house W4AFP8, 100×3, GPT-5.6 Luna medium judge throughout.
 
-| Config | Run id | pass@1 | Claim |
+| Arm / config | Run id | pass@1 | Claim |
 |---|---|---:|---|
-| **1.0/0.95 @131,072** | `…-full-t1p95-r2` | **237/300 = 79.00%** | public-methodology reproduction |
-| 1.0/0.95 @262,144 | `…-full-t1p95-2x-r1` | 233/300 = 77.67% | raised-cap ablation |
-| 0.6/1.0 @131,072 | `…-full-r1` | 214/300 = 71.33% | generic-sampling ablation |
+| **AWQ 1.0/0.95 @131,072** | `glm53-w4afp8-…-full-t1p95-r2` | **237/300 = 79.00%** | public-methodology reproduction |
+| **GPTQ 1.0/0.95 @131,072** | `glm53-gptq-…-full-t1p95-r1` | **235/300 = 78.33%** | public-methodology reproduction |
+| AWQ 1.0/0.95 @262,144 | `glm53-w4afp8-…-full-t1p95-2x-r1` | 233/300 = 77.67% | raised-cap ablation |
+| AWQ 0.6/1.0 @131,072 | `glm53-w4afp8-…-full-r1` | 214/300 = 71.33% | generic-sampling ablation |
+
+GPTQ vs AWQ is a controlled A/B (identical serve, sampling, cap, judge; only the
+checkpoint differs) and the difference is **not significant**: paired McNemar on
+36 discordant units gives **p ≈ 0.87**. Compare future arms **paired**, not by
+the headline delta — 12% of units flip between arms on sampling alone. GPTQ did
+generate **18.2% fewer** output tokens and finished 25 min sooner; see the status
+note's token-efficiency section.
 
 **The headline is 79.00%** — Z.ai's recommended sampling at AA's max-output
 policy, i.e. AA's own rule on both axes. AA's published GLM-5.3 figure is 80%.

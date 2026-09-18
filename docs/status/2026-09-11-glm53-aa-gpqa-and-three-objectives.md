@@ -18,11 +18,6 @@
 > (ours) and 155/990 → 14/992 (Phala), avg completion tokens fell ~44%, and the
 > pair got ~3x cheaper (83 h → ~25 h).
 >
-> Also superseded: the "Plan for next week" claim that Zhou Yu's two serving
-> nodes let paired arms run concurrently and halve the 83 h. There is one
-> server, it serves our checkpoint only, and no Phala arm ran on it. The actual
-> speedup came from the sampling fix.
->
 > See [`2026-09-18-glm53-aa-sampling-and-gptq-arm.md`](2026-09-18-glm53-aa-sampling-and-gptq-arm.md).
 
 ## Duy

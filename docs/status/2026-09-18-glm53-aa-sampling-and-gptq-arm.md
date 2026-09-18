@@ -13,7 +13,9 @@
   finished, qualified, and has been benchmarked. Last week's tables were
   two-arm (ours vs PhalaCloud); GPTQ was still a quantization job.
 - **Three benchmarks this week** instead of one: AA-LCR v1.1, AA GPQA Diamond,
-  and the cheap full7 suite — the last one reran three-way.
+  and the cheap full7 suite — the last one reran three-way. AA-LCR runs on
+  **Zhou Yu's two nodes** (TP=16), which is what makes its 131k output cap
+  possible at all; its GPTQ arm is in flight.
 - Weekly detail lives in three notes, merged here:
   [AA-LCR](2026-09-16-glm53-aa-lcr-v11-zai-sampling.md),
   [EP GPTQ + first full7](2026-09-14-glm53-ep-gptq-w4afp8-and-full7.md),
@@ -41,6 +43,11 @@ GPQA is the formal AA protocol: 198 Diamond items × 5 repeats = 990 completions
 per arm, every response HTTP 200. AA-LCR is 100 questions × 3 repeats = 300.
 Both are **public-methodology reproductions, not official AA runs** — in-house
 endpoint, our runner, our reconstruction of AA's rule.
+
+AA-LCR runs against **Zhou Yu's two nodes** as a standing TP=16 serve
+(`gpu02`+`gpu03`, pool 598,848), because a 131,072-cap trace does not fit a
+single-node pool. The GPTQ arm is on it now; PhalaCloud is the one cell still
+missing. GPQA, by contrast, is one node per arm.
 
 **Same mechanism on both benchmarks, and it is not a budget problem.** Low
 temperature with an untruncated tail (top_p 1.0) makes a minority of traces run
@@ -161,17 +168,16 @@ published payload.
 
 Still the binding constraint, and tighter than last week.
 
-- **The cluster is full.** 6 of 72 GPUs free, **zero fully-free nodes**, largest
-  schedulable pod 4 GPUs. `gpu07` was claimed by another namespace within
-  minutes of our last full7 arm releasing it.
-- **AA-LCR has only one arm.** PhalaCloud and GPTQ are unmeasured on it, and each
-  needs a **two-node TP=16 serve** for the pool reason above — so it cannot start
-  until two whole nodes are free simultaneously.
-- **Last week's premise about Zhou Yu's two serving nodes did not hold.** The
-  plan assumed paired arms could run concurrently and halve the 83 h. In practice
-  there is one server, it serves our checkpoint only, and there is no Phala arm
-  on it. The GPQA speedup we actually got came from the sampling fix (37.1 h →
-  11.2 h), not from parallelism.
+- **The single-node pool is full.** 6 of 72 GPUs free, **zero fully-free nodes**,
+  largest schedulable pod 4 GPUs. `gpu07` was claimed by another namespace within
+  minutes of our last full7 arm releasing it. This is what constrains full7 and
+  the AA GPQA arms, which are one-node-per-arm.
+- **AA-LCR is not capacity-blocked** — it runs on Zhou Yu's two nodes
+  (`gpu02`+`gpu03`) as a standing TP=16 serve, which is the only place a
+  131,072-cap trace fits (pool 598,848 vs the ~247k a worst-case trace needs; a
+  single-node TP=8 pool of ~164,800 is refused by the budget check). Its
+  constraint is **serial, not scarce**: the serve hosts one checkpoint at a time,
+  so each arm means re-pointing it and reloading. ~2 h 34 m per arm plus load.
 - **Queue the whole campaign up front.** Applying all three full7 arms at once,
   pinned to one node and each requesting all 8 GPUs, made Kubernetes serialize
   them with **3-second** gaps and left no window for another tenant. Worth doing
@@ -183,10 +189,12 @@ Still the binding constraint, and tighter than last week.
 
 **Finish the AA set at the correct config.**
 
-- **GPTQ's AA GPQA arm** — in flight; it is the number the three-way verdict
-  rests on.
-- **AA-LCR for PhalaCloud and GPTQ** — needs a two-node window. First thing to
-  launch when two nodes free up.
+- **GPTQ's AA GPQA arm** — in flight on `gpu04`; it is the number the three-way
+  verdict rests on.
+- **GPTQ's AA-LCR arm** — in flight on Zhou Yu's two nodes as of Sep 18
+  (`hd-aa-lcr-v11-full-gptq`, canary already Complete). Due ~1 h out.
+- **AA-LCR for PhalaCloud** — the last missing cell. Re-point the two-node serve
+  at the PhalaCloud snapshot once the GPTQ arm publishes.
 - **HLE text-only** (2,158 questions) — carried over, not started. Still needs
   the AA equality-checker judge wired up, the one dependency outside our cluster.
 

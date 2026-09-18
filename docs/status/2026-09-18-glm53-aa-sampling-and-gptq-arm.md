@@ -11,6 +11,10 @@
   points on it and got ~3x cheaper.
 - **The third arm now has numbers.** Native EP-GPTQ → W4AFP8 finished, qualified,
   and has been benchmarked. Last week's tables were two-arm.
+- **All three arms tie on GPQA Diamond — but GPTQ gets there on the fewest
+  tokens.** 0.41 pp spread across the arms, while GPTQ spends 14.6% fewer tokens
+  than PhalaCloud and finishes 3.7 h sooner for the same score. Consistent with
+  the token-efficiency edge we have seen on the other benchmarks.
 - Three benchmarks ran: AA GPQA Diamond, AA-LCR v1.1, and the cheap full7 suite.
 
 Detail: [AA-LCR](2026-09-16-glm53-aa-lcr-v11-zai-sampling.md) ·
@@ -23,6 +27,7 @@ Detail: [AA-LCR](2026-09-16-glm53-aa-lcr-v11-zai-sampling.md) ·
 |---|---:|---:|---:|---:|
 | **GPQA Diamond**, ours | 81.82% | **91.52%** ±0.87 | ~91.7% | 9.9 pp → **0.2 pp** |
 | **GPQA Diamond**, PhalaCloud | 79.39% | **91.11%** ±0.85 | ~91.7% | 12.3 pp → **0.6 pp** |
+| **GPQA Diamond**, EP GPTQ | not run | **91.21%** ±0.88 | ~91.7% | **0.5 pp** |
 | **AA-LCR v1.1**, ours | 71.33% | **79.00%** | 80% | 8.7 pp → **1.0 pp** |
 
 GPQA is the formal AA protocol, 198 items × 5 repeats = 990 completions per arm,
@@ -33,11 +38,11 @@ AA runs — but the sampling axis is now confirmed rather than inferred.
 one.** Low temperature with an untruncated tail lets a minority of traces run
 away into the output cap and return empty.
 
-| GPQA, per arm | ours 0.6/1.0 | **ours 1.0/0.95** | phala 0.6/1.0 | **phala 1.0/0.95** |
-|---|---:|---:|---:|---:|
-| Hit the 131,072 cap | 120/990 (12.1%) | **4/990 (0.4%)** | 155/990 (15.7%) | **14/992 (1.4%)** |
-| Avg completion tokens | 26,463 | **14,757** | 30,745 | **16,332** |
-| Wall clock, one 8×H100 | 37.1 h | **11.2 h** | 46.2 h | **14.3 h** |
+| GPQA, per arm | ours 0.6/1.0 | **ours 1.0/0.95** | phala 0.6/1.0 | **phala 1.0/0.95** | **gptq 1.0/0.95** |
+|---|---:|---:|---:|---:|---:|
+| Hit the 131,072 cap | 120/990 (12.1%) | **4/990 (0.4%)** | 155/990 (15.7%) | **14/992 (1.4%)** | **5/990 (0.5%)** |
+| Avg completion tokens | 26,463 | **14,757** | 30,745 | **16,332** | **13,944** |
+| Wall clock, one 8×H100 | 37.1 h | **11.2 h** | 46.2 h | **14.3 h** | **10.7 h** |
 
 Same on AA-LCR: 32/300 cap hits → 2/300, generated tokens −62%, while
 non-truncated accuracy barely moved (79.48% → 79.53%). The whole gain is about
@@ -73,13 +78,62 @@ for all three arms:
 
 Three arms, 7 h 59 m, GPQA excluded (its node was busy). Every score sits inside
 its own error bar, so this suite is a regression check rather than a way to rank
-the arms. **Both AA arms are in flight** — GPQA on `gpu04`, AA-LCR on the
-two-node serve — and those are the numbers a three-way verdict should rest on.
+the arms.
+
+**GPQA Diamond has now landed on the formal AA protocol, and it does not
+reproduce that 12-point separation.** All three arms tie:
+
+| Arm | Score | 990/990 | Spread |
+|---|---:|---:|---|
+| ours (AWQ) | **91.52%** ±0.87 | yes | — |
+| gptq (EP) | **91.21%** ±0.88 | yes | 0.31 pp below ours |
+| PhalaCloud | **91.11%** ±0.85 | yes | 0.41 pp below ours |
+
+Total spread is **0.41 pp against ±0.9 error bars**, so on the formal protocol
+the three checkpoints are statistically indistinguishable. The full7 GPQA-CoT
+gap above (67.68 / 61.11 / 55.56) therefore should **not** be read as a quality
+ranking — different cap, CoT harness, and 1 repeat instead of 5. Where the
+instrument is strong enough to publish from, the arms are level.
+
+### Key result 3, GPTQ is the most token-efficient arm
+
+Same accuracy, fewer tokens, less wall clock — which matches what we have seen
+on the other benchmarks, so this is now a repeated observation rather than a
+one-off:
+
+| Arm | Mean completion | p50 | p90 | p99 | Cap-hits | Total generated | Infer time |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **gptq** | **13,944** | 6,685 | 38,645 | 82,580 | 5 (0.5%) | **13.80 M** | **10.66 h** |
+| ours | 14,757 | 7,987 | 38,888 | 86,655 | 4 (0.4%) | 14.61 M | 11.25 h |
+| phala | 16,332 | 7,940 | 42,687 | **131,072** | 14 (1.4%) | 16.20 M | 14.32 h |
+
+GPTQ spends **14.6% fewer tokens than PhalaCloud and 5.5% fewer than our AWQ**
+at an indistinguishable score, and finished 3.7 h sooner than PhalaCloud on the
+same 8×H100. On a served endpoint that is a direct cost saving.
+
+PhalaCloud is also the only arm whose **p99 sits on the cap** — ours and GPTQ
+top out around 83–87k — and it runs away 3× more often. Its tail, not its
+average, is what makes it the slowest arm.
+
+Two structural notes from the same data: **98–99% of every completion is
+reasoning tokens** (the answer itself is 200–300), and the length distribution
+is heavily right-skewed (p50 ~7k against a ~15k mean), so a minority of long
+traces drives most of the spend on all three arms.
+
+Token figures are cross-checked two ways that agree to within 0.0%: SGLang's
+prometheus counters diffed across the eval, and the harness's own
+`response_stats_cache`. Cap-hits come from `finish_reason: "length"` — the
+server's statement about why it stopped — not from a token count equalling the
+cap. Sampling was verified from each arm's executed `run_config.yml`
+(1.0 / 0.95, `max_new_tokens` 131072, `n_samples` 5, `limit_samples: null`),
+identical across all three. PhalaCloud's aggregate covers 992 attempts against
+990 scored items — two retries — which moves its mean by under 0.5%.
 
 ### Plan for next week
 
-- **Land GPTQ's two AA arms** (both in flight) and **run AA-LCR for PhalaCloud** —
-  the last missing cell. That completes the three-way on both AA benchmarks.
+- **GPQA Diamond is done three-way** (key results 1–3 above). Remaining on AA:
+  confirm **GPTQ's AA-LCR** arm and **run AA-LCR for PhalaCloud** — the last
+  missing cell. That completes the three-way on both AA benchmarks.
 - **Write and publish the technical blog.** The AA-comparable three-way table is
   the material, and the sampling-config finding is the story worth telling.
 - **HLE text-only** (2,158 questions) — carried over, not started; still needs

@@ -4,222 +4,103 @@
 
 ### What I worked on
 
-- **Pinned down AA's actual sampling config, by asking AA directly.** Their
-  published methodology does not state which config a given model is scored
-  under — it documents a generic default (temperature 0.6 / top_p 1.0) and a rule
-  that a lab's own recommended config takes precedence, without saying per model
-  which applies. Confirmed with AA that GLM-5.3 is scored at Z.ai's recommended
-  **1.0 / 0.95**. Rerun on that, **both** AA benchmarks gained ~10 points and
-  landed within ~1 point of AA's published GLM-5.3 figures — and got ~3x cheaper.
-- **The third arm now has numbers.** Native expert-parallel GPTQ → W4AFP8
-  finished, qualified, and has been benchmarked. Last week's tables were
-  two-arm (ours vs PhalaCloud); GPTQ was still a quantization job.
-- **Three benchmarks this week** instead of one: AA-LCR v1.1, AA GPQA Diamond,
-  and the cheap full7 suite — the last one reran three-way. AA-LCR runs on
-  **Zhou Yu's two nodes** (TP=16), which is what makes its 131k output cap
-  possible at all; its GPTQ arm is in flight.
-- Weekly detail lives in three notes, merged here:
-  [AA-LCR](2026-09-16-glm53-aa-lcr-v11-zai-sampling.md),
-  [EP GPTQ + first full7](2026-09-14-glm53-ep-gptq-w4afp8-and-full7.md),
-  [full7 rerun](2026-09-17-glm53-full7-zai-sampling.md).
+- **Confirmed AA's actual sampling config with AA directly.** Their published
+  methodology documents a generic default (0.6 / 1.0) *and* a rule that a lab's
+  recommended config takes precedence, without saying per model which applies.
+  GLM-5.3 is scored at Z.ai's **1.0 / 0.95**. Both AA benchmarks gained ~10
+  points on it and got ~3x cheaper.
+- **The third arm now has numbers.** Native EP-GPTQ → W4AFP8 finished, qualified,
+  and has been benchmarked. Last week's tables were two-arm.
+- Three benchmarks ran: AA GPQA Diamond, AA-LCR v1.1, and the cheap full7 suite.
 
-### Key result 1, confirming AA's actual sampling config was worth ~10 points on both benchmarks
+Detail: [AA-LCR](2026-09-16-glm53-aa-lcr-v11-zai-sampling.md) ·
+[EP GPTQ + first full7](2026-09-14-glm53-ep-gptq-w4afp8-and-full7.md) ·
+[full7 rerun](2026-09-17-glm53-full7-zai-sampling.md).
 
-**The config is not published per model, so we went to the source.** AA documents
-a generic default (temperature 0.6 / top_p 1.0) **and** a rule that the model
-creator's own recommended config takes precedence where the lab publishes one —
-but the published methodology does not say which branch any given model was
-scored under. That is not inferable from the outside, so we asked AA directly and
-confirmed: GLM-5.3 is scored at Z.ai's recommended **1.0 / 0.95**. Our earlier
-runs used the documented generic default, which was the reasonable reading of
-what was public at the time; those measurements stand as the generic-default
-branch and are now correctly labelled as such.
+### Key result 1, the confirmed config is worth ~10 points on both AA benchmarks
 
-**Rerun on the confirmed config.**
-
-| Benchmark | Was (0.6 / 1.0) | Now (1.0 / 0.95) | AA published | Gap to AA |
+| Benchmark | Generic 0.6/1.0 | **Z.ai 1.0/0.95** | AA published | Gap to AA |
 |---|---:|---:|---:|---:|
 | **GPQA Diamond**, ours | 81.82% | **91.52%** ±0.87 | ~91.7% | 9.9 pp → **0.2 pp** |
 | **GPQA Diamond**, PhalaCloud | 79.39% | **91.11%** ±0.85 | ~91.7% | 12.3 pp → **0.6 pp** |
 | **AA-LCR v1.1**, ours | 71.33% | **79.00%** | 80% | 8.7 pp → **1.0 pp** |
 
-GPQA is the formal AA protocol: 198 Diamond items × 5 repeats = 990 completions
-per arm, every response HTTP 200. AA-LCR is 100 questions × 3 repeats = 300.
-Both are **public-methodology reproductions, not official AA runs** — in-house
-endpoint and our runner. The sampling config is no longer the soft part of that
-claim: it is confirmed with AA rather than inferred.
+GPQA is the formal AA protocol, 198 items × 5 repeats = 990 completions per arm,
+all HTTP 200. AA-LCR is 100 × 3. Public-methodology reproductions, not official
+AA runs — but the sampling axis is now confirmed rather than inferred.
 
-AA-LCR runs against **Zhou Yu's two nodes** as a standing TP=16 serve
-(`gpu02`+`gpu03`, pool 598,848), because a 131,072-cap trace does not fit a
-single-node pool. The GPTQ arm is on it now; PhalaCloud is the one cell still
-missing. GPQA, by contrast, is one node per arm.
+**Why it moves so much: truncation, and it is a sampling effect not a budget
+one.** Low temperature with an untruncated tail lets a minority of traces run
+away into the output cap and return empty.
 
-**Same mechanism on both benchmarks, and it is not a budget problem.** Low
-temperature with an untruncated tail (top_p 1.0) makes a minority of traces run
-away until they hit the output cap and return an empty answer. Z.ai's config
-removes the runaway band; it does not make the model smarter on items that finish
-either way. Worth knowing in its own right: it means a creator's recommended
-config can be worth ten points on a reasoning benchmark, so the config is a
-first-class part of a published score, not a footnote.
-
-| GPQA, per arm | ours 0.6/1.0 | ours 1.0/0.95 | phala 0.6/1.0 | phala 1.0/0.95 |
+| GPQA, per arm | ours 0.6/1.0 | **ours 1.0/0.95** | phala 0.6/1.0 | **phala 1.0/0.95** |
 |---|---:|---:|---:|---:|
-| Hit the 131,072 cap | 120 / 990 (12.1%) | **4 / 990 (0.4%)** | 155 / 990 (15.7%) | **14 / 992 (1.4%)** |
+| Hit the 131,072 cap | 120/990 (12.1%) | **4/990 (0.4%)** | 155/990 (15.7%) | **14/992 (1.4%)** |
 | Avg completion tokens | 26,463 | **14,757** | 30,745 | **16,332** |
 | Wall clock, one 8×H100 | 37.1 h | **11.2 h** | 46.2 h | **14.3 h** |
 
-**Last week's hypothesis was right.** That note predicted "truncation is probably
-most of the gap to AA's 91.7%" and computed an 87.9% ceiling if every
-length-finish scored zero. Confirmed, and the cause is now identified: the
-truncation was a **sampling artifact**, not too small a budget. AA-LCR shows the
-same pattern — 32/300 cap hits at 0.6/1.0, 2/300 at 1.0/0.95, with non-truncated
-accuracy essentially unchanged (79.48% → 79.53%). The entire headline gain on
-both benchmarks is about not running away.
+Same on AA-LCR: 32/300 cap hits → 2/300, generated tokens −62%, while
+non-truncated accuracy barely moved (79.48% → 79.53%). The whole gain is about
+not running away — which confirms last week's hypothesis that truncation
+explained most of the gap to AA's 91.7%.
 
-**The confirmed config is also ~3x cheaper.** GPQA went from 83 h of node time
-for the pair to ~25 h, and AA-LCR's generated tokens fell 62% (5.08M → 1.91M) at
-the same cap. Higher scores on a third of the compute — the rare case where the
-correct protocol is also the cheap one, which is why it is worth spending a
-question to AA rather than inferring the config.
-
-**Raising the cap is settled as the wrong lever.** A 262,144 AA-LCR rerun was
-authorized because of those 32 truncations. It converted **zero** items — only 2
-of 300 completions exceeded 131,072, both ran to the full cap, both scored
-incorrect — and it scored *lower* than 131,072 (77.67% vs 79.00%) on 7% more
-tokens. At correct sampling, 99% of AA-LCR attempts finish under 50k tokens
-against a 131,072 cap. **Do not raise the cap.**
+Two consequences worth keeping: a creator's recommended config can be worth ten
+points on a reasoning benchmark, so it is a first-class part of a published
+score; and **raising the cap is the wrong lever** — a 262,144 AA-LCR rerun
+converted zero items and scored *lower* on more tokens.
 
 ### Key result 2, the GPTQ arm
 
-**The checkpoint.** Native expert-parallel GPTQ → W4AFP8, served as written with
-no AWQ `to_sglang` conversion. Full EP8 job **15 h 04 m**, exit 0, 371 GiB, 8
-main shards + MTP. Representative qualification passed first: EP4 and EP8 produce
-**identical greedy outputs, 100% top-1 over 24 positions**, with EP8 peak memory
-at **51.8% of EP4** — the memory claim that was still unproven last week.
+**Checkpoint.** Full EP8 job 15 h 04 m, exit 0, 371 GiB. Qualification passed:
+EP4 and EP8 give **identical greedy outputs, 100% top-1**, with EP8 peak memory
+**51.8% of EP4** — the memory claim that was unproven last week. Skips
+`to_sglang`, indexer repatch and MTP graft entirely (AWQ needed ~3.5 h of that).
 
-Against in-house AWQ (~20.5 h quantize + ~3.5 h conversion/repatch/graft) this
-path skips `to_sglang`, indexer repatch and standalone MTP graft entirely. The
-extra ~4 h over the W4A16 predecessor is native compression + shard write +
-CT-layout restore + hashing, not a slower GPTQ walk.
+**Quality.** On the cheap greedy full7 it won the only task that separated the
+arms by more than 2 pp:
 
-**Where GPTQ stands on quality.** Two instruments, and they disagree in an
-informative way.
+| | GPTQ | AWQ | Phala |
+|---|---:|---:|---:|
+| **GPQA Diamond CoT** (flexible) | **67.68%** | 61.11% | 55.56% |
 
-*Cheap full7 suite, greedy, with GPQA (Sep 13):*
+Elsewhere on full7 it is inside noise (GSM8K −0.38, IFEval +0.74, MMLU +0.17 vs
+AWQ). Both AA arms are **in flight**: GPQA on `gpu04`, AA-LCR on the two-node
+serve. Those are the numbers a three-way verdict should rest on — not the full7
+rerun, which excluded GPQA.
 
-| Task | GPTQ | in-house AWQ | Phala | vs AWQ |
-|---|---:|---:|---:|---:|
-| GSM8K | 97.27% | 97.65% | 97.19% | −0.38 |
-| IFEval | 90.39% | 89.65% | 90.76% | +0.74 |
-| **GPQA Diamond CoT** (flexible) | **67.68%** | 61.11% | 55.56% | **+6.57** |
-| MMLU | 86.84% | 86.67% | 86.66% | +0.17 |
-| ARC Challenge | 68.94% | 68.77% | 69.80% | +0.17 |
-| HellaSwag | 89.00% | 89.37% | 89.29% | −0.37 |
-| TruthfulQA MC2 | 61.92% | 62.99% | 62.50% | −1.07 |
+### The full7 rerun moved nothing, which is the useful finding
 
-GPQA is the only task that separated the arms by more than the 2 pp diagnostic
-threshold, and GPTQ won it by **+6.57 over AWQ and +12.12 over Phala**. GPTQ also
-generated 3.2% fewer tokens than AWQ and 6.9% fewer than Phala.
+Three arms, 6 tasks, 7 h 59 m total, all gates passed. Every per-arm delta vs its
+greedy run sits inside stderr. **Structural:** only GSM8K and IFEval are
+generative — the other four are teacher-forced loglikelihood and lm-eval ignores
+`gen_kwargs` there, so 4 of 6 tasks cannot respond to sampling at all, and full7
+generates too short to have a runaway tail. **Do not re-run full7 for sampling
+reasons.**
 
-*The AA GPQA arm for GPTQ is still running* (started Sep 16, holding gpu04). That
-is the number that matters for the three-way verdict, since AA GPQA is where the
-arms actually separate and where we have a published reference.
+It did close a provenance gap: the suite had no decoding channel at all, so
+published full7 numbers were greedy by *inheritance* from gsm8k's yaml while the
+profile declared a temperature that reached only other runners.
+`GENERAL_TEMPERATURE` / `GENERAL_TOP_P` now exist and are recorded in the payload.
 
-**Do not read a GPTQ verdict off the full7 rerun.** It excluded GPQA (the node
-was occupied), which removes the only task that has ever distinguished the arms.
-GPTQ vs AWQ there is +0.22 GSM8K, +0.21 MMLU, −1.85 IFEval, −1.11 TruthfulQA —
-nothing crossing 2 pp, and IFEval unresolved at n=541 (±1.35).
+### Blocking: GPU resources
 
-### The full7 rerun moved nothing, and that is the useful finding
-
-All three arms, 6 tasks (GPQA excluded), 32,768 cap, CTX=65536, one node each,
-**7 h 59 m** total. Every gate passed on every arm; all exited 0.
-
-Every per-arm delta against its own greedy run sits inside that task's stderr —
-largest are IFEval ours +1.11 and GPTQ −1.48, pointing in *opposite* directions,
-which is what noise looks like.
-
-**The ceiling is structural.** Only GSM8K and IFEval are generative. MMLU, ARC,
-HellaSwag and TruthfulQA are `output_type: multiple_choice`, scored as
-teacher-forced loglikelihood, and lm-eval ignores `gen_kwargs` on that path — so
-**4 of 6 tasks cannot respond to sampling at all.** "full7 at Z.ai sampling" is
-really a two-task experiment, and full7 generates short, so there is no runaway
-tail for the fix to remove. **Conclusion: do not spend a node re-running full7
-for sampling reasons.** Ask sampling questions on long-generation benchmarks.
-
-**It did close a provenance defect.** The general suite had **no decoding channel
-at all**: profiles declared `REASONING_TEMP=0`, which only ever drove the
-reliability/sampling/long-context runners, and the greedy behaviour of every
-published full7 number came from gsm8k's own yaml (`do_sample: false`) by
-*inheritance*. The profile stated a temperature that described nothing about the
-requests sent. `GENERAL_TEMPERATURE` / `GENERAL_TOP_P` now exist, are opt-in,
-refuse invalid values rather than laundering them, and are recorded in the
-published payload.
-
-### Two gates that earned their keep
-
-- **`tokenizer.json` parity blocked the GPTQ arm on a false positive.** The GPTQ
-  checkpoint's tokenizer carries a `truncation: max_length 2048` block — a
-  fingerprint of its 256×2048 calibration — where the other two have null. This
-  was worth checking rather than waiving: the loglikelihood path tokenizes
-  **client-side**, so a tokenizer that really truncated at 2048 would have
-  silently cut MMLU's 5-shot prompts on one arm only. Measured: `transformers`
-  resets backend truncation per call, so a 6,401-token string encodes to
-  **identical ids** on both, and vocab/merges/processors/added-tokens are
-  byte-equal across all three. Parity is now semantic for that file; anything
-  touching vocabulary still blocks.
-- **A fail-closed budget check refuses an AA-LCR run that cannot fit.** A
-  131,072-cap AA-LCR trace needs a KV pool ≥ ~247k tokens (largest prompt
-  114,611 + cap). The two-node TP=16 serve has 598,848; a single-node TP=8 serve
-  (~164,800) is refused before any endpoint traffic.
-
-### What is blocking me: GPU resources
-
-Still the binding constraint, and tighter than last week.
-
-- **The single-node pool is full.** 6 of 72 GPUs free, **zero fully-free nodes**,
-  largest schedulable pod 4 GPUs. `gpu07` was claimed by another namespace within
-  minutes of our last full7 arm releasing it. This is what constrains full7 and
-  the AA GPQA arms, which are one-node-per-arm.
-- **AA-LCR is not capacity-blocked** — it runs on Zhou Yu's two nodes
-  (`gpu02`+`gpu03`) as a standing TP=16 serve, which is the only place a
-  131,072-cap trace fits (pool 598,848 vs the ~247k a worst-case trace needs; a
-  single-node TP=8 pool of ~164,800 is refused by the budget check). Its
-  constraint is **serial, not scarce**: the serve hosts one checkpoint at a time,
-  so each arm means re-pointing it and reloading. ~2 h 34 m per arm plus load.
-- **Queue the whole campaign up front.** Applying all three full7 arms at once,
-  pinned to one node and each requesting all 8 GPUs, made Kubernetes serialize
-  them with **3-second** gaps and left no window for another tenant. Worth doing
-  by default on a contended cluster.
-- Quantization still needs a predictable 8-GPU allocation of its own, not one
-  shared with eval work.
+- **Single-node pool is full** — 6 of 72 free, zero fully-free nodes. This binds
+  full7 and the AA GPQA arms, which are one node per arm. `gpu07` was taken by
+  another namespace minutes after our last arm released it.
+- **AA-LCR is not capacity-blocked** — it runs on Zhou Yu's two nodes as a
+  standing TP=16 serve (pool 598,848), the only place a 131,072-cap trace fits.
+  Its constraint is serial: one checkpoint at a time, ~2 h 34 m per arm plus
+  reload.
+- Quantization still needs its own predictable 8-GPU allocation.
 
 ### Plan for next week
 
-**Finish the AA set at the correct config.**
-
-- **GPTQ's AA GPQA arm** — in flight on `gpu04`; it is the number the three-way
-  verdict rests on.
-- **GPTQ's AA-LCR arm** — in flight on Zhou Yu's two nodes as of Sep 18
-  (`hd-aa-lcr-v11-full-gptq`, canary already Complete). Due ~1 h out.
-- **AA-LCR for PhalaCloud** — the last missing cell. Re-point the two-node serve
-  at the PhalaCloud snapshot once the GPTQ arm publishes.
-- **HLE text-only** (2,158 questions) — carried over, not started. Still needs
-  the AA equality-checker judge wired up, the one dependency outside our cluster.
-
-**Cheap and worth doing.**
-
-- **Re-add GPQA to full7** for the three-way — it is the only task that ever
-  separated the arms by more than 2 pp. Needs `HF_TOKEN` in the arm secret *and*
-  the `Idavidrein/gpqa` licence accepted on that account.
-- **A greedy 6-task full7 control** (`GENERAL_TEMPERATURE=0`, same tag) would
-  make one loose end a one-variable question: the generated-token ordering
-  reversed between the greedy and sampled runs (GPTQ leanest before, loudest
-  after), but sampling and the GPQA removal changed together, so it is currently
-  unattributed.
-
-**Still open on the quantization side.** Direct native export (removes the second
-whole-checkpoint write), expert activation-scale alignment (the MoE path wants
-static per-group scales; our preset is dynamic per-token), and the fact that no
-BF16 GLM-5.3 fits an 8×H100 node — so a defect shared by all three arms stays
-invisible on every benchmark above.
+- **Land GPTQ's two AA arms** (both in flight) and **run AA-LCR for PhalaCloud** —
+  the last missing cell.
+- **HLE text-only** (2,158 questions) — carried over, not started; still needs
+  the AA equality-checker judge, the one dependency outside our cluster.
+- **Re-add GPQA to full7** for a three-way on the cheap instrument. Needs
+  `HF_TOKEN` plus the `Idavidrein/gpqa` licence accepted on that account.
+- Still open on quantization: direct native export, expert activation-scale
+  alignment, and the fact that no BF16 GLM-5.3 fits an 8×H100 node — so a defect
+  shared by all three arms stays invisible on every benchmark above.

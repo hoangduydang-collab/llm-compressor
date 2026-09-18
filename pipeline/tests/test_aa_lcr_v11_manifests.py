@@ -13,7 +13,18 @@ CANARY_T1 = K8S / "hd-aa-lcr-v11-canary-t1.yaml"
 FULL_T1 = K8S / "hd-aa-lcr-v11-full-t1.yaml"
 CANARY_T1_2X = K8S / "hd-aa-lcr-v11-canary-t1-2x.yaml"
 FULL_T1_2X = K8S / "hd-aa-lcr-v11-full-t1-2x.yaml"
-EVAL_MANIFESTS = (CANARY, FULL, CANARY_T1, FULL_T1, CANARY_T1_2X, FULL_T1_2X)
+CANARY_GPTQ = K8S / "hd-aa-lcr-v11-canary-gptq.yaml"
+FULL_GPTQ = K8S / "hd-aa-lcr-v11-full-gptq.yaml"
+EVAL_MANIFESTS = (
+    CANARY,
+    FULL,
+    CANARY_T1,
+    FULL_T1,
+    CANARY_T1_2X,
+    FULL_T1_2X,
+    CANARY_GPTQ,
+    FULL_GPTQ,
+)
 TIKTOKEN_CACHE_DIR = "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"
 CL100K_CACHE_FILE = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
 CL100K_BPE_SHA256 = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
@@ -110,13 +121,42 @@ def test_base_jobs_pin_aa_generic_sampling_explicitly():
         assert "--candidate-top-p 1.0" in text
 
 
+def test_gptq_jobs_assert_the_checkpoint_and_match_the_awq_arm():
+    # The GPTQ serve reuses --served-model-name glm-5.3-w4afp8, so the runner's
+    # served-model check cannot distinguish the arms. The manifest must assert
+    # the checkpoint path itself before spending GPU hours.
+    for path in (CANARY_GPTQ, FULL_GPTQ):
+        text = path.read_text(encoding="utf-8")
+        assert 'EXPECT_MODEL_PATH_SUBSTRING, value: "gptq-W4AFP8"' in text
+        assert "/get_server_info" in text
+        assert "exit 12" in text
+        # Sampling must be byte-identical to the AWQ t1 arm for the comparison
+        # to isolate the checkpoint.
+        assert "--candidate-temperature 1.0" in text
+        assert "--candidate-top-p 0.95" in text
+        assert "--candidate-max-tokens 131072" in text
+        assert "--candidate-concurrency 2" in text
+        # Distinct run ids: a GPTQ result must not land on an AWQ checkpoint.
+        assert "glm53-gptq-aa-lcr-v11-" in text
+        assert "glm53-w4afp8-aa-lcr-v11-" not in text
+    assert "--run-id glm53-gptq-aa-lcr-v11-full-t1p95-r1" in FULL_GPTQ.read_text(
+        encoding="utf-8"
+    )
+    assert "--run-id glm53-gptq-aa-lcr-v11-canary-t1p95-r1" in CANARY_GPTQ.read_text(
+        encoding="utf-8"
+    )
+    assert "--canary" in CANARY_GPTQ.read_text(encoding="utf-8")
+    assert "--limit 100" in FULL_GPTQ.read_text(encoding="utf-8")
+    assert "--repeats 3" in FULL_GPTQ.read_text(encoding="utf-8")
+
+
 def test_full_jobs_use_24h_deadline():
     # 12h was enough only because the 0.6 campaign resumed into a second Job.
     # A from-scratch 300-unit run needs the extra headroom.
-    for path in (FULL, FULL_T1):
+    for path in (FULL, FULL_T1, FULL_GPTQ):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert document["spec"]["activeDeadlineSeconds"] == 86400
-    for path in (CANARY, CANARY_T1, CANARY_T1_2X):
+    for path in (CANARY, CANARY_T1, CANARY_T1_2X, CANARY_GPTQ):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert document["spec"]["activeDeadlineSeconds"] == 7200
 

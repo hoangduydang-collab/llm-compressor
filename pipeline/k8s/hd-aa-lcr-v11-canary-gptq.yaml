@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: hd-aa-lcr-v11-canary-gptq-
+  namespace: evaluation
+  labels:
+    owner: hoangduy.dang
+    purpose: aa-lcr-v11-canary-gptq
+    aa-lcr-run-id: glm53-gptq-aa-lcr-v11-canary-t1p95-r1
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        owner: hoangduy.dang
+        purpose: aa-lcr-v11-canary-gptq
+        aa-lcr-run-id: glm53-gptq-aa-lcr-v11-canary-t1p95-r1
+    spec:
+      restartPolicy: Never
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: evaluate
+          image: python:3.12-slim
+          env:
+            - {name: PYTHONUNBUFFERED, value: "1"}
+            - {name: TIKTOKEN_CACHE_DIR, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"}
+            - {name: CL100K_CACHE_FILE, value: "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"}
+            - {name: CL100K_BPE_SHA256, value: "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"}
+            - {name: TIKTOKEN_READY_MARKER, value: "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken/cl100k_base.ready"}
+            - {name: CANDIDATE_COMPLETIONS_URL, value: "http://glm-5-3-w4afp8-sglang:30000/v1/chat/completions"}
+            # The GPTQ serve reuses --served-model-name glm-5.3-w4afp8, so the
+            # runner's served-model check cannot tell the arms apart. Assert the
+            # checkpoint path before spending 2.5h against the wrong one.
+            - {name: EXPECT_MODEL_PATH_SUBSTRING, value: "gptq-W4AFP8"}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: {name: hd-openai-aa-judge, key: OPENAI_API_KEY}
+            - name: AA_LCR_CODE_REVISION
+              valueFrom:
+                configMapKeyRef:
+                  name: AA_LCR_CODE_CONFIGMAP
+                  key: AA_LCR_CODE_REVISION
+          resources:
+            requests: {cpu: "2", memory: "8Gi"}
+            limits: {cpu: "4", memory: "16Gi"}
+          command: ["bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p /mnt/cephfs/hoangduy/runlogs
+              exec > >(tee -a /mnt/cephfs/hoangduy/runlogs/hd-aa-lcr-v11-canary-gptq.log) 2>&1
+              LOCK=/workspace/pipeline/requirements-aa-lcr-v11.lock
+              DIGEST=$(sha256sum "$LOCK" | awk '{print $1}')
+              VENV=/mnt/cephfs/hoangduy/venvs/aa-lcr-v11-py312-${DIGEST:0:12}
+              test -x "$VENV/bin/python"
+              test "$(cat "$VENV/requirements-sha256.txt")" = "$DIGEST"
+              test -d "$TIKTOKEN_CACHE_DIR"
+              test -s "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE"
+              test -s "$TIKTOKEN_READY_MARKER"
+              test "$(cat "$TIKTOKEN_READY_MARKER")" = "$CL100K_CACHE_FILE $CL100K_BPE_SHA256"
+              test "$(sha256sum "$TIKTOKEN_CACHE_DIR/$CL100K_CACHE_FILE" | awk '{print $1}')" = "$CL100K_BPE_SHA256"
+              SERVED_PATH=$("$VENV/bin/python" - <<'PY'
+              import json, os, urllib.request
+              base = os.environ["CANDIDATE_COMPLETIONS_URL"].removesuffix("/v1/chat/completions")
+              with urllib.request.urlopen(base + "/get_server_info", timeout=30) as r:
+                  print(json.load(r).get("model_path", ""))
+              PY
+              )
+              echo "==> served model_path: $SERVED_PATH"
+              case "$SERVED_PATH" in
+                *"$EXPECT_MODEL_PATH_SUBSTRING"*) echo "==> checkpoint assertion OK" ;;
+                *) echo "FATAL: served checkpoint does not contain '$EXPECT_MODEL_PATH_SUBSTRING'"; exit 12 ;;
+              esac
+              cd /workspace
+              "$VENV/bin/python" -m pipeline.aa_lcr_v11 run \
+                --run-id glm53-gptq-aa-lcr-v11-canary-t1p95-r1 \
+                --work-dir /mnt/cephfs/hoangduy/aa-lcr-v11-work \
+                --output-dir /mnt/cephfs/hoangduy/results/glm53-aa-lcr-v11 \
+                --candidate-base-url "${CANDIDATE_COMPLETIONS_URL%/v1/chat/completions}" \
+                --candidate-temperature 1.0 \
+                --candidate-top-p 0.95 \
+                --candidate-max-tokens 131072 \
+                --canary --limit 1 --repeats 1 \
+                --candidate-concurrency 2 --judge-preflight
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: code, mountPath: /workspace/pipeline, readOnly: true}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: code
+          configMap: {name: AA_LCR_CODE_CONFIGMAP}

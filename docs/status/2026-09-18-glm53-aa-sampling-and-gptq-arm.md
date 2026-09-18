@@ -57,42 +57,24 @@ splitting the work 8 ways gives **answers identical to the 4-way run** at
 produces the servable format directly, skipping the ~3.5 h of post-processing the
 AWQ path needs.
 
-**Quality.** On the cheap greedy full7 it won the only task that separated the
-arms by more than 2 pp:
+**Quality.** On our own cheap suite GPTQ won the only task that has ever
+separated the arms by more than 2 pp — GPQA Diamond CoT, **67.68%** against AWQ's
+61.11% and PhalaCloud's 55.56%. Everything else on that suite is inside noise,
+for all three arms:
 
-| | GPTQ | AWQ | Phala |
+| Task | ours | gptq | phala |
 |---|---:|---:|---:|
-| **GPQA Diamond CoT** | **67.68%** | 61.11% | 55.56% |
+| GSM8K | 97.35 ±0.44 | **97.57** ±0.42 | 96.82 ±0.48 |
+| IFEval | **90.76** ±1.25 | 88.91 ±1.35 | 90.20 ±1.28 |
+| MMLU | 86.63 ±0.28 | **86.84** ±0.27 | 86.81 ±0.27 |
+| ARC Challenge | 69.37 ±1.35 | 68.86 ±1.35 | **70.31** ±1.34 |
+| HellaSwag | 89.20 ±0.31 | 88.97 ±0.31 | **89.35** ±0.31 |
+| TruthfulQA MC2 | **62.88** ±1.46 | 61.77 ±1.45 | 62.54 ±1.46 |
 
-Elsewhere on full7 it is inside noise (GSM8K −0.38, IFEval +0.74, MMLU +0.17 vs
-AWQ). Both AA arms are **in flight**: GPQA on `gpu04`, AA-LCR on the two-node
-serve. Those are the numbers a three-way verdict should rest on — not the full7
-rerun, which excluded GPQA.
-
-### The cheap suite could not see the change
-
-Three arms, 6 tasks, 7 h 59 m total, all clean. GPQA excluded (its node was busy).
-
-| Task | ours | gptq | phala | greedy ours/gptq/phala |
-|---|---:|---:|---:|---|
-| GSM8K | 97.35 ±0.44 | **97.57** ±0.42 | 96.82 ±0.48 | 97.65 / 97.27 / 97.19 |
-| IFEval | **90.76** ±1.25 | 88.91 ±1.35 | 90.20 ±1.28 | 89.65 / 90.39 / 90.76 |
-| MMLU | 86.63 ±0.28 | **86.84** ±0.27 | 86.81 ±0.27 | 86.67 / 86.84 / 86.66 |
-| ARC Challenge | 69.37 ±1.35 | 68.86 ±1.35 | **70.31** ±1.34 | 68.77 / 68.94 / 69.80 |
-| HellaSwag | 89.20 ±0.31 | 88.97 ±0.31 | **89.35** ±0.31 | 89.37 / 89.00 / 89.29 |
-| TruthfulQA MC2 | **62.88** ±1.46 | 61.77 ±1.45 | 62.54 ±1.46 | 62.99 / 61.92 / 62.50 |
-
-Every score landed inside its own error bar — no arm moved, in either direction.
-
-That is a limit of the suite, not a result about the models: most of its tasks
-are multiple-choice, where sampling cannot change the answer, and the rest are
-far too short to run into the output cap. So full7 stays useful as a cheap
-regression check, but **AA GPQA and AA-LCR are the instruments for anything
-sampling-related** — worth one node saved per question asked.
-
-The rerun also made the sampling config an explicit, recorded setting in that
-suite rather than an implicit default, so every future run states the decoding it
-actually used.
+Three arms, 7 h 59 m, GPQA excluded (its node was busy). Every score sits inside
+its own error bar, so this suite is a regression check rather than a way to rank
+the arms. **Both AA arms are in flight** — GPQA on `gpu04`, AA-LCR on the
+two-node serve — and those are the numbers a three-way verdict should rest on.
 
 ### Plan for next week
 

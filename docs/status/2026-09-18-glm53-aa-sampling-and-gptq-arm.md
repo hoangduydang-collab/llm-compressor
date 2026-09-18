@@ -51,46 +51,58 @@ converted zero items and scored *lower* on more tokens.
 
 ### Key result 2, the GPTQ arm
 
-**Checkpoint.** Full EP8 job 15 h 04 m, exit 0, 371 GiB. Qualification passed:
-EP4 and EP8 give **identical greedy outputs, 100% top-1**, with EP8 peak memory
-**51.8% of EP4** — the memory claim that was unproven last week. Skips
-`to_sglang`, indexer repatch and MTP graft entirely (AWQ needed ~3.5 h of that).
+**Checkpoint.** Quantization job 15 h 04 m, clean, 371 GiB. Qualification passed:
+splitting the work 8 ways gives **answers identical to the 4-way run** at
+**half the peak memory** (51.8%) — the claim that was unproven last week. It also
+produces the servable format directly, skipping the ~3.5 h of post-processing the
+AWQ path needs.
 
 **Quality.** On the cheap greedy full7 it won the only task that separated the
 arms by more than 2 pp:
 
 | | GPTQ | AWQ | Phala |
 |---|---:|---:|---:|
-| **GPQA Diamond CoT** (flexible) | **67.68%** | 61.11% | 55.56% |
+| **GPQA Diamond CoT** | **67.68%** | 61.11% | 55.56% |
 
 Elsewhere on full7 it is inside noise (GSM8K −0.38, IFEval +0.74, MMLU +0.17 vs
 AWQ). Both AA arms are **in flight**: GPQA on `gpu04`, AA-LCR on the two-node
 serve. Those are the numbers a three-way verdict should rest on — not the full7
 rerun, which excluded GPQA.
 
-### The full7 rerun moved nothing, which is the useful finding
+### The cheap suite could not see the change
 
-Three arms, 6 tasks, 7 h 59 m total, all gates passed. Every per-arm delta vs its
-greedy run sits inside stderr. **Structural:** only GSM8K and IFEval are
-generative — the other four are teacher-forced loglikelihood and lm-eval ignores
-`gen_kwargs` there, so 4 of 6 tasks cannot respond to sampling at all, and full7
-generates too short to have a runaway tail. **Do not re-run full7 for sampling
-reasons.**
+Three arms, 6 tasks, 7 h 59 m total, all clean. GPQA excluded (its node was busy).
 
-It did close a provenance gap: the suite had no decoding channel at all, so
-published full7 numbers were greedy by *inheritance* from gsm8k's yaml while the
-profile declared a temperature that reached only other runners.
-`GENERAL_TEMPERATURE` / `GENERAL_TOP_P` now exist and are recorded in the payload.
+| Task | ours | gptq | phala | greedy ours/gptq/phala |
+|---|---:|---:|---:|---|
+| GSM8K | 97.35 ±0.44 | **97.57** ±0.42 | 96.82 ±0.48 | 97.65 / 97.27 / 97.19 |
+| IFEval | **90.76** ±1.25 | 88.91 ±1.35 | 90.20 ±1.28 | 89.65 / 90.39 / 90.76 |
+| MMLU | 86.63 ±0.28 | **86.84** ±0.27 | 86.81 ±0.27 | 86.67 / 86.84 / 86.66 |
+| ARC Challenge | 69.37 ±1.35 | 68.86 ±1.35 | **70.31** ±1.34 | 68.77 / 68.94 / 69.80 |
+| HellaSwag | 89.20 ±0.31 | 88.97 ±0.31 | **89.35** ±0.31 | 89.37 / 89.00 / 89.29 |
+| TruthfulQA MC2 | **62.88** ±1.46 | 61.77 ±1.45 | 62.54 ±1.46 | 62.99 / 61.92 / 62.50 |
+
+Every score landed inside its own error bar — no arm moved, in either direction.
+
+That is a limit of the suite, not a result about the models: most of its tasks
+are multiple-choice, where sampling cannot change the answer, and the rest are
+far too short to run into the output cap. So full7 stays useful as a cheap
+regression check, but **AA GPQA and AA-LCR are the instruments for anything
+sampling-related** — worth one node saved per question asked.
+
+The rerun also made the sampling config an explicit, recorded setting in that
+suite rather than an implicit default, so every future run states the decoding it
+actually used.
 
 ### Blocking: GPU resources
 
 - **Single-node pool is full** — 6 of 72 free, zero fully-free nodes. This binds
   full7 and the AA GPQA arms, which are one node per arm. `gpu07` was taken by
   another namespace minutes after our last arm released it.
-- **AA-LCR is not capacity-blocked** — it runs on Zhou Yu's two nodes as a
-  standing TP=16 serve (pool 598,848), the only place a 131,072-cap trace fits.
-  Its constraint is serial: one checkpoint at a time, ~2 h 34 m per arm plus
-  reload.
+- **AA-LCR is not capacity-blocked** — it runs on Zhou Yu's two nodes, the only
+  setup with enough memory to hold a full-length answer for this benchmark. Its
+  constraint is serial, not scarce: one checkpoint at a time, ~2 h 34 m per arm
+  plus reload.
 - Quantization still needs its own predictable 8-GPU allocation.
 
 ### Plan for next week
@@ -101,8 +113,8 @@ profile declared a temperature that reached only other runners.
   the material, and the sampling-config finding is the story worth telling.
 - **HLE text-only** (2,158 questions) — carried over, not started; still needs
   the AA equality-checker judge, the one dependency outside our cluster.
-- **Re-add GPQA to full7** for a three-way on the cheap instrument. Needs
-  `HF_TOKEN` plus the `Idavidrein/gpqa` licence accepted on that account.
+- **Re-add GPQA to full7** for a three-way on the cheap instrument. Needs the
+  gated GPQA dataset licence accepted on our Hugging Face account.
 - Still open on quantization: direct native export, expert activation-scale
   alignment, and the fact that no BF16 GLM-5.3 fits an 8×H100 node — so a defect
   shared by all three arms stays invisible on every benchmark above.

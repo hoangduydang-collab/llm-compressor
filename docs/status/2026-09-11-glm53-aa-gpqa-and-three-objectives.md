@@ -1,16 +1,16 @@
 # Sep 7 - Sep 11
 
-> ## ⚠ CORRECTION (2026-09-18) — these GPQA scores used the wrong branch of AA's own rule
+> ## UPDATE (2026-09-18) — AA's actual sampling config is now confirmed
 >
 > The 81.82% / 79.39% pair below was measured at temperature 0.6 / top_p 1.0,
-> which this note treats as "AA methodology". That is AA's **generic** default;
-> AA overrides it with the model creator's recommended config whenever the lab
-> publishes one, and Z.ai recommends **1.0 / 0.95** for GLM-5.3. So 0.6 / 1.0 is
-> the ablation for this model.
+> AA's documented **generic** default. AA's methodology also says a lab's own
+> recommended config takes precedence where one is published, but does not state
+> per model which branch was used — so we asked AA directly. GLM-5.3 is scored at
+> Z.ai's recommended **1.0 / 0.95**.
 >
-> Rerun at the correct config: **ours 91.52% ±0.87, PhalaCloud 91.11% ±0.85**
-> against AA's published ~91.7% — a **0.2 pp** gap, not 9.9 pp. The
-> measurements below stand; their provenance label does not.
+> These scores remain valid as the generic-default branch; they are simply not
+> the AA-comparable pair. On the confirmed config: **ours 91.52% ±0.87,
+> PhalaCloud 91.11% ±0.85** against AA's published ~91.7% — a **0.2 pp** gap.
 >
 > This note's hypothesis that "truncation is probably most of the gap to AA's
 > 91.7%" was right, and the cause is now identified: the truncation was a

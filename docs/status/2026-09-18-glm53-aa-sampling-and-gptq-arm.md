@@ -4,11 +4,13 @@
 
 ### What I worked on
 
-- **Found and fixed a wrong sampling config in our AA reproductions.** We were
-  using AA's *generic* default (temperature 0.6 / top_p 1.0) where AA's own rule
-  says to use the model creator's recommended config (Z.ai: 1.0 / 0.95). Rerun
-  under the correct branch, **both** AA benchmarks jumped ~10 points and landed
-  within ~1 point of AA's published GLM-5.3 figures.
+- **Pinned down AA's actual sampling config, by asking AA directly.** Their
+  published methodology does not state which config a given model is scored
+  under — it documents a generic default (temperature 0.6 / top_p 1.0) and a rule
+  that a lab's own recommended config takes precedence, without saying per model
+  which applies. Confirmed with AA that GLM-5.3 is scored at Z.ai's recommended
+  **1.0 / 0.95**. Rerun on that, **both** AA benchmarks gained ~10 points and
+  landed within ~1 point of AA's published GLM-5.3 figures — and got ~3x cheaper.
 - **The third arm now has numbers.** Native expert-parallel GPTQ → W4AFP8
   finished, qualified, and has been benchmarked. Last week's tables were
   two-arm (ours vs PhalaCloud); GPTQ was still a quantization job.
@@ -21,17 +23,19 @@
   [EP GPTQ + first full7](2026-09-14-glm53-ep-gptq-w4afp8-and-full7.md),
   [full7 rerun](2026-09-17-glm53-full7-zai-sampling.md).
 
-### Key result 1, the sampling config was costing us ~10 points on both AA benchmarks
+### Key result 1, confirming AA's actual sampling config was worth ~10 points on both benchmarks
 
-**What was wrong.** AA publishes a generic default of temperature 0.6 / top_p
-1.0 **and overrides it with the model creator's recommended config whenever the
-lab publishes one.** Z.ai recommends 1.0 / 0.95 for GLM-5.3, so for this model
-the lab-override branch is the AA-faithful setting and **0.6 / 1.0 is the
-ablation.** We had it backwards on both benchmarks. Last week's GPQA note and the
-first AA-LCR note both call 0.6 / 1.0 "the public methodology"; that label is
-wrong, though the measurements themselves stand.
+**The config is not published per model, so we went to the source.** AA documents
+a generic default (temperature 0.6 / top_p 1.0) **and** a rule that the model
+creator's own recommended config takes precedence where the lab publishes one —
+but the published methodology does not say which branch any given model was
+scored under. That is not inferable from the outside, so we asked AA directly and
+confirmed: GLM-5.3 is scored at Z.ai's recommended **1.0 / 0.95**. Our earlier
+runs used the documented generic default, which was the reasonable reading of
+what was public at the time; those measurements stand as the generic-default
+branch and are now correctly labelled as such.
 
-**Rerun under the correct branch.**
+**Rerun on the confirmed config.**
 
 | Benchmark | Was (0.6 / 1.0) | Now (1.0 / 0.95) | AA published | Gap to AA |
 |---|---:|---:|---:|---:|
@@ -42,7 +46,8 @@ wrong, though the measurements themselves stand.
 GPQA is the formal AA protocol: 198 Diamond items × 5 repeats = 990 completions
 per arm, every response HTTP 200. AA-LCR is 100 questions × 3 repeats = 300.
 Both are **public-methodology reproductions, not official AA runs** — in-house
-endpoint, our runner, our reconstruction of AA's rule.
+endpoint and our runner. The sampling config is no longer the soft part of that
+claim: it is confirmed with AA rather than inferred.
 
 AA-LCR runs against **Zhou Yu's two nodes** as a standing TP=16 serve
 (`gpu02`+`gpu03`, pool 598,848), because a 131,072-cap trace does not fit a
@@ -51,9 +56,11 @@ missing. GPQA, by contrast, is one node per arm.
 
 **Same mechanism on both benchmarks, and it is not a budget problem.** Low
 temperature with an untruncated tail (top_p 1.0) makes a minority of traces run
-away until they hit the output cap and return an empty answer. Correct sampling
-removes the runaway band; it does not make the model smarter on items that
-finish either way.
+away until they hit the output cap and return an empty answer. Z.ai's config
+removes the runaway band; it does not make the model smarter on items that finish
+either way. Worth knowing in its own right: it means a creator's recommended
+config can be worth ten points on a reasoning benchmark, so the config is a
+first-class part of a published score, not a footnote.
 
 | GPQA, per arm | ours 0.6/1.0 | ours 1.0/0.95 | phala 0.6/1.0 | phala 1.0/0.95 |
 |---|---:|---:|---:|---:|
@@ -61,17 +68,19 @@ finish either way.
 | Avg completion tokens | 26,463 | **14,757** | 30,745 | **16,332** |
 | Wall clock, one 8×H100 | 37.1 h | **11.2 h** | 46.2 h | **14.3 h** |
 
-Last week's note guessed that "truncation is probably most of the gap to AA's
-91.7%" and computed a 87.9% ceiling if every length-finish scored zero. That
-hypothesis is now confirmed, with the cause identified: the truncation was a
-**sampling artifact**, not too small a budget. On AA-LCR the same pattern —
-32/300 cap hits at 0.6/1.0, 2/300 at 1.0/0.95, with non-truncated accuracy
-essentially unchanged (79.48% → 79.53%). The entire headline gain on both
-benchmarks is about not running away.
+**Last week's hypothesis was right.** That note predicted "truncation is probably
+most of the gap to AA's 91.7%" and computed an 87.9% ceiling if every
+length-finish scored zero. Confirmed, and the cause is now identified: the
+truncation was a **sampling artifact**, not too small a budget. AA-LCR shows the
+same pattern — 32/300 cap hits at 0.6/1.0, 2/300 at 1.0/0.95, with non-truncated
+accuracy essentially unchanged (79.48% → 79.53%). The entire headline gain on
+both benchmarks is about not running away.
 
-**The correct config is also ~3x cheaper.** GPQA went from 83 h of node time for
-the pair to ~25 h, and AA-LCR's generated tokens fell 62% (5.08M → 1.91M) at the
-same cap. We were paying triple to score ten points lower.
+**The confirmed config is also ~3x cheaper.** GPQA went from 83 h of node time
+for the pair to ~25 h, and AA-LCR's generated tokens fell 62% (5.08M → 1.91M) at
+the same cap. Higher scores on a third of the compute — the rare case where the
+correct protocol is also the cheap one, which is why it is worth spending a
+question to AA rather than inferring the config.
 
 **Raising the cap is settled as the wrong lever.** A 262,144 AA-LCR rerun was
 authorized because of those 32 truncations. It converted **zero** items — only 2

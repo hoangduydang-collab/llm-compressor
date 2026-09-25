@@ -134,8 +134,12 @@ def test_stream_end_to_end_and_resume(tmp_path):
 
     # diagnostics: sink-exempt variants of the key arms, attention mass on token 0
     d = kd.stream(kd.LayerSource(str(ck), str(tmp_path / "st3")), windows, torch.device("cpu"), tmp_path / "o3",
-                  layers=2, diag=True, **kw)
+                  layers=2, diag=True, dump_layers={1}, **kw)
     e = d[1]["eval"]
+    dm = torch.load(tmp_path / "o3" / "dump" / "001.pt")
+    assert not (tmp_path / "o3" / "dump" / "000.pt").exists() and len(dm["X"]) == len(windows["eval"])
+    d_lat = dm["X"][0].shape[1]
+    assert dm["X"][0].shape[0] == 256 and dm["cb16"].shape == (16, d_lat) and dm["key_mass"][0].shape == (256,)
     assert {"cb16-ch-int2|keep1", "cb16-ch-int2|keep4", "gmean-ch-int2|keep4"} <= set(e["arms"])
     assert e["arms"]["cb16-ch-int2|keep1"]["token0_latent_rel_mse"] == 0.0
     assert 0.0 < e["attn_mass_on_token0"] < 1.0 and e["token0_norm_over_median"] > 0

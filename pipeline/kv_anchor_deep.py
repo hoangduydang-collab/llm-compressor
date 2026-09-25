@@ -409,8 +409,9 @@ def eval_window(layer, tap, X, o0, ctx, acc: Acc, gen, cfg: dict):
 def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int | None = None, act_fp8=False,
            cbs=(256, 4096), kmeans_iters=10, lexico_every=8, lexico_atoms=4096, lexico_s=45,
            lexico_fit_tokens=8192, lexico_iters=5, qvg_c=64, state_every=8, seed=0, sink_keep=0,
-           diag=False) -> dict:
-    """windows: {"train": [...], "eval": [...], "gen": [...]} equal-length token-id tensors."""
+           diag=False, dump_layers=()) -> dict:
+    """windows: {"train": [...], "eval": [...], "gen": [...]} equal-length token-id tensors.
+    dump_layers: save the eval latents, per-key attention, codebook and mean of these layers to dump/NNN.pt."""
     gen = torch.Generator().manual_seed(seed)
     cfg = {"cbs": cbs, "qvg_c": qvg_c, "lexico_s": lexico_s, "sink_keep": sink_keep, "diag": diag}
     names = [(s, i) for s in ("train", "eval", "gen") for i in range(len(windows[s]))]
@@ -458,11 +459,15 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
                     ctx["lexico"] = bc.fit_dictionary(sub, lexico_atoms, lexico_s, lexico_iters, gen)
             del Xtr
             # pass B: held-out AA-LCR and generated windows
-            accs, noop = {"eval": Acc(), "gen": Acc()}, 0.0
+            accs, noop, dump = {"eval": Acc(), "gen": Acc()}, 0.0, {"X": [], "key_mass": []}
             for j, (s, _) in enumerate(names):
                 if s == "train":
                     continue
                 X, o0 = step(j)
+                if L in dump_layers and s == "eval":
+                    dump["X"].append(X.half().cpu())
+                    km = tap.key_mass.get(0)
+                    dump["key_mass"].append(None if km is None else km.cpu())
                 if noop == 0.0:
                     noop = (tap.rerun([layer], 0, X[None].to(torch.bfloat16)).float() - o0).pow(2).sum().item() / o0.pow(2).sum().item()
                     if noop > 1e-6:
@@ -470,6 +475,10 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
                 eval_window(layer, tap, X, o0, ctx, accs[s], gen, cfg)
         finally:
             tap.close()
+        if L in dump_layers:
+            (out_dir / "dump").mkdir(exist_ok=True)
+            torch.save({**dump, "mu": ctx["mu"].cpu(), **{f"cb{m}": ctx[f"cb{m}"].cpu() for m in cbs}},
+                       out_dir / "dump" / f"{L:03d}.pt")
         g = layer.self_attn.kv_a_layernorm.weight.float().abs()
         res = {"layer": L, "act_fp8_hooks": hooks, "lexico": "lexico" in ctx,
                "kv_norm_gain_abs": {"min": g.min().item(), "median": g.median().item(), "max": g.max().item()},
@@ -582,6 +591,7 @@ def main(argv=None):
     ap.add_argument("--lexico-every", type=int, default=8)
     ap.add_argument("--sink-keep", type=int, default=0, help="first k tokens of each window stay exact in every arm")
     ap.add_argument("--diag", action="store_true", help="also score key arms with k=1,4 exact sink tokens")
+    ap.add_argument("--dump-layers", default="", help="comma list: save eval latents + codebooks of these layers")
     ap.add_argument("--threads", type=int, default=16)
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args(argv)
@@ -627,7 +637,8 @@ def main(argv=None):
 
     meta.update(sink_keep=args.sink_keep, diag=args.diag)
     stream(src, {"train": train, "eval": evals, "gen": gens}, dev, out, layers=args.layers,
-           act_fp8=args.act_fp8, lexico_every=args.lexico_every, sink_keep=args.sink_keep, diag=args.diag)
+           act_fp8=args.act_fp8, lexico_every=args.lexico_every, sink_keep=args.sink_keep, diag=args.diag,
+           dump_layers={int(x) for x in args.dump_layers.split(",") if x})
     # every finished layer, including ones from before a resume
     results = {int(p.stem): json.loads(p.read_text()) for p in sorted((out / "layers").glob("*.json"))}
     (out / "kv_anchor_deep_meta.json").write_text(json.dumps(meta, indent=1))

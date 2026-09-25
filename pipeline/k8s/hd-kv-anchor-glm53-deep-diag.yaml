@@ -1,4 +1,5 @@
 ---
+# DIAGNOSTIC (layers 0-12, sink exemption k=1,4 on key arms). Generated from hd-kv-anchor-glm53-deep.yaml.
 # KV anchor probe at every layer of the SERVED GLM-5.3 W4AFP8 (EP-GPTQ) checkpoint,
 # streamed one layer at a time on 1 GPU (gpu06). Weights dequantized exactly,
 # FP8 activations emulated (--act-fp8). Exits when done; the GPU is released.
@@ -18,16 +19,16 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: hd-kv-anchor-glm53-deep
+  name: hd-kv-anchor-glm53-deep-diag
   namespace: evaluation
-  labels: {owner: hoangduy.dang, purpose: kv-anchor-deep}
+  labels: {owner: hoangduy.dang, purpose: kv-anchor-deep-diag}
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 0
   activeDeadlineSeconds: 43200
   template:
     metadata:
-      labels: {owner: hoangduy.dang, purpose: kv-anchor-deep}
+      labels: {owner: hoangduy.dang, purpose: kv-anchor-deep-diag}
     spec:
       restartPolicy: Never
       nodeSelector: {kubernetes.io/hostname: aicloud-infermesh-test-ca-gpu06}
@@ -68,12 +69,12 @@ spec:
               value: /mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
             - {name: AA_LCR_WORK, value: /mnt/cephfs/hoangduy/aa-lcr-v11-work}
             # e.g. "--sink-keep 4" for the full run
-            - {name: EXTRA_ARGS, value: ""}
+            - {name: EXTRA_ARGS, value: "--layers 13 --diag --lexico-every 0"}
           command: ["bash", "-c"]
           args:
             - |
               set -euo pipefail
-              OUT=${OUT:-/mnt/cephfs/hoangduy/results/kv-anchor/glm53-w4afp8-deep-$(date -u +%Y%m%dt%H%M%Sz)}
+              OUT=${OUT:-/mnt/cephfs/hoangduy/results/kv-anchor/glm53-w4afp8-deep-diag-$(date -u +%Y%m%dt%H%M%Sz)}
               mkdir -p "$OUT"
               echo "OUT=$OUT"
               nvidia-smi --query-gpu=name,uuid,memory.total --format=csv

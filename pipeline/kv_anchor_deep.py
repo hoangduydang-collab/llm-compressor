@@ -36,7 +36,6 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import shutil
 import sqlite3
@@ -59,23 +58,30 @@ _ALLOWED_MISSING = re.compile(r"(embed_tokens|lm_head|model\.norm)\.")
 
 
 # ---------------------------------------------------------------- weights
-def copy_parallel(src: Path, dst: Path, threads: int = 16, chunk: int = 64 << 20) -> int:
-    """src -> dst with parallel range reads (cephfs is ~30 MB/s per stream)."""
-    size = src.stat().st_size
-    tmp = dst.with_name(dst.name + ".part")
-    with open(tmp, "wb") as f:
-        f.truncate(size)
+_ST_DTYPE = {"F32": torch.float32, "F16": torch.float16, "BF16": torch.bfloat16, "F64": torch.float64,
+             "I8": torch.int8, "U8": torch.uint8, "I16": torch.int16, "I32": torch.int32, "I64": torch.int64,
+             "BOOL": torch.bool, "F8_E4M3": torch.float8_e4m3fn}
+
+
+def read_span(path: Path, lo: int, hi: int, threads: int = 16, chunk: int = 64 << 20) -> bytearray:
+    """Bytes [lo, hi) of a file with parallel range reads (cephfs is ~30 MB/s per stream)."""
+    buf = bytearray(hi - lo)
+    view = memoryview(buf)
 
     def work(off):
-        with open(src, "rb", buffering=0) as s, open(tmp, "r+b", buffering=0) as d:
-            s.seek(off)
-            d.seek(off)
-            d.write(s.read(min(chunk, size - off)))
+        n = min(chunk, hi - off)
+        with open(path, "rb", buffering=0) as f:
+            f.seek(off)
+            got = 0
+            while got < n:
+                r = f.readinto(view[off - lo + got: off - lo + n])
+                if not r:
+                    raise IOError(f"short read at {off + got} in {path}")
+                got += r
 
     with ThreadPoolExecutor(threads) as ex:
-        list(ex.map(work, range(0, size, chunk)))
-    os.replace(tmp, dst)
-    return size
+        list(ex.map(work, range(lo, hi, chunk)))
+    return buf
 
 
 def dequantize_sglang_w4afp8(raw: dict[str, torch.Tensor]) -> tuple[dict[str, torch.Tensor], set[str]]:
@@ -101,8 +107,9 @@ def dequantize_sglang_w4afp8(raw: dict[str, torch.Tensor]) -> tuple[dict[str, to
 
 
 class LayerSource:
-    """Stages one decoder layer's shards on local disk and writes it as a
-    one-layer checkpoint loadable by AutoModelForCausalLM."""
+    """Reads one decoder layer's tensors by byte range (never whole shards: the
+    served checkpoint packs ~10 layers into each 46.6 GiB shard) and writes the
+    layer as a one-layer checkpoint loadable by AutoModelForCausalLM."""
 
     def __init__(self, snapshot: str, stage: str, threads: int = 16, dequant: bool = False):
         self.snapshot, self.stage = Path(snapshot), Path(stage)
@@ -122,60 +129,49 @@ class LayerSource:
             m = _LAYER.search(k)
             (self.by_layer.setdefault(int(m[1]), []) if m else self.other).append(k)
         self.n_layers = int(self.cfg["num_hidden_layers"])
+        self._headers: dict[str, tuple[int, dict]] = {}
+        self._pending: dict[int, object] = {}
+        self._pool = ThreadPoolExecutor(1)
         self._lock = threading.Lock()
-        self._inflight: dict[str, threading.Event] = {}
         self.bytes, self.seconds = 0, 0.0
 
-    def shards(self, L: int) -> set[str]:
-        return {self.wmap[k] for k in self.by_layer[L]}
-
-    def fetch(self, name: str) -> Path:
-        dst = self.stage / name
+    def _header(self, shard: str) -> tuple[int, dict]:
         with self._lock:
-            ev = self._inflight.get(name)
-            mine = ev is None and not dst.exists()
-            if mine:
-                ev = self._inflight[name] = threading.Event()
-        if mine:
+            if shard not in self._headers:
+                with open(self.snapshot / shard, "rb") as f:
+                    n = int.from_bytes(f.read(8), "little")
+                    self._headers[shard] = (8 + n, json.loads(f.read(n)))
+            return self._headers[shard]
+
+    def read(self, keys: list[str]) -> dict[str, torch.Tensor]:
+        """Tensors by name, reading only the byte span that covers them in each shard."""
+        by_shard: dict[str, list[str]] = {}
+        for k in keys:
+            by_shard.setdefault(self.wmap[k], []).append(k)
+        out = {}
+        for shard, ks in sorted(by_shard.items()):
+            base, hdr = self._header(shard)
+            lo = min(hdr[k]["data_offsets"][0] for k in ks)
+            hi = max(hdr[k]["data_offsets"][1] for k in ks)
             t0 = time.time()
-            try:
-                n = copy_parallel(self.snapshot / name, dst, self.threads)
-                with self._lock:
-                    self.bytes += n
-                    self.seconds += time.time() - t0
-            finally:                       # never leave a waiter hanging on a failed copy
-                with self._lock:
-                    del self._inflight[name]
-                ev.set()
-        elif ev is not None:
-            ev.wait()
-            if not dst.exists():           # the prefetching thread failed: copy in the foreground
-                return self.fetch(name)
-        return dst
+            buf = read_span(self.snapshot / shard, base + lo, base + hi, self.threads)
+            with self._lock:
+                self.bytes += hi - lo
+                self.seconds += time.time() - t0
+            for k in ks:
+                a, b = hdr[k]["data_offsets"]
+                dt = _ST_DTYPE[hdr[k]["dtype"]]
+                t = torch.frombuffer(buf, dtype=torch.uint8, count=b - a, offset=a - lo) if b > a else torch.empty(0, dtype=torch.uint8)
+                out[k] = t.view(dt).reshape(hdr[k]["shape"]).clone()
+            del buf
+        return out
 
     def prefetch(self, L: int):
-        def work():
-            try:
-                for s in sorted(self.shards(L)):
-                    self.fetch(s)
-            except Exception as ex:        # the foreground fetch retries and raises properly
-                log(f"prefetch of layer {L} failed: {ex!r}")
-        if L < self.n_layers:
-            threading.Thread(target=work, daemon=True).start()
-
-    def release(self, keep_from: int):
-        """Delete staged shards that no layer >= keep_from needs (non-layer shards are kept)."""
-        needed = {self.wmap[k] for k in self.other}
-        for L in range(keep_from, self.n_layers):
-            needed |= self.shards(L)
-        for p in self.stage.glob("*.safetensors"):
-            if p.name not in needed:
-                p.unlink(missing_ok=True)
+        if L < self.n_layers and L not in self._pending:
+            self._pending[L] = self._pool.submit(self.read, self.by_layer[L])
 
     def tensor(self, key: str) -> torch.Tensor:
-        from safetensors import safe_open
-        with safe_open(str(self.fetch(self.wmap[key])), framework="pt") as h:
-            return h.get_tensor(key)
+        return self.read([key])[key]
 
     def layer_config(self, L: int) -> dict:
         d = dict(self.cfg)
@@ -191,14 +187,8 @@ class LayerSource:
         return d
 
     def raw_layer(self, L: int) -> dict[str, torch.Tensor]:
-        from safetensors import safe_open
-        out = {}
-        for name in sorted(self.shards(L)):
-            with safe_open(str(self.fetch(name)), framework="pt") as h:
-                for k in self.by_layer[L]:
-                    if self.wmap[k] == name:
-                        out[k] = h.get_tensor(k)
-        return out
+        fut = self._pending.pop(L, None)
+        return fut.result() if fut is not None else self.read(self.by_layer[L])
 
     def build(self, L: int) -> tuple[Path, set[str]]:
         from safetensors.torch import save_file
@@ -318,21 +308,27 @@ def gen_windows(db: str, tok, W: int, n: int, offset: int, dev) -> list[torch.Te
 # ---------------------------------------------------------------- per-layer evaluation
 class Acc:
     def __init__(self):
-        self.lat, self.attn, self.bits, self.pred, self.lag = {}, {}, {}, {}, {}
-        self.E = self.Ec = 0.0
+        self.lat, self.attn, self.bits, self.pred, self.lag, self.tok0 = {}, {}, {}, {}, {}, {}
+        self.E = self.Ec = self.E0 = 0.0
+        self.sink_mass, self.norm_ratio = [], []
 
     def add(self, nm, bits, Xh, X, o, o0):
         self.bits[nm] = bits
         self.lat[nm] = self.lat.get(nm, 0.0) + (Xh - X).pow(2).sum().item()
+        self.tok0[nm] = self.tok0.get(nm, 0.0) + (Xh[0] - X[0]).pow(2).sum().item()
         a = self.attn.setdefault(nm, [0.0, 0.0])
         a[0] += (o - o0).pow(2).sum().item()
         a[1] += o0.pow(2).sum().item()
 
     def result(self) -> dict:
+        mean = lambda v: sum(v) / len(v) if v else None
         return {"centered_energy_fraction": self.Ec / self.E,
+                "attn_mass_on_token0": mean(self.sink_mass),
+                "token0_norm_over_median": mean(self.norm_ratio),
                 "lag_corr": {str(k): v[0] / math.sqrt(v[1] * v[2]) for k, v in self.lag.items()},
                 "pred_resid_vs_gmean": {k: v / self.Ec for k, v in self.pred.items()},
                 "arms": {nm: {"bits": self.bits[nm], "latent_rel_mse": self.lat[nm] / self.E,
+                              "token0_latent_rel_mse": self.tok0[nm] / self.E0,
                               "attn_rel_mse": self.attn[nm][0] / self.attn[nm][1]} for nm in self.lat}}
 
 
@@ -344,32 +340,58 @@ def deep_arms(cbs) -> list[tuple]:
     return arms
 
 
+def diag_arms(cbs) -> set[str]:
+    big = f"cb{cbs[1]}"
+    return {"direct-ch-int2", "gmean-ch-int2", f"{big}-ch-int2", f"{big}-tok-int2"}
+
+
 @torch.no_grad()
 def eval_window(layer, tap, X, o0, ctx, acc: Acc, gen, cfg: dict):
-    mu = ctx["mu"]
+    """sink_keep: the first k tokens of every window stay exact in every arm
+    (the attention-sink exemption practical KV quantizers make). diag: also
+    score a few arms with k = 1 and 4 when the run itself keeps none."""
+    mu, k = ctx["mu"], cfg.get("sink_keep", 0)
     acc.E += X.pow(2).sum().item()
     acc.Ec += (X - mu).pow(2).sum().item()
+    acc.E0 += X[0].pow(2).sum().item()
+    acc.norm_ratio.append((X[0].norm() / X.norm(dim=1).median()).item())
+    if tap.sink_mass.get(0) is not None:
+        acc.sink_mass.append(tap.sink_mass[0])
     kp.lag_stats(X, mu, acc.lag)
     for m in cfg["cbs"]:
         acc.pred[f"cb{m}"] = acc.pred.get(f"cb{m}", 0.0) + (X - kp.predict(X, f"cb{m}", None, ctx)[0]).pow(2).sum().item()
     rerun = lambda Xh: tap.rerun([layer], 0, Xh[None]).float()
-    for arm in deep_arms(cfg["cbs"]):
-        Xh, bits = kp.apply_arm(X, arm, ctx)
-        acc.add(kp.arm_name(arm), bits, Xh, X, rerun(Xh), o0)
-    Xh, bits = qvg_encode(X, gen, cfg["qvg_c"])
-    acc.add(f"qvg{cfg['qvg_c']}-int2", bits, Xh, X, rerun(Xh), o0)
+
+    def keep(Xh, n):
+        if not n:
+            return Xh
+        Xh = Xh.clone()
+        Xh[:n] = X[:n]
+        return Xh
+
+    diag = diag_arms(cfg["cbs"]) if cfg.get("diag") and not k else set()
+    coded = [(kp.arm_name(a), *kp.apply_arm(X, a, ctx)) for a in deep_arms(cfg["cbs"])]
+    Xq, bq = qvg_encode(X, gen, cfg["qvg_c"])
+    coded.append((f"qvg{cfg['qvg_c']}-int2", Xq, bq))
     if "lexico" in ctx:
-        Xh, bits = lexico_encode(X, ctx["lexico"], cfg["lexico_s"])
-        acc.add(f"lexico{cfg['lexico_s']}", bits, Xh, X, rerun(Xh), o0)
+        Xl, bl = lexico_encode(X, ctx["lexico"], cfg["lexico_s"])
+        coded.append((f"lexico{cfg['lexico_s']}", Xl, bl))
+    for nm, Xh, bits in coded:
+        Xh = keep(Xh, k)
+        acc.add(nm, bits, Xh, X, rerun(Xh), o0)
+        for n in (1, 4) if nm in diag else ():
+            Xk = keep(Xh, n)
+            acc.add(f"{nm}|keep{n}", bits, Xk, X, rerun(Xk), o0)
 
 
 @torch.no_grad()
 def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int | None = None, act_fp8=False,
            cbs=(256, 4096), kmeans_iters=10, lexico_every=8, lexico_atoms=4096, lexico_s=45,
-           lexico_fit_tokens=8192, lexico_iters=5, qvg_c=64, state_every=8, seed=0) -> dict:
+           lexico_fit_tokens=8192, lexico_iters=5, qvg_c=64, state_every=8, seed=0, sink_keep=0,
+           diag=False) -> dict:
     """windows: {"train": [...], "eval": [...], "gen": [...]} equal-length token-id tensors."""
     gen = torch.Generator().manual_seed(seed)
-    cfg = {"cbs": cbs, "qvg_c": qvg_c, "lexico_s": lexico_s}
+    cfg = {"cbs": cbs, "qvg_c": qvg_c, "lexico_s": lexico_s, "sink_keep": sink_keep, "diag": diag}
     names = [(s, i) for s in ("train", "eval", "gen") for i in range(len(windows[s]))]
     (out_dir / "layers").mkdir(parents=True, exist_ok=True)
     state_p = out_dir / "stream_state.pt"
@@ -402,7 +424,8 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
                 return tap.latent[0][0].float(), tap.out[0].float()
 
             # pass A: training windows -> global mean, codebooks, dictionary
-            train = [step(j)[0] for j, (s, _) in enumerate(names) if s == "train"]
+            # exempt sink tokens are never coded, so they are not fit either
+            train = [step(j)[0][sink_keep:] for j, (s, _) in enumerate(names) if s == "train"]
             Xtr = torch.cat(train)
             del train
             ctx = {"mu": Xtr.mean(0, keepdim=True).half().float()}
@@ -438,7 +461,6 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
         del layer, rotary, ctx
         if dev.type == "cuda":
             torch.cuda.empty_cache()
-        src.release(L + 1)
         if state_every and (L + 1) % state_every == 0 and L + 1 < last:
             torch.save({"H": H, "topk": topk, "next_layer": L + 1}, state_p)
     return results
@@ -532,6 +554,8 @@ def main(argv=None):
     ap.add_argument("--layers", type=int, default=None, help="stop after this many layers (smoke runs)")
     ap.add_argument("--act-fp8", action="store_true")
     ap.add_argument("--lexico-every", type=int, default=8)
+    ap.add_argument("--sink-keep", type=int, default=0, help="first k tokens of each window stay exact in every arm")
+    ap.add_argument("--diag", action="store_true", help="also score key arms with k=1,4 exact sink tokens")
     ap.add_argument("--threads", type=int, default=16)
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args(argv)
@@ -575,8 +599,9 @@ def main(argv=None):
     meta.update(train_windows=len(train), eval_windows=len(evals), gen_windows=len(gens), windows=names)
     log(f"{len(train)} train / {len(evals)} eval AA-LCR + {len(gens)} generated windows")
 
+    meta.update(sink_keep=args.sink_keep, diag=args.diag)
     stream(src, {"train": train, "eval": evals, "gen": gens}, dev, out, layers=args.layers,
-           act_fp8=args.act_fp8, lexico_every=args.lexico_every)
+           act_fp8=args.act_fp8, lexico_every=args.lexico_every, sink_keep=args.sink_keep, diag=args.diag)
     # every finished layer, including ones from before a resume
     results = {int(p.stem): json.loads(p.read_text()) for p in sorted((out / "layers").glob("*.json"))}
     (out / "kv_anchor_deep_meta.json").write_text(json.dumps(meta, indent=1))

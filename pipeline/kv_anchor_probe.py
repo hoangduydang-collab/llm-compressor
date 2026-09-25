@@ -161,6 +161,7 @@ class Tap:
 
     def __init__(self, layers):
         self.latent, self.kwargs, self.out, self.topk = {}, {}, {}, {}
+        self.sink_mass: dict[int, float | None] = {}   # mean attention weight on key 0 (eager only)
         self.replace: dict[int, torch.Tensor] = {}
         self.record = False
         self.handles = []
@@ -189,6 +190,9 @@ class Tap:
             if self.record:
                 self.out[i] = out[0].detach()
                 self.topk[i] = out[2].detach() if len(out) > 2 and out[2] is not None else None
+                w = out[1] if len(out) > 1 else None
+                self.sink_mass[i] = (w[0, :, 1:, 0].float().mean().item()
+                                     if isinstance(w, torch.Tensor) and w.dim() == 4 and w.shape[-2] > 1 else None)
         return hook
 
     def rerun(self, layers, i, latent: torch.Tensor | None) -> torch.Tensor:

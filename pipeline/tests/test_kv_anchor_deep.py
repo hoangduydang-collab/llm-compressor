@@ -58,12 +58,28 @@ def test_layer_config_slices_per_layer_lists(tmp_path):
     assert c["layer_types"] == ["x"] and "quantization_config" not in c and c["num_nextn_predict_layers"] == 0
 
 
-def test_copy_parallel(tmp_path):
-    src = tmp_path / "a.bin"
-    data = torch.randint(0, 255, (1_000_003,), dtype=torch.uint8).numpy().tobytes()
-    src.write_bytes(data)
-    assert kd.copy_parallel(src, tmp_path / "b.bin", threads=4, chunk=65536) == len(data)
-    assert (tmp_path / "b.bin").read_bytes() == data
+def test_range_reads_match_safetensors(tmp_path):
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
+    d = tmp_path / "ck"
+    d.mkdir()
+    g = torch.Generator().manual_seed(3)
+    t = {"model.layers.0.a.weight": torch.randn(300, 7, generator=g).to(torch.bfloat16),
+         "model.layers.1.b.weight": torch.randint(-128, 127, (1000,), generator=g).to(torch.int8),
+         "model.layers.1.c.weight": torch.randn(64, 64, generator=g).to(torch.float8_e4m3fn),
+         "model.embed_tokens.weight": torch.randn(10, 4, generator=g)}
+    save_file(t, str(d / "s0.safetensors"))
+    (d / "config.json").write_text(json.dumps({"num_hidden_layers": 2}))
+    (d / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {k: "s0.safetensors" for k in t}}))
+    src = kd.LayerSource(str(d), str(tmp_path / "st"))
+    got = src.read(list(t))
+    with safe_open(str(d / "s0.safetensors"), framework="pt") as h:
+        for k in t:
+            assert got[k].dtype == t[k].dtype and torch.equal(got[k].view(torch.uint8), h.get_tensor(k).view(torch.uint8))
+    src.prefetch(1)
+    assert set(src.raw_layer(1)) == {"model.layers.1.b.weight", "model.layers.1.c.weight"}
+    assert kd.read_span(d / "s0.safetensors", 8, 5000, threads=3, chunk=512) == (d / "s0.safetensors").read_bytes()[8:5000]
 
 
 def test_preflight_stream_matches_full_forward(tmp_path):
@@ -115,3 +131,15 @@ def test_stream_end_to_end_and_resume(tmp_path):
     assert sorted(again) == [2, 3]
     for L in (2, 3):
         assert again[L]["eval"]["arms"]["direct-ch-int4"]["attn_rel_mse"] == pytest.approx(first[L], rel=1e-6)
+
+    # diagnostics: sink-exempt variants of the key arms, attention mass on token 0
+    d = kd.stream(kd.LayerSource(str(ck), str(tmp_path / "st3")), windows, torch.device("cpu"), tmp_path / "o3",
+                  layers=2, diag=True, **kw)
+    e = d[1]["eval"]
+    assert {"cb16-ch-int2|keep1", "cb16-ch-int2|keep4", "gmean-ch-int2|keep4"} <= set(e["arms"])
+    assert e["arms"]["cb16-ch-int2|keep1"]["token0_latent_rel_mse"] == 0.0
+    assert 0.0 < e["attn_mass_on_token0"] < 1.0 and e["token0_norm_over_median"] > 0
+    # sink_keep: token 0 exact in every arm, and no |keep variants
+    s = kd.stream(kd.LayerSource(str(ck), str(tmp_path / "st4")), windows, torch.device("cpu"), tmp_path / "o4",
+                  layers=1, sink_keep=2, diag=True, **kw)[0]["eval"]["arms"]
+    assert all(v["token0_latent_rel_mse"] == 0.0 for v in s.values()) and not any("|keep" in n for n in s)

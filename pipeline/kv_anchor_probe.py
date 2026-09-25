@@ -53,7 +53,8 @@ FP8_MAX = 448.0
 def fp8_rows(x: torch.Tensor) -> torch.Tensor:
     """fp8-e4m3 with one fp16 scale per row (last dim)."""
     s = (x.abs().amax(-1, keepdim=True) / FP8_MAX).clamp(min=1e-12).half().float()
-    return (x / s).to(torch.float8_e4m3fn).float() * s
+    # clamp: fp32/fp16 rounding can push the row max past 448, which e4m3fn does not saturate
+    return (x / s).clamp(-FP8_MAX, FP8_MAX).to(torch.float8_e4m3fn).float() * s
 
 
 def fp8_unscaled(x: torch.Tensor) -> torch.Tensor:

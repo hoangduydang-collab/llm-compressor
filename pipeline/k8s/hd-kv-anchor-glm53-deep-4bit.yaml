@@ -1,0 +1,91 @@
+---
+# 4-BIT BASELINES (layers 0-12): SGLang FP8-tile/NVFP4/MX-FP4, Hadamard arms, codebook+NVFP4. Generated from hd-kv-anchor-glm53-deep-diag.yaml.
+# KV anchor probe at every layer of the SERVED GLM-5.3 W4AFP8 (EP-GPTQ) checkpoint,
+# streamed one layer at a time on 1 GPU (gpu06). Weights dequantized exactly,
+# FP8 activations emulated (--act-fp8). Exits when done; the GPU is released.
+# Resumable: re-run with OUT pointing at the same directory (stream_state.pt).
+#
+#   : > /tmp/empty_init.py     # must be EMPTY: the repo's pipeline/__init__.py imports unshipped modules
+#   kubectl -n evaluation create configmap hd-kv-anchor-deep-script \
+#     --from-file=__init__.py=/tmp/empty_init.py \
+#     --from-file=basis_codec_layer_analysis.py=pipeline/basis_codec_layer_analysis.py \
+#     --from-file=kv_anchor_probe.py=pipeline/kv_anchor_probe.py \
+#     --from-file=kv_anchor_deep.py=pipeline/kv_anchor_deep.py \
+#     --from-file=sglang_w4afp8_kernels.py=pipeline/sglang_w4afp8_kernels.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-kv-anchor-glm53-deep.yaml
+#
+# Output: /mnt/cephfs/hoangduy/results/kv-anchor/glm53-w4afp8-deep-<utc>/
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-kv-anchor-glm53-deep-4bit
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: kv-anchor-deep-diag}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 43200
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: kv-anchor-deep-diag}
+    spec:
+      restartPolicy: Never
+      nodeSelector: {kubernetes.io/hostname: aicloud-infermesh-test-ca-gpu06}
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Equal, value: present, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: script
+          configMap: {name: hd-kv-anchor-deep-script}
+        # layers are read by byte range, so scratch only holds one BF16 one-layer
+        # checkpoint (~20 GiB). The first run staged whole 46.6 GiB shards and was
+        # evicted at 150 Gi on 2026-09-25.
+        - name: scratch
+          emptyDir: {sizeLimit: 60Gi}
+      containers:
+        - name: probe
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {nvidia.com/gpu: 1, cpu: "16", memory: 96Gi, ephemeral-storage: 40Gi}
+            limits: {nvidia.com/gpu: 1, cpu: "24", memory: 128Gi, ephemeral-storage: 70Gi}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: script, mountPath: /opt/kv/pipeline, readOnly: true}
+            - {name: scratch, mountPath: /scratch}
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: TRANSFORMERS_OFFLINE, value: "1"}
+            - name: SNAPSHOT
+              value: /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639
+            # the checkpoint the evaluation serve runs (glm-5-3-w4afp8-sglang, 2026-09-25)
+            - name: QUANT_CKPT
+              value: /mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/20260912-184239/checkpoint
+            # GLM-5.3 (in-house W4AFP8) completions from the AA-GPQA v3 paired run
+            - name: GEN_DB
+              value: /mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
+            - {name: AA_LCR_WORK, value: /mnt/cephfs/hoangduy/aa-lcr-v11-work}
+            # e.g. "--sink-keep 4" for the full run
+            - {name: EXTRA_ARGS, value: "--layers 13 --lexico-every 0"}
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              OUT=${OUT:-/mnt/cephfs/hoangduy/results/kv-anchor/glm53-w4afp8-deep-4bit-$(date -u +%Y%m%dt%H%M%Sz)}
+              mkdir -p "$OUT"
+              echo "OUT=$OUT"
+              nvidia-smi --query-gpu=name,uuid,memory.total --format=csv
+              sha256sum /opt/kv/pipeline/*.py
+              test -f "$GEN_DB" || { echo "FAIL: missing $GEN_DB"; exit 1; }
+              test -f "$QUANT_CKPT/config.json" || { echo "FAIL: missing $QUANT_CKPT"; exit 1; }
+              LCR=$(find "$AA_LCR_WORK" -maxdepth 4 -type d -path '*/dataset/extracted_text/lcr' | sort | head -1)
+              test -n "$LCR" || { echo "FAIL: no dataset/extracted_text/lcr under $AA_LCR_WORK"; exit 1; }
+              AA_LCR_ROOT=$(dirname "$(dirname "$LCR")")
+              echo "AA_LCR_ROOT=$AA_LCR_ROOT"
+              cd /opt/kv
+              python3 -m pipeline.kv_anchor_deep --weights w4afp8 --act-fp8 --snapshot "$SNAPSHOT" \
+                --quant-ckpt "$QUANT_CKPT" --stage-dir /scratch/stage --aa-lcr-root "$AA_LCR_ROOT" \
+                --gen-db "$GEN_DB" --out "$OUT" $EXTRA_ARGS 2>&1 | tee -a "$OUT/run.log"

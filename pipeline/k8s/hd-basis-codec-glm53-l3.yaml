@@ -1,0 +1,58 @@
+---
+# Basis-codec feasibility on GLM-5.3 layer 3 (first MoE layer), routed experts.
+# 1 GPU pinned to gpu06; exits when done, so the GPU is released automatically.
+#
+#   kubectl -n evaluation create configmap hd-basis-codec-script \
+#     --from-file=basis_codec_layer_analysis.py=pipeline/basis_codec_layer_analysis.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-basis-codec-glm53-l3.yaml
+#   kubectl -n evaluation logs -f job/hd-basis-codec-glm53-l3
+#
+# Output: /mnt/cephfs/hoangduy/results/basis-codec/glm53-L3-<utc>/{results.json,summary.md,run.log}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-basis-codec-glm53-l3
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: basis-codec}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 10800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: basis-codec}
+    spec:
+      restartPolicy: Never
+      nodeSelector: {kubernetes.io/hostname: aicloud-infermesh-test-ca-gpu06}
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Equal, value: present, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: script
+          configMap: {name: hd-basis-codec-script}
+      containers:
+        - name: analysis
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {nvidia.com/gpu: 1, cpu: "8", memory: 64Gi}
+            limits: {nvidia.com/gpu: 1, cpu: "16", memory: 96Gi}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: script, mountPath: /opt/basis-codec, readOnly: true}
+          env:
+            - name: CKPT
+              value: /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              OUT=/mnt/cephfs/hoangduy/results/basis-codec/glm53-L3-$(date -u +%Y%m%dt%H%M%Sz)
+              mkdir -p "$OUT"
+              echo "OUT=$OUT"
+              nvidia-smi --query-gpu=name,uuid,memory.total,driver_version --format=csv | tee "$OUT/gpu.csv"
+              cp /opt/basis-codec/basis_codec_layer_analysis.py "$OUT/"
+              sha256sum "$OUT/basis_codec_layer_analysis.py"
+              python3 "$OUT/basis_codec_layer_analysis.py" --ckpt "$CKPT" --out "$OUT" 2>&1 | tee "$OUT/run.log"

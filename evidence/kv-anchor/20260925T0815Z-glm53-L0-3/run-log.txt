@@ -1,0 +1,493 @@
+﻿OUT=/mnt/cephfs/hoangduy/results/kv-anchor/glm53-L0-3-20260925t081504z
+name, uuid, memory.total [MiB]
+NVIDIA H100 80GB HBM3, GPU-1b31163f-30d2-2908-3c75-0220763595db, 81559 MiB
+af72591ec08a89cff4658a42753cd8e1a7c13174f3f2a4ccfc08970ae3b71ffb  /opt/kv/pipeline/basis_codec_layer_analysis.py
+fc1e199b0044a9c2a252d536f83bceb318a8c1cb761adcbd1dc84580766d5598  /opt/kv/pipeline/build_subset_checkpoint.py
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /opt/kv/pipeline/__init__.py
+6d6a88ce73d120e370195fe03fdeeafd5281632eb9b731feea98c81d69324ece  /opt/kv/pipeline/kv_anchor_probe.py
+AA_LCR_ROOT=/mnt/cephfs/hoangduy/aa-lcr-v11-work/glm53-gptq-aa-lcr-v11-canary-t1p95-r1/dataset
+Academia
+Company_Documents
+Government_Consultations
+Industry_Reports
+Legal
+Marketing
+Survey_Reports
+[08:15:22] env {'transformers': '5.12.1', 'torch': '2.11.0+cu130', 'window': 4096, 'started_utc': '2026-09-25T08:15:22Z'}
+[08:15:22] config {'transformers': '5.12.1', 'torch': '2.11.0+cu130', 'window': 4096, 'kv_lora_rank': 512, 'qk_rope_head_dim': 64, 'num_attention_heads': 64, 'index_topk': 2048, 'index_n_heads': 32, 'index_head_dim': 128, 'first_k_dense_replace': 3, 'indexer_types_head': ['full', 'full', 'full', 'shared']}
+[08:15:22] preflight on a tiny random model with the real layer types
+/usr/local/lib/python3.12/dist-packages/torchao/quantization/quant_api.py:1731: SyntaxWarning: invalid escape sequence '\.'
+  """Configuration class for applying different quantization configs to modules or parameters based on their fully qualified names (FQNs).
+
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 128.71it/s]
+
+Loading weights:   0%|          | 0/70 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 70/70 [00:00<00:00, 5529.63it/s]
+[08:15:26] fitted means + codebooks (16,) on 3 windows
+[08:15:29] eval window 1/2 done
+[08:15:33] eval window 2/2 done
+[08:15:33] layer-0 DSA clustering on 512 tokens done
+[08:15:33] preflight PASS
+[08:16:01] 15 train / 15 eval windows of 4096 tokens
+[08:16:02] 4 long-context docs of 32768 tokens
+[subset] 836 of 59585 tensors, 24.17 GiB, 4 output shard(s), from 9 source shard(s)
+[subset]   wrote model-00001-of-00004.safetensors: 148 tensors, 7.99 GiB
+[subset]   wrote model-00002-of-00004.safetensors: 341 tensors, 7.99 GiB
+[subset]   wrote model-00003-of-00004.safetensors: 342 tensors, 7.91 GiB
+[subset]   wrote model-00004-of-00004.safetensors: 5 tensors, 0.27 GiB
+[subset] copied 7 auxiliary file(s): ['.gitattributes', 'LICENSE', 'README.md', 'chat_template.jinja', 'generation_config.json', 'tokenizer.json', 'tokenizer_config.json']
+[08:28:22] subset built in 740s
+
+Loading weights:   0%|          | 0/70 [00:00<?, ?it/s]
+Loading weights:  79%|███████▊  | 55/70 [00:05<00:01, 10.97it/s]
+Loading weights:  79%|███████▊  | 55/70 [00:17<00:01, 10.97it/s]
+Loading weights:  80%|████████  | 56/70 [00:21<00:07,  1.96it/s]
+Loading weights: 100%|██████████| 70/70 [00:21<00:00,  3.24it/s]
+[transformers] The following generation flags are not valid and may be ignored: ['top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+[08:28:49] model loaded GlmMoeDsaForCausalLM 4 layers
+[08:34:21] fitted means + codebooks (256, 4096) on 15 windows
+[08:35:02] eval window 1/15 done
+[08:35:44] eval window 2/15 done
+[08:36:25] eval window 3/15 done
+[08:37:07] eval window 4/15 done
+[08:37:48] eval window 5/15 done
+[08:38:30] eval window 6/15 done
+[08:39:11] eval window 7/15 done
+[08:39:53] eval window 8/15 done
+[08:40:34] eval window 9/15 done
+[08:41:15] eval window 10/15 done
+[08:41:56] eval window 11/15 done
+[08:42:38] eval window 12/15 done
+[08:43:19] eval window 13/15 done
+[08:44:01] eval window 14/15 done
+[08:44:42] eval window 15/15 done
+[08:44:43] layer-0 DSA clustering on 32768 tokens done
+[08:44:44] layer-0 DSA clustering on 32768 tokens done
+[08:44:44] layer-0 DSA clustering on 32768 tokens done
+[08:44:45] layer-0 DSA clustering on 32768 tokens done
+
+# KV anchor probe — GLM-5.3 MLA latent
+
+Layers [0, 1, 2, 3], eval windows 15 x 4096 tokens, kv_lora_rank 512.
+
+## layer 0
+
+centered energy fraction 0.6902 (1 - share of the global per-channel mean); no-op attention re-run error 0.00e+00
+
+Lag correlation of the centred latent: 1:-0.039, 2:0.002, 4:0.019, 8:0.016, 16:0.018, 32:0.015, 64:0.012, 128:0.013, 256:0.010
+
+| predictor | residual / gmean residual | bits saved vs gmean | token-shuffled |
+|---|---|---|---|
+| gmean | 1.0000 | 0.000 | - |
+| cb256 | 0.4562 | 0.566 | - |
+| cb4096 | 0.1795 | 1.239 | - |
+| first-N4 | 1.5062 | -0.295 | 1.4909 |
+| first-N8 | 1.7330 | -0.397 | 1.7361 |
+| first-N16 | 1.8434 | -0.441 | 1.8604 |
+| first-N32 | 1.8779 | -0.455 | 1.9255 |
+| first-N64 | 1.9302 | -0.474 | 1.9781 |
+| first-N128 | 1.9262 | -0.473 | 1.9634 |
+| mean-N4 | 0.7618 | 0.196 | 0.7452 |
+| mean-N8 | 0.8736 | 0.098 | 0.8694 |
+| mean-N16 | 0.9283 | 0.054 | 0.9318 |
+| mean-N32 | 0.9553 | 0.033 | 0.9631 |
+| mean-N64 | 0.9697 | 0.022 | 0.9787 |
+| mean-N128 | 0.9780 | 0.016 | 0.9863 |
+| rank1-N4 | 0.6512 | 0.309 | 0.6418 |
+| rank1-N8 | 0.8138 | 0.149 | 0.8134 |
+| rank1-N16 | 0.8895 | 0.084 | 0.8952 |
+| rank1-N32 | 0.9250 | 0.056 | 0.9349 |
+| rank1-N64 | 0.9434 | 0.042 | 0.9545 |
+| rank1-N128 | 0.9539 | 0.034 | 0.9638 |
+
+| arm | bits/value | latent rel MSE | attention rel MSE |
+|---|---|---|---|
+| direct-ch-int2 | 2.125 | 14.158% | 0.097% |
+| direct-tok-int2 | 2.125 | 19.787% | 4.064% |
+| gmean-ch-int2 | 2.125 | 12.379% | 0.123% |
+| gmean-tok-int2 | 2.125 | 12.677% | 0.375% |
+| cb4096-ch-int2 | 2.148 | 2.153% | 0.001% |
+| cb4096-tok-int2 | 2.148 | 2.275% | 0.002% |
+| first-N64-ch-int2 | 2.250 | 17.211% | 0.096% |
+| first-N64-tok-int2 | 2.250 | 24.770% | 0.475% |
+| mean-N64-ch-int2 | 2.250 | 11.940% | 0.061% |
+| mean-N64-tok-int2 | 2.250 | 12.309% | 0.361% |
+| rank1-N64-ch-int2 | 2.282 | 11.455% | 0.049% |
+| rank1-N64-tok-int2 | 2.282 | 12.235% | 0.650% |
+| first-N16-ch-int2 | 2.627 | 19.072% | 0.130% |
+| first-N16-tok-int2 | 2.627 | 23.648% | 0.396% |
+| mean-N16-ch-int2 | 2.627 | 11.207% | 0.044% |
+| mean-N16-tok-int2 | 2.627 | 11.797% | 0.348% |
+| rank1-N16-ch-int2 | 2.658 | 10.599% | 0.044% |
+| rank1-N16-tok-int2 | 2.658 | 11.661% | 0.771% |
+| direct-ch-int3 | 3.125 | 4.029% | 0.010% |
+| direct-tok-int3 | 3.125 | 6.181% | 0.432% |
+| gmean-ch-int3 | 3.125 | 3.626% | 0.006% |
+| gmean-tok-int3 | 3.125 | 3.842% | 0.036% |
+| cb4096-ch-int3 | 3.148 | 0.631% | 0.001% |
+| cb4096-tok-int3 | 3.148 | 0.688% | 0.000% |
+| first-N64-ch-int3 | 3.250 | 4.826% | 0.004% |
+| first-N64-tok-int3 | 3.250 | 7.563% | 0.043% |
+| mean-N64-ch-int3 | 3.250 | 3.508% | 0.004% |
+| mean-N64-tok-int3 | 3.250 | 3.736% | 0.032% |
+| rank1-N64-ch-int3 | 3.282 | 3.395% | 0.003% |
+| rank1-N64-tok-int3 | 3.282 | 3.743% | 0.059% |
+| first-N16-ch-int3 | 3.627 | 5.170% | 0.005% |
+| first-N16-tok-int3 | 3.627 | 7.213% | 0.035% |
+| mean-N16-ch-int3 | 3.627 | 3.287% | 0.003% |
+| mean-N16-tok-int3 | 3.627 | 3.584% | 0.030% |
+| rank1-N16-ch-int3 | 3.658 | 3.144% | 0.003% |
+| rank1-N16-tok-int3 | 3.658 | 3.577% | 0.072% |
+| direct-ch-int4 | 4.125 | 1.104% | 0.002% |
+| direct-tok-int4 | 4.125 | 1.779% | 0.039% |
+| gmean-ch-int4 | 4.125 | 1.007% | 0.001% |
+| gmean-tok-int4 | 4.125 | 1.105% | 0.004% |
+| cb4096-ch-int4 | 4.148 | 0.176% | 0.000% |
+| cb4096-tok-int4 | 4.148 | 0.197% | 0.000% |
+| first-N64-ch-int4 | 4.250 | 1.324% | 0.001% |
+| first-N64-tok-int4 | 4.250 | 2.173% | 0.004% |
+| mean-N64-ch-int4 | 4.250 | 0.980% | 0.001% |
+| mean-N64-tok-int4 | 4.250 | 1.074% | 0.003% |
+| rank1-N64-ch-int4 | 4.282 | 0.949% | 0.001% |
+| rank1-N64-tok-int4 | 4.282 | 1.077% | 0.005% |
+| first-N16-ch-int4 | 4.627 | 1.408% | 0.001% |
+| first-N16-tok-int4 | 4.627 | 2.070% | 0.003% |
+| mean-N16-ch-int4 | 4.627 | 0.919% | 0.001% |
+| mean-N16-tok-int4 | 4.627 | 1.030% | 0.003% |
+| rank1-N16-ch-int4 | 4.658 | 0.883% | 0.001% |
+| rank1-N16-tok-int4 | 4.658 | 1.028% | 0.006% |
+| fp8_unscaled | 8.000 | 1.304% | 0.003% |
+| fp8_tok | 8.031 | 0.067% | 0.000% |
+
+## layer 1
+
+centered energy fraction 0.9535 (1 - share of the global per-channel mean); no-op attention re-run error 0.00e+00
+
+Lag correlation of the centred latent: 1:-0.049, 2:0.006, 4:0.020, 8:0.019, 16:0.023, 32:0.020, 64:0.017, 128:0.014, 256:0.011
+
+| predictor | residual / gmean residual | bits saved vs gmean | token-shuffled |
+|---|---|---|---|
+| gmean | 1.0000 | 0.000 | - |
+| cb256 | 0.2095 | 1.127 | - |
+| cb4096 | 0.0721 | 1.897 | - |
+| first-N4 | 1.5112 | -0.298 | 1.4845 |
+| first-N8 | 1.7338 | -0.397 | 1.7253 |
+| first-N16 | 1.8430 | -0.441 | 1.8504 |
+| first-N32 | 1.9053 | -0.465 | 1.9255 |
+| first-N64 | 1.9258 | -0.473 | 1.9573 |
+| first-N128 | 1.9683 | -0.488 | 1.9907 |
+| mean-N4 | 0.7642 | 0.194 | 0.7459 |
+| mean-N8 | 0.8736 | 0.097 | 0.8703 |
+| mean-N16 | 0.9263 | 0.055 | 0.9326 |
+| mean-N32 | 0.9522 | 0.035 | 0.9639 |
+| mean-N64 | 0.9660 | 0.025 | 0.9793 |
+| mean-N128 | 0.9742 | 0.019 | 0.9873 |
+| rank1-N4 | 0.5412 | 0.443 | 0.5413 |
+| rank1-N8 | 0.6770 | 0.281 | 0.6811 |
+| rank1-N16 | 0.7469 | 0.210 | 0.7570 |
+| rank1-N32 | 0.7834 | 0.176 | 0.7970 |
+| rank1-N64 | 0.8030 | 0.158 | 0.8184 |
+| rank1-N128 | 0.8145 | 0.148 | 0.8298 |
+
+| arm | bits/value | latent rel MSE | attention rel MSE |
+|---|---|---|---|
+| direct-ch-int2 | 2.125 | 13.643% | 1.826% |
+| direct-tok-int2 | 2.125 | 16.483% | 2.720% |
+| gmean-ch-int2 | 2.125 | 13.207% | 1.710% |
+| gmean-tok-int2 | 2.125 | 16.100% | 2.644% |
+| cb4096-ch-int2 | 2.148 | 1.292% | 0.132% |
+| cb4096-tok-int2 | 2.148 | 1.186% | 0.044% |
+| first-N64-ch-int2 | 2.250 | 21.446% | 2.387% |
+| first-N64-tok-int2 | 2.250 | 31.711% | 4.264% |
+| mean-N64-ch-int2 | 2.250 | 12.935% | 1.735% |
+| mean-N64-tok-int2 | 2.250 | 15.577% | 2.426% |
+| rank1-N64-ch-int2 | 2.282 | 11.657% | 1.408% |
+| rank1-N64-tok-int2 | 2.282 | 12.971% | 1.819% |
+| first-N16-ch-int2 | 2.627 | 23.668% | 2.424% |
+| first-N16-tok-int2 | 2.627 | 30.383% | 3.512% |
+| mean-N16-ch-int2 | 2.627 | 12.453% | 1.636% |
+| mean-N16-tok-int2 | 2.627 | 14.978% | 2.236% |
+| rank1-N16-ch-int2 | 2.658 | 10.984% | 1.296% |
+| rank1-N16-tok-int2 | 2.658 | 11.996% | 1.474% |
+| direct-ch-int3 | 3.125 | 3.455% | 0.151% |
+| direct-tok-int3 | 3.125 | 4.774% | 0.270% |
+| gmean-ch-int3 | 3.125 | 3.303% | 0.133% |
+| gmean-tok-int3 | 3.125 | 4.663% | 0.271% |
+| cb4096-ch-int3 | 3.148 | 0.448% | 0.060% |
+| cb4096-tok-int3 | 3.148 | 0.347% | 0.008% |
+| first-N64-ch-int3 | 3.250 | 5.326% | 0.199% |
+| first-N64-tok-int3 | 3.250 | 9.306% | 0.476% |
+| mean-N64-ch-int3 | 3.250 | 3.263% | 0.133% |
+| mean-N64-tok-int3 | 3.250 | 4.516% | 0.245% |
+| rank1-N64-ch-int3 | 3.282 | 3.120% | 0.130% |
+| rank1-N64-tok-int3 | 3.282 | 3.810% | 0.199% |
+| first-N16-ch-int3 | 3.627 | 5.908% | 0.218% |
+| first-N16-tok-int3 | 3.627 | 8.930% | 0.392% |
+| mean-N16-ch-int3 | 3.627 | 3.161% | 0.127% |
+| mean-N16-tok-int3 | 3.627 | 4.349% | 0.226% |
+| rank1-N16-ch-int3 | 3.658 | 2.967% | 0.121% |
+| rank1-N16-tok-int3 | 3.658 | 3.510% | 0.158% |
+| direct-ch-int4 | 4.125 | 0.900% | 0.023% |
+| direct-tok-int4 | 4.125 | 1.352% | 0.046% |
+| gmean-ch-int4 | 4.125 | 0.861% | 0.021% |
+| gmean-tok-int4 | 4.125 | 1.319% | 0.042% |
+| cb4096-ch-int4 | 4.148 | 0.164% | 0.016% |
+| cb4096-tok-int4 | 4.148 | 0.097% | 0.002% |
+| first-N64-ch-int4 | 4.250 | 1.376% | 0.031% |
+| first-N64-tok-int4 | 4.250 | 2.632% | 0.071% |
+| mean-N64-ch-int4 | 4.250 | 0.853% | 0.020% |
+| mean-N64-tok-int4 | 4.250 | 1.272% | 0.036% |
+| rank1-N64-ch-int4 | 4.282 | 0.837% | 0.020% |
+| rank1-N64-tok-int4 | 4.282 | 1.079% | 0.030% |
+| first-N16-ch-int4 | 4.627 | 1.534% | 0.034% |
+| first-N16-tok-int4 | 4.627 | 2.526% | 0.061% |
+| mean-N16-ch-int4 | 4.627 | 0.831% | 0.019% |
+| mean-N16-tok-int4 | 4.627 | 1.226% | 0.033% |
+| rank1-N16-ch-int4 | 4.658 | 0.802% | 0.019% |
+| rank1-N16-tok-int4 | 4.658 | 0.993% | 0.025% |
+| fp8_unscaled | 8.000 | 6.741% | 0.162% |
+| fp8_tok | 8.031 | 0.068% | 0.002% |
+
+## layer 2
+
+centered energy fraction 0.8871 (1 - share of the global per-channel mean); no-op attention re-run error 0.00e+00
+
+Lag correlation of the centred latent: 1:-0.151, 2:-0.012, 4:0.007, 8:0.008, 16:0.017, 32:0.011, 64:0.014, 128:0.012, 256:0.007
+
+| predictor | residual / gmean residual | bits saved vs gmean | token-shuffled |
+|---|---|---|---|
+| gmean | 1.0000 | 0.000 | - |
+| cb256 | 0.1014 | 1.651 | - |
+| cb4096 | 0.0430 | 2.269 | - |
+| first-N4 | 1.5711 | -0.326 | 1.4993 |
+| first-N8 | 1.7726 | -0.413 | 1.7332 |
+| first-N16 | 1.8711 | -0.452 | 1.8516 |
+| first-N32 | 1.9187 | -0.470 | 1.9209 |
+| first-N64 | 1.9556 | -0.484 | 1.9652 |
+| first-N128 | 2.0068 | -0.502 | 2.0437 |
+| mean-N4 | 0.8070 | 0.155 | 0.7483 |
+| mean-N8 | 0.9035 | 0.073 | 0.8713 |
+| mean-N16 | 0.9462 | 0.040 | 0.9353 |
+| mean-N32 | 0.9653 | 0.025 | 0.9658 |
+| mean-N64 | 0.9750 | 0.018 | 0.9809 |
+| mean-N128 | 0.9809 | 0.014 | 0.9888 |
+| rank1-N4 | 0.3407 | 0.777 | 0.3486 |
+| rank1-N8 | 0.4023 | 0.657 | 0.4118 |
+| rank1-N16 | 0.4369 | 0.597 | 0.4434 |
+| rank1-N32 | 0.4513 | 0.574 | 0.4589 |
+| rank1-N64 | 0.4584 | 0.563 | 0.4668 |
+| rank1-N128 | 0.4624 | 0.556 | 0.4709 |
+
+| arm | bits/value | latent rel MSE | attention rel MSE |
+|---|---|---|---|
+| direct-ch-int2 | 2.125 | 11.747% | 4.776% |
+| direct-tok-int2 | 2.125 | 23.963% | 8.932% |
+| gmean-ch-int2 | 2.125 | 12.497% | 11.171% |
+| gmean-tok-int2 | 2.125 | 20.742% | 8.798% |
+| cb4096-ch-int2 | 2.148 | 0.828% | 0.053% |
+| cb4096-tok-int2 | 2.148 | 0.847% | 0.082% |
+| first-N64-ch-int2 | 2.250 | 19.642% | 7.680% |
+| first-N64-tok-int2 | 2.250 | 40.345% | 12.899% |
+| mean-N64-ch-int2 | 2.250 | 12.407% | 11.274% |
+| mean-N64-tok-int2 | 2.250 | 20.244% | 8.102% |
+| rank1-N64-ch-int2 | 2.282 | 6.228% | 1.526% |
+| rank1-N64-tok-int2 | 2.282 | 9.462% | 2.048% |
+| first-N16-ch-int2 | 2.627 | 22.378% | 5.397% |
+| first-N16-tok-int2 | 2.627 | 38.563% | 9.223% |
+| mean-N16-ch-int2 | 2.627 | 12.120% | 10.611% |
+| mean-N16-tok-int2 | 2.627 | 19.635% | 7.765% |
+| rank1-N16-ch-int2 | 2.658 | 5.912% | 1.194% |
+| rank1-N16-tok-int2 | 2.658 | 9.014% | 1.848% |
+| direct-ch-int3 | 3.125 | 3.034% | 0.629% |
+| direct-tok-int3 | 3.125 | 8.852% | 1.205% |
+| gmean-ch-int3 | 3.125 | 3.278% | 1.004% |
+| gmean-tok-int3 | 3.125 | 7.645% | 1.236% |
+| cb4096-ch-int3 | 3.148 | 0.290% | 0.008% |
+| cb4096-tok-int3 | 3.148 | 0.298% | 0.013% |
+| first-N64-ch-int3 | 3.250 | 5.140% | 0.950% |
+| first-N64-tok-int3 | 3.250 | 14.930% | 1.892% |
+| mean-N64-ch-int3 | 3.250 | 3.274% | 1.001% |
+| mean-N64-tok-int3 | 3.250 | 7.469% | 1.165% |
+| rank1-N64-ch-int3 | 3.282 | 1.700% | 0.154% |
+| rank1-N64-tok-int3 | 3.282 | 3.467% | 0.339% |
+| first-N16-ch-int3 | 3.627 | 5.641% | 0.715% |
+| first-N16-tok-int3 | 3.627 | 14.255% | 1.334% |
+| mean-N16-ch-int3 | 3.627 | 3.210% | 0.978% |
+| mean-N16-tok-int3 | 3.627 | 7.249% | 1.114% |
+| rank1-N16-ch-int3 | 3.658 | 1.615% | 0.122% |
+| rank1-N16-tok-int3 | 3.658 | 3.300% | 0.294% |
+| direct-ch-int4 | 4.125 | 0.783% | 0.052% |
+| direct-tok-int4 | 4.125 | 2.896% | 0.161% |
+| gmean-ch-int4 | 4.125 | 0.873% | 0.083% |
+| gmean-tok-int4 | 4.125 | 2.483% | 0.190% |
+| cb4096-ch-int4 | 4.148 | 0.088% | 0.002% |
+| cb4096-tok-int4 | 4.148 | 0.093% | 0.002% |
+| first-N64-ch-int4 | 4.250 | 1.347% | 0.087% |
+| first-N64-tok-int4 | 4.250 | 4.858% | 0.215% |
+| mean-N64-ch-int4 | 4.250 | 0.873% | 0.082% |
+| mean-N64-tok-int4 | 4.250 | 2.430% | 0.182% |
+| rank1-N64-ch-int4 | 4.282 | 0.458% | 0.016% |
+| rank1-N64-tok-int4 | 4.282 | 1.120% | 0.044% |
+| first-N16-ch-int4 | 4.627 | 1.464% | 0.074% |
+| first-N16-tok-int4 | 4.627 | 4.641% | 0.156% |
+| mean-N16-ch-int4 | 4.627 | 0.856% | 0.081% |
+| mean-N16-tok-int4 | 4.627 | 2.362% | 0.164% |
+| rank1-N16-ch-int4 | 4.658 | 0.437% | 0.013% |
+| rank1-N16-tok-int4 | 4.658 | 1.066% | 0.038% |
+| fp8_unscaled | 8.000 | 6.062% | 0.107% |
+| fp8_tok | 8.031 | 0.061% | 0.002% |
+
+## layer 3
+
+centered energy fraction 0.9383 (1 - share of the global per-channel mean); no-op attention re-run error 0.00e+00
+
+Lag correlation of the centred latent: 1:-0.036, 2:0.032, 4:0.022, 8:0.019, 16:0.034, 32:0.024, 64:0.028, 128:0.023, 256:0.017
+
+| predictor | residual / gmean residual | bits saved vs gmean | token-shuffled |
+|---|---|---|---|
+| gmean | 1.0000 | 0.000 | - |
+| cb256 | 0.0345 | 2.428 | - |
+| cb4096 | 0.0166 | 2.957 | - |
+| first-N4 | 1.4791 | -0.282 | 1.4814 |
+| first-N8 | 1.7116 | -0.388 | 1.7150 |
+| first-N16 | 1.8267 | -0.435 | 1.8439 |
+| first-N32 | 1.8685 | -0.451 | 1.8995 |
+| first-N64 | 1.9253 | -0.473 | 1.9257 |
+| first-N128 | 1.9368 | -0.477 | 1.9135 |
+| mean-N4 | 0.7487 | 0.209 | 0.7420 |
+| mean-N8 | 0.8619 | 0.107 | 0.8665 |
+| mean-N16 | 0.9187 | 0.061 | 0.9270 |
+| mean-N32 | 0.9436 | 0.042 | 0.9574 |
+| mean-N64 | 0.9565 | 0.032 | 0.9734 |
+| mean-N128 | 0.9647 | 0.026 | 0.9810 |
+| rank1-N4 | 0.1690 | 1.283 | 0.1702 |
+| rank1-N8 | 0.2028 | 1.151 | 0.2054 |
+| rank1-N16 | 0.2186 | 1.097 | 0.2214 |
+| rank1-N32 | 0.2254 | 1.075 | 0.2289 |
+| rank1-N64 | 0.2291 | 1.063 | 0.2324 |
+| rank1-N128 | 0.2310 | 1.057 | 0.2341 |
+
+| arm | bits/value | latent rel MSE | attention rel MSE |
+|---|---|---|---|
+| direct-ch-int2 | 2.125 | 13.172% | 5.143% |
+| direct-tok-int2 | 2.125 | 22.259% | 8.878% |
+| gmean-ch-int2 | 2.125 | 11.931% | 4.957% |
+| gmean-tok-int2 | 2.125 | 23.109% | 9.970% |
+| cb4096-ch-int2 | 2.148 | 0.312% | 0.056% |
+| cb4096-tok-int2 | 2.148 | 0.361% | 0.072% |
+| first-N64-ch-int2 | 2.250 | 19.889% | 9.860% |
+| first-N64-tok-int2 | 2.250 | 45.844% | 50.518% |
+| mean-N64-ch-int2 | 2.250 | 11.886% | 5.061% |
+| mean-N64-tok-int2 | 2.250 | 22.644% | 9.995% |
+| rank1-N64-ch-int2 | 2.282 | 3.516% | 2.377% |
+| rank1-N64-tok-int2 | 2.282 | 4.773% | 1.648% |
+| first-N16-ch-int2 | 2.627 | 22.558% | 10.346% |
+| first-N16-tok-int2 | 2.627 | 43.628% | 34.983% |
+| mean-N16-ch-int2 | 2.627 | 11.684% | 4.844% |
+| mean-N16-tok-int2 | 2.627 | 21.801% | 9.406% |
+| rank1-N16-ch-int2 | 2.658 | 3.392% | 2.306% |
+| rank1-N16-tok-int2 | 2.658 | 4.558% | 1.595% |
+| direct-ch-int3 | 3.125 | 3.254% | 0.632% |
+| direct-tok-int3 | 3.125 | 10.942% | 2.597% |
+| gmean-ch-int3 | 3.125 | 2.818% | 0.561% |
+| gmean-tok-int3 | 3.125 | 11.053% | 2.559% |
+| cb4096-ch-int3 | 3.148 | 0.101% | 0.011% |
+| cb4096-tok-int3 | 3.148 | 0.133% | 0.014% |
+| first-N64-ch-int3 | 3.250 | 4.841% | 1.060% |
+| first-N64-tok-int3 | 3.250 | 21.893% | 11.645% |
+| mean-N64-ch-int3 | 3.250 | 2.810% | 0.584% |
+| mean-N64-tok-int3 | 3.250 | 10.740% | 2.479% |
+| rank1-N64-ch-int3 | 3.282 | 0.954% | 0.318% |
+| rank1-N64-tok-int3 | 3.282 | 1.634% | 0.227% |
+| first-N16-ch-int3 | 3.627 | 5.408% | 1.150% |
+| first-N16-tok-int3 | 3.627 | 20.843% | 8.123% |
+| mean-N16-ch-int3 | 3.627 | 2.820% | 0.610% |
+| mean-N16-tok-int3 | 3.627 | 10.342% | 2.266% |
+| rank1-N16-ch-int3 | 3.658 | 0.922% | 0.318% |
+| rank1-N16-tok-int3 | 3.658 | 1.562% | 0.220% |
+| direct-ch-int4 | 4.125 | 0.822% | 0.086% |
+| direct-tok-int4 | 4.125 | 4.475% | 0.441% |
+| gmean-ch-int4 | 4.125 | 0.723% | 0.081% |
+| gmean-tok-int4 | 4.125 | 4.330% | 0.393% |
+| cb4096-ch-int4 | 4.148 | 0.029% | 0.003% |
+| cb4096-tok-int4 | 4.148 | 0.042% | 0.003% |
+| first-N64-ch-int4 | 4.250 | 1.219% | 0.146% |
+| first-N64-tok-int4 | 4.250 | 8.586% | 1.651% |
+| mean-N64-ch-int4 | 4.250 | 0.719% | 0.083% |
+| mean-N64-tok-int4 | 4.250 | 4.199% | 0.391% |
+| rank1-N64-ch-int4 | 4.282 | 0.250% | 0.037% |
+| rank1-N64-tok-int4 | 4.282 | 0.490% | 0.032% |
+| first-N16-ch-int4 | 4.627 | 1.358% | 0.158% |
+| first-N16-tok-int4 | 4.627 | 8.172% | 1.199% |
+| mean-N16-ch-int4 | 4.627 | 0.723% | 0.086% |
+| mean-N16-tok-int4 | 4.627 | 4.049% | 0.359% |
+| rank1-N16-ch-int4 | 4.658 | 0.243% | 0.038% |
+| rank1-N16-tok-int4 | 4.658 | 0.469% | 0.031% |
+| fp8_unscaled | 8.000 | 2.163% | 0.091% |
+| fp8_tok | 8.031 | 0.059% | 0.004% |
+
+## DSA clustering, layer 0
+
+```
+{
+ "validation_overlap": 1.0,
+ "index_topk": 2048,
+ "docs": [
+  {
+   "tokens": 32768,
+   "N16": {
+    "chunks_per_selected_token": 0.3517822265625,
+    "vs_random_selection": 0.8648215184207582,
+    "queries": 120
+   },
+   "N64": {
+    "chunks_per_selected_token": 0.12040201822916667,
+    "vs_random_selection": 0.939378883152574,
+    "queries": 120
+   }
+  },
+  {
+   "tokens": 32768,
+   "N16": {
+    "chunks_per_selected_token": 0.3331380208333333,
+    "vs_random_selection": 0.8272960329102259,
+    "queries": 120
+   },
+   "N64": {
+    "chunks_per_selected_token": 0.11394856770833334,
+    "vs_random_selection": 0.9027587361923003,
+    "queries": 120
+   }
+  },
+  {
+   "tokens": 32768,
+   "N16": {
+    "chunks_per_selected_token": 0.32421875,
+    "vs_random_selection": 0.8042848857766799,
+    "queries": 120
+   },
+   "N64": {
+    "chunks_per_selected_token": 0.11322835286458334,
+    "vs_random_selection": 0.895497709257429,
+    "queries": 120
+   }
+  },
+  {
+   "tokens": 32768,
+   "N16": {
+    "chunks_per_selected_token": 0.34127604166666664,
+    "vs_random_selection": 0.8413775443597178,
+    "queries": 120
+   },
+   "N64": {
+    "chunks_per_selected_token": 0.11738688151041667,
+    "vs_random_selection": 0.9182033531159396,
+    "queries": 120
+   }
+  }
+ ]
+}
+```
+
+[08:44:45] done -> /mnt/cephfs/hoangduy/results/kv-anchor/glm53-L0-3-20260925t081504z

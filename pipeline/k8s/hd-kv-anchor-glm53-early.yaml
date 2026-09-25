@@ -1,0 +1,77 @@
+---
+# KV-cache anchor predictability on GLM-5.3 layers 0-3 (MLA latent), AA-LCR text.
+# 1 GPU pinned to gpu06; exits when done, so the GPU is released automatically.
+# Builds a depth-truncated BF16 copy (layers 0-3, ~24 GiB) on node-local scratch,
+# runs a tiny-model preflight first, then the probe.
+#
+#   : > /tmp/empty_init.py     # must be EMPTY: the repo's pipeline/__init__.py imports unshipped modules
+#   kubectl -n evaluation create configmap hd-kv-anchor-script \
+#     --from-file=__init__.py=/tmp/empty_init.py \
+#     --from-file=basis_codec_layer_analysis.py=pipeline/basis_codec_layer_analysis.py \
+#     --from-file=build_subset_checkpoint.py=pipeline/build_subset_checkpoint.py \
+#     --from-file=kv_anchor_probe.py=pipeline/kv_anchor_probe.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-kv-anchor-glm53-early.yaml
+#
+# Output: /mnt/cephfs/hoangduy/results/kv-anchor/glm53-L0-3-<utc>/
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-kv-anchor-glm53-early
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: kv-anchor-probe}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 10800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: kv-anchor-probe}
+    spec:
+      restartPolicy: Never
+      nodeSelector: {kubernetes.io/hostname: aicloud-infermesh-test-ca-gpu06}
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Equal, value: present, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: script
+          configMap: {name: hd-kv-anchor-script}
+        - name: scratch
+          emptyDir: {sizeLimit: 60Gi}
+      containers:
+        - name: probe
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {nvidia.com/gpu: 1, cpu: "8", memory: 96Gi, ephemeral-storage: 40Gi}
+            limits: {nvidia.com/gpu: 1, cpu: "16", memory: 128Gi, ephemeral-storage: 70Gi}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: script, mountPath: /opt/kv/pipeline, readOnly: true}
+            - {name: scratch, mountPath: /scratch}
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: TRANSFORMERS_OFFLINE, value: "1"}
+            - name: SNAPSHOT
+              value: /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639
+            # aa_lcr_v11 extracts the pinned (sha-checked) dataset per run under
+            # <work-dir>/<run-id>/dataset/extracted_text/lcr; any run's copy is the same data.
+            - {name: AA_LCR_WORK, value: /mnt/cephfs/hoangduy/aa-lcr-v11-work}
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              OUT=/mnt/cephfs/hoangduy/results/kv-anchor/glm53-L0-3-$(date -u +%Y%m%dt%H%M%Sz)
+              mkdir -p "$OUT"
+              echo "OUT=$OUT"
+              nvidia-smi --query-gpu=name,uuid,memory.total --format=csv
+              sha256sum /opt/kv/pipeline/*.py
+              LCR=$(find "$AA_LCR_WORK" -maxdepth 4 -type d -path '*/dataset/extracted_text/lcr' | sort | head -1)
+              test -n "$LCR" || { echo "FAIL: no dataset/extracted_text/lcr under $AA_LCR_WORK"; exit 1; }
+              AA_LCR_ROOT=$(dirname "$(dirname "$LCR")")
+              echo "AA_LCR_ROOT=$AA_LCR_ROOT"; ls "$LCR"
+              cd /opt/kv
+              python3 -m pipeline.kv_anchor_probe --snapshot "$SNAPSHOT" --subset-dir /scratch/glm53-bf16-L0-3 \
+                --aa-lcr-root "$AA_LCR_ROOT" --out "$OUT" 2>&1 | tee "$OUT/run.log"

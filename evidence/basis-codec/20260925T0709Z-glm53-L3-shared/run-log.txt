@@ -1,0 +1,76 @@
+﻿OUT=/mnt/cephfs/hoangduy/results/basis-codec/glm53-L3-shared-20260925t070931z
+name, uuid, memory.total [MiB]
+NVIDIA H100 80GB HBM3, GPU-1b31163f-30d2-2908-3c75-0220763595db, 81559 MiB
+af72591ec08a89cff4658a42753cd8e1a7c13174f3f2a4ccfc08970ae3b71ffb  /opt/sec/pipeline/basis_codec_layer_analysis.py
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /opt/sec/pipeline/__init__.py
+c85b2478fa23a6ba88dfed2e349885031c06d819f45813489f5bbb1d5fb0946a  /opt/sec/pipeline/shared_expert_correlation.py
+scipy 1.18.0
+[07:17:17] loaded layer 3: 256 experts, 19.33 GB in 461s (42 MB/s) from 5 shards
+[07:17:18] shared expert shapes {'gate': [2048, 6144], 'up': [2048, 6144], 'down': [6144, 2048]}
+[07:18:01]   A: {"vs_shared": {"p50": 0.0324915274977684, "p99": 0.08804461359977722, "max": 0.5583489537239075, "frac_gt_0.5": 1.9073486328125e-06}, "vs_other_routed": {"p50": 0.03098881244659424, "p99": 0.053140487521886826, "max": 0.41485506296157837, "frac_gt_0.5": 0.0}}
+[07:18:18]   B: {"gate": {"k64": 0.0274, "k256": 0.0818, "k1024": 0.2496, "k2048": 0.426}, "up": {"k64": 0.0216, "k256": 0.0666, "k1024": 0.2197, "k2048": 0.4027}, "down": {"k64": 0.0172, "k256": 0.0591, "k1024": 0.2014, "k2048": 0.3714}}
+[07:18:30]   C: {"vs_shared": {"p50": 0.9987277984619141, "p99": 0.999090850353241, "max": 0.9991051554679871, "frac_gt_0.5": 1.0}, "vs_other_routed": {"p50": 0.9990211129188538, "p99": 0.9991630911827087, "max": 0.9991652965545654, "frac_gt_0.5": 1.0}}
+[07:18:30] == iid-Gaussian control
+[07:18:39]   A: {"vs_shared": {"p50": 0.026395699009299278, "p99": 0.03375065326690674, "max": 0.04199017584323883, "frac_gt_0.5": 0.0}, "vs_other_routed": {"p50": 0.026394562795758247, "p99": 0.033753786236047745, "max": 0.04415417090058327, "frac_gt_0.5": 0.0}}
+[07:18:57]   B: {"gate": {"k64": 0.0104, "k256": 0.0417, "k1024": 0.1667, "k2048": 0.3334}, "up": {"k64": 0.0104, "k256": 0.0417, "k1024": 0.1667, "k2048": 0.3333}, "down": {"k64": 0.0104, "k256": 0.0417, "k1024": 0.1666, "k2048": 0.3333}}
+[07:19:07]   C: {"vs_shared": {"p50": 0.9993229508399963, "p99": 0.9993276000022888, "max": 0.9993276000022888, "frac_gt_0.5": 1.0}, "vs_other_routed": {"p50": 0.9993240237236023, "p99": 0.9993267059326172, "max": 0.9993268251419067, "frac_gt_0.5": 1.0}}
+
+# Shared vs routed experts
+
+## real
+
+Energy ratio shared / mean routed: gate 1.939, up 2.469, down 2.405
+
+| test | vs shared | vs other routed |
+|---|---|---|
+| A neuron max abs cos, p50 | 0.0325 | 0.0310 |
+| A neuron max abs cos, p99 | 0.0880 | 0.0531 |
+| A neuron max abs cos, max | 0.5583 | 0.4149 |
+| A neuron max abs cos, frac_gt_0.5 | 0.0000 | 0.0000 |
+| C delta residual energy, p50 | 0.9987 | 0.9990 |
+| C delta residual energy, max | 0.9991 | 0.9992 |
+
+| proj | k | routed in shared top-k | routed in other-routed top-k | isotropic | shared in own top-k |
+|---|---|---|---|---|---|
+| gate | 64 | 0.0274 | 0.0208 | 0.0104 | 0.1280 |
+| gate | 256 | 0.0818 | 0.0741 | 0.0417 | 0.3380 |
+| gate | 1024 | 0.2496 | 0.2376 | 0.1667 | 0.7989 |
+| gate | 2048 | 0.4260 | 0.4178 | 0.3333 | 1.0000 |
+| up | 64 | 0.0216 | 0.0203 | 0.0104 | 0.0836 |
+| up | 256 | 0.0666 | 0.0734 | 0.0417 | 0.2675 |
+| up | 1024 | 0.2197 | 0.2370 | 0.1667 | 0.7486 |
+| up | 2048 | 0.4027 | 0.4171 | 0.3333 | 1.0000 |
+| down | 64 | 0.0172 | 0.0130 | 0.0104 | 0.0994 |
+| down | 256 | 0.0591 | 0.0494 | 0.0417 | 0.2909 |
+| down | 1024 | 0.2014 | 0.1837 | 0.1667 | 0.7608 |
+| down | 2048 | 0.3714 | 0.3544 | 0.3333 | 1.0000 |
+
+## iid-Gaussian control
+
+Energy ratio shared / mean routed: gate 1.000, up 1.000, down 1.001
+
+| test | vs shared | vs other routed |
+|---|---|---|
+| A neuron max abs cos, p50 | 0.0264 | 0.0264 |
+| A neuron max abs cos, p99 | 0.0338 | 0.0338 |
+| A neuron max abs cos, max | 0.0420 | 0.0442 |
+| A neuron max abs cos, frac_gt_0.5 | 0.0000 | 0.0000 |
+| C delta residual energy, p50 | 0.9993 | 0.9993 |
+| C delta residual energy, max | 0.9993 | 0.9993 |
+
+| proj | k | routed in shared top-k | routed in other-routed top-k | isotropic | shared in own top-k |
+|---|---|---|---|---|---|
+| gate | 64 | 0.0104 | 0.0104 | 0.0104 | 0.0723 |
+| gate | 256 | 0.0417 | 0.0416 | 0.0417 | 0.2574 |
+| gate | 1024 | 0.1667 | 0.1666 | 0.1667 | 0.7393 |
+| gate | 2048 | 0.3334 | 0.3334 | 0.3333 | 1.0000 |
+| up | 64 | 0.0104 | 0.0104 | 0.0104 | 0.0723 |
+| up | 256 | 0.0417 | 0.0417 | 0.0417 | 0.2574 |
+| up | 1024 | 0.1667 | 0.1667 | 0.1667 | 0.7396 |
+| up | 2048 | 0.3333 | 0.3334 | 0.3333 | 1.0000 |
+| down | 64 | 0.0104 | 0.0104 | 0.0104 | 0.0723 |
+| down | 256 | 0.0417 | 0.0416 | 0.0417 | 0.2574 |
+| down | 1024 | 0.1666 | 0.1666 | 0.1667 | 0.7396 |
+| down | 2048 | 0.3333 | 0.3333 | 0.3333 | 1.0000 |
+
+[07:19:07] done -> /mnt/cephfs/hoangduy/results/basis-codec/glm53-L3-shared-20260925t070931z

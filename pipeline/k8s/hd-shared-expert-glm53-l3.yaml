@@ -1,0 +1,63 @@
+---
+# Shared-vs-routed expert correlation on GLM-5.3 layer 3. 1 GPU pinned to gpu06;
+# exits when done, so the GPU is released automatically.
+#
+#   # __init__.py must be EMPTY: the repo's pipeline/__init__.py imports modules not shipped here
+#   : > /tmp/empty_init.py
+#   kubectl -n evaluation create configmap hd-shared-expert-script \
+#     --from-file=__init__.py=/tmp/empty_init.py \
+#     --from-file=basis_codec_layer_analysis.py=pipeline/basis_codec_layer_analysis.py \
+#     --from-file=shared_expert_correlation.py=pipeline/shared_expert_correlation.py \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f pipeline/k8s/hd-shared-expert-glm53-l3.yaml
+#   kubectl -n evaluation logs -f job/hd-shared-expert-glm53-l3
+#
+# Output: /mnt/cephfs/hoangduy/results/basis-codec/glm53-L3-shared-<utc>/
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hd-shared-expert-glm53-l3
+  namespace: evaluation
+  labels: {owner: hoangduy.dang, purpose: shared-expert-correlation}
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 10800
+  template:
+    metadata:
+      labels: {owner: hoangduy.dang, purpose: shared-expert-correlation}
+    spec:
+      restartPolicy: Never
+      nodeSelector: {kubernetes.io/hostname: aicloud-infermesh-test-ca-gpu06}
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Equal, value: present, effect: NoSchedule}
+      volumes:
+        - name: cephfs
+          persistentVolumeClaim: {claimName: model-cache-shared}
+        - name: script
+          configMap: {name: hd-shared-expert-script}
+      containers:
+        - name: analysis
+          image: lmsysorg/sglang:v0.5.17
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: {nvidia.com/gpu: 1, cpu: "8", memory: 64Gi}
+            limits: {nvidia.com/gpu: 1, cpu: "16", memory: 96Gi}
+          volumeMounts:
+            - {name: cephfs, mountPath: /mnt/cephfs}
+            - {name: script, mountPath: /opt/sec/pipeline, readOnly: true}
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            - name: CKPT
+              value: /mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639
+          command: ["bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              OUT=/mnt/cephfs/hoangduy/results/basis-codec/glm53-L3-shared-$(date -u +%Y%m%dt%H%M%Sz)
+              mkdir -p "$OUT"
+              echo "OUT=$OUT"
+              nvidia-smi --query-gpu=name,uuid,memory.total --format=csv
+              sha256sum /opt/sec/pipeline/*.py
+              python3 -c "import scipy; print('scipy', scipy.__version__)"
+              cd /opt/sec && python3 -m pipeline.shared_expert_correlation --ckpt "$CKPT" --out "$OUT" 2>&1 | tee "$OUT/run.log"

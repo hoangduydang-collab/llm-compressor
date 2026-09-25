@@ -51,6 +51,19 @@ def test_kmeans_finds_clusters_and_codebook_arm_costs_index_bits():
         kv.kmeans(X[:4], 8, 1, g)
 
 
+def test_zero_centroid_rescues_near_zero_token():
+    g = torch.Generator().manual_seed(4)
+    C = torch.randn(16, 128, generator=g) * 3 + 5                 # no centroid near the origin
+    X = C[torch.randint(0, 16, (256,), generator=g)] + torch.randn(256, 128, generator=g)
+    X[0] *= 0.02                                                  # sink-like token
+    ctx = {"cb16": C}
+    P, cost = kv.predict(X, "cb16z", None, ctx)
+    assert torch.equal(P[0], torch.zeros(128)) and torch.equal(P[1:], kv.predict(X, "cb16", None, ctx)[0][1:])
+    assert cost == pytest.approx(math.log2(17) / 128)
+    err = lambda s: (kv.apply_arm(X, (s, None, "tok", 2), ctx)[0][0] - X[0]).pow(2).sum() / X[0].pow(2).sum()
+    assert err("cb16") > 10 and err("cb16z") == err("direct")
+
+
 def test_arm_bit_accounting():
     X = torch.randn(128, 128)
     ctx = {"mu": X.mean(0, keepdim=True)}

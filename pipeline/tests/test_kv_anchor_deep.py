@@ -139,6 +139,10 @@ def test_stream_end_to_end_and_resume(tmp_path):
     assert {"cb16-ch-int2|keep1", "cb16-ch-int2|keep4", "gmean-ch-int2|keep4"} <= set(e["arms"])
     assert e["arms"]["cb16-ch-int2|keep1"]["token0_latent_rel_mse"] == 0.0
     assert 0.0 < e["attn_mass_on_token0"] < 1.0 and e["token0_norm_over_median"] > 0
+    assert {"cb16z-ch-int2|keep1", "cb16z-tok-int4"} <= set(e["arms"])
+    assert 0.0 <= e["small_token_fraction"] <= 1.0 and 0.0 <= e["attn_mass_on_small_tokens"] <= 1.0
+    assert 0.0 <= e["zero_anchor_fraction"] <= 1.0 and e["token0_prenorm_rms_over_median"] > 0
+    assert e["token0_prenorm_rms_over_sqrt_eps"] > 0 and d[1]["kv_norm_gain_abs"]["max"] > 0
     # sink_keep: token 0 exact in every arm, and no |keep variants
     s = kd.stream(kd.LayerSource(str(ck), str(tmp_path / "st4")), windows, torch.device("cpu"), tmp_path / "o4",
                   layers=1, sink_keep=2, diag=True, **kw)[0]["eval"]["arms"]

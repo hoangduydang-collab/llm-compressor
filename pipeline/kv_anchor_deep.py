@@ -311,6 +311,7 @@ class Acc:
         self.lat, self.attn, self.bits, self.pred, self.lag, self.tok0 = {}, {}, {}, {}, {}, {}
         self.E = self.Ec = self.E0 = 0.0
         self.sink_mass, self.norm_ratio = [], []
+        self.small_frac, self.small_mass, self.zero_pick, self.pre_ratio, self.pre_eps = [], [], [], [], []
 
     def add(self, nm, bits, Xh, X, o, o0):
         self.bits[nm] = bits
@@ -325,6 +326,13 @@ class Acc:
         return {"centered_energy_fraction": self.Ec / self.E,
                 "attn_mass_on_token0": mean(self.sink_mass),
                 "token0_norm_over_median": mean(self.norm_ratio),
+                # tokens 1.. with latent norm < 0.1 x median: share of tokens, attention mass they receive
+                "small_token_fraction": mean(self.small_frac),
+                "attn_mass_on_small_tokens": mean(self.small_mass),
+                "zero_anchor_fraction": mean(self.zero_pick),
+                # kv_a_layernorm input RMS of token 0: over the median token's, and over sqrt(eps)
+                "token0_prenorm_rms_over_median": mean(self.pre_ratio),
+                "token0_prenorm_rms_over_sqrt_eps": mean(self.pre_eps),
                 "lag_corr": {str(k): v[0] / math.sqrt(v[1] * v[2]) for k, v in self.lag.items()},
                 "pred_resid_vs_gmean": {k: v / self.Ec for k, v in self.pred.items()},
                 "arms": {nm: {"bits": self.bits[nm], "latent_rel_mse": self.lat[nm] / self.E,
@@ -336,13 +344,13 @@ def deep_arms(cbs) -> list[tuple]:
     small, big = f"cb{cbs[0]}", f"cb{cbs[1]}"
     arms = [("fp8_tok", None, None, None), ("fp8_unscaled", None, None, None)]
     arms += [("direct", None, "ch", b) for b in BITS] + [("gmean", None, "ch", 2)]
-    arms += [(big, None, g, b) for g in ("ch", "tok") for b in BITS] + [(small, None, "ch", 2)]
+    arms += [(s, None, g, b) for s in (big, big + "z") for g in ("ch", "tok") for b in BITS] + [(small, None, "ch", 2)]
     return arms
 
 
 def diag_arms(cbs) -> set[str]:
     big = f"cb{cbs[1]}"
-    return {"direct-ch-int2", "gmean-ch-int2", f"{big}-ch-int2", f"{big}-tok-int2"}
+    return {"direct-ch-int2", "gmean-ch-int2", f"{big}-ch-int2", f"{big}-tok-int2", f"{big}z-ch-int2", f"{big}z-tok-int2"}
 
 
 @torch.no_grad()
@@ -354,9 +362,22 @@ def eval_window(layer, tap, X, o0, ctx, acc: Acc, gen, cfg: dict):
     acc.E += X.pow(2).sum().item()
     acc.Ec += (X - mu).pow(2).sum().item()
     acc.E0 += X[0].pow(2).sum().item()
-    acc.norm_ratio.append((X[0].norm() / X.norm(dim=1).median()).item())
+    n = X.norm(dim=1)
+    acc.norm_ratio.append((n[0] / n.median()).item())
     if tap.sink_mass.get(0) is not None:
         acc.sink_mass.append(tap.sink_mass[0])
+    small = n[1:] < 0.1 * n.median()
+    acc.small_frac.append(small.float().mean().item())
+    if tap.key_mass.get(0) is not None:
+        acc.small_mass.append(tap.key_mass[0][1:][small].sum().item())
+    C = ctx[f"cb{cfg['cbs'][-1]}"]
+    acc.zero_pick.append((kp.nearest(X, torch.cat([C, torch.zeros_like(C[:1])])) == C.shape[0]).float().mean().item())
+    pre = tap.prenorm[0][0].float().pow(2).mean(-1).sqrt()
+    norm = layer.self_attn.kv_a_layernorm
+    eps = getattr(norm, "variance_epsilon", getattr(norm, "eps", None))
+    acc.pre_ratio.append((pre[0] / pre.median()).item())
+    if eps:
+        acc.pre_eps.append(pre[0].item() / math.sqrt(eps))
     kp.lag_stats(X, mu, acc.lag)
     for m in cfg["cbs"]:
         acc.pred[f"cb{m}"] = acc.pred.get(f"cb{m}", 0.0) + (X - kp.predict(X, f"cb{m}", None, ctx)[0]).pow(2).sum().item()
@@ -449,14 +470,18 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
                 eval_window(layer, tap, X, o0, ctx, accs[s], gen, cfg)
         finally:
             tap.close()
+        g = layer.self_attn.kv_a_layernorm.weight.float().abs()
         res = {"layer": L, "act_fp8_hooks": hooks, "lexico": "lexico" in ctx,
+               "kv_norm_gain_abs": {"min": g.min().item(), "median": g.median().item(), "max": g.max().item()},
                "seconds": {"load": round(t_load, 1), "total": round(time.time() - t0, 1)},
                "staged_MBps": round(src.bytes / 1e6 / max(src.seconds, 1e-9), 1),
                **{s: a.result() for s, a in accs.items() if a.E}}
         (out_dir / "layers" / f"{L:03d}.json").write_text(json.dumps(res, indent=1))
         results[L] = res
         e = res.get("eval", {}).get("arms", {})
-        log(f"layer {L}: {res['seconds']}  cb{cbs[-1]}-ch-int2 attn={e.get(f'cb{cbs[-1]}-ch-int2', {}).get('attn_rel_mse', float('nan')):.2e}"
+        at = lambda nm: e.get(nm, {}).get('attn_rel_mse', float('nan'))
+        log(f"layer {L}: {res['seconds']}  cb{cbs[-1]}-ch-int2 attn={at(f'cb{cbs[-1]}-ch-int2'):.2e}"
+            f" cb{cbs[-1]}z-ch-int2 attn={at(f'cb{cbs[-1]}z-ch-int2'):.2e} direct-ch-int2 attn={at('direct-ch-int2'):.2e}"
             f" direct-ch-int4 attn={e.get('direct-ch-int4', {}).get('attn_rel_mse', float('nan')):.2e}  staged {res['staged_MBps']} MB/s")
         del layer, rotary, ctx
         if dev.type == "cuda":
@@ -517,7 +542,8 @@ def dequant_check(qsrc: LayerSource, bf16_snapshot: str, L: int, n_experts: int 
 
 
 # ---------------------------------------------------------------- report
-KEY_ARMS = ("direct-ch-int4", "cb4096-ch-int2", "cb4096-ch-int3", "cb4096-ch-int4", "qvg64-int2", "lexico45", "fp8_tok")
+KEY_ARMS = ("direct-ch-int4", "cb4096-ch-int2", "cb4096z-ch-int2", "cb4096z-tok-int2", "cb4096z-tok-int3",
+            "qvg64-int2", "lexico45", "fp8_tok")
 
 
 def summarize(results: dict, meta: dict) -> str:

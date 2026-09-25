@@ -106,7 +106,9 @@ def predict(X: torch.Tensor, scheme: str, N: int | None, ctx: dict) -> tuple[tor
     if scheme == "gmean":
         return ctx["mu"].expand(T, d), 0.0
     if scheme.startswith("cb"):
-        C = ctx[scheme]
+        C = ctx[scheme.rstrip("z")]
+        if scheme.endswith("z"):   # extra all-zero centroid: tokens nearer the origin than any centroid get no anchor
+            C = torch.cat([C, torch.zeros_like(C[:1])])
         return C[nearest(X, C)], math.log2(C.shape[0]) / d
     if T % N:
         raise ValueError(f"window {T} not divisible by chunk {N}")
@@ -162,6 +164,8 @@ class Tap:
     def __init__(self, layers):
         self.latent, self.kwargs, self.out, self.topk = {}, {}, {}, {}
         self.sink_mass: dict[int, float | None] = {}   # mean attention weight on key 0 (eager only)
+        self.key_mass: dict[int, torch.Tensor | None] = {}   # [T] mean attention each key receives (eager only)
+        self.prenorm: dict[int, torch.Tensor] = {}     # kv_a_layernorm input
         self.replace: dict[int, torch.Tensor] = {}
         self.record = False
         self.handles = []
@@ -175,6 +179,7 @@ class Tap:
         def hook(mod, inp, out):
             if self.record:
                 self.latent[i] = out.detach()
+                self.prenorm[i] = inp[0].detach()
             if i in self.replace:
                 return self.replace[i].to(out.dtype)
         return hook
@@ -191,8 +196,9 @@ class Tap:
                 self.out[i] = out[0].detach()
                 self.topk[i] = out[2].detach() if len(out) > 2 and out[2] is not None else None
                 w = out[1] if len(out) > 1 else None
-                self.sink_mass[i] = (w[0, :, 1:, 0].float().mean().item()
-                                     if isinstance(w, torch.Tensor) and w.dim() == 4 and w.shape[-2] > 1 else None)
+                ok = isinstance(w, torch.Tensor) and w.dim() == 4 and w.shape[-2] > 1
+                self.sink_mass[i] = w[0, :, 1:, 0].float().mean().item() if ok else None
+                self.key_mass[i] = w[0, :, 1:].float().mean((0, 1)) if ok else None
         return hook
 
     def rerun(self, layers, i, latent: torch.Tensor | None) -> torch.Tensor:

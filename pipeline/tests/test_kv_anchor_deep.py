@@ -143,7 +143,10 @@ def test_stream_end_to_end_and_resume(tmp_path):
     assert {"cb16-ch-int2|keep1", "cb16-ch-int2|keep4", "gmean-ch-int2|keep4"} <= set(e["arms"])
     assert e["arms"]["cb16-ch-int2|keep1"]["token0_latent_rel_mse"] == 0.0
     assert 0.0 < e["attn_mass_on_token0"] < 1.0 and e["token0_norm_over_median"] > 0
-    assert {"cb16z-ch-int2|keep1", "cb16z-tok-int4"} <= set(e["arms"])
+    assert {"cb16z-ch-int2|keep1", "cb16z-tok-int4", "direct-tok-int3", "cb16w1-tok-int2", "cb16w2-ch-int2",
+            "cb16zs-tok-int4", "direct-tok-int2|tiny", "cb16z-tok-int3|tiny"} <= set(e["arms"])
+    assert 0.0 <= e["tiny_exact_fraction"] <= 1.0
+    assert e["arms"]["direct-tok-int2|tiny"]["bits"] >= e["arms"]["direct-tok-int2"]["bits"]
     assert 0.0 <= e["small_token_fraction"] <= 1.0 and 0.0 <= e["attn_mass_on_small_tokens"] <= 1.0
     assert 0.0 <= e["zero_anchor_fraction"] <= 1.0 and e["token0_prenorm_rms_over_median"] > 0
     assert e["token0_prenorm_rms_over_sqrt_eps"] > 0 and d[1]["kv_norm_gain_abs"]["max"] > 0

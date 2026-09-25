@@ -312,6 +312,7 @@ class Acc:
         self.E = self.Ec = self.E0 = 0.0
         self.sink_mass, self.norm_ratio = [], []
         self.small_frac, self.small_mass, self.zero_pick, self.pre_ratio, self.pre_eps = [], [], [], [], []
+        self.tiny_frac = []
 
     def add(self, nm, bits, Xh, X, o, o0):
         self.bits[nm] = bits
@@ -330,6 +331,7 @@ class Acc:
                 "small_token_fraction": mean(self.small_frac),
                 "attn_mass_on_small_tokens": mean(self.small_mass),
                 "zero_anchor_fraction": mean(self.zero_pick),
+                "tiny_exact_fraction": mean(self.tiny_frac),   # tokens under the training-median threshold (|tiny arms)
                 # kv_a_layernorm input RMS of token 0: over the median token's, and over sqrt(eps)
                 "token0_prenorm_rms_over_median": mean(self.pre_ratio),
                 "token0_prenorm_rms_over_sqrt_eps": mean(self.pre_eps),
@@ -343,9 +345,18 @@ class Acc:
 def deep_arms(cbs) -> list[tuple]:
     small, big = f"cb{cbs[0]}", f"cb{cbs[1]}"
     arms = [("fp8_tok", None, None, None), ("fp8_unscaled", None, None, None)]
-    arms += [("direct", None, "ch", b) for b in BITS] + [("gmean", None, "ch", 2)]
+    arms += [("direct", None, g, b) for g in ("ch", "tok") for b in BITS] + [("gmean", None, "ch", 2)]
     arms += [(s, None, g, b) for s in (big, big + "z") for g in ("ch", "tok") for b in BITS] + [(small, None, "ch", 2)]
+    # attention-weighted codebooks (w1: mean attention weight, w2: mean squared weight) and dedicated sink centroids
+    arms += [(s, None, "tok", b) for s in (big + "w1", big + "w2", big + "zs") for b in BITS]
+    arms += [(big + "w2", None, "ch", 2)]
     return arms
+
+
+def tiny_arms(cbs) -> set[str]:
+    """arms also scored with tiny tokens (norm < 0.1 x training median) kept exact"""
+    big = f"cb{cbs[1]}"
+    return {"direct-tok-int2", "direct-tok-int4", *(f"{big}z-tok-int{b}" for b in BITS)}
 
 
 def diag_arms(cbs) -> set[str]:
@@ -391,6 +402,9 @@ def eval_window(layer, tap, X, o0, ctx, acc: Acc, gen, cfg: dict):
         return Xh
 
     diag = diag_arms(cfg["cbs"]) if cfg.get("diag") and not k else set()
+    tiny = n < ctx["tiny_thr"]
+    acc.tiny_frac.append(tiny.float().mean().item())
+    tiny_cost = tiny.float().mean().item() * (1 + math.log2(X.shape[0]) / X.shape[1])   # x (16 - b) bits, + position
     coded = [(kp.arm_name(a), *kp.apply_arm(X, a, ctx)) for a in deep_arms(cfg["cbs"])]
     Xq, bq = qvg_encode(X, gen, cfg["qvg_c"])
     coded.append((f"qvg{cfg['qvg_c']}-int2", Xq, bq))
@@ -403,6 +417,9 @@ def eval_window(layer, tap, X, o0, ctx, acc: Acc, gen, cfg: dict):
         for n in (1, 4) if nm in diag else ():
             Xk = keep(Xh, n)
             acc.add(f"{nm}|keep{n}", bits, Xk, X, rerun(Xk), o0)
+        if nm in tiny_arms(cfg["cbs"]):
+            Xt = torch.where(tiny[:, None], X, Xh)
+            acc.add(f"{nm}|tiny", bits + tiny_cost * (16 - bits), Xt, X, rerun(Xt), o0)
 
 
 @torch.no_grad()
@@ -447,12 +464,26 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
 
             # pass A: training windows -> global mean, codebooks, dictionary
             # exempt sink tokens are never coded, so they are not fit either
-            train = [step(j)[0][sink_keep:] for j, (s, _) in enumerate(names) if s == "train"]
-            Xtr = torch.cat(train)
+            train, w1, w2 = [], [], []
+            for j, (s, _) in enumerate(names):
+                if s == "train":
+                    train.append(step(j)[0][sink_keep:])
+                    km, km2 = tap.key_mass.get(0), tap.key_mass2.get(0)
+                    w1.append(km[sink_keep:] if km is not None else torch.ones_like(train[-1][:, 0]))
+                    w2.append(km2[sink_keep:] if km2 is not None else torch.ones_like(train[-1][:, 0]))
+            Xtr, w1, w2 = torch.cat(train), torch.cat(w1), torch.cat(w2)
             del train
             ctx = {"mu": Xtr.mean(0, keepdim=True).half().float()}
             for m in cbs:
                 ctx[f"cb{m}"] = kp.kmeans(Xtr, m, kmeans_iters, gen)
+            # attention-weighted codebooks; tiny-token threshold and dedicated sink centroids
+            ctx[f"cb{cbs[-1]}w1"] = kp.kmeans(Xtr, cbs[-1], kmeans_iters, gen, w=w1)
+            ctx[f"cb{cbs[-1]}w2"] = kp.kmeans(Xtr, cbs[-1], kmeans_iters, gen, w=w2)
+            ntr = Xtr.norm(dim=1)
+            ctx["tiny_thr"] = 0.1 * ntr.median()
+            Xs = Xtr[ntr < ctx["tiny_thr"]]
+            ctx["sink"] = kp.kmeans(Xs, min(4, Xs.shape[0]), 20, gen) if Xs.shape[0] else Xtr[:0]
+            del w1, w2, Xs
             if lexico_every and (L % lexico_every == 0 or L == src.n_layers - 1):
                 sub = Xtr[torch.randperm(Xtr.shape[0], generator=gen)[:lexico_fit_tokens].to(dev)]
                 with _tf32():
@@ -491,6 +522,8 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
         at = lambda nm: e.get(nm, {}).get('attn_rel_mse', float('nan'))
         log(f"layer {L}: {res['seconds']}  cb{cbs[-1]}-ch-int2 attn={at(f'cb{cbs[-1]}-ch-int2'):.2e}"
             f" cb{cbs[-1]}z-ch-int2 attn={at(f'cb{cbs[-1]}z-ch-int2'):.2e} direct-ch-int2 attn={at('direct-ch-int2'):.2e}"
+            f" | tok-int2: direct {at('direct-tok-int2'):.2e} z {at(f'cb{cbs[-1]}z-tok-int2'):.2e}"
+            f" w2 {at(f'cb{cbs[-1]}w2-tok-int2'):.2e} zs {at(f'cb{cbs[-1]}zs-tok-int2'):.2e} z|tiny {at(f'cb{cbs[-1]}z-tok-int2|tiny'):.2e}"
             f" direct-ch-int4 attn={e.get('direct-ch-int4', {}).get('attn_rel_mse', float('nan')):.2e}  staged {res['staged_MBps']} MB/s")
         del layer, rotary, ctx
         if dev.type == "cuda":
@@ -551,8 +584,8 @@ def dequant_check(qsrc: LayerSource, bf16_snapshot: str, L: int, n_experts: int 
 
 
 # ---------------------------------------------------------------- report
-KEY_ARMS = ("direct-ch-int4", "cb4096-ch-int2", "cb4096z-ch-int2", "cb4096z-tok-int2", "cb4096z-tok-int3",
-            "qvg64-int2", "lexico45", "fp8_tok")
+KEY_ARMS = ("direct-tok-int4", "cb4096z-tok-int2", "cb4096w2-tok-int2", "cb4096zs-tok-int2", "cb4096z-tok-int2|tiny",
+            "cb4096z-tok-int4", "fp8_unscaled", "fp8_tok")
 
 
 def summarize(results: dict, meta: dict) -> str:

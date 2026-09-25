@@ -30,6 +30,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -75,24 +76,27 @@ def nearest(X: torch.Tensor, C: torch.Tensor, chunk: int = 16384) -> torch.Tenso
     return torch.cat([(2 * X[a:a + chunk] @ C.T - cn).argmax(1) for a in range(0, X.shape[0], chunk)])
 
 
-def kmeans(X: torch.Tensor, M: int, iters: int, gen: torch.Generator) -> torch.Tensor:
+def kmeans(X: torch.Tensor, M: int, iters: int, gen: torch.Generator, w: torch.Tensor | None = None) -> torch.Tensor:
+    """k-means++ / Lloyd. w: optional per-token weights (weighted squared error)."""
     if X.shape[0] < M:
         raise ValueError(f"{X.shape[0]} training tokens for a {M}-centroid codebook")
-    # k-means++ seeding: each new centroid drawn with probability ~ squared distance
-    first = int(torch.randint(0, X.shape[0], (1,), generator=gen))
+    w = torch.ones(X.shape[0], device=X.device, dtype=X.dtype) if w is None else w.to(X)
+    # k-means++ seeding: each new centroid drawn with probability ~ weight x squared distance
+    first = int(torch.multinomial((w / w.sum()).cpu(), 1, generator=gen))
     C = torch.empty(M, X.shape[1], device=X.device, dtype=X.dtype)
     C[0] = X[first]
     d2 = (X - C[0]).pow(2).sum(1)
     for j in range(1, M):
-        p = (d2 / d2.sum().clamp(min=1e-30)).cpu()
+        p = w * d2
+        p = (p / p.sum()).cpu() if p.sum() > 0 else torch.full((X.shape[0],), 1 / X.shape[0])
         C[j] = X[int(torch.multinomial(p, 1, generator=gen))]
         d2 = torch.minimum(d2, (X - C[j]).pow(2).sum(1))
     for _ in range(iters):
         idx = nearest(X, C)
-        sums = torch.zeros_like(C).index_add_(0, idx, X)
-        cnt = torch.bincount(idx, minlength=M)
-        empty = cnt == 0
-        C = torch.where(empty[:, None], C, sums / cnt.clamp(min=1)[:, None])
+        sums = torch.zeros_like(C).index_add_(0, idx, w[:, None] * X)
+        cnt = torch.zeros(M, device=X.device, dtype=X.dtype).index_add_(0, idx, w)
+        empty = cnt <= 0
+        C = torch.where(empty[:, None], C, sums / cnt.clamp(min=1e-30)[:, None])
         if empty.any():
             C[empty] = X[torch.randperm(X.shape[0], generator=gen)[: int(empty.sum())].to(X.device)]
     return C.half().float()
@@ -106,9 +110,14 @@ def predict(X: torch.Tensor, scheme: str, N: int | None, ctx: dict) -> tuple[tor
     if scheme == "gmean":
         return ctx["mu"].expand(T, d), 0.0
     if scheme.startswith("cb"):
-        C = ctx[scheme.rstrip("z")]
-        if scheme.endswith("z"):   # extra all-zero centroid: tokens nearer the origin than any centroid get no anchor
+        # cb<M>[w1|w2][z][s]: ctx["cb<M>[w1|w2]"], plus an all-zero centroid (z: tokens nearer the
+        # origin than any centroid get no anchor) and dedicated sink centroids ctx["sink"] (s)
+        base, extra = re.fullmatch(r"(cb\d+(?:w[12])?)([zs]*)", scheme).groups()
+        C = ctx[base]
+        if "z" in extra:
             C = torch.cat([C, torch.zeros_like(C[:1])])
+        if "s" in extra:
+            C = torch.cat([C, ctx["sink"].to(C)])
         return C[nearest(X, C)], math.log2(C.shape[0]) / d
     if T % N:
         raise ValueError(f"window {T} not divisible by chunk {N}")
@@ -165,6 +174,7 @@ class Tap:
         self.latent, self.kwargs, self.out, self.topk = {}, {}, {}, {}
         self.sink_mass: dict[int, float | None] = {}   # mean attention weight on key 0 (eager only)
         self.key_mass: dict[int, torch.Tensor | None] = {}   # [T] mean attention each key receives (eager only)
+        self.key_mass2: dict[int, torch.Tensor | None] = {}  # [T] mean squared attention weight per key
         self.prenorm: dict[int, torch.Tensor] = {}     # kv_a_layernorm input
         self.replace: dict[int, torch.Tensor] = {}
         self.record = False
@@ -199,6 +209,7 @@ class Tap:
                 ok = isinstance(w, torch.Tensor) and w.dim() == 4 and w.shape[-2] > 1
                 self.sink_mass[i] = w[0, :, 1:, 0].float().mean().item() if ok else None
                 self.key_mass[i] = w[0, :, 1:].float().mean((0, 1)) if ok else None
+                self.key_mass2[i] = w[0, :, 1:].float().pow(2).mean((0, 1)) if ok else None
         return hook
 
     def rerun(self, layers, i, latent: torch.Tensor | None) -> torch.Tensor:

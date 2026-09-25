@@ -51,6 +51,21 @@ def test_kmeans_finds_clusters_and_codebook_arm_costs_index_bits():
         kv.kmeans(X[:4], 8, 1, g)
 
 
+def test_weighted_kmeans_gives_heavy_rare_token_its_own_centroid():
+    g = torch.Generator().manual_seed(5)
+    X = torch.cat([torch.randn(2000, 64, generator=g) + 6, torch.full((1, 64), -3.0)])   # one rare, far token
+    w = torch.ones(2001)
+    w[-1] = 1e4
+    plain = kv.kmeans(X, 4, 10, torch.Generator().manual_seed(0))
+    heavy = kv.kmeans(X, 4, 10, torch.Generator().manual_seed(0), w=w)
+    err = lambda C: (X[-1] - C[kv.nearest(X[-1:], C)][0]).pow(2).sum() / X[-1].pow(2).sum()
+    assert err(heavy) < 1e-4 and err(heavy) <= err(plain)          # the weighted fit keeps it exact
+    # cb<M>w2zs parsing: weighted base + zero + sink rows
+    ctx = {"cb4w2": heavy, "sink": torch.zeros(2, 64) + 0.5}
+    P, cost = kv.predict(X[:8], "cb4w2zs", None, ctx)
+    assert P.shape == (8, 64) and cost == pytest.approx(math.log2(7) / 64)
+
+
 def test_zero_centroid_rescues_near_zero_token():
     g = torch.Generator().manual_seed(4)
     C = torch.randn(16, 128, generator=g) * 3 + 5                 # no centroid near the origin

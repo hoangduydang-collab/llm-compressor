@@ -68,7 +68,7 @@ spec:
               value: /mnt/cephfs/hoangduy/results/glm53-quality-paired/20260902t0431z/client-ours/aa-gpqa-v3/results-formal-198-c8/gpqa_diamond_aa_v3/cache/cache.sqlite/cache.db
             - {name: AA_LCR_WORK, value: /mnt/cephfs/hoangduy/aa-lcr-v11-work}
             # e.g. "--sink-keep 4" for the full run
-            - {name: EXTRA_ARGS, value: ""}
+            - {name: EXTRA_ARGS, value: "--lexico-every 0 --gen-train 8"}
           command: ["bash", "-c"]
           args:
             - |

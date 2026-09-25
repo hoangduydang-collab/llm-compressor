@@ -163,7 +163,8 @@ def test_stream_end_to_end_and_resume(tmp_path):
             "cb16zs-tok-int4", "direct-tok-int2|tiny", "cb16z-tok-int3|tiny"} <= set(e["arms"])
     assert 0.0 <= e["tiny_exact_fraction"] <= 1.0
     assert {"sglang_fp8_tile128", "sglang_nvfp4", "sglang_fp4_mx16", "H-nvfp4", "H-direct-tok-int4",
-            "cb16z-nvfp4", "H-cb16z-nvfp4", "H-cb16z-tok-int4"} <= set(e["arms"])
+            "cb16z-nvfp4", "H-cb16z-nvfp4", "H-cb16z-tok-int4", "cb16w2z-tok-int4|tiny", "cb16w2z-nvfp4|tiny",
+            "H-cb16w2z-nvfp4|tiny", "sglang_nvfp4|tiny"} <= set(e["arms"])
     assert e["arms"]["direct-tok-int2|tiny"]["bits"] >= e["arms"]["direct-tok-int2"]["bits"]
     assert 0.0 <= e["small_token_fraction"] <= 1.0 and 0.0 <= e["attn_mass_on_small_tokens"] <= 1.0
     assert 0.0 <= e["zero_anchor_fraction"] <= 1.0 and e["token0_prenorm_rms_over_median"] > 0

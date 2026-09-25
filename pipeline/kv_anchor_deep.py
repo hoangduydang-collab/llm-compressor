@@ -324,14 +324,16 @@ def rotated_arms(X: torch.Tensor, ctx: dict, big: str) -> list[tuple[str, torch.
     H = ctx["H"]
     int4 = lambda V: kp.quant_residual(V, "tok", 4)
     b_int4 = 4 + 16 / kp.G
-    P, cost = kp.predict(X, big + "z", None, ctx)
-    R = X - P
     Xn, b_nv = nvfp4(X @ H)
-    return [("H-nvfp4", Xn @ H.T, b_nv),
-            ("H-direct-tok-int4", int4(X @ H) @ H.T, b_int4),
-            (f"{big}z-nvfp4", P + nvfp4(R)[0], b_nv + cost),
-            (f"H-{big}z-nvfp4", P + nvfp4(R @ H)[0] @ H.T, b_nv + cost),
-            (f"H-{big}z-tok-int4", P + int4(R @ H) @ H.T, b_int4 + cost)]
+    out = [("H-nvfp4", Xn @ H.T, b_nv), ("H-direct-tok-int4", int4(X @ H) @ H.T, b_int4)]
+    for s in (big + "z", big + "w2z"):       # unweighted / attention-weighted codebook, both with the zero centroid
+        P, cost = kp.predict(X, s, None, ctx)
+        R = X - P
+        out += [(f"{s}-nvfp4", P + nvfp4(R)[0], b_nv + cost),
+                (f"H-{s}-nvfp4", P + nvfp4(R @ H)[0] @ H.T, b_nv + cost)]
+    P, cost = kp.predict(X, big + "z", None, ctx)
+    out.append((f"H-{big}z-tok-int4", P + int4((X - P) @ H) @ H.T, b_int4 + cost))
+    return out
 
 
 def qvg_encode(X: torch.Tensor, gen, C: int, bits: int = 2) -> tuple[torch.Tensor, float]:
@@ -416,7 +418,7 @@ def deep_arms(cbs) -> list[tuple]:
     arms += [("direct", None, g, b) for g in ("ch", "tok") for b in BITS] + [("gmean", None, "ch", 2)]
     arms += [(s, None, g, b) for s in (big, big + "z") for g in ("ch", "tok") for b in BITS] + [(small, None, "ch", 2)]
     # attention-weighted codebooks (w1: mean attention weight, w2: mean squared weight) and dedicated sink centroids
-    arms += [(s, None, "tok", b) for s in (big + "w1", big + "w2", big + "zs") for b in BITS]
+    arms += [(s, None, "tok", b) for s in (big + "w1", big + "w2", big + "zs", big + "w2z") for b in BITS]
     arms += [(big + "w2", None, "ch", 2)]
     return arms
 
@@ -424,7 +426,9 @@ def deep_arms(cbs) -> list[tuple]:
 def tiny_arms(cbs) -> set[str]:
     """arms also scored with tiny tokens (norm < 0.1 x training median) kept exact"""
     big = f"cb{cbs[1]}"
-    return {"direct-tok-int2", "direct-tok-int4", *(f"{big}z-tok-int{b}" for b in BITS)}
+    return {"direct-tok-int2", "direct-tok-int4", *(f"{big}z-tok-int{b}" for b in BITS),
+            *(f"{big}w2z-tok-int{b}" for b in BITS), "sglang_nvfp4",
+            *(f"{p}{big}{s}-nvfp4" for p in ("", "H-") for s in ("z", "w2z"))}
 
 
 def diag_arms(cbs) -> set[str]:
@@ -594,7 +598,9 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
         big = f"cb{cbs[-1]}"
         four = {"fp8_tile": "sglang_fp8_tile128", "fp8_tok": "fp8_tok", "nvfp4": "sglang_nvfp4", "H-nvfp4": "H-nvfp4",
                 "tok4": "direct-tok-int4", "z4": f"{big}z-tok-int4", "w2-4": f"{big}w2-tok-int4",
-                "z4|tiny": f"{big}z-tok-int4|tiny", "H-z-nvfp4": f"H-{big}z-nvfp4"}
+                "z4|tiny": f"{big}z-tok-int4|tiny", "H-z-nvfp4": f"H-{big}z-nvfp4",
+                "w2z4|tiny": f"{big}w2z-tok-int4|tiny", "w2z-nv|tiny": f"{big}w2z-nvfp4|tiny",
+                "H-w2z-nv|tiny": f"H-{big}w2z-nvfp4|tiny", "nvfp4|tiny": "sglang_nvfp4|tiny"}
         log(f"layer {L}: {res['seconds']}  attn ~4b+: " + " ".join(f"{k} {at(v):.2e}" for k, v in four.items())
             + f"  staged {res['staged_MBps']} MB/s")
         del layer, rotary, ctx
@@ -690,7 +696,8 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--window", type=int, default=4096)
     ap.add_argument("--offset", type=int, default=1024)
-    ap.add_argument("--gen-windows", type=int, default=8)
+    ap.add_argument("--gen-windows", type=int, default=8, help="held-out generated windows")
+    ap.add_argument("--gen-train", type=int, default=0, help="extra generated windows added to the fitting set")
     ap.add_argument("--layers", type=int, default=None, help="stop after this many layers (smoke runs)")
     ap.add_argument("--act-fp8", action="store_true")
     ap.add_argument("--lexico-every", type=int, default=8)
@@ -736,9 +743,12 @@ def main(argv=None):
 
     tok = AutoTokenizer.from_pretrained(args.snapshot)
     train, evals, names = kp.make_windows(tok, kp.aa_lcr_sets(Path(args.aa_lcr_root)), args.window, args.offset, dev)
-    gens = gen_windows(args.gen_db, tok, args.window, args.gen_windows, args.offset, dev)
-    meta.update(train_windows=len(train), eval_windows=len(evals), gen_windows=len(gens), windows=names)
-    log(f"{len(train)} train / {len(evals)} eval AA-LCR + {len(gens)} generated windows")
+    gens = gen_windows(args.gen_db, tok, args.window, args.gen_windows + args.gen_train, args.offset, dev)
+    # the first gen_train generated completions join the fitting set; the rest stay held out
+    train, gens = train + gens[:args.gen_train], gens[args.gen_train:]
+    meta.update(train_windows=len(train), eval_windows=len(evals), gen_windows=len(gens), gen_train=args.gen_train,
+                windows=names)
+    log(f"{len(train)} train ({args.gen_train} generated) / {len(evals)} eval AA-LCR + {len(gens)} generated windows")
 
     meta.update(sink_keep=args.sink_keep, diag=args.diag)
     stream(src, {"train": train, "eval": evals, "gen": gens}, dev, out, layers=args.layers,

@@ -1,0 +1,623 @@
+{
+ "layer": 1,
+ "act_fp8_hooks": 10,
+ "lexico": false,
+ "kv_norm_gain_abs": {
+  "min": 9.298324584960938e-06,
+  "median": 0.003326416015625,
+  "max": 0.006622314453125
+ },
+ "seconds": {
+  "load": 3.9,
+  "total": 166.1
+ },
+ "staged_MBps": 274.6,
+ "eval": {
+  "centered_energy_fraction": 0.9535641523486029,
+  "attn_mass_on_token0": 0.0012317336785296598,
+  "token0_norm_over_median": 0.9218028505643209,
+  "small_token_fraction": 0.0,
+  "attn_mass_on_small_tokens": 0.0,
+  "zero_anchor_fraction": 0.00011393229166666667,
+  "tiny_exact_fraction": 0.0,
+  "token0_prenorm_rms_over_median": 1.16776385307312,
+  "token0_prenorm_rms_over_sqrt_eps": 270.1044936974843,
+  "lag_corr": {
+   "1": -0.04876169736388668,
+   "2": 0.005779375936085371,
+   "4": 0.020371800534283842,
+   "8": 0.019226600348902723,
+   "16": 0.02279060405116453,
+   "32": 0.020043550863321217,
+   "64": 0.01743829870697045,
+   "128": 0.014156217773626283,
+   "256": 0.010610901170811099
+  },
+  "pred_resid_vs_gmean": {
+   "cb256": 0.2081187143727671,
+   "cb4096": 0.07366132369635343
+  },
+  "arms": {
+   "fp8_tok": {
+    "bits": 8.03125,
+    "latent_rel_mse": 0.0006824147399616971,
+    "token0_latent_rel_mse": 0.0007177064166224645,
+    "attn_rel_mse": 8.404766260545426e-05
+   },
+   "fp8_unscaled": {
+    "bits": 8.0,
+    "latent_rel_mse": 0.06746050190385423,
+    "token0_latent_rel_mse": 0.07941190150534733,
+    "attn_rel_mse": 0.001961949442440439
+   },
+   "direct-ch-int2": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.13653427608030363,
+    "token0_latent_rel_mse": 0.140215282404368,
+    "attn_rel_mse": 0.018359757534996593
+   },
+   "direct-ch-int3": {
+    "bits": 3.125,
+    "latent_rel_mse": 0.03458254741986873,
+    "token0_latent_rel_mse": 0.03824072372755412,
+    "attn_rel_mse": 0.0016075217247743545
+   },
+   "direct-ch-int4": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.009015826960699316,
+    "token0_latent_rel_mse": 0.010345344848822415,
+    "attn_rel_mse": 0.0003098557480019272
+   },
+   "direct-tok-int2": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.16487345646142004,
+    "token0_latent_rel_mse": 0.16407697677927136,
+    "attn_rel_mse": 0.026938279397323253
+   },
+   "direct-tok-int2|tiny": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.16487345646142004,
+    "token0_latent_rel_mse": 0.16407697677927136,
+    "attn_rel_mse": 0.026938279397323253
+   },
+   "direct-tok-int3": {
+    "bits": 3.125,
+    "latent_rel_mse": 0.047726217986322726,
+    "token0_latent_rel_mse": 0.04735373130187302,
+    "attn_rel_mse": 0.003311107258165706
+   },
+   "direct-tok-int4": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.013511380990094558,
+    "token0_latent_rel_mse": 0.01321038604944028,
+    "attn_rel_mse": 0.0005651417745074738
+   },
+   "direct-tok-int4|tiny": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.013511380990094558,
+    "token0_latent_rel_mse": 0.01321038604944028,
+    "attn_rel_mse": 0.0005651417745074738
+   },
+   "gmean-ch-int2": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.13209080879134918,
+    "token0_latent_rel_mse": 0.13358767090995632,
+    "attn_rel_mse": 0.017100681632724293
+   },
+   "cb4096-ch-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.013313432655217007,
+    "token0_latent_rel_mse": 0.05080167646221179,
+    "attn_rel_mse": 0.0013976942403089092
+   },
+   "cb4096-ch-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.004656403267409029,
+    "token0_latent_rel_mse": 0.013316758688316967,
+    "attn_rel_mse": 0.0006688022688884461
+   },
+   "cb4096-ch-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.0017057476110674409,
+    "token0_latent_rel_mse": 0.0033430898679665173,
+    "attn_rel_mse": 0.00022093992598129622
+   },
+   "cb4096-tok-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.012140625872899286,
+    "token0_latent_rel_mse": 0.052906751635455045,
+    "attn_rel_mse": 0.0005109812072463631
+   },
+   "cb4096-tok-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.0035496371489926455,
+    "token0_latent_rel_mse": 0.01571833461706144,
+    "attn_rel_mse": 0.00012257469705869144
+   },
+   "cb4096-tok-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.0009995781911064856,
+    "token0_latent_rel_mse": 0.004439355136413482,
+    "attn_rel_mse": 5.056687498942144e-05
+   },
+   "cb4096z-ch-int2": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.013312750889707499,
+    "token0_latent_rel_mse": 0.05080167646221179,
+    "attn_rel_mse": 0.0013970094062739872
+   },
+   "cb4096z-ch-int3": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.004656060062564665,
+    "token0_latent_rel_mse": 0.013316758688316967,
+    "attn_rel_mse": 0.0006686511562136045
+   },
+   "cb4096z-ch-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.0017056298166217227,
+    "token0_latent_rel_mse": 0.0033430898679665173,
+    "attn_rel_mse": 0.00022087013146868844
+   },
+   "cb4096z-tok-int2": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.012140105621622654,
+    "token0_latent_rel_mse": 0.052906751635455045,
+    "attn_rel_mse": 0.0005109067425199698
+   },
+   "cb4096z-tok-int2|tiny": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.012140105621622654,
+    "token0_latent_rel_mse": 0.052906751635455045,
+    "attn_rel_mse": 0.0005109067425199698
+   },
+   "cb4096z-tok-int3": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.0035492963436408787,
+    "token0_latent_rel_mse": 0.01571833461706144,
+    "attn_rel_mse": 0.0001225556320818951
+   },
+   "cb4096z-tok-int3|tiny": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.0035492963436408787,
+    "token0_latent_rel_mse": 0.01571833461706144,
+    "attn_rel_mse": 0.0001225556320818951
+   },
+   "cb4096z-tok-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.0009995433339613391,
+    "token0_latent_rel_mse": 0.004439355136413482,
+    "attn_rel_mse": 5.056292377885981e-05
+   },
+   "cb4096z-tok-int4|tiny": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.0009995433339613391,
+    "token0_latent_rel_mse": 0.004439355136413482,
+    "attn_rel_mse": 5.056292377885981e-05
+   },
+   "cb256-ch-int2": {
+    "bits": 2.140625,
+    "latent_rel_mse": 0.036056392350326615,
+    "token0_latent_rel_mse": 0.06850111861742227,
+    "attn_rel_mse": 0.0023069765116671276
+   },
+   "cb4096w1-tok-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.012344285438774721,
+    "token0_latent_rel_mse": 0.039436420408467836,
+    "attn_rel_mse": 0.0005035450255397139
+   },
+   "cb4096w1-tok-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.0036162554391347295,
+    "token0_latent_rel_mse": 0.01198606618391696,
+    "attn_rel_mse": 0.00012342522961239068
+   },
+   "cb4096w1-tok-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.00101856438268854,
+    "token0_latent_rel_mse": 0.00334133188727064,
+    "attn_rel_mse": 5.10697740164094e-05
+   },
+   "cb4096w2-tok-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.01245648452576657,
+    "token0_latent_rel_mse": 0.042321198362235454,
+    "attn_rel_mse": 0.0004810280072110671
+   },
+   "cb4096w2-tok-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.0036381658768642007,
+    "token0_latent_rel_mse": 0.012485820662777966,
+    "attn_rel_mse": 0.00011873232472204187
+   },
+   "cb4096w2-tok-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.0010239718811403068,
+    "token0_latent_rel_mse": 0.003433439133468133,
+    "attn_rel_mse": 4.884410112914743e-05
+   },
+   "cb4096zs-tok-int2": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.012140105621622654,
+    "token0_latent_rel_mse": 0.052906751635455045,
+    "attn_rel_mse": 0.0005109067425199698
+   },
+   "cb4096zs-tok-int3": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.0035492963436408787,
+    "token0_latent_rel_mse": 0.01571833461706144,
+    "attn_rel_mse": 0.0001225556320818951
+   },
+   "cb4096zs-tok-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.0009995433339613391,
+    "token0_latent_rel_mse": 0.004439355136413482,
+    "attn_rel_mse": 5.056292377885981e-05
+   },
+   "cb4096w2-ch-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.013367074628074644,
+    "token0_latent_rel_mse": 0.04215669068221138,
+    "attn_rel_mse": 0.0013449270292729193
+   },
+   "qvg64-int2": {
+    "bits": 2.51171875,
+    "latent_rel_mse": 0.043119127594310344,
+    "token0_latent_rel_mse": 0.0738456783924667,
+    "attn_rel_mse": 0.0018131689504634146
+   },
+   "sglang_fp8_tile128": {
+    "bits": 8.25,
+    "latent_rel_mse": 0.0006429314924179402,
+    "token0_latent_rel_mse": 0.0006454308636806793,
+    "attn_rel_mse": 1.9790800629382096e-05
+   },
+   "sglang_fp4_mx16": {
+    "bits": 4.5,
+    "latent_rel_mse": 0.013629297577726239,
+    "token0_latent_rel_mse": 0.013487533270463783,
+    "attn_rel_mse": 0.0011432529776729335
+   },
+   "sglang_nvfp4": {
+    "bits": 4.5000152587890625,
+    "latent_rel_mse": 0.008886721100470705,
+    "token0_latent_rel_mse": 0.008732127330012565,
+    "attn_rel_mse": 0.0005325951859429463
+   },
+   "H-nvfp4": {
+    "bits": 4.5000152587890625,
+    "latent_rel_mse": 0.00904016880685747,
+    "token0_latent_rel_mse": 0.009152288717775932,
+    "attn_rel_mse": 0.0003173944823510312
+   },
+   "H-direct-tok-int4": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.010018021640451777,
+    "token0_latent_rel_mse": 0.009837621684627384,
+    "attn_rel_mse": 0.00045698661189673775
+   },
+   "cb4096z-nvfp4": {
+    "bits": 4.5234534466357035,
+    "latent_rel_mse": 0.0006156685446087177,
+    "token0_latent_rel_mse": 0.0024675111081080467,
+    "attn_rel_mse": 3.838527788440145e-05
+   },
+   "H-cb4096z-nvfp4": {
+    "bits": 4.5234534466357035,
+    "latent_rel_mse": 0.0006369092021974497,
+    "token0_latent_rel_mse": 0.0025852235077597394,
+    "attn_rel_mse": 3.798302461022774e-05
+   },
+   "H-cb4096z-tok-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.0007121816832695049,
+    "token0_latent_rel_mse": 0.00279302537163502,
+    "attn_rel_mse": 4.0501557432096444e-05
+   }
+  }
+ },
+ "gen": {
+  "centered_energy_fraction": 0.9588951504019998,
+  "attn_mass_on_token0": 0.0012092209872207604,
+  "token0_norm_over_median": 0.9245168939232826,
+  "small_token_fraction": 0.0,
+  "attn_mass_on_small_tokens": 0.0,
+  "zero_anchor_fraction": 0.00103759765625,
+  "tiny_exact_fraction": 0.0,
+  "token0_prenorm_rms_over_median": 1.1268577054142952,
+  "token0_prenorm_rms_over_sqrt_eps": 258.62665474414825,
+  "lag_corr": {
+   "1": -0.047353344849184444,
+   "2": 0.0348300719601595,
+   "4": 0.03938627721717783,
+   "8": 0.033333973375533614,
+   "16": 0.030447635739385154,
+   "32": 0.03324634878809536,
+   "64": 0.02358709776558659,
+   "128": 0.024190538548121587,
+   "256": 0.021073224686622434
+  },
+  "pred_resid_vs_gmean": {
+   "cb256": 0.29106115680244443,
+   "cb4096": 0.1619557292383112
+  },
+  "arms": {
+   "fp8_tok": {
+    "bits": 8.03125,
+    "latent_rel_mse": 0.0006754468156365008,
+    "token0_latent_rel_mse": 0.0006682340948315548,
+    "attn_rel_mse": 7.179304677239272e-05
+   },
+   "fp8_unscaled": {
+    "bits": 8.0,
+    "latent_rel_mse": 0.06829193385156279,
+    "token0_latent_rel_mse": 0.07521148559037472,
+    "attn_rel_mse": 0.002104419321885911
+   },
+   "direct-ch-int2": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.13922759138558163,
+    "token0_latent_rel_mse": 0.1440344515584835,
+    "attn_rel_mse": 0.022194394200017436
+   },
+   "direct-ch-int3": {
+    "bits": 3.125,
+    "latent_rel_mse": 0.035413202053939205,
+    "token0_latent_rel_mse": 0.03666325818896801,
+    "attn_rel_mse": 0.0020596786881552165
+   },
+   "direct-ch-int4": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.009287783427436271,
+    "token0_latent_rel_mse": 0.01004971468543472,
+    "attn_rel_mse": 0.0003479206768358225
+   },
+   "direct-tok-int2": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.16893831729027606,
+    "token0_latent_rel_mse": 0.16336429469015878,
+    "attn_rel_mse": 0.03059107501085224
+   },
+   "direct-tok-int2|tiny": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.16893831729027606,
+    "token0_latent_rel_mse": 0.16336429469015878,
+    "attn_rel_mse": 0.03059107501085224
+   },
+   "direct-tok-int3": {
+    "bits": 3.125,
+    "latent_rel_mse": 0.04978429924218481,
+    "token0_latent_rel_mse": 0.04742299438847825,
+    "attn_rel_mse": 0.0034863191033761873
+   },
+   "direct-tok-int4": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.014220027077846583,
+    "token0_latent_rel_mse": 0.01355144070690014,
+    "attn_rel_mse": 0.0005495346723512972
+   },
+   "direct-tok-int4|tiny": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.014220027077846583,
+    "token0_latent_rel_mse": 0.01355144070690014,
+    "attn_rel_mse": 0.0005495346723512972
+   },
+   "gmean-ch-int2": {
+    "bits": 2.125,
+    "latent_rel_mse": 0.13492587952883842,
+    "token0_latent_rel_mse": 0.14251989967388418,
+    "attn_rel_mse": 0.021273695865781626
+   },
+   "cb4096-ch-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.027394143515025806,
+    "token0_latent_rel_mse": 0.059621230969220576,
+    "attn_rel_mse": 0.0032137710265995787
+   },
+   "cb4096-ch-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.009083619199004498,
+    "token0_latent_rel_mse": 0.01756641453509434,
+    "attn_rel_mse": 0.0012017008397805914
+   },
+   "cb4096-ch-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.003054717489883502,
+    "token0_latent_rel_mse": 0.004392208366227717,
+    "attn_rel_mse": 0.0002677961812566479
+   },
+   "cb4096-tok-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.026534508161948113,
+    "token0_latent_rel_mse": 0.04716889805899788,
+    "attn_rel_mse": 0.0013307672830782514
+   },
+   "cb4096-tok-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.007799620943359976,
+    "token0_latent_rel_mse": 0.014556870634818062,
+    "attn_rel_mse": 0.00027878650628687207
+   },
+   "cb4096-tok-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.0022016081714699752,
+    "token0_latent_rel_mse": 0.004209123032230339,
+    "attn_rel_mse": 9.72792548214872e-05
+   },
+   "cb4096z-ch-int2": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.02739050148469583,
+    "token0_latent_rel_mse": 0.05977712334105463,
+    "attn_rel_mse": 0.0032148173859268313
+   },
+   "cb4096z-ch-int3": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.009083762867480447,
+    "token0_latent_rel_mse": 0.017616733524312086,
+    "attn_rel_mse": 0.0012030577397154766
+   },
+   "cb4096z-ch-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.003054537805818055,
+    "token0_latent_rel_mse": 0.004376624148433036,
+    "attn_rel_mse": 0.0002678575278675963
+   },
+   "cb4096z-tok-int2": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.026533848803404623,
+    "token0_latent_rel_mse": 0.04716889805899788,
+    "attn_rel_mse": 0.0013321832270190735
+   },
+   "cb4096z-tok-int2|tiny": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.026533848803404623,
+    "token0_latent_rel_mse": 0.04716889805899788,
+    "attn_rel_mse": 0.0013321832270190735
+   },
+   "cb4096z-tok-int3": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.007799727488453175,
+    "token0_latent_rel_mse": 0.014556870634818062,
+    "attn_rel_mse": 0.00027905853343619343
+   },
+   "cb4096z-tok-int3|tiny": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.007799727488453175,
+    "token0_latent_rel_mse": 0.014556870634818062,
+    "attn_rel_mse": 0.00027905853343619343
+   },
+   "cb4096z-tok-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.002201448698476967,
+    "token0_latent_rel_mse": 0.004209123032230339,
+    "attn_rel_mse": 9.7290952054945e-05
+   },
+   "cb4096z-tok-int4|tiny": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.002201448698476967,
+    "token0_latent_rel_mse": 0.004209123032230339,
+    "attn_rel_mse": 9.7290952054945e-05
+   },
+   "cb256-ch-int2": {
+    "bits": 2.140625,
+    "latent_rel_mse": 0.04875946345728131,
+    "token0_latent_rel_mse": 0.0690444310218481,
+    "attn_rel_mse": 0.006036746919710329
+   },
+   "cb4096w1-tok-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.027222666572811402,
+    "token0_latent_rel_mse": 0.04192110877631255,
+    "attn_rel_mse": 0.0014109255617830267
+   },
+   "cb4096w1-tok-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.007989830226345546,
+    "token0_latent_rel_mse": 0.012636422764478197,
+    "attn_rel_mse": 0.0002902706801374154
+   },
+   "cb4096w1-tok-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.0022606633742260833,
+    "token0_latent_rel_mse": 0.003547995627084954,
+    "attn_rel_mse": 0.00010266656244895884
+   },
+   "cb4096w2-tok-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.02719928041720692,
+    "token0_latent_rel_mse": 0.043827963398427615,
+    "attn_rel_mse": 0.0016989188526062092
+   },
+   "cb4096w2-tok-int3": {
+    "bits": 3.1484375,
+    "latent_rel_mse": 0.008005952901626931,
+    "token0_latent_rel_mse": 0.014074527554452992,
+    "attn_rel_mse": 0.00030284086330459976
+   },
+   "cb4096w2-tok-int4": {
+    "bits": 4.1484375,
+    "latent_rel_mse": 0.0022635255181067703,
+    "token0_latent_rel_mse": 0.004108050559594467,
+    "attn_rel_mse": 0.00010399024057252135
+   },
+   "cb4096zs-tok-int2": {
+    "bits": 2.1484381878466414,
+    "latent_rel_mse": 0.026533848803404623,
+    "token0_latent_rel_mse": 0.04716889805899788,
+    "attn_rel_mse": 0.0013321832270190735
+   },
+   "cb4096zs-tok-int3": {
+    "bits": 3.1484381878466414,
+    "latent_rel_mse": 0.007799727488453175,
+    "token0_latent_rel_mse": 0.014556870634818062,
+    "attn_rel_mse": 0.00027905853343619343
+   },
+   "cb4096zs-tok-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.002201448698476967,
+    "token0_latent_rel_mse": 0.004209123032230339,
+    "attn_rel_mse": 9.7290952054945e-05
+   },
+   "cb4096w2-ch-int2": {
+    "bits": 2.1484375,
+    "latent_rel_mse": 0.027639083200529962,
+    "token0_latent_rel_mse": 0.05484295312069664,
+    "attn_rel_mse": 0.0038639588931207443
+   },
+   "qvg64-int2": {
+    "bits": 2.51171875,
+    "latent_rel_mse": 0.03647207712517986,
+    "token0_latent_rel_mse": 0.05264063606337794,
+    "attn_rel_mse": 0.0014393267991328273
+   },
+   "sglang_fp8_tile128": {
+    "bits": 8.25,
+    "latent_rel_mse": 0.000638649844167895,
+    "token0_latent_rel_mse": 0.0006477488717986671,
+    "attn_rel_mse": 1.736687760545641e-05
+   },
+   "sglang_fp4_mx16": {
+    "bits": 4.5,
+    "latent_rel_mse": 0.013845839036535275,
+    "token0_latent_rel_mse": 0.013670243350095984,
+    "attn_rel_mse": 0.0010766757480661286
+   },
+   "sglang_nvfp4": {
+    "bits": 4.5000152587890625,
+    "latent_rel_mse": 0.008766528003538712,
+    "token0_latent_rel_mse": 0.008722601019268262,
+    "attn_rel_mse": 0.0003984509319482986
+   },
+   "H-nvfp4": {
+    "bits": 4.5000152587890625,
+    "latent_rel_mse": 0.00901721649596155,
+    "token0_latent_rel_mse": 0.008888988123698482,
+    "attn_rel_mse": 0.0002810525268147017
+   },
+   "H-direct-tok-int4": {
+    "bits": 4.125,
+    "latent_rel_mse": 0.01010837797996818,
+    "token0_latent_rel_mse": 0.01072113710022137,
+    "attn_rel_mse": 0.00038392250921053347
+   },
+   "cb4096z-nvfp4": {
+    "bits": 4.5234534466357035,
+    "latent_rel_mse": 0.0013583438732295428,
+    "token0_latent_rel_mse": 0.0023890459111335087,
+    "attn_rel_mse": 7.100361471903202e-05
+   },
+   "H-cb4096z-nvfp4": {
+    "bits": 4.5234534466357035,
+    "latent_rel_mse": 0.0014041097419604043,
+    "token0_latent_rel_mse": 0.0024429474412103734,
+    "attn_rel_mse": 7.020182593138196e-05
+   },
+   "H-cb4096z-tok-int4": {
+    "bits": 4.148438187846641,
+    "latent_rel_mse": 0.0015790863507631097,
+    "token0_latent_rel_mse": 0.0029446110537397533,
+    "attn_rel_mse": 7.429533108363305e-05
+   }
+  }
+ }
+}

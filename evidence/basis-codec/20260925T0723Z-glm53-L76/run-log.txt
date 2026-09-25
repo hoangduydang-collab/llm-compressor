@@ -1,0 +1,327 @@
+﻿OUT=/mnt/cephfs/hoangduy/results/basis-codec/glm53-L76-20260925t072300z LAYER=76
+name, uuid, memory.total [MiB]
+NVIDIA H100 80GB HBM3, GPU-1a876dac-18a3-1d27-475b-e6da478403ae, 81559 MiB
+af72591ec08a89cff4658a42753cd8e1a7c13174f3f2a4ccfc08970ae3b71ffb  /opt/sec/pipeline/basis_codec_layer_analysis.py
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /opt/sec/pipeline/__init__.py
+c85b2478fa23a6ba88dfed2e349885031c06d819f45813489f5bbb1d5fb0946a  /opt/sec/pipeline/shared_expert_correlation.py
+[07:23:04] env {'torch': '2.11.0+cu130', 'device': 'cuda', 'gpu': 'NVIDIA H100 80GB HBM3', 'argv': ['/opt/sec/pipeline/basis_codec_layer_analysis.py', '--ckpt', '/mnt/cephfs/.hf-cache/models--zai-org--GLM-5.3-BF16/snapshots/304b8051cfb2b260b61ce0cbe330e02a98e73639', '--layer', '76', '--out', '/mnt/cephfs/hoangduy/results/basis-codec/glm53-L76-20260925t072300z'], 'started_utc': '2026-09-25T07:23:04Z'}
+[07:35:15] loaded layer 76: 256 experts, 19.33 GB in 730s (26 MB/s) from 5 shards
+[07:35:15] == gate_proj (256, 2048, 6144)
+[07:35:32]   target: int2_g128=0.14615 int3_g128=0.03819 int4_g128=0.01019
+[07:35:53]   dense d=8: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03819
+[07:36:13]   dense d=16: amgm_bits=0.000 pca@3=0.03818 ident@3=0.03819
+[07:36:33]   dense d=32: amgm_bits=0.000 pca@3=0.03831 ident@3=0.03833
+[07:36:53]   dense d=64: amgm_bits=0.000 pca@3=0.03852 ident@3=0.03855
+[07:37:13]   dense d=128: amgm_bits=0.000 pca@3=0.03879 ident@3=0.03881
+[07:37:13]   sparse d=8 K=256 s=2 coef_bits=4
+[07:37:13]     MOD it 1/15: fit rel_err=0.05648 dead=0
+[07:37:13]     MOD it 5/15: fit rel_err=0.05060 dead=0
+[07:37:13]     MOD it 10/15: fit rel_err=0.04856 dead=0
+[07:37:13]     MOD it 15/15: fit rel_err=0.04782 dead=0
+[07:37:14]     -> rel_mse=0.05393 (float coefs 0.04849) bpw=3.031 | same rows INT4=0.01019 INT3=0.03819
+[07:37:14]   sparse d=16 K=256 s=4 coef_bits=4
+[07:37:14]     MOD it 1/15: fit rel_err=0.07075 dead=0
+[07:37:14]     MOD it 5/15: fit rel_err=0.06495 dead=0
+[07:37:14]     MOD it 10/15: fit rel_err=0.06260 dead=0
+[07:37:14]     MOD it 15/15: fit rel_err=0.06137 dead=0
+[07:37:14]     -> rel_mse=0.06855 (float coefs 0.06198) bpw=3.031 | same rows INT4=0.01019 INT3=0.03819
+[07:37:14]   sparse d=32 K=4096 s=6 coef_bits=4
+[07:37:14]     MOD it 1/15: fit rel_err=0.05056 dead=0
+[07:37:15]     MOD it 5/15: fit rel_err=0.04740 dead=0
+[07:37:15]     MOD it 10/15: fit rel_err=0.04601 dead=0
+[07:37:16]     MOD it 15/15: fit rel_err=0.04527 dead=0
+[07:37:16]     -> rel_mse=0.05648 (float coefs 0.05010) bpw=3.024 | same rows INT4=0.01019 INT3=0.03819
+[07:37:16]   experts raw 1-eta: K1=0.9931 K2=0.9880 K4=0.9787 K8=0.9608 K16=0.9260 K32=0.8582 K64=0.7265 K128=0.4728 K256=0.0000
+[07:37:16] == up_proj (256, 2048, 6144)
+[07:37:31]   target: int2_g128=0.14628 int3_g128=0.03821 int4_g128=0.01020
+[07:37:51]   dense d=8: amgm_bits=0.000 pca@3=0.03819 ident@3=0.03821
+[07:38:11]   dense d=16: amgm_bits=0.000 pca@3=0.03818 ident@3=0.03821
+[07:38:31]   dense d=32: amgm_bits=0.000 pca@3=0.03825 ident@3=0.03829
+[07:38:51]   dense d=64: amgm_bits=0.000 pca@3=0.03836 ident@3=0.03840
+[07:39:11]   dense d=128: amgm_bits=0.000 pca@3=0.03849 ident@3=0.03853
+[07:39:11]   sparse d=8 K=256 s=2 coef_bits=4
+[07:39:12]     MOD it 1/15: fit rel_err=0.05644 dead=0
+[07:39:12]     MOD it 5/15: fit rel_err=0.05064 dead=0
+[07:39:12]     MOD it 10/15: fit rel_err=0.04852 dead=0
+[07:39:12]     MOD it 15/15: fit rel_err=0.04768 dead=0
+[07:39:12]     -> rel_mse=0.05381 (float coefs 0.04838) bpw=3.031 | same rows INT4=0.01020 INT3=0.03822
+[07:39:12]   sparse d=16 K=256 s=4 coef_bits=4
+[07:39:12]     MOD it 1/15: fit rel_err=0.06994 dead=0
+[07:39:12]     MOD it 5/15: fit rel_err=0.06450 dead=0
+[07:39:12]     MOD it 10/15: fit rel_err=0.06236 dead=0
+[07:39:12]     MOD it 15/15: fit rel_err=0.06124 dead=0
+[07:39:12]     -> rel_mse=0.06856 (float coefs 0.06199) bpw=3.031 | same rows INT4=0.01020 INT3=0.03822
+[07:39:12]   sparse d=32 K=4096 s=6 coef_bits=4
+[07:39:13]     MOD it 1/15: fit rel_err=0.05052 dead=0
+[07:39:13]     MOD it 5/15: fit rel_err=0.04738 dead=0
+[07:39:13]     MOD it 10/15: fit rel_err=0.04604 dead=0
+[07:39:14]     MOD it 15/15: fit rel_err=0.04527 dead=0
+[07:39:14]     -> rel_mse=0.05646 (float coefs 0.05007) bpw=3.024 | same rows INT4=0.01020 INT3=0.03822
+[07:39:14]   experts raw 1-eta: K1=0.9938 K2=0.9884 K4=0.9791 K8=0.9611 K16=0.9261 K32=0.8583 K64=0.7273 K128=0.4746 K256=0.0000
+[07:39:14] == down_proj (256, 6144, 2048)
+[07:39:29]   target: int2_g128=0.14745 int3_g128=0.03884 int4_g128=0.01042
+[07:39:49]   dense d=8: amgm_bits=0.000 pca@3=0.03845 ident@3=0.03883
+[07:40:09]   dense d=16: amgm_bits=0.000 pca@3=0.03836 ident@3=0.03883
+[07:40:30]   dense d=32: amgm_bits=0.000 pca@3=0.03829 ident@3=0.03885
+[07:40:50]   dense d=64: amgm_bits=0.000 pca@3=0.03825 ident@3=0.03885
+[07:41:10]   dense d=128: amgm_bits=0.000 pca@3=0.03823 ident@3=0.03882
+[07:41:10]   sparse d=8 K=256 s=2 coef_bits=4
+[07:41:10]     MOD it 1/15: fit rel_err=0.05705 dead=0
+[07:41:10]     MOD it 5/15: fit rel_err=0.05097 dead=0
+[07:41:10]     MOD it 10/15: fit rel_err=0.04881 dead=0
+[07:41:10]     MOD it 15/15: fit rel_err=0.04793 dead=0
+[07:41:10]     -> rel_mse=0.05401 (float coefs 0.04851) bpw=3.031 | same rows INT4=0.01040 INT3=0.03878
+[07:41:10]   sparse d=16 K=256 s=4 coef_bits=4
+[07:41:10]     MOD it 1/15: fit rel_err=0.07104 dead=0
+[07:41:10]     MOD it 5/15: fit rel_err=0.06475 dead=0
+[07:41:10]     MOD it 10/15: fit rel_err=0.06239 dead=0
+[07:41:10]     MOD it 15/15: fit rel_err=0.06121 dead=0
+[07:41:11]     -> rel_mse=0.06850 (float coefs 0.06189) bpw=3.031 | same rows INT4=0.01040 INT3=0.03878
+[07:41:11]   sparse d=32 K=4096 s=6 coef_bits=4
+[07:41:11]     MOD it 1/15: fit rel_err=0.05048 dead=0
+[07:41:11]     MOD it 5/15: fit rel_err=0.04742 dead=0
+[07:41:12]     MOD it 10/15: fit rel_err=0.04602 dead=0
+[07:41:12]     MOD it 15/15: fit rel_err=0.04526 dead=0
+[07:41:13]     -> rel_mse=0.05651 (float coefs 0.05009) bpw=3.024 | same rows INT4=0.01040 INT3=0.03878
+[07:41:13]   experts raw 1-eta: K1=0.9929 K2=0.9877 K4=0.9785 K8=0.9604 K16=0.9256 K32=0.8593 K64=0.7301 K128=0.4792 K256=0.0000
+[07:41:13] == iid-Gaussian control, 16 experts
+[07:41:16] == gate_proj (16, 2048, 6144)
+[07:41:16]   target: int2_g128=0.14616 int3_g128=0.03816 int4_g128=0.01018
+[07:41:18]   dense d=8: amgm_bits=0.000 pca@3=0.03815 ident@3=0.03816
+[07:41:19]   dense d=16: amgm_bits=0.000 pca@3=0.03815 ident@3=0.03816
+[07:41:20]   dense d=32: amgm_bits=0.000 pca@3=0.03816 ident@3=0.03815
+[07:41:22]   dense d=64: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03815
+[07:41:23]   dense d=128: amgm_bits=0.000 pca@3=0.03816 ident@3=0.03815
+[07:41:23]   sparse d=8 K=256 s=2 coef_bits=4
+[07:41:23]     MOD it 1/15: fit rel_err=0.05674 dead=0
+[07:41:23]     MOD it 5/15: fit rel_err=0.05087 dead=0
+[07:41:23]     MOD it 10/15: fit rel_err=0.04879 dead=0
+[07:41:23]     MOD it 15/15: fit rel_err=0.04791 dead=0
+[07:41:23]     -> rel_mse=0.05387 (float coefs 0.04844) bpw=3.031 | same rows INT4=0.01017 INT3=0.03814
+[07:41:23]   sparse d=16 K=256 s=4 coef_bits=4
+[07:41:23]     MOD it 1/15: fit rel_err=0.07167 dead=0
+[07:41:23]     MOD it 5/15: fit rel_err=0.06472 dead=0
+[07:41:23]     MOD it 10/15: fit rel_err=0.06231 dead=0
+[07:41:23]     MOD it 15/15: fit rel_err=0.06111 dead=0
+[07:41:23]     -> rel_mse=0.06848 (float coefs 0.06193) bpw=3.032 | same rows INT4=0.01017 INT3=0.03814
+[07:41:23]   sparse d=32 K=4096 s=6 coef_bits=4
+[07:41:23]     MOD it 1/15: fit rel_err=0.04915 dead=0
+[07:41:23]     MOD it 5/15: fit rel_err=0.04383 dead=0
+[07:41:23]     MOD it 10/15: fit rel_err=0.04177 dead=0
+[07:41:24]     MOD it 15/15: fit rel_err=0.04077 dead=0
+[07:41:24]     -> rel_mse=0.05658 (float coefs 0.05024) bpw=3.034 | same rows INT4=0.01017 INT3=0.03814
+[07:41:24]   experts raw 1-eta: K1=0.9374 K2=0.8748 K4=0.7496 K8=0.4995 K16=0.0000
+[07:41:24] == up_proj (16, 2048, 6144)
+[07:41:25]   target: int2_g128=0.14617 int3_g128=0.03816 int4_g128=0.01018
+[07:41:26]   dense d=8: amgm_bits=0.000 pca@3=0.03816 ident@3=0.03816
+[07:41:27]   dense d=16: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03816
+[07:41:28]   dense d=32: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03816
+[07:41:30]   dense d=64: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03816
+[07:41:31]   dense d=128: amgm_bits=0.000 pca@3=0.03816 ident@3=0.03816
+[07:41:31]   sparse d=8 K=256 s=2 coef_bits=4
+[07:41:31]     MOD it 1/15: fit rel_err=0.05721 dead=0
+[07:41:31]     MOD it 5/15: fit rel_err=0.05108 dead=0
+[07:41:31]     MOD it 10/15: fit rel_err=0.04901 dead=0
+[07:41:31]     MOD it 15/15: fit rel_err=0.04817 dead=0
+[07:41:31]     -> rel_mse=0.05416 (float coefs 0.04872) bpw=3.031 | same rows INT4=0.01022 INT3=0.03828
+[07:41:31]   sparse d=16 K=256 s=4 coef_bits=4
+[07:41:31]     MOD it 1/15: fit rel_err=0.07175 dead=0
+[07:41:31]     MOD it 5/15: fit rel_err=0.06465 dead=0
+[07:41:31]     MOD it 10/15: fit rel_err=0.06226 dead=0
+[07:41:31]     MOD it 15/15: fit rel_err=0.06106 dead=0
+[07:41:31]     -> rel_mse=0.06848 (float coefs 0.06188) bpw=3.032 | same rows INT4=0.01022 INT3=0.03828
+[07:41:31]   sparse d=32 K=4096 s=6 coef_bits=4
+[07:41:31]     MOD it 1/15: fit rel_err=0.04918 dead=0
+[07:41:32]     MOD it 5/15: fit rel_err=0.04372 dead=0
+[07:41:32]     MOD it 10/15: fit rel_err=0.04166 dead=0
+[07:41:32]     MOD it 15/15: fit rel_err=0.04074 dead=0
+[07:41:32]     -> rel_mse=0.05658 (float coefs 0.05020) bpw=3.034 | same rows INT4=0.01022 INT3=0.03828
+[07:41:32]   experts raw 1-eta: K1=0.9374 K2=0.8748 K4=0.7496 K8=0.4996 K16=0.0000
+[07:41:32] == down_proj (16, 6144, 2048)
+[07:41:33]   target: int2_g128=0.14620 int3_g128=0.03817 int4_g128=0.01018
+[07:41:34]   dense d=8: amgm_bits=0.000 pca@3=0.03816 ident@3=0.03817
+[07:41:36]   dense d=16: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03817
+[07:41:37]   dense d=32: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03817
+[07:41:38]   dense d=64: amgm_bits=0.000 pca@3=0.03816 ident@3=0.03817
+[07:41:40]   dense d=128: amgm_bits=0.000 pca@3=0.03817 ident@3=0.03817
+[07:41:40]   sparse d=8 K=256 s=2 coef_bits=4
+[07:41:40]     MOD it 1/15: fit rel_err=0.05756 dead=0
+[07:41:40]     MOD it 5/15: fit rel_err=0.05097 dead=0
+[07:41:40]     MOD it 10/15: fit rel_err=0.04874 dead=0
+[07:41:40]     MOD it 15/15: fit rel_err=0.04793 dead=0
+[07:41:40]     -> rel_mse=0.05411 (float coefs 0.04868) bpw=3.031 | same rows INT4=0.01017 INT3=0.03818
+[07:41:40]   sparse d=16 K=256 s=4 coef_bits=4
+[07:41:40]     MOD it 1/15: fit rel_err=0.07057 dead=0
+[07:41:40]     MOD it 5/15: fit rel_err=0.06468 dead=0
+[07:41:40]     MOD it 10/15: fit rel_err=0.06231 dead=0
+[07:41:40]     MOD it 15/15: fit rel_err=0.06113 dead=0
+[07:41:40]     -> rel_mse=0.06865 (float coefs 0.06204) bpw=3.032 | same rows INT4=0.01017 INT3=0.03818
+[07:41:40]   sparse d=32 K=4096 s=6 coef_bits=4
+[07:41:40]     MOD it 1/15: fit rel_err=0.04919 dead=0
+[07:41:40]     MOD it 5/15: fit rel_err=0.04380 dead=0
+[07:41:40]     MOD it 10/15: fit rel_err=0.04177 dead=0
+[07:41:41]     MOD it 15/15: fit rel_err=0.04077 dead=0
+[07:41:41]     -> rel_mse=0.05661 (float coefs 0.05021) bpw=3.034 | same rows INT4=0.01017 INT3=0.03818
+[07:41:41]   experts raw 1-eta: K1=0.9374 K2=0.8748 K4=0.7497 K8=0.4995 K16=0.0000
+
+# Basis-codec feasibility summary
+
+Relative weight MSE (lower is better). Target: beat INT4-g128 at <=3.2 bpw.
+
+## gate_proj
+
+INT4-g128 1.019% @4.125 | INT3-g128 3.819% @3.125 | INT2-g128 14.615% @2.125 | row-normalized excess kurtosis 0.00
+
+| d | AM/GM bound (bits saved) | top-quarter energy | PCA@3 | ident@3 | PCA@3 bpw | PCA@4 | ident@4 |
+|---|---|---|---|---|---|---|---|
+| 8 | 0.000 | 0.250 | 3.817% | 3.819% | 3.125 | 1.019% | 1.019% |
+| 16 | 0.000 | 0.250 | 3.818% | 3.819% | 3.125 | 1.019% | 1.019% |
+| 32 | 0.000 | 0.251 | 3.831% | 3.833% | 3.125 | 1.023% | 1.024% |
+| 64 | 0.000 | 0.252 | 3.852% | 3.855% | 3.125 | 1.030% | 1.031% |
+| 128 | 0.000 | 0.253 | 3.879% | 3.881% | 3.125 | 1.039% | 1.040% |
+
+| config | rel MSE | float-coef MSE | bpw | same-rows INT4 | same-rows INT3 | Gaussian ctrl |
+|---|---|---|---|---|---|---|
+| d8_K256_s2_c4 | 5.393% | 4.849% | 3.031 | 1.019% | 3.819% | 5.387% |
+| d16_K256_s4_c4 | 6.855% | 6.198% | 3.031 | 1.019% | 3.819% | 6.848% |
+| d32_K4096_s6_c4 | 5.648% | 5.010% | 3.024 | 1.019% | 3.819% | 5.658% |
+
+Eigen-experts, residual energy fraction 1-eta_K (no-residual error floor):
+
+| K | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|---|---|---|---|---|
+| raw | 0.9931 | 0.9880 | 0.9787 | 0.9608 | 0.9260 | 0.8582 | 0.7265 | 0.4728 | 0.0000 |
+| centered | 0.9948 | 0.9900 | 0.9808 | 0.9629 | 0.9280 | 0.8598 | 0.7274 | 0.4721 | 0.0000 |
+
+Mean-expert energy fraction: 0.0067
+
+## up_proj
+
+INT4-g128 1.020% @4.125 | INT3-g128 3.821% @3.125 | INT2-g128 14.628% @2.125 | row-normalized excess kurtosis 0.00
+
+| d | AM/GM bound (bits saved) | top-quarter energy | PCA@3 | ident@3 | PCA@3 bpw | PCA@4 | ident@4 |
+|---|---|---|---|---|---|---|---|
+| 8 | 0.000 | 0.250 | 3.819% | 3.821% | 3.125 | 1.019% | 1.020% |
+| 16 | 0.000 | 0.250 | 3.818% | 3.821% | 3.125 | 1.019% | 1.020% |
+| 32 | 0.000 | 0.251 | 3.825% | 3.829% | 3.125 | 1.021% | 1.022% |
+| 64 | 0.000 | 0.251 | 3.836% | 3.840% | 3.125 | 1.025% | 1.026% |
+| 128 | 0.000 | 0.252 | 3.849% | 3.853% | 3.125 | 1.029% | 1.031% |
+
+| config | rel MSE | float-coef MSE | bpw | same-rows INT4 | same-rows INT3 | Gaussian ctrl |
+|---|---|---|---|---|---|---|
+| d8_K256_s2_c4 | 5.381% | 4.838% | 3.031 | 1.020% | 3.822% | 5.416% |
+| d16_K256_s4_c4 | 6.856% | 6.199% | 3.031 | 1.020% | 3.822% | 6.848% |
+| d32_K4096_s6_c4 | 5.646% | 5.007% | 3.024 | 1.020% | 3.822% | 5.658% |
+
+Eigen-experts, residual energy fraction 1-eta_K (no-residual error floor):
+
+| K | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|---|---|---|---|---|
+| raw | 0.9938 | 0.9884 | 0.9791 | 0.9611 | 0.9261 | 0.8583 | 0.7273 | 0.4746 | 0.0000 |
+| centered | 0.9938 | 0.9884 | 0.9790 | 0.9610 | 0.9259 | 0.8578 | 0.7264 | 0.4727 | 0.0000 |
+
+Mean-expert energy fraction: 0.0039
+
+## down_proj
+
+INT4-g128 1.042% @4.125 | INT3-g128 3.884% @3.125 | INT2-g128 14.745% @2.125 | row-normalized excess kurtosis 0.05
+
+| d | AM/GM bound (bits saved) | top-quarter energy | PCA@3 | ident@3 | PCA@3 bpw | PCA@4 | ident@4 |
+|---|---|---|---|---|---|---|---|
+| 8 | 0.000 | 0.250 | 3.845% | 3.883% | 3.125 | 1.028% | 1.042% |
+| 16 | 0.000 | 0.250 | 3.836% | 3.883% | 3.125 | 1.025% | 1.042% |
+| 32 | 0.000 | 0.250 | 3.829% | 3.885% | 3.125 | 1.022% | 1.042% |
+| 64 | 0.000 | 0.251 | 3.825% | 3.885% | 3.125 | 1.021% | 1.042% |
+| 128 | 0.000 | 0.251 | 3.823% | 3.882% | 3.125 | 1.021% | 1.041% |
+
+| config | rel MSE | float-coef MSE | bpw | same-rows INT4 | same-rows INT3 | Gaussian ctrl |
+|---|---|---|---|---|---|---|
+| d8_K256_s2_c4 | 5.401% | 4.851% | 3.031 | 1.040% | 3.878% | 5.411% |
+| d16_K256_s4_c4 | 6.850% | 6.189% | 3.031 | 1.040% | 3.878% | 6.865% |
+| d32_K4096_s6_c4 | 5.651% | 5.009% | 3.024 | 1.040% | 3.878% | 5.661% |
+
+Eigen-experts, residual energy fraction 1-eta_K (no-residual error floor):
+
+| K | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|---|---|---|---|---|
+| raw | 0.9929 | 0.9877 | 0.9785 | 0.9604 | 0.9256 | 0.8593 | 0.7301 | 0.4792 | 0.0000 |
+| centered | 0.9929 | 0.9877 | 0.9785 | 0.9603 | 0.9254 | 0.8588 | 0.7291 | 0.4773 | 0.0000 |
+
+Mean-expert energy fraction: 0.0039
+
+## iid-Gaussian control (same shapes)
+
+- gate: INT4 1.018%, INT3 3.816%, dense d16 AM/GM bound 0.000 bits, PCA@3 3.815%
+- up: INT4 1.018%, INT3 3.816%, dense d16 AM/GM bound 0.000 bits, PCA@3 3.817%
+- down: INT4 1.018%, INT3 3.817%, dense d16 AM/GM bound 0.000 bits, PCA@3 3.817%
+
+[07:41:41] done -> /mnt/cephfs/hoangduy/results/basis-codec/glm53-L76-20260925t072300z
+[07:42:33] loaded layer 76: 256 experts, 19.33 GB in 47s (412 MB/s) from 5 shards
+[07:42:36] shared expert shapes {'gate': [2048, 6144], 'up': [2048, 6144], 'down': [6144, 2048]}
+[07:43:04]   A: {"vs_shared": {"p50": 0.029445677995681763, "p99": 0.18610313534736633, "max": 0.674629807472229, "frac_gt_0.5": 1.71661376953125e-05}, "vs_other_routed": {"p50": 0.027637166902422905, "p99": 0.06320921331644058, "max": 0.6096823215484619, "frac_gt_0.5": 1.9073486328125e-06}}
+[07:43:22]   B: {"gate": {"k64": 0.0145, "k256": 0.0459, "k1024": 0.1699, "k2048": 0.3391}, "up": {"k64": 0.0139, "k256": 0.0479, "k1024": 0.1768, "k2048": 0.3433}, "down": {"k64": 0.0149, "k256": 0.0503, "k1024": 0.1844, "k2048": 0.3525}}
+[07:43:35]   C: {"vs_shared": {"p50": 0.9980790615081787, "p99": 0.9992846846580505, "max": 0.9992957711219788, "frac_gt_0.5": 1.0}, "vs_other_routed": {"p50": 0.9992340207099915, "p99": 0.9992989301681519, "max": 0.9993078112602234, "frac_gt_0.5": 1.0}}
+[07:43:35] == iid-Gaussian control
+[07:43:45]   A: {"vs_shared": {"p50": 0.026395699009299278, "p99": 0.03375065326690674, "max": 0.04199017584323883, "frac_gt_0.5": 0.0}, "vs_other_routed": {"p50": 0.026394562795758247, "p99": 0.033753786236047745, "max": 0.04415417090058327, "frac_gt_0.5": 0.0}}
+[07:44:02]   B: {"gate": {"k64": 0.0104, "k256": 0.0417, "k1024": 0.1667, "k2048": 0.3334}, "up": {"k64": 0.0104, "k256": 0.0417, "k1024": 0.1667, "k2048": 0.3333}, "down": {"k64": 0.0104, "k256": 0.0417, "k1024": 0.1666, "k2048": 0.3333}}
+[07:44:13]   C: {"vs_shared": {"p50": 0.9993229508399963, "p99": 0.9993276000022888, "max": 0.9993276000022888, "frac_gt_0.5": 1.0}, "vs_other_routed": {"p50": 0.9993240237236023, "p99": 0.9993267059326172, "max": 0.9993268251419067, "frac_gt_0.5": 1.0}}
+
+# Shared vs routed experts
+
+## real
+
+Energy ratio shared / mean routed: gate 0.746, up 0.663, down 0.503
+
+| test | vs shared | vs other routed |
+|---|---|---|
+| A neuron max abs cos, p50 | 0.0294 | 0.0276 |
+| A neuron max abs cos, p99 | 0.1861 | 0.0632 |
+| A neuron max abs cos, max | 0.6746 | 0.6097 |
+| A neuron max abs cos, frac_gt_0.5 | 0.0000 | 0.0000 |
+| C delta residual energy, p50 | 0.9981 | 0.9992 |
+| C delta residual energy, max | 0.9993 | 0.9993 |
+
+| proj | k | routed in shared top-k | routed in other-routed top-k | isotropic | shared in own top-k |
+|---|---|---|---|---|---|
+| gate | 64 | 0.0145 | 0.0119 | 0.0104 | 0.1664 |
+| gate | 256 | 0.0459 | 0.0438 | 0.0417 | 0.4148 |
+| gate | 1024 | 0.1699 | 0.1697 | 0.1667 | 0.8915 |
+| gate | 2048 | 0.3391 | 0.3364 | 0.3333 | 1.0000 |
+| up | 64 | 0.0139 | 0.0112 | 0.0104 | 0.2006 |
+| up | 256 | 0.0479 | 0.0431 | 0.0417 | 0.4597 |
+| up | 1024 | 0.1768 | 0.1691 | 0.1667 | 0.8643 |
+| up | 2048 | 0.3433 | 0.3359 | 0.3333 | 1.0000 |
+| down | 64 | 0.0149 | 0.0119 | 0.0104 | 0.1830 |
+| down | 256 | 0.0503 | 0.0459 | 0.0417 | 0.4384 |
+| down | 1024 | 0.1844 | 0.1765 | 0.1667 | 0.8539 |
+| down | 2048 | 0.3525 | 0.3454 | 0.3333 | 1.0000 |
+
+## iid-Gaussian control
+
+Energy ratio shared / mean routed: gate 1.000, up 1.000, down 1.001
+
+| test | vs shared | vs other routed |
+|---|---|---|
+| A neuron max abs cos, p50 | 0.0264 | 0.0264 |
+| A neuron max abs cos, p99 | 0.0338 | 0.0338 |
+| A neuron max abs cos, max | 0.0420 | 0.0442 |
+| A neuron max abs cos, frac_gt_0.5 | 0.0000 | 0.0000 |
+| C delta residual energy, p50 | 0.9993 | 0.9993 |
+| C delta residual energy, max | 0.9993 | 0.9993 |
+
+| proj | k | routed in shared top-k | routed in other-routed top-k | isotropic | shared in own top-k |
+|---|---|---|---|---|---|
+| gate | 64 | 0.0104 | 0.0104 | 0.0104 | 0.0723 |
+| gate | 256 | 0.0417 | 0.0416 | 0.0417 | 0.2574 |
+| gate | 1024 | 0.1667 | 0.1666 | 0.1667 | 0.7393 |
+| gate | 2048 | 0.3334 | 0.3334 | 0.3333 | 1.0000 |
+| up | 64 | 0.0104 | 0.0104 | 0.0104 | 0.0723 |
+| up | 256 | 0.0417 | 0.0417 | 0.0417 | 0.2574 |
+| up | 1024 | 0.1667 | 0.1667 | 0.1667 | 0.7396 |
+| up | 2048 | 0.3333 | 0.3334 | 0.3333 | 1.0000 |
+| down | 64 | 0.0104 | 0.0104 | 0.0104 | 0.0723 |
+| down | 256 | 0.0417 | 0.0416 | 0.0417 | 0.2574 |
+| down | 1024 | 0.1666 | 0.1666 | 0.1667 | 0.7396 |
+| down | 2048 | 0.3333 | 0.3333 | 0.3333 | 1.0000 |
+
+[07:44:13] done -> /mnt/cephfs/hoangduy/results/basis-codec/glm53-L76-20260925t072300z

@@ -591,11 +591,12 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
         results[L] = res
         e = res.get("eval", {}).get("arms", {})
         at = lambda nm: e.get(nm, {}).get('attn_rel_mse', float('nan'))
-        log(f"layer {L}: {res['seconds']}  cb{cbs[-1]}-ch-int2 attn={at(f'cb{cbs[-1]}-ch-int2'):.2e}"
-            f" cb{cbs[-1]}z-ch-int2 attn={at(f'cb{cbs[-1]}z-ch-int2'):.2e} direct-ch-int2 attn={at('direct-ch-int2'):.2e}"
-            f" | tok-int2: direct {at('direct-tok-int2'):.2e} z {at(f'cb{cbs[-1]}z-tok-int2'):.2e}"
-            f" w2 {at(f'cb{cbs[-1]}w2-tok-int2'):.2e} zs {at(f'cb{cbs[-1]}zs-tok-int2'):.2e} z|tiny {at(f'cb{cbs[-1]}z-tok-int2|tiny'):.2e}"
-            f" direct-ch-int4 attn={e.get('direct-ch-int4', {}).get('attn_rel_mse', float('nan')):.2e}  staged {res['staged_MBps']} MB/s")
+        big = f"cb{cbs[-1]}"
+        four = {"fp8_tile": "sglang_fp8_tile128", "fp8_tok": "fp8_tok", "nvfp4": "sglang_nvfp4", "H-nvfp4": "H-nvfp4",
+                "tok4": "direct-tok-int4", "z4": f"{big}z-tok-int4", "w2-4": f"{big}w2-tok-int4",
+                "z4|tiny": f"{big}z-tok-int4|tiny", "H-z-nvfp4": f"H-{big}z-nvfp4"}
+        log(f"layer {L}: {res['seconds']}  attn ~4b+: " + " ".join(f"{k} {at(v):.2e}" for k, v in four.items())
+            + f"  staged {res['staged_MBps']} MB/s")
         del layer, rotary, ctx
         if dev.type == "cuda":
             torch.cuda.empty_cache()

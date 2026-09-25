@@ -1,0 +1,87 @@
+[15:17:38] env {'weights': 'w4afp8+act_fp8', 'window': 4096, 'transformers': '5.12.1', 'torch': '2.11.0+cu130', 'source': '/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/20260912-184239/checkpoint', 'started_utc': '2026-09-25T15:17:38Z'}
+[15:17:38] gate 1: tiny-model streaming == full forward
+/usr/local/lib/python3.12/dist-packages/torchao/quantization/quant_api.py:1731: SyntaxWarning: invalid escape sequence '\.'
+  """Configuration class for applying different quantization configs to modules or parameters based on their fully qualified names (FQNs).
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 283.26it/s]
+Loading weights:   0%|          | 0/70 [00:00<?, ?it/s]Loading weights: 100%|██████████| 70/70 [00:00<00:00, 6644.37it/s]
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 8027.83it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer000
+--------------------------+---------+-
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 10932.72it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer001
+--------------------------+---------+-
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 6134.66it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer002
+--------------------------+---------+-
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights: 100%|██████████| 16/16 [00:00<00:00, 2245.87it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer003
+--------------------------+---------+-
+[15:17:40] gate 1 PASS (0.0e+00)
+[15:17:40] gate 2: dequantized layer 3 vs BF16
+[15:21:49] gate 2 PASS {"int4_expert": [["model.layers.3.mlp.experts.0.down_proj.weight", 0.05107491463422775], ["model.layers.3.mlp.experts.0.gate_proj.weight", 0.029209990054368973], ["model.layers.3.mlp.experts.0.up_proj.weight", 0.02981599234044552], ["model.layers.3.mlp.experts.1.down_proj.weight", 0.038907840847969055], ["model.layers.3.mlp.experts.1.gate_proj.weight", 0.027386346831917763], ["model.layers.3.mlp.experts.1.up_proj.weight", 0.02723190374672413], ["model.layers.3.mlp.experts.10.down_proj.weight", 0.02669159322977066], ["model.layers.3.mlp.experts.10.gate_proj.weight", 0.026703406125307083], ["model.layers.3.mlp.experts.10.up_proj.weight", 0.026620063930749893], ["model.layers.3.mlp.experts.100.down_proj.weight", 0.03374968841671944], ["model.layers.3.mlp.experts.100.gate_proj.weight", 0.027560796588659286], ["model.layers.3.mlp.experts.100.up_proj.weight", 0.0275716669857502]], "fp8_block": [["model.layers.3.mlp.shared_experts.down_proj.weight", 0.0007102919043973088], ["model.layers.3.mlp.shared_experts.gate_proj.weight", 0.000709202722646296], ["model.layers.3.mlp.shared_experts.up_proj.weight", 0.0007103882962837815], ["model.layers.3.self_attn.kv_a_proj_with_mqa.weight", 0.0006939216982573271], ["model.layers.3.self_attn.kv_b_proj.weight", 0.0007090474828146398], ["model.layers.3.self_attn.o_proj.weight", 0.0007104241522029042]]}
+[15:21:57] 15 train / 15 eval AA-LCR + 8 generated windows
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 4118.71it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer000
+--------------------------+---------+-
+[15:23:58]     MOD it 1/5: fit rel_err=0.01625 dead=753
+[15:23:59]     MOD it 5/5: fit rel_err=0.00016 dead=36
+[15:24:46] layer 0: {'load': 3.7, 'total': 166.2}  cb4096-ch-int2 attn=1.89e-05 cb4096z-ch-int2 attn=1.90e-05 direct-ch-int2 attn=9.90e-04 | tok-int2: direct 3.98e-02 z 2.14e-05 w2 1.93e-05 zs 2.14e-05 z|tiny 2.14e-05 direct-ch-int4 attn=2.31e-05  staged 220.1 MB/s
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 8980.25it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer001
+--------------------------+---------+-
+[15:27:23] layer 1: {'load': 3.0, 'total': 157.2}  cb4096-ch-int2 attn=1.42e-03 cb4096z-ch-int2 attn=1.42e-03 direct-ch-int2 attn=1.84e-02 | tok-int2: direct 2.69e-02 z 5.21e-04 w2 4.84e-04 zs 5.21e-04 z|tiny 5.21e-04 direct-ch-int4 attn=3.10e-04  staged 252.0 MB/s
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 4456.45it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer002
+--------------------------+---------+-
+[15:32:39] layer 2: {'load': 9.9, 'total': 315.8}  cb4096-ch-int2 attn=6.19e-04 cb4096z-ch-int2 attn=6.15e-04 direct-ch-int2 attn=4.78e-02 | tok-int2: direct 8.75e-02 z 9.12e-04 w2 7.86e-04 zs 9.12e-04 z|tiny 9.12e-04 direct-ch-int4 attn=5.83e-04  staged 376.3 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:10,  1.31it/s]Loading weights:  19%|█▉        | 3/16 [00:07<00:35,  2.75s/it]Loading weights: 100%|██████████| 16/16 [00:07<00:00,  2.27it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer003
+--------------------------+---------+-
+[15:37:05] layer 3: {'load': 116.2, 'total': 265.9}  cb4096-ch-int2 attn=6.45e-04 cb4096z-ch-int2 attn=6.44e-04 direct-ch-int2 attn=5.14e-02 | tok-int2: direct 8.89e-02 z 8.03e-04 w2 7.79e-04 zs 8.03e-04 z|tiny 8.03e-04 direct-ch-int4 attn=9.42e-04  staged 415.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.22it/s]Loading weights:  19%|█▉        | 3/16 [00:25<02:16, 10.52s/it]Loading weights: 100%|██████████| 16/16 [00:25<00:00,  1.61s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer004
+--------------------------+---------+-
+[15:40:30]     MOD it 1/5: fit rel_err=0.01237 dead=0
+[15:40:31]     MOD it 5/5: fit rel_err=0.00480 dead=0
+[15:41:07] layer 4: {'load': 74.8, 'total': 241.9}  cb4096-ch-int2 attn=1.54e-02 cb4096z-ch-int2 attn=1.48e-02 direct-ch-int2 attn=5.91e-02 | tok-int2: direct 5.90e-02 z 8.20e-03 w2 7.70e-03 zs 8.20e-03 z|tiny 8.20e-03 direct-ch-int4 attn=4.50e-03  staged 466.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.22it/s]Loading weights:  19%|█▉        | 3/16 [00:19<01:43,  7.99s/it]Loading weights: 100%|██████████| 16/16 [00:19<00:00,  1.23s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer005
+--------------------------+---------+-
+[15:45:04] layer 5: {'load': 63.7, 'total': 237.2}  cb4096-ch-int2 attn=3.08e-02 cb4096z-ch-int2 attn=1.82e-02 direct-ch-int2 attn=4.78e-02 | tok-int2: direct 4.50e-02 z 1.10e-02 w2 9.16e-03 zs 9.38e-03 z|tiny 9.52e-03 direct-ch-int4 attn=5.70e-03  staged 424.2 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:16,  1.15it/s]Loading weights:  14%|█▍        | 3/21 [00:22<02:42,  9.01s/it]Loading weights: 100%|██████████| 21/21 [00:22<00:00,  1.05s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer006
+--------------------------+---------+-
+[15:49:28] layer 6: {'load': 82.1, 'total': 263.9}  cb4096-ch-int2 attn=8.99e-02 cb4096z-ch-int2 attn=4.34e-02 direct-ch-int2 attn=8.75e-02 | tok-int2: direct 7.27e-02 z 1.96e-02 w2 1.75e-02 zs 1.80e-02 z|tiny 1.77e-02 direct-ch-int4 attn=2.04e-02  staged 368.3 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:15,  1.12s/it]Loading weights:  19%|█▉        | 3/16 [00:26<02:20, 10.82s/it]Loading weights: 100%|██████████| 16/16 [00:26<00:00,  1.67s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer007
+--------------------------+---------+-
+[15:53:35] layer 7: {'load': 79.8, 'total': 246.7}  cb4096-ch-int2 attn=1.01e-01 cb4096z-ch-int2 attn=3.56e-02 direct-ch-int2 attn=6.25e-02 | tok-int2: direct 5.10e-02 z 1.56e-02 w2 1.29e-02 zs 1.31e-02 z|tiny 1.27e-02 direct-ch-int4 attn=1.86e-02  staged 311.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:05<00:38,  2.76s/it]Loading weights:  19%|█▉        | 3/16 [00:38<03:17, 15.19s/it]Loading weights: 100%|██████████| 16/16 [00:38<00:00,  2.38s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer008
+--------------------------+---------+-
+[15:57:19]     MOD it 1/5: fit rel_err=0.04130 dead=0
+[15:57:20]     MOD it 5/5: fit rel_err=0.01228 dead=0
+[15:57:55] layer 8: {'load': 103.5, 'total': 258.1}  cb4096-ch-int2 attn=7.38e-01 cb4096z-ch-int2 attn=6.94e-02 direct-ch-int2 attn=1.23e-01 | tok-int2: direct 1.05e-01 z 2.82e-02 w2 1.97e-02 zs 2.71e-02 z|tiny 1.87e-02 direct-ch-int4 attn=4.76e-02  staged 311.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.14it/s]Loading weights:  19%|█▉        | 3/16 [00:10<00:55,  4.26s/it]Loading weights: 100%|██████████| 16/16 [00:10<00:00,  1.49it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer009
+--------------------------+---------+-
+[16:02:54] layer 9: {'load': 105.8, 'total': 299.0}  cb4096-ch-int2 attn=2.20e+00 cb4096z-ch-int2 attn=1.32e-01 direct-ch-int2 attn=1.42e-01 | tok-int2: direct 5.74e-02 z 2.54e-02 w2 1.69e-02 zs 1.70e-02 z|tiny 1.62e-02 direct-ch-int4 attn=1.10e-01  staged 258.7 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:18,  1.04it/s]Loading weights:  14%|█▍        | 3/21 [00:07<00:53,  2.98s/it]Loading weights: 100%|██████████| 21/21 [00:07<00:00,  2.72it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer010
+--------------------------+---------+-
+[16:06:24] layer 10: {'load': 46.8, 'total': 209.7}  cb4096-ch-int2 attn=4.10e+01 cb4096z-ch-int2 attn=1.52e-01 direct-ch-int2 attn=2.16e-01 | tok-int2: direct 1.88e-01 z 8.02e-02 w2 4.28e-02 zs 4.43e-02 z|tiny 4.18e-02 direct-ch-int4 attn=1.06e-01  staged 266.6 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.22it/s]Loading weights:  19%|█▉        | 3/16 [00:13<01:08,  5.30s/it]Loading weights: 100%|██████████| 16/16 [00:13<00:00,  1.21it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer011
+--------------------------+---------+-
+[16:10:13] layer 11: {'load': 46.3, 'total': 229.4}  cb4096-ch-int2 attn=6.50e+01 cb4096z-ch-int2 attn=2.36e-01 direct-ch-int2 attn=2.95e-01 | tok-int2: direct 2.04e-01 z 9.00e-02 w2 5.12e-02 zs 5.46e-02 z|tiny 5.21e-02 direct-ch-int4 attn=1.72e-01  staged 266.7 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:09,  1.51it/s]Loading weights:  19%|█▉        | 3/16 [00:11<00:58,  4.48s/it]Loading weights: 100%|██████████| 16/16 [00:11<00:00,  1.43it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer012
+--------------------------+---------+-
+[16:12:59]     MOD it 1/5: fit rel_err=0.05176 dead=0
+[16:13:00]     MOD it 5/5: fit rel_err=0.02234 dead=0
+[16:13:35] layer 12: {'load': 49.1, 'total': 202.0}  cb4096-ch-int2 attn=9.21e+01 cb4096z-ch-int2 attn=2.56e-01 direct-ch-int2 attn=3.46e-01 | tok-int2: direct 2.47e-01 z 9.71e-02 w2 5.13e-02 zs 5.46e-02 z|tiny 5.06e-02 direct-ch-int4 attn=1.98e-01  staged 269.1 MB/s
+# KV anchor probe, all layers — GLM-5.3 w4afp8+act_fp8
+15 AA-LCR eval + 8 generated windows x 4096 tokens; codebooks fit on 15 AA-LCR windows. Attention-output relative MSE.
+## eval
+## gen
+[16:13:35] done -> /mnt/cephfs/hoangduy/results/kv-anchor/glm53-w4afp8-deep-diag-20260925t151725z

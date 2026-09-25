@@ -65,6 +65,24 @@ random selection of the same size: 0.80–0.86 (N=16), 0.90–0.94 (N=64). Barel
 clustered — positional anchors would pay extra reads; codebook anchors do not
 (shared table, per-token index).
 
+## Prior art (checked 2026-09-25, full text of key papers)
+
+The method is not new. Centroid + low-bit residual per KV vector is Quant
+VideoGen (arXiv 2602.02958, ICML 2026) / QuantWM (2609.26425) for video
+diffusion KV (BF16 k-means centroid, 2-bit residual, group 64), itself the
+classic IVFADC coarse-quantizer + residual design. For LLM KV: Lexico
+(2412.08890, ICML 2025) uses per-layer K/V dictionaries of 4096 atoms,
+trained offline, sparse FP8 coefficients, a 128-token full-precision buffer,
+and an adaptive variant that appends up to 1024 atoms at inference;
+Residual VQ (2410.15704), CommVQ (2506.18879), GSRQ (2607.01065), and AQUA-KV
+(2501.19392, cross-layer predictor + quantized residual). CacheGen (2310.07240)
+did token-delta coding for KV streaming.
+
+Not found: any codebook/dictionary codec on **MLA latents**, or with **DSA**
+sparse top-k reads — MLA work found is scalar (CLLA-quant 4-bit, FP8) or
+cross-layer (xKV). Next probes should use Lexico and a QVG-style
+centroid+residual as baselines on GLM-5.3 latents, not only our own codebook.
+
 ## Caveats
 
 - Layers 0–3 only. Layer 0's latent is a function of the current token alone;

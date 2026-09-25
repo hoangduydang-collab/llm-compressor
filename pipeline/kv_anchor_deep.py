@@ -266,6 +266,74 @@ def lexico_encode(X: torch.Tensor, D: torch.Tensor, s: int) -> tuple[torch.Tenso
     return bc.reconstruct(D, idx, kp.fp8_unscaled(coef)), (24 * s + 16) / X.shape[1]
 
 
+# ---------------------------------------------------------------- SGLang's served KV formats (v0.5.17)
+E2M1 = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
+
+
+def _round_e2m1(x: torch.Tensor) -> torch.Tensor:
+    """round to the nearest FP4 E2M1 value (|x| <= 6 assumed; ties go up)."""
+    vals = x.new_tensor(E2M1)
+    bounds = x.new_tensor([(a + b) / 2 for a, b in zip(E2M1, E2M1[1:])])
+    return torch.sign(x) * vals[torch.bucketize(x.abs().clamp(max=6.0), bounds, right=True)]
+
+
+def fp8_tile128(X: torch.Tensor) -> tuple[torch.Tensor, float]:
+    """DSA FP8 K cache (kernels/ops/attention/dsa/quant_k_cache.py): per token, one fp32
+    amax/448 scale per 128-value tile, e4m3 values."""
+    T, d = X.shape
+    t = X.reshape(T, d // 128, 128)
+    # the reference computes the scale on the bf16 latent, so it is bf16-rounded
+    s = (t.to(torch.bfloat16).abs().amax(-1, keepdim=True) / 448.0).float().clamp(min=1e-30)
+    q = (t / s).clamp(-448, 448).to(torch.float8_e4m3fn).float()
+    return (q * s).reshape(T, d), 8 + 32 / 128
+
+
+def fp4_mx_block16(X: torch.Tensor) -> tuple[torch.Tensor, float]:
+    """--kv-cache-dtype fp4_mx_block16 (kvfp4_tensor.FP4MXBlock16KVQuantizeUtil): E2M1 values,
+    one power-of-two scale ceil(log2(amax/6)) per 16 values."""
+    T, d = X.shape
+    b = X.reshape(T, d // 16, 16)
+    e = torch.ceil(torch.log2(torch.clamp(b.abs().amax(-1, keepdim=True) / 6.0, min=1e-10)))
+    return (_round_e2m1(b / torch.exp2(e)) * torch.exp2(e)).reshape(T, d), 4 + 8 / 16
+
+
+def nvfp4(X: torch.Tensor) -> tuple[torch.Tensor, float]:
+    """--kv-cache-dtype nvfp4: E2M1 values, e4m3 scale per 16 values, one fp32 global scale
+    (here from the window itself -- a served static scale can only be worse)."""
+    T, d = X.shape
+    b = X.reshape(T, d // 16, 16)
+    g = (X.abs().amax() / (448.0 * 6.0)).clamp(min=1e-30)
+    sb = ((b.abs().amax(-1, keepdim=True) / 6.0) / g).clamp(max=448).to(torch.float8_e4m3fn).float() * g
+    sb = sb.clamp(min=1e-30)
+    return (_round_e2m1((b / sb).clamp(-6, 6)) * sb).reshape(T, d), 4 + 8 / 16 + 32 / (T * d)
+
+
+def hadamard(d: int, device=None) -> torch.Tensor:
+    """orthonormal Sylvester Hadamard [d, d]; in absorbed MLA it folds exactly into W_UK / W_UV."""
+    H = torch.ones(1, 1, device=device)
+    while H.shape[0] < d:
+        H = torch.cat([torch.cat([H, H], 1), torch.cat([H, -H], 1)], 0)
+    if H.shape[0] != d:
+        raise ValueError(f"no Sylvester Hadamard of size {d}")
+    return H / math.sqrt(d)
+
+
+def rotated_arms(X: torch.Tensor, ctx: dict, big: str) -> list[tuple[str, torch.Tensor, float]]:
+    """established 4-bit baselines with a Hadamard rotation (QuaRot / SAW-INT4), and our
+    anchor combined with NVFP4 for the residual."""
+    H = ctx["H"]
+    int4 = lambda V: kp.quant_residual(V, "tok", 4)
+    b_int4 = 4 + 16 / kp.G
+    P, cost = kp.predict(X, big + "z", None, ctx)
+    R = X - P
+    Xn, b_nv = nvfp4(X @ H)
+    return [("H-nvfp4", Xn @ H.T, b_nv),
+            ("H-direct-tok-int4", int4(X @ H) @ H.T, b_int4),
+            (f"{big}z-nvfp4", P + nvfp4(R)[0], b_nv + cost),
+            (f"H-{big}z-nvfp4", P + nvfp4(R @ H)[0] @ H.T, b_nv + cost),
+            (f"H-{big}z-tok-int4", P + int4(R @ H) @ H.T, b_int4 + cost)]
+
+
 def qvg_encode(X: torch.Tensor, gen, C: int, bits: int = 2) -> tuple[torch.Tensor, float]:
     T, d = X.shape
     cent = kp.kmeans(X, C, 5, gen).to(torch.bfloat16).float()
@@ -408,6 +476,9 @@ def eval_window(layer, tap, X, o0, ctx, acc: Acc, gen, cfg: dict):
     coded = [(kp.arm_name(a), *kp.apply_arm(X, a, ctx)) for a in deep_arms(cfg["cbs"])]
     Xq, bq = qvg_encode(X, gen, cfg["qvg_c"])
     coded.append((f"qvg{cfg['qvg_c']}-int2", Xq, bq))
+    coded += [(nm, *f(X)) for nm, f in (("sglang_fp8_tile128", fp8_tile128), ("sglang_fp4_mx16", fp4_mx_block16),
+                                         ("sglang_nvfp4", nvfp4))]
+    coded += rotated_arms(X, ctx, f"cb{cfg['cbs'][-1]}")
     if "lexico" in ctx:
         Xl, bl = lexico_encode(X, ctx["lexico"], cfg["lexico_s"])
         coded.append((f"lexico{cfg['lexico_s']}", Xl, bl))
@@ -473,7 +544,7 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
                     w2.append(km2[sink_keep:] if km2 is not None else torch.ones_like(train[-1][:, 0]))
             Xtr, w1, w2 = torch.cat(train), torch.cat(w1), torch.cat(w2)
             del train
-            ctx = {"mu": Xtr.mean(0, keepdim=True).half().float()}
+            ctx = {"mu": Xtr.mean(0, keepdim=True).half().float(), "H": hadamard(Xtr.shape[1], Xtr.device)}
             for m in cbs:
                 ctx[f"cb{m}"] = kp.kmeans(Xtr, m, kmeans_iters, gen)
             # attention-weighted codebooks; tiny-token threshold and dedicated sink centroids
@@ -584,8 +655,8 @@ def dequant_check(qsrc: LayerSource, bf16_snapshot: str, L: int, n_experts: int 
 
 
 # ---------------------------------------------------------------- report
-KEY_ARMS = ("direct-tok-int4", "cb4096z-tok-int2", "cb4096w2-tok-int2", "cb4096zs-tok-int2", "cb4096z-tok-int2|tiny",
-            "cb4096z-tok-int4", "fp8_unscaled", "fp8_tok")
+KEY_ARMS = ("sglang_fp8_tile128", "sglang_nvfp4", "sglang_fp4_mx16", "H-nvfp4", "H-direct-tok-int4",
+            "cb4096z-tok-int4", "cb4096w2-tok-int4", "H-cb4096z-nvfp4")
 
 
 def summarize(results: dict, meta: dict) -> str:

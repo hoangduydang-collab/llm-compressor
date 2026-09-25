@@ -46,6 +46,22 @@ def test_dequantize_sglang_w4afp8_roundtrip():
         kd.dequantize_sglang_w4afp8({"a.weight": torch.zeros(2, 2), "a.weight_scale_inv": torch.ones(1)})
 
 
+def test_served_kv_formats_and_hadamard():
+    g = torch.Generator().manual_seed(1)
+    # FP4 E2M1 values times a power of two survive both FP4 recipes exactly
+    v = torch.tensor(kd.E2M1 + tuple(-x for x in kd.E2M1[1:]) + (6.0,))[torch.randint(0, 16, (8, 512), generator=g)] * 0.25
+    v[:, ::16] = 6.0 * 0.25                                           # each block's max lands on 6 x scale
+    assert torch.equal(kd.fp4_mx_block16(v)[0], v)
+    X = torch.randn(64, 512, generator=g) * torch.rand(64, 1, generator=g) * 3
+    rel = lambda f: ((f(X)[0] - X).pow(2).sum() / X.pow(2).sum()).item()
+    assert rel(kd.fp8_tile128) < 1e-3 < rel(kd.nvfp4) < rel(kd.fp4_mx_block16) < 0.03
+    assert kd.fp8_tile128(X)[1] == 8.25 and kd.fp4_mx_block16(X)[1] == 4.5
+    H = kd.hadamard(512)
+    assert torch.allclose(H @ H.T, torch.eye(512), atol=1e-5)
+    with pytest.raises(ValueError):
+        kd.hadamard(576)
+
+
 def test_layer_config_slices_per_layer_lists(tmp_path):
     d = tmp_path / "ck"
     d.mkdir()
@@ -146,6 +162,8 @@ def test_stream_end_to_end_and_resume(tmp_path):
     assert {"cb16z-ch-int2|keep1", "cb16z-tok-int4", "direct-tok-int3", "cb16w1-tok-int2", "cb16w2-ch-int2",
             "cb16zs-tok-int4", "direct-tok-int2|tiny", "cb16z-tok-int3|tiny"} <= set(e["arms"])
     assert 0.0 <= e["tiny_exact_fraction"] <= 1.0
+    assert {"sglang_fp8_tile128", "sglang_nvfp4", "sglang_fp4_mx16", "H-nvfp4", "H-direct-tok-int4",
+            "cb16z-nvfp4", "H-cb16z-nvfp4", "H-cb16z-tok-int4"} <= set(e["arms"])
     assert e["arms"]["direct-tok-int2|tiny"]["bits"] >= e["arms"]["direct-tok-int2"]["bits"]
     assert 0.0 <= e["small_token_fraction"] <= 1.0 and 0.0 <= e["attn_mass_on_small_tokens"] <= 1.0
     assert 0.0 <= e["zero_anchor_fraction"] <= 1.0 and e["token0_prenorm_rms_over_median"] > 0

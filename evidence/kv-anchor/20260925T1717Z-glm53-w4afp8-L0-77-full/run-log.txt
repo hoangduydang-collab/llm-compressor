@@ -1,0 +1,339 @@
+[17:17:37] env {'weights': 'w4afp8+act_fp8', 'window': 4096, 'transformers': '5.12.1', 'torch': '2.11.0+cu130', 'source': '/mnt/cephfs/hoangduy/results/glm53-ep-gptq-w4afp8/full-ep8/20260912t183612z/output/304b8051cfb2b260b61ce0cbe330e02a98e73639-gptq-W4AFP8/20260912-184239/checkpoint', 'started_utc': '2026-09-25T17:17:37Z'}
+[17:17:37] gate 1: tiny-model streaming == full forward
+/usr/local/lib/python3.12/dist-packages/torchao/quantization/quant_api.py:1731: SyntaxWarning: invalid escape sequence '\.'
+  """Configuration class for applying different quantization configs to modules or parameters based on their fully qualified names (FQNs).
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 172.25it/s]
+Loading weights:   0%|          | 0/70 [00:00<?, ?it/s]Loading weights: 100%|██████████| 70/70 [00:00<00:00, 5693.15it/s]
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 4669.80it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer000
+--------------------------+---------+-
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 7468.65it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer001
+--------------------------+---------+-
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 6927.35it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer002
+--------------------------+---------+-
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights: 100%|██████████| 16/16 [00:00<00:00, 3399.81it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/preflight/tiny_stage/layer003
+--------------------------+---------+-
+[17:17:40] gate 1 PASS (0.0e+00)
+[17:17:41] gate 2: dequantized layer 3 vs BF16
+[17:22:06] gate 2 PASS {"int4_expert": [["model.layers.3.mlp.experts.0.down_proj.weight", 0.05107491463422775], ["model.layers.3.mlp.experts.0.gate_proj.weight", 0.029209990054368973], ["model.layers.3.mlp.experts.0.up_proj.weight", 0.02981599234044552], ["model.layers.3.mlp.experts.1.down_proj.weight", 0.038907840847969055], ["model.layers.3.mlp.experts.1.gate_proj.weight", 0.027386346831917763], ["model.layers.3.mlp.experts.1.up_proj.weight", 0.02723190374672413], ["model.layers.3.mlp.experts.10.down_proj.weight", 0.02669159322977066], ["model.layers.3.mlp.experts.10.gate_proj.weight", 0.026703406125307083], ["model.layers.3.mlp.experts.10.up_proj.weight", 0.026620063930749893], ["model.layers.3.mlp.experts.100.down_proj.weight", 0.03374968841671944], ["model.layers.3.mlp.experts.100.gate_proj.weight", 0.027560796588659286], ["model.layers.3.mlp.experts.100.up_proj.weight", 0.0275716669857502]], "fp8_block": [["model.layers.3.mlp.shared_experts.down_proj.weight", 0.0007102919043973088], ["model.layers.3.mlp.shared_experts.gate_proj.weight", 0.000709202722646296], ["model.layers.3.mlp.shared_experts.up_proj.weight", 0.0007103882962837815], ["model.layers.3.self_attn.kv_a_proj_with_mqa.weight", 0.0006939216982573271], ["model.layers.3.self_attn.kv_b_proj.weight", 0.0007090474828146398], ["model.layers.3.self_attn.o_proj.weight", 0.0007104241522029042]]}
+[17:22:30] 23 train (8 generated) / 15 eval AA-LCR + 8 generated windows
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 3105.00it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer000
+--------------------------+---------+-
+[17:26:37] layer 0: {'load': 3.4, 'total': 245.4}  attn ~4b+: fp8_tile 4.67e-06 fp8_tok 7.70e-06 nvfp4 5.94e-05 H-nvfp4 5.45e-05 tok4 4.41e-04 z4 4.06e-06 w2-4 3.60e-06 z4|tiny 4.06e-06 H-z-nvfp4 3.36e-06 w2z4|tiny 3.60e-06 w2z-nv|tiny 3.01e-06 H-w2z-nv|tiny 2.94e-06 nvfp4|tiny 5.94e-05  staged 220.1 MB/s
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 3073.15it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer001
+--------------------------+---------+-
+[17:30:36] layer 1: {'load': 3.8, 'total': 239.2}  attn ~4b+: fp8_tile 1.98e-05 fp8_tok 8.40e-05 nvfp4 5.33e-04 H-nvfp4 3.17e-04 tok4 5.65e-04 z4 5.32e-05 w2-4 5.07e-05 z4|tiny 5.32e-05 H-z-nvfp4 3.99e-05 w2z4|tiny 5.07e-05 w2z-nv|tiny 3.85e-05 H-w2z-nv|tiny 3.82e-05 nvfp4|tiny 5.33e-04  staged 250.6 MB/s
+Loading weights:   0%|          | 0/17 [00:00<?, ?it/s]Loading weights: 100%|██████████| 17/17 [00:00<00:00, 2916.88it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer002
+--------------------------+---------+-
+[17:35:08] layer 2: {'load': 14.5, 'total': 271.3}  attn ~4b+: fp8_tile 1.53e-05 fp8_tok 4.52e-05 nvfp4 2.61e-04 H-nvfp4 1.91e-04 tok4 1.84e-03 z4 5.42e-05 w2-4 4.90e-05 z4|tiny 5.42e-05 H-z-nvfp4 2.43e-05 w2z4|tiny 4.89e-05 w2z-nv|tiny 2.52e-05 H-w2z-nv|tiny 2.31e-05 nvfp4|tiny 2.61e-04  staged 365.7 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:10,  1.31it/s]Loading weights:  19%|█▉        | 3/16 [00:07<00:37,  2.87s/it]Loading weights: 100%|██████████| 16/16 [00:07<00:00,  2.18it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer003
+--------------------------+---------+-
+[17:40:43] layer 3: {'load': 127.3, 'total': 335.7}  attn ~4b+: fp8_tile 1.71e-05 fp8_tok 8.84e-05 nvfp4 4.78e-04 H-nvfp4 3.55e-04 tok4 4.58e-03 z4 6.76e-05 w2-4 6.59e-05 z4|tiny 6.76e-05 H-z-nvfp4 3.38e-05 w2z4|tiny 6.59e-05 w2z-nv|tiny 3.72e-05 H-w2z-nv|tiny 3.35e-05 nvfp4|tiny 4.78e-04  staged 406.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.17it/s]Loading weights:  19%|█▉        | 3/16 [00:07<00:37,  2.92s/it]Loading weights: 100%|██████████| 16/16 [00:07<00:00,  2.13it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer004
+--------------------------+---------+-
+[17:45:18] layer 4: {'load': 59.1, 'total': 274.4}  attn ~4b+: fp8_tile 1.13e-04 fp8_tok 5.56e-04 nvfp4 2.74e-03 H-nvfp4 2.60e-03 tok4 3.43e-03 z4 8.83e-04 w2-4 8.43e-04 z4|tiny 8.83e-04 H-z-nvfp4 7.31e-04 w2z4|tiny 8.43e-04 w2z-nv|tiny 7.08e-04 H-w2z-nv|tiny 7.01e-04 nvfp4|tiny 2.74e-03  staged 462.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.12it/s]Loading weights:  19%|█▉        | 3/16 [00:25<02:15, 10.40s/it]Loading weights: 100%|██████████| 16/16 [00:25<00:00,  1.59s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer005
+--------------------------+---------+-
+[17:50:32] layer 5: {'load': 78.4, 'total': 314.5}  attn ~4b+: fp8_tile 7.14e-05 fp8_tok 2.79e-04 nvfp4 1.20e-03 H-nvfp4 1.15e-03 tok4 1.95e-03 z4 1.13e-03 w2-4 6.11e-04 z4|tiny 6.77e-04 H-z-nvfp4 5.99e-04 w2z4|tiny 6.05e-04 w2z-nv|tiny 5.08e-04 H-w2z-nv|tiny 5.06e-04 nvfp4|tiny 1.14e-03  staged 491.3 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:16,  1.13it/s]Loading weights:  14%|█▍        | 3/21 [00:15<01:54,  6.34s/it]Loading weights: 100%|██████████| 21/21 [00:15<00:00,  1.33it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer006
+--------------------------+---------+-
+[17:56:13] layer 6: {'load': 68.7, 'total': 341.0}  attn ~4b+: fp8_tile 1.59e-04 fp8_tok 7.42e-04 nvfp4 3.61e-03 H-nvfp4 3.50e-03 tok4 4.25e-03 z4 1.84e-03 w2-4 1.62e-03 z4|tiny 1.64e-03 H-z-nvfp4 1.58e-03 w2z4|tiny 1.59e-03 w2z-nv|tiny 1.41e-03 H-w2z-nv|tiny 1.40e-03 nvfp4|tiny 3.47e-03  staged 425.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:17,  1.22s/it]Loading weights:  19%|█▉        | 3/16 [00:26<02:18, 10.64s/it]Loading weights: 100%|██████████| 16/16 [00:26<00:00,  1.64s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer007
+--------------------------+---------+-
+[18:01:42] layer 7: {'load': 80.8, 'total': 328.6}  attn ~4b+: fp8_tile 1.02e-04 fp8_tok 4.43e-04 nvfp4 2.11e-03 H-nvfp4 2.04e-03 tok4 2.58e-03 z4 1.28e-03 w2-4 1.06e-03 z4|tiny 1.05e-03 H-z-nvfp4 1.06e-03 w2z4|tiny 1.03e-03 w2z-nv|tiny 8.88e-04 H-w2z-nv|tiny 8.87e-04 nvfp4|tiny 1.96e-03  staged 364.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:06<00:44,  3.15s/it]Loading weights:  19%|█▉        | 3/16 [00:29<02:31, 11.67s/it]Loading weights: 100%|██████████| 16/16 [00:29<00:00,  1.87s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer008
+--------------------------+---------+-
+[18:07:03] layer 8: {'load': 90.3, 'total': 318.6}  attn ~4b+: fp8_tile 1.04e-04 fp8_tok 3.92e-04 nvfp4 1.69e-03 H-nvfp4 1.60e-03 tok4 2.25e-03 z4 1.34e-03 w2-4 8.26e-04 z4|tiny 7.52e-04 H-z-nvfp4 1.16e-03 w2z4|tiny 7.07e-04 w2z-nv|tiny 5.93e-04 H-w2z-nv|tiny 5.90e-04 nvfp4|tiny 1.21e-03  staged 364.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.00it/s]Loading weights:  19%|█▉        | 3/16 [00:11<01:01,  4.74s/it]Loading weights: 100%|██████████| 16/16 [00:11<00:00,  1.34it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer009
+--------------------------+---------+-
+[18:12:39] layer 9: {'load': 80.3, 'total': 336.1}  attn ~4b+: fp8_tile 1.21e-04 fp8_tok 5.46e-04 nvfp4 2.57e-03 H-nvfp4 2.53e-03 tok4 2.97e-03 z4 1.89e-03 w2-4 1.30e-03 z4|tiny 1.22e-03 H-z-nvfp4 1.67e-03 w2z4|tiny 1.21e-03 w2z-nv|tiny 1.08e-03 H-w2z-nv|tiny 1.07e-03 nvfp4|tiny 2.01e-03  staged 279.1 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:18,  1.03it/s]Loading weights:  14%|█▍        | 3/21 [00:12<01:32,  5.16s/it]Loading weights: 100%|██████████| 21/21 [00:12<00:00,  1.62it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer010
+--------------------------+---------+-
+[18:17:16] layer 10: {'load': 51.4, 'total': 277.2}  attn ~4b+: fp8_tile 2.58e-04 fp8_tok 1.10e-03 nvfp4 5.21e-03 H-nvfp4 4.88e-03 tok4 6.05e-03 z4 4.30e-03 w2-4 2.09e-03 z4|tiny 1.77e-03 H-z-nvfp4 3.95e-03 w2z4|tiny 1.72e-03 w2z-nv|tiny 1.48e-03 H-w2z-nv|tiny 1.47e-03 nvfp4|tiny 2.75e-03  staged 284.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.24it/s]Loading weights:  19%|█▉        | 3/16 [00:10<00:52,  4.04s/it]Loading weights: 100%|██████████| 16/16 [00:10<00:00,  1.57it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer011
+--------------------------+---------+-
+[18:22:15] layer 11: {'load': 52.4, 'total': 299.3}  attn ~4b+: fp8_tile 2.36e-04 fp8_tok 1.11e-03 nvfp4 5.55e-03 H-nvfp4 4.72e-03 tok4 6.46e-03 z4 4.18e-03 w2-4 2.18e-03 z4|tiny 1.90e-03 H-z-nvfp4 3.68e-03 w2z4|tiny 1.83e-03 w2z-nv|tiny 1.50e-03 H-w2z-nv|tiny 1.49e-03 nvfp4|tiny 3.33e-03  staged 279.8 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.20it/s]Loading weights:  19%|█▉        | 3/16 [00:07<00:38,  2.99s/it]Loading weights: 100%|██████████| 16/16 [00:07<00:00,  2.08it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer012
+--------------------------+---------+-
+[18:26:33] layer 12: {'load': 47.4, 'total': 257.7}  attn ~4b+: fp8_tile 3.23e-04 fp8_tok 1.52e-03 nvfp4 7.64e-03 H-nvfp4 6.98e-03 tok4 8.84e-03 z4 5.80e-03 w2-4 2.80e-03 z4|tiny 2.37e-03 H-z-nvfp4 5.48e-03 w2z4|tiny 2.23e-03 w2z-nv|tiny 1.92e-03 H-w2z-nv|tiny 1.92e-03 nvfp4|tiny 4.34e-03  staged 283.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.27it/s]Loading weights:  19%|█▉        | 3/16 [00:14<01:17,  5.94s/it]Loading weights: 100%|██████████| 16/16 [00:14<00:00,  1.09it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer013
+--------------------------+---------+-
+[18:30:50] layer 13: {'load': 52.5, 'total': 256.7}  attn ~4b+: fp8_tile 1.73e-04 fp8_tok 7.43e-04 nvfp4 3.60e-03 H-nvfp4 3.47e-03 tok4 3.92e-03 z4 2.32e-03 w2-4 1.97e-03 z4|tiny 1.99e-03 H-z-nvfp4 2.11e-03 w2z4|tiny 1.94e-03 w2z-nv|tiny 1.77e-03 H-w2z-nv|tiny 1.77e-03 nvfp4|tiny 3.30e-03  staged 288.6 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:17,  1.11it/s]Loading weights:  14%|█▍        | 3/21 [00:12<01:31,  5.09s/it]Loading weights: 100%|██████████| 21/21 [00:12<00:00,  1.65it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer014
+--------------------------+---------+-
+[18:35:36] layer 14: {'load': 53.6, 'total': 286.3}  attn ~4b+: fp8_tile 2.20e-04 fp8_tok 9.19e-04 nvfp4 4.34e-03 H-nvfp4 4.09e-03 tok4 4.87e-03 z4 3.72e-03 w2-4 2.18e-03 z4|tiny 1.99e-03 H-z-nvfp4 3.29e-03 w2z4|tiny 1.96e-03 w2z-nv|tiny 1.75e-03 H-w2z-nv|tiny 1.74e-03 nvfp4|tiny 2.78e-03  staged 295.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.24it/s]Loading weights:  19%|█▉        | 3/16 [00:11<01:01,  4.70s/it]Loading weights: 100%|██████████| 16/16 [00:11<00:00,  1.36it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer015
+--------------------------+---------+-
+[18:40:09] layer 15: {'load': 47.8, 'total': 273.2}  attn ~4b+: fp8_tile 2.15e-04 fp8_tok 9.19e-04 nvfp4 4.02e-03 H-nvfp4 3.89e-03 tok4 4.62e-03 z4 3.49e-03 w2-4 2.36e-03 z4|tiny 2.31e-03 H-z-nvfp4 3.10e-03 w2z4|tiny 2.24e-03 w2z-nv|tiny 2.02e-03 H-w2z-nv|tiny 2.02e-03 nvfp4|tiny 3.00e-03  staged 305.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:10,  1.29it/s]Loading weights:  19%|█▉        | 3/16 [00:13<01:08,  5.29s/it]Loading weights: 100%|██████████| 16/16 [00:13<00:00,  1.22it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer016
+--------------------------+---------+-
+[18:45:18] layer 16: {'load': 55.7, 'total': 305.8}  attn ~4b+: fp8_tile 2.04e-04 fp8_tok 8.99e-04 nvfp4 4.36e-03 H-nvfp4 4.21e-03 tok4 5.15e-03 z4 3.36e-03 w2-4 2.40e-03 z4|tiny 2.37e-03 H-z-nvfp4 2.70e-03 w2z4|tiny 2.36e-03 w2z-nv|tiny 2.12e-03 H-w2z-nv|tiny 2.12e-03 nvfp4|tiny 3.78e-03  staged 286.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.21it/s]Loading weights:  19%|█▉        | 3/16 [00:21<01:51,  8.61s/it]Loading weights: 100%|██████████| 16/16 [00:21<00:00,  1.32s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer017
+--------------------------+---------+-
+[18:50:44] layer 17: {'load': 73.5, 'total': 326.0}  attn ~4b+: fp8_tile 2.01e-04 fp8_tok 7.56e-04 nvfp4 3.34e-03 H-nvfp4 3.23e-03 tok4 3.73e-03 z4 2.80e-03 w2-4 2.03e-03 z4|tiny 2.02e-03 H-z-nvfp4 2.52e-03 w2z4|tiny 1.96e-03 w2z-nv|tiny 1.77e-03 H-w2z-nv|tiny 1.77e-03 nvfp4|tiny 2.64e-03  staged 275.0 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:03<00:37,  1.98s/it]Loading weights:  14%|█▍        | 3/21 [00:28<03:24, 11.34s/it]Loading weights: 100%|██████████| 21/21 [00:28<00:00,  1.35s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer018
+--------------------------+---------+-
+[18:56:00] layer 18: {'load': 78.7, 'total': 316.1}  attn ~4b+: fp8_tile 2.68e-04 fp8_tok 1.05e-03 nvfp4 4.55e-03 H-nvfp4 4.30e-03 tok4 5.42e-03 z4 3.64e-03 w2-4 2.54e-03 z4|tiny 2.63e-03 H-z-nvfp4 3.14e-03 w2z4|tiny 2.45e-03 w2z-nv|tiny 2.20e-03 H-w2z-nv|tiny 2.19e-03 nvfp4|tiny 3.80e-03  staged 286.3 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.26it/s]Loading weights:  19%|█▉        | 3/16 [00:14<01:14,  5.71s/it]Loading weights: 100%|██████████| 16/16 [00:14<00:00,  1.13it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer019
+--------------------------+---------+-
+[19:00:48] layer 19: {'load': 63.8, 'total': 288.5}  attn ~4b+: fp8_tile 2.60e-04 fp8_tok 1.02e-03 nvfp4 4.58e-03 H-nvfp4 4.35e-03 tok4 5.05e-03 z4 3.69e-03 w2-4 2.78e-03 z4|tiny 2.72e-03 H-z-nvfp4 3.33e-03 w2z4|tiny 2.65e-03 w2z-nv|tiny 2.40e-03 H-w2z-nv|tiny 2.39e-03 nvfp4|tiny 3.63e-03  staged 286.3 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:04<00:32,  2.29s/it]Loading weights:  19%|█▉        | 3/16 [00:42<03:43, 17.18s/it]Loading weights: 100%|██████████| 16/16 [00:42<00:00,  2.66s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer020
+--------------------------+---------+-
+[19:06:31] layer 20: {'load': 103.3, 'total': 342.8}  attn ~4b+: fp8_tile 2.27e-04 fp8_tok 7.96e-04 nvfp4 3.17e-03 H-nvfp4 2.96e-03 tok4 3.94e-03 z4 2.73e-03 w2-4 1.89e-03 z4|tiny 1.91e-03 H-z-nvfp4 2.29e-03 w2z4|tiny 1.83e-03 w2z-nv|tiny 1.64e-03 H-w2z-nv|tiny 1.64e-03 nvfp4|tiny 2.60e-03  staged 254.2 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:10,  1.32it/s]Loading weights:  19%|█▉        | 3/16 [00:28<02:29, 11.48s/it]Loading weights: 100%|██████████| 16/16 [00:28<00:00,  1.75s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer021
+--------------------------+---------+-
+[19:11:46] layer 21: {'load': 84.3, 'total': 315.3}  attn ~4b+: fp8_tile 2.47e-04 fp8_tok 1.11e-03 nvfp4 5.19e-03 H-nvfp4 5.05e-03 tok4 6.89e-03 z4 5.16e-03 w2-4 2.97e-03 z4|tiny 2.88e-03 H-z-nvfp4 3.73e-03 w2z4|tiny 2.87e-03 w2z-nv|tiny 2.61e-03 H-w2z-nv|tiny 2.61e-03 nvfp4|tiny 4.11e-03  staged 253.1 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:14,  1.27it/s]Loading weights:  14%|█▍        | 3/21 [00:11<01:19,  4.40s/it]Loading weights: 100%|██████████| 21/21 [00:11<00:00,  1.90it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer022
+--------------------------+---------+-
+[19:16:32] layer 22: {'load': 45.8, 'total': 285.9}  attn ~4b+: fp8_tile 1.92e-04 fp8_tok 6.89e-04 nvfp4 2.76e-03 H-nvfp4 2.70e-03 tok4 3.82e-03 z4 2.88e-03 w2-4 1.77e-03 z4|tiny 1.76e-03 H-z-nvfp4 2.02e-03 w2z4|tiny 1.73e-03 w2z-nv|tiny 1.55e-03 H-w2z-nv|tiny 1.55e-03 nvfp4|tiny 2.33e-03  staged 255.6 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:10,  1.29it/s]Loading weights:  19%|█▉        | 3/16 [00:22<01:57,  9.02s/it]Loading weights: 100%|██████████| 16/16 [00:22<00:00,  1.38s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer023
+--------------------------+---------+-
+[19:20:57] layer 23: {'load': 58.9, 'total': 264.3}  attn ~4b+: fp8_tile 1.98e-04 fp8_tok 8.88e-04 nvfp4 4.18e-03 H-nvfp4 4.10e-03 tok4 4.57e-03 z4 2.61e-03 w2-4 2.26e-03 z4|tiny 2.40e-03 H-z-nvfp4 2.40e-03 w2z4|tiny 2.24e-03 w2z-nv|tiny 2.06e-03 H-w2z-nv|tiny 2.06e-03 nvfp4|tiny 4.00e-03  staged 258.7 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:14,  1.02s/it]Loading weights:  19%|█▉        | 3/16 [00:11<00:58,  4.52s/it]Loading weights: 100%|██████████| 16/16 [00:11<00:00,  1.39it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer024
+--------------------------+---------+-
+[19:25:48] layer 24: {'load': 49.5, 'total': 288.4}  attn ~4b+: fp8_tile 3.68e-04 fp8_tok 1.40e-03 nvfp4 6.27e-03 H-nvfp4 6.07e-03 tok4 6.85e-03 z4 4.24e-03 w2-4 3.65e-03 z4|tiny 3.75e-03 H-z-nvfp4 3.92e-03 w2z4|tiny 3.60e-03 w2z-nv|tiny 3.30e-03 H-w2z-nv|tiny 3.30e-03 nvfp4|tiny 5.80e-03  staged 263.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:14,  1.06s/it]Loading weights:  19%|█▉        | 3/16 [00:14<01:14,  5.73s/it]Loading weights: 100%|██████████| 16/16 [00:14<00:00,  1.11it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer025
+--------------------------+---------+-
+[19:31:29] layer 25: {'load': 54.7, 'total': 341.0}  attn ~4b+: fp8_tile 3.64e-04 fp8_tok 1.57e-03 nvfp4 7.48e-03 H-nvfp4 7.33e-03 tok4 8.57e-03 z4 5.76e-03 w2-4 4.77e-03 z4|tiny 4.76e-03 H-z-nvfp4 4.89e-03 w2z4|tiny 4.73e-03 w2z-nv|tiny 4.34e-03 H-w2z-nv|tiny 4.33e-03 nvfp4|tiny 6.97e-03  staged 267.5 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:16,  1.18it/s]Loading weights:  14%|█▍        | 3/21 [00:16<01:57,  6.55s/it]Loading weights: 100%|██████████| 21/21 [00:16<00:00,  1.29it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer026
+--------------------------+---------+-
+[19:37:03] layer 26: {'load': 57.4, 'total': 334.0}  attn ~4b+: fp8_tile 3.92e-04 fp8_tok 1.49e-03 nvfp4 6.29e-03 H-nvfp4 6.10e-03 tok4 7.08e-03 z4 4.96e-03 w2-4 4.48e-03 z4|tiny 4.50e-03 H-z-nvfp4 4.44e-03 w2z4|tiny 4.44e-03 w2z-nv|tiny 4.05e-03 H-w2z-nv|tiny 4.05e-03 nvfp4|tiny 5.95e-03  staged 266.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:14,  1.04s/it]Loading weights:  19%|█▉        | 3/16 [00:18<01:34,  7.29s/it]Loading weights: 100%|██████████| 16/16 [00:18<00:00,  1.13s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer027
+--------------------------+---------+-
+[19:42:07] layer 27: {'load': 60.5, 'total': 304.6}  attn ~4b+: fp8_tile 4.56e-04 fp8_tok 1.98e-03 nvfp4 8.49e-03 H-nvfp4 7.96e-03 tok4 9.59e-03 z4 6.92e-03 w2-4 6.27e-03 z4|tiny 6.23e-03 H-z-nvfp4 6.08e-03 w2z4|tiny 6.22e-03 w2z-nv|tiny 5.59e-03 H-w2z-nv|tiny 5.59e-03 nvfp4|tiny 8.05e-03  staged 265.5 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:17,  1.25s/it]Loading weights:  19%|█▉        | 3/16 [00:25<02:15, 10.45s/it]Loading weights: 100%|██████████| 16/16 [00:25<00:00,  1.61s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer028
+--------------------------+---------+-
+[19:47:45] layer 28: {'load': 79.8, 'total': 338.3}  attn ~4b+: fp8_tile 5.21e-04 fp8_tok 1.86e-03 nvfp4 7.81e-03 H-nvfp4 7.64e-03 tok4 9.10e-03 z4 6.65e-03 w2-4 5.48e-03 z4|tiny 5.64e-03 H-z-nvfp4 5.59e-03 w2z4|tiny 5.46e-03 w2z-nv|tiny 5.00e-03 H-w2z-nv|tiny 5.00e-03 nvfp4|tiny 7.43e-03  staged 257.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:05<00:40,  2.88s/it]Loading weights:  19%|█▉        | 3/16 [00:28<02:24, 11.15s/it]Loading weights: 100%|██████████| 16/16 [00:28<00:00,  1.78s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer029
+--------------------------+---------+-
+[19:52:54] layer 29: {'load': 88.6, 'total': 308.2}  attn ~4b+: fp8_tile 5.55e-04 fp8_tok 1.98e-03 nvfp4 8.46e-03 H-nvfp4 8.34e-03 tok4 1.02e-02 z4 7.55e-03 w2-4 5.98e-03 z4|tiny 6.01e-03 H-z-nvfp4 6.00e-03 w2z4|tiny 5.96e-03 w2z-nv|tiny 5.47e-03 H-w2z-nv|tiny 5.46e-03 nvfp4|tiny 7.99e-03  staged 249.1 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:04<00:46,  2.46s/it]Loading weights:  14%|█▍        | 3/21 [00:33<04:02, 13.45s/it]Loading weights: 100%|██████████| 21/21 [00:33<00:00,  1.61s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer030
+--------------------------+---------+-
+[19:58:13] layer 30: {'load': 88.2, 'total': 319.0}  attn ~4b+: fp8_tile 5.81e-04 fp8_tok 2.04e-03 nvfp4 8.46e-03 H-nvfp4 8.52e-03 tok4 2.16e-02 z4 2.01e-02 w2-4 5.69e-03 z4|tiny 2.01e-02 H-z-nvfp4 7.27e-03 w2z4|tiny 5.70e-03 w2z-nv|tiny 5.21e-03 H-w2z-nv|tiny 5.21e-03 nvfp4|tiny 8.46e-03  staged 249.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:10<01:11,  5.11s/it]Loading weights:  19%|█▉        | 3/16 [00:36<02:58, 13.73s/it]Loading weights: 100%|██████████| 16/16 [00:36<00:00,  2.25s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer031
+--------------------------+---------+-
+[20:03:52] layer 31: {'load': 130.1, 'total': 339.1}  attn ~4b+: fp8_tile 4.84e-04 fp8_tok 1.67e-03 nvfp4 6.50e-03 H-nvfp4 6.21e-03 tok4 1.57e-02 z4 1.42e-02 w2-4 3.91e-03 z4|tiny 1.42e-02 H-z-nvfp4 5.27e-03 w2z4|tiny 3.92e-03 w2z-nv|tiny 3.55e-03 H-w2z-nv|tiny 3.55e-03 nvfp4|tiny 6.50e-03  staged 240.8 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.07it/s]Loading weights:  19%|█▉        | 3/16 [00:15<01:22,  6.37s/it]Loading weights: 100%|██████████| 16/16 [00:15<00:00,  1.01it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer032
+--------------------------+---------+-
+[20:08:29] layer 32: {'load': 54.1, 'total': 273.5}  attn ~4b+: fp8_tile 6.13e-04 fp8_tok 2.11e-03 nvfp4 8.95e-03 H-nvfp4 8.71e-03 tok4 2.52e-02 z4 2.34e-02 w2-4 5.24e-03 z4|tiny 2.34e-02 H-z-nvfp4 7.48e-03 w2z4|tiny 5.24e-03 w2z-nv|tiny 4.81e-03 H-w2z-nv|tiny 4.81e-03 nvfp4|tiny 8.95e-03  staged 241.7 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:10,  1.36it/s]Loading weights:  19%|█▉        | 3/16 [00:09<00:49,  3.84s/it]Loading weights: 100%|██████████| 16/16 [00:09<00:00,  1.66it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer033
+--------------------------+---------+-
+[20:13:04] layer 33: {'load': 48.5, 'total': 275.3}  attn ~4b+: fp8_tile 7.84e-04 fp8_tok 2.40e-03 nvfp4 8.33e-03 H-nvfp4 8.27e-03 tok4 1.86e-02 z4 1.64e-02 w2-4 5.43e-03 z4|tiny 1.64e-02 H-z-nvfp4 6.84e-03 w2z4|tiny 5.44e-03 w2z-nv|tiny 4.95e-03 H-w2z-nv|tiny 4.96e-03 nvfp4|tiny 8.33e-03  staged 244.4 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:15,  1.23it/s]Loading weights:  14%|█▍        | 3/21 [00:10<01:17,  4.32s/it]Loading weights: 100%|██████████| 21/21 [00:10<00:00,  1.93it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer034
+--------------------------+---------+-
+[20:17:56] layer 34: {'load': 52.6, 'total': 292.4}  attn ~4b+: fp8_tile 1.00e-03 fp8_tok 3.50e-03 nvfp4 1.25e-02 H-nvfp4 1.23e-02 tok4 2.41e-02 z4 2.15e-02 w2-4 8.79e-03 z4|tiny 2.15e-02 H-z-nvfp4 1.02e-02 w2z4|tiny 8.79e-03 w2z-nv|tiny 8.10e-03 H-w2z-nv|tiny 8.10e-03 nvfp4|tiny 1.25e-02  staged 247.7 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.18it/s]Loading weights:  19%|█▉        | 3/16 [00:12<01:03,  4.91s/it]Loading weights: 100%|██████████| 16/16 [00:12<00:00,  1.30it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer035
+--------------------------+---------+-
+[20:23:00] layer 35: {'load': 55.3, 'total': 303.2}  attn ~4b+: fp8_tile 9.41e-04 fp8_tok 3.02e-03 nvfp4 1.12e-02 H-nvfp4 1.11e-02 tok4 1.95e-02 z4 1.74e-02 w2-4 8.27e-03 z4|tiny 1.74e-02 H-z-nvfp4 9.31e-03 w2z4|tiny 8.27e-03 w2z-nv|tiny 7.63e-03 H-w2z-nv|tiny 7.64e-03 nvfp4|tiny 1.12e-02  staged 249.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:15,  1.09s/it]Loading weights:  19%|█▉        | 3/16 [00:18<01:36,  7.45s/it]Loading weights: 100%|██████████| 16/16 [00:18<00:00,  1.16s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer036
+--------------------------+---------+-
+[20:27:51] layer 36: {'load': 63.1, 'total': 291.9}  attn ~4b+: fp8_tile 8.19e-04 fp8_tok 2.66e-03 nvfp4 9.30e-03 H-nvfp4 9.06e-03 tok4 1.31e-02 z4 1.04e-02 w2-4 6.91e-03 z4|tiny 1.04e-02 H-z-nvfp4 6.87e-03 w2z4|tiny 6.91e-03 w2z-nv|tiny 6.36e-03 H-w2z-nv|tiny 6.37e-03 nvfp4|tiny 9.30e-03  staged 250.5 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.04it/s]Loading weights:  19%|█▉        | 3/16 [00:24<02:11, 10.13s/it]Loading weights: 100%|██████████| 16/16 [00:24<00:00,  1.56s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer037
+--------------------------+---------+-
+[20:33:48] layer 37: {'load': 78.5, 'total': 356.1}  attn ~4b+: fp8_tile 1.24e-03 fp8_tok 3.82e-03 nvfp4 1.18e-02 H-nvfp4 1.14e-02 tok4 1.49e-02 z4 1.26e-02 w2-4 8.50e-03 z4|tiny 1.26e-02 H-z-nvfp4 9.57e-03 w2z4|tiny 8.52e-03 w2z-nv|tiny 7.87e-03 H-w2z-nv|tiny 7.86e-03 nvfp4|tiny 1.18e-02  staged 246.5 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:05<00:50,  2.66s/it]Loading weights:  14%|█▍        | 3/21 [00:26<03:06, 10.33s/it]Loading weights: 100%|██████████| 21/21 [00:26<00:00,  1.26s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer038
+--------------------------+---------+-
+[20:38:59] layer 38: {'load': 70.9, 'total': 311.9}  attn ~4b+: fp8_tile 1.11e-03 fp8_tok 3.55e-03 nvfp4 1.29e-02 H-nvfp4 1.29e-02 tok4 2.69e-02 z4 2.48e-02 w2-4 9.32e-03 z4|tiny 2.48e-02 H-z-nvfp4 1.12e-02 w2z4|tiny 9.32e-03 w2z-nv|tiny 8.58e-03 H-w2z-nv|tiny 8.59e-03 nvfp4|tiny 1.29e-02  staged 242.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:05<00:39,  2.85s/it]Loading weights:  19%|█▉        | 3/16 [00:31<02:41, 12.39s/it]Loading weights: 100%|██████████| 16/16 [00:31<00:00,  1.97s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer039
+--------------------------+---------+-
+[20:44:04] layer 39: {'load': 86.2, 'total': 304.1}  attn ~4b+: fp8_tile 1.05e-03 fp8_tok 3.65e-03 nvfp4 1.41e-02 H-nvfp4 1.40e-02 tok4 3.05e-02 z4 2.76e-02 w2-4 1.00e-02 z4|tiny 2.76e-02 H-z-nvfp4 1.16e-02 w2z4|tiny 1.00e-02 w2z-nv|tiny 9.14e-03 H-w2z-nv|tiny 9.16e-03 nvfp4|tiny 1.41e-02  staged 242.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:15,  1.07s/it]Loading weights:  19%|█▉        | 3/16 [00:11<00:58,  4.54s/it]Loading weights: 100%|██████████| 16/16 [00:11<00:00,  1.39it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer040
+--------------------------+---------+-
+[20:50:46] layer 40: {'load': 116.8, 'total': 400.5}  attn ~4b+: fp8_tile 8.17e-04 fp8_tok 2.64e-03 nvfp4 1.00e-02 H-nvfp4 1.02e-02 tok4 2.05e-02 z4 1.34e-02 w2-4 6.98e-03 z4|tiny 1.34e-02 H-z-nvfp4 7.76e-03 w2z4|tiny 6.97e-03 w2z-nv|tiny 6.38e-03 H-w2z-nv|tiny 6.40e-03 nvfp4|tiny 1.00e-02  staged 234.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:09,  1.40it/s]Loading weights:  19%|█▉        | 3/16 [00:06<00:31,  2.44s/it]Loading weights: 100%|██████████| 16/16 [00:06<00:00,  2.54it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer041
+--------------------------+---------+-
+[20:55:14] layer 41: {'load': 46.4, 'total': 267.6}  attn ~4b+: fp8_tile 9.48e-04 fp8_tok 3.22e-03 nvfp4 1.36e-02 H-nvfp4 1.31e-02 tok4 3.72e-02 z4 3.58e-02 w2-4 8.97e-03 z4|tiny 3.58e-02 H-z-nvfp4 1.08e-02 w2z4|tiny 8.98e-03 w2z-nv|tiny 8.19e-03 H-w2z-nv|tiny 8.24e-03 nvfp4|tiny 1.36e-02  staged 235.5 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:14,  1.29it/s]Loading weights:  14%|█▍        | 3/21 [00:15<01:50,  6.14s/it]Loading weights: 100%|██████████| 21/21 [00:15<00:00,  1.38it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer042
+--------------------------+---------+-
+[20:59:55] layer 42: {'load': 49.8, 'total': 280.6}  attn ~4b+: fp8_tile 1.14e-03 fp8_tok 3.72e-03 nvfp4 1.24e-02 H-nvfp4 1.20e-02 tok4 1.85e-02 z4 1.64e-02 w2-4 9.75e-03 z4|tiny 1.64e-02 H-z-nvfp4 1.04e-02 w2z4|tiny 9.75e-03 w2z-nv|tiny 8.99e-03 H-w2z-nv|tiny 8.98e-03 nvfp4|tiny 1.24e-02  staged 237.3 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.10it/s]Loading weights:  19%|█▉        | 3/16 [00:17<01:32,  7.11s/it]Loading weights: 100%|██████████| 16/16 [00:17<00:00,  1.10s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer043
+--------------------------+---------+-
+[21:04:25] layer 43: {'load': 62.0, 'total': 270.0}  attn ~4b+: fp8_tile 1.09e-03 fp8_tok 3.60e-03 nvfp4 1.24e-02 H-nvfp4 1.22e-02 tok4 1.66e-02 z4 1.27e-02 w2-4 9.25e-03 z4|tiny 1.27e-02 H-z-nvfp4 9.28e-03 w2z4|tiny 9.25e-03 w2z-nv|tiny 8.54e-03 H-w2z-nv|tiny 8.56e-03 nvfp4|tiny 1.24e-02  staged 239.5 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.04it/s]Loading weights:  19%|█▉        | 3/16 [00:15<01:22,  6.35s/it]Loading weights: 100%|██████████| 16/16 [00:15<00:00,  1.01it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer044
+--------------------------+---------+-
+[21:09:06] layer 44: {'load': 58.7, 'total': 281.6}  attn ~4b+: fp8_tile 8.31e-04 fp8_tok 3.11e-03 nvfp4 1.22e-02 H-nvfp4 1.27e-02 tok4 2.28e-02 z4 1.99e-02 w2-4 8.84e-03 z4|tiny 1.99e-02 H-z-nvfp4 1.01e-02 w2z4|tiny 8.85e-03 w2z-nv|tiny 8.11e-03 H-w2z-nv|tiny 8.12e-03 nvfp4|tiny 1.22e-02  staged 242.6 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.16it/s]Loading weights:  19%|█▉        | 3/16 [00:14<01:15,  5.83s/it]Loading weights: 100%|██████████| 16/16 [00:14<00:00,  1.10it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer045
+--------------------------+---------+-
+[21:14:08] layer 45: {'load': 58.2, 'total': 301.7}  attn ~4b+: fp8_tile 1.21e-03 fp8_tok 3.71e-03 nvfp4 1.20e-02 H-nvfp4 1.16e-02 tok4 1.65e-02 z4 1.29e-02 w2-4 8.70e-03 z4|tiny 1.29e-02 H-z-nvfp4 9.46e-03 w2z4|tiny 8.70e-03 w2z-nv|tiny 8.01e-03 H-w2z-nv|tiny 8.01e-03 nvfp4|tiny 1.20e-02  staged 245.3 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:14,  1.28it/s]Loading weights:  14%|█▍        | 3/21 [00:20<02:31,  8.43s/it]Loading weights: 100%|██████████| 21/21 [00:20<00:00,  1.01it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer046
+--------------------------+---------+-
+[21:19:37] layer 46: {'load': 67.4, 'total': 329.1}  attn ~4b+: fp8_tile 7.61e-04 fp8_tok 2.72e-03 nvfp4 1.14e-02 H-nvfp4 1.11e-02 tok4 2.41e-02 z4 2.10e-02 w2-4 7.67e-03 z4|tiny 2.10e-02 H-z-nvfp4 8.55e-03 w2z4|tiny 7.66e-03 w2z-nv|tiny 7.00e-03 H-w2z-nv|tiny 7.03e-03 nvfp4|tiny 1.14e-02  staged 246.5 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:14,  1.03s/it]Loading weights:  19%|█▉        | 3/16 [00:28<02:28, 11.43s/it]Loading weights: 100%|██████████| 16/16 [00:28<00:00,  1.75s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer047
+--------------------------+---------+-
+[21:25:13] layer 47: {'load': 77.7, 'total': 335.9}  attn ~4b+: fp8_tile 1.03e-03 fp8_tok 3.30e-03 nvfp4 1.14e-02 H-nvfp4 1.10e-02 tok4 1.60e-02 z4 1.25e-02 w2-4 8.57e-03 z4|tiny 1.25e-02 H-z-nvfp4 8.89e-03 w2z4|tiny 8.56e-03 w2z-nv|tiny 7.83e-03 H-w2z-nv|tiny 7.88e-03 nvfp4|tiny 1.14e-02  staged 246.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:05<00:35,  2.50s/it]Loading weights:  19%|█▉        | 3/16 [00:38<03:21, 15.47s/it]Loading weights: 100%|██████████| 16/16 [00:38<00:00,  2.41s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer048
+--------------------------+---------+-
+[21:31:19] layer 48: {'load': 92.7, 'total': 363.7}  attn ~4b+: fp8_tile 9.66e-04 fp8_tok 3.23e-03 nvfp4 1.22e-02 H-nvfp4 1.18e-02 tok4 1.69e-02 z4 1.38e-02 w2-4 8.95e-03 z4|tiny 1.38e-02 H-z-nvfp4 9.15e-03 w2z4|tiny 8.95e-03 w2z-nv|tiny 8.17e-03 H-w2z-nv|tiny 8.21e-03 nvfp4|tiny 1.22e-02  staged 242.2 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:03<00:27,  1.96s/it]Loading weights:  19%|█▉        | 3/16 [00:36<03:13, 14.92s/it]Loading weights: 100%|██████████| 16/16 [00:36<00:00,  2.31s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer049
+--------------------------+---------+-
+[21:36:52] layer 49: {'load': 96.7, 'total': 332.9}  attn ~4b+: fp8_tile 7.82e-04 fp8_tok 2.75e-03 nvfp4 1.07e-02 H-nvfp4 1.08e-02 tok4 1.91e-02 z4 1.66e-02 w2-4 8.03e-03 z4|tiny 1.66e-02 H-z-nvfp4 8.88e-03 w2z4|tiny 8.03e-03 w2z-nv|tiny 7.25e-03 H-w2z-nv|tiny 7.30e-03 nvfp4|tiny 1.07e-02  staged 238.4 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:11<01:45,  5.56s/it]Loading weights:  14%|█▍        | 3/21 [00:37<04:18, 14.37s/it]Loading weights: 100%|██████████| 21/21 [00:37<00:00,  1.80s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer050
+--------------------------+---------+-
+[21:41:56] layer 50: {'load': 78.4, 'total': 303.7}  attn ~4b+: fp8_tile 5.54e-04 fp8_tok 2.00e-03 nvfp4 7.89e-03 H-nvfp4 7.76e-03 tok4 1.24e-02 z4 9.64e-03 w2-4 5.24e-03 z4|tiny 9.64e-03 H-z-nvfp4 5.66e-03 w2z4|tiny 5.24e-03 w2z-nv|tiny 4.78e-03 H-w2z-nv|tiny 4.77e-03 nvfp4|tiny 7.89e-03  staged 238.8 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.16it/s]Loading weights:  19%|█▉        | 3/16 [00:12<01:05,  5.07s/it]Loading weights: 100%|██████████| 16/16 [00:12<00:00,  1.26it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer051
+--------------------------+---------+-
+[21:46:21] layer 51: {'load': 48.0, 'total': 265.1}  attn ~4b+: fp8_tile 7.89e-04 fp8_tok 3.11e-03 nvfp4 1.38e-02 H-nvfp4 1.33e-02 tok4 2.30e-02 z4 1.88e-02 w2-4 8.58e-03 z4|tiny 1.88e-02 H-z-nvfp4 1.02e-02 w2z4|tiny 8.57e-03 w2z-nv|tiny 7.77e-03 H-w2z-nv|tiny 7.78e-03 nvfp4|tiny 1.38e-02  staged 239.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:02<00:15,  1.08s/it]Loading weights:  19%|█▉        | 3/16 [00:18<01:36,  7.42s/it]Loading weights: 100%|██████████| 16/16 [00:18<00:00,  1.15s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer052
+--------------------------+---------+-
+[21:50:55] layer 52: {'load': 55.6, 'total': 274.3}  attn ~4b+: fp8_tile 8.04e-04 fp8_tok 2.98e-03 nvfp4 1.23e-02 H-nvfp4 1.22e-02 tok4 1.98e-02 z4 1.64e-02 w2-4 7.87e-03 z4|tiny 1.03e-02 H-z-nvfp4 9.52e-03 w2z4|tiny 7.85e-03 w2z-nv|tiny 7.14e-03 H-w2z-nv|tiny 7.16e-03 nvfp4|tiny 1.15e-02  staged 241.3 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.09it/s]Loading weights:  19%|█▉        | 3/16 [00:11<00:57,  4.39s/it]Loading weights: 100%|██████████| 16/16 [00:11<00:00,  1.44it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer053
+--------------------------+---------+-
+[21:55:23] layer 53: {'load': 51.4, 'total': 267.5}  attn ~4b+: fp8_tile 6.35e-04 fp8_tok 2.25e-03 nvfp4 8.86e-03 H-nvfp4 8.75e-03 tok4 1.77e-02 z4 6.40e-03 w2-4 6.18e-03 z4|tiny 6.40e-03 H-z-nvfp4 5.83e-03 w2z4|tiny 6.18e-03 w2z-nv|tiny 5.61e-03 H-w2z-nv|tiny 5.61e-03 nvfp4|tiny 8.86e-03  staged 243.4 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:16,  1.17it/s]Loading weights:  14%|█▍        | 3/21 [00:14<01:48,  6.02s/it]Loading weights: 100%|██████████| 21/21 [00:14<00:00,  1.40it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer054
+--------------------------+---------+-
+[22:00:09] layer 54: {'load': 55.0, 'total': 286.4}  attn ~4b+: fp8_tile 7.37e-04 fp8_tok 2.76e-03 nvfp4 1.07e-02 H-nvfp4 1.05e-02 tok4 1.61e-02 z4 1.35e-02 w2-4 8.40e-03 z4|tiny 1.35e-02 H-z-nvfp4 8.61e-03 w2z4|tiny 8.39e-03 w2z-nv|tiny 7.67e-03 H-w2z-nv|tiny 7.68e-03 nvfp4|tiny 1.07e-02  staged 245.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.16it/s]Loading weights:  19%|█▉        | 3/16 [00:13<01:11,  5.48s/it]Loading weights: 100%|██████████| 16/16 [00:13<00:00,  1.17it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer055
+--------------------------+---------+-
+[22:05:21] layer 55: {'load': 56.2, 'total': 311.5}  attn ~4b+: fp8_tile 5.89e-04 fp8_tok 2.21e-03 nvfp4 9.27e-03 H-nvfp4 9.11e-03 tok4 1.63e-02 z4 1.24e-02 w2-4 6.81e-03 z4|tiny 1.24e-02 H-z-nvfp4 7.04e-03 w2z4|tiny 6.80e-03 w2z-nv|tiny 6.21e-03 H-w2z-nv|tiny 6.22e-03 nvfp4|tiny 9.27e-03  staged 247.6 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.05it/s]Loading weights:  19%|█▉        | 3/16 [00:20<01:46,  8.22s/it]Loading weights: 100%|██████████| 16/16 [00:20<00:00,  1.27s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer056
+--------------------------+---------+-
+[22:10:38] layer 56: {'load': 67.9, 'total': 315.2}  attn ~4b+: fp8_tile 7.86e-04 fp8_tok 2.96e-03 nvfp4 1.21e-02 H-nvfp4 1.16e-02 tok4 1.53e-02 z4 1.14e-02 w2-4 8.22e-03 z4|tiny 1.10e-02 H-z-nvfp4 8.47e-03 w2z4|tiny 8.22e-03 w2z-nv|tiny 7.47e-03 H-w2z-nv|tiny 7.45e-03 nvfp4|tiny 1.18e-02  staged 245.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:07<00:50,  3.59s/it]Loading weights:  19%|█▉        | 3/16 [00:38<03:15, 15.07s/it]Loading weights: 100%|██████████| 16/16 [00:38<00:00,  2.40s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer057
+--------------------------+---------+-
+[22:16:25] layer 57: {'load': 88.0, 'total': 346.9}  attn ~4b+: fp8_tile 6.87e-04 fp8_tok 2.48e-03 nvfp4 1.00e-02 H-nvfp4 9.74e-03 tok4 1.43e-02 z4 1.18e-02 w2-4 6.71e-03 z4|tiny 9.91e-03 H-z-nvfp4 7.41e-03 w2z4|tiny 6.68e-03 w2z-nv|tiny 6.06e-03 H-w2z-nv|tiny 6.08e-03 nvfp4|tiny 9.50e-03  staged 244.5 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:04<00:44,  2.35s/it]Loading weights:  14%|█▍        | 3/21 [00:33<04:01, 13.44s/it]Loading weights: 100%|██████████| 21/21 [00:33<00:00,  1.60s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer058
+--------------------------+---------+-
+[22:22:16] layer 58: {'load': 86.2, 'total': 350.3}  attn ~4b+: fp8_tile 8.24e-04 fp8_tok 3.03e-03 nvfp4 1.20e-02 H-nvfp4 1.21e-02 tok4 2.30e-02 z4 2.06e-02 w2-4 8.78e-03 z4|tiny 2.06e-02 H-z-nvfp4 1.01e-02 w2z4|tiny 8.78e-03 w2z-nv|tiny 7.97e-03 H-w2z-nv|tiny 8.03e-03 nvfp4|tiny 1.20e-02  staged 242.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:05<00:39,  2.82s/it]Loading weights:  19%|█▉        | 3/16 [00:35<03:04, 14.18s/it]Loading weights: 100%|██████████| 16/16 [00:35<00:00,  2.23s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer059
+--------------------------+---------+-
+[22:27:41] layer 59: {'load': 90.1, 'total': 325.2}  attn ~4b+: fp8_tile 6.53e-04 fp8_tok 2.31e-03 nvfp4 9.59e-03 H-nvfp4 9.67e-03 tok4 1.32e-02 z4 8.57e-03 w2-4 6.96e-03 z4|tiny 6.93e-03 H-z-nvfp4 6.81e-03 w2z4|tiny 6.91e-03 w2z-nv|tiny 6.12e-03 H-w2z-nv|tiny 6.21e-03 nvfp4|tiny 9.02e-03  staged 239.7 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.25it/s]Loading weights:  19%|█▉        | 3/16 [00:06<00:33,  2.57s/it]Loading weights: 100%|██████████| 16/16 [00:06<00:00,  2.41it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer060
+--------------------------+---------+-
+[22:32:09] layer 60: {'load': 42.5, 'total': 268.1}  attn ~4b+: fp8_tile 7.31e-04 fp8_tok 2.41e-03 nvfp4 9.14e-03 H-nvfp4 9.17e-03 tok4 1.15e-02 z4 8.73e-03 w2-4 6.28e-03 z4|tiny 7.96e-03 H-z-nvfp4 6.96e-03 w2z4|tiny 6.25e-03 w2z-nv|tiny 5.63e-03 H-w2z-nv|tiny 5.67e-03 nvfp4|tiny 8.79e-03  staged 240.4 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.03it/s]Loading weights:  19%|█▉        | 3/16 [00:10<00:54,  4.20s/it]Loading weights: 100%|██████████| 16/16 [00:10<00:00,  1.50it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer061
+--------------------------+---------+-
+[22:36:35] layer 61: {'load': 50.3, 'total': 266.0}  attn ~4b+: fp8_tile 7.87e-04 fp8_tok 3.01e-03 nvfp4 1.23e-02 H-nvfp4 1.21e-02 tok4 1.56e-02 z4 1.31e-02 w2-4 9.27e-03 z4|tiny 1.06e-02 H-z-nvfp4 9.55e-03 w2z4|tiny 9.23e-03 w2z-nv|tiny 8.45e-03 H-w2z-nv|tiny 8.48e-03 nvfp4|tiny 1.17e-02  staged 241.7 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:14,  1.33it/s]Loading weights:  14%|█▍        | 3/21 [00:17<02:10,  7.23s/it]Loading weights: 100%|██████████| 21/21 [00:17<00:00,  1.18it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer062
+--------------------------+---------+-
+[22:41:13] layer 62: {'load': 57.4, 'total': 278.4}  attn ~4b+: fp8_tile 9.05e-04 fp8_tok 3.20e-03 nvfp4 1.31e-02 H-nvfp4 1.26e-02 tok4 1.48e-02 z4 1.10e-02 w2-4 9.44e-03 z4|tiny 1.04e-02 H-z-nvfp4 9.43e-03 w2z4|tiny 9.43e-03 w2z-nv|tiny 8.53e-03 H-w2z-nv|tiny 8.61e-03 nvfp4|tiny 1.28e-02  staged 243.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.10it/s]Loading weights:  19%|█▉        | 3/16 [00:13<01:10,  5.45s/it]Loading weights: 100%|██████████| 16/16 [00:13<00:00,  1.17it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer063
+--------------------------+---------+-
+[22:45:39] layer 63: {'load': 56.4, 'total': 265.3}  attn ~4b+: fp8_tile 9.28e-04 fp8_tok 3.35e-03 nvfp4 1.41e-02 H-nvfp4 1.37e-02 tok4 1.64e-02 z4 1.17e-02 w2-4 1.08e-02 z4|tiny 1.09e-02 H-z-nvfp4 1.03e-02 w2z4|tiny 1.08e-02 w2z-nv|tiny 9.83e-03 H-w2z-nv|tiny 9.81e-03 nvfp4|tiny 1.38e-02  staged 244.8 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.19it/s]Loading weights:  19%|█▉        | 3/16 [00:12<01:05,  5.01s/it]Loading weights: 100%|██████████| 16/16 [00:12<00:00,  1.28it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer064
+--------------------------+---------+-
+[22:51:00] layer 64: {'load': 60.6, 'total': 319.4}  attn ~4b+: fp8_tile 7.81e-04 fp8_tok 2.89e-03 nvfp4 1.23e-02 H-nvfp4 1.20e-02 tok4 1.48e-02 z4 9.44e-03 w2-4 9.08e-03 z4|tiny 9.01e-03 H-z-nvfp4 8.52e-03 w2z4|tiny 9.04e-03 w2z-nv|tiny 8.22e-03 H-w2z-nv|tiny 8.24e-03 nvfp4|tiny 1.19e-02  staged 246.2 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:13,  1.06it/s]Loading weights:  19%|█▉        | 3/16 [00:18<01:36,  7.41s/it]Loading weights: 100%|██████████| 16/16 [00:18<00:00,  1.15s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer065
+--------------------------+---------+-
+[22:56:08] layer 65: {'load': 69.5, 'total': 307.8}  attn ~4b+: fp8_tile 9.30e-04 fp8_tok 3.15e-03 nvfp4 1.22e-02 H-nvfp4 1.18e-02 tok4 1.63e-02 z4 9.05e-03 w2-4 8.26e-03 z4|tiny 8.21e-03 H-z-nvfp4 8.06e-03 w2z4|tiny 8.24e-03 w2z-nv|tiny 7.42e-03 H-w2z-nv|tiny 7.27e-03 nvfp4|tiny 1.15e-02  staged 247.0 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:15,  1.20it/s]Loading weights:  14%|█▍        | 3/21 [00:22<02:46,  9.23s/it]Loading weights: 100%|██████████| 21/21 [00:22<00:00,  1.08s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer066
+--------------------------+---------+-
+[23:02:05] layer 66: {'load': 69.1, 'total': 356.8}  attn ~4b+: fp8_tile 9.51e-04 fp8_tok 3.52e-03 nvfp4 1.38e-02 H-nvfp4 1.36e-02 tok4 1.70e-02 z4 1.46e-02 w2-4 1.12e-02 z4|tiny 1.46e-02 H-z-nvfp4 1.17e-02 w2z4|tiny 1.12e-02 w2z-nv|tiny 1.02e-02 H-w2z-nv|tiny 1.02e-02 nvfp4|tiny 1.38e-02  staged 245.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:04<00:34,  2.48s/it]Loading weights:  19%|█▉        | 3/16 [00:27<02:23, 11.02s/it]Loading weights: 100%|██████████| 16/16 [00:27<00:00,  1.75s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer067
+--------------------------+---------+-
+[23:07:50] layer 67: {'load': 88.4, 'total': 344.4}  attn ~4b+: fp8_tile 7.24e-04 fp8_tok 3.03e-03 nvfp4 1.36e-02 H-nvfp4 1.35e-02 tok4 1.68e-02 z4 1.45e-02 w2-4 1.13e-02 z4|tiny 1.45e-02 H-z-nvfp4 1.09e-02 w2z4|tiny 1.13e-02 w2z-nv|tiny 1.02e-02 H-w2z-nv|tiny 1.03e-02 nvfp4|tiny 1.36e-02  staged 244.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:07<00:51,  3.71s/it]Loading weights:  19%|█▉        | 3/16 [00:33<02:50, 13.13s/it]Loading weights: 100%|██████████| 16/16 [00:33<00:00,  2.11s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer068
+--------------------------+---------+-
+[23:13:02] layer 68: {'load': 90.4, 'total': 312.0}  attn ~4b+: fp8_tile 7.83e-04 fp8_tok 3.14e-03 nvfp4 1.36e-02 H-nvfp4 1.35e-02 tok4 1.74e-02 z4 1.34e-02 w2-4 1.06e-02 z4|tiny 1.34e-02 H-z-nvfp4 1.01e-02 w2z4|tiny 1.06e-02 w2z-nv|tiny 9.58e-03 H-w2z-nv|tiny 9.66e-03 nvfp4|tiny 1.36e-02  staged 242.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.26it/s]Loading weights:  19%|█▉        | 3/16 [00:18<01:40,  7.71s/it]Loading weights: 100%|██████████| 16/16 [00:18<00:00,  1.19s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer069
+--------------------------+---------+-
+[23:17:22] layer 69: {'load': 56.6, 'total': 260.2}  attn ~4b+: fp8_tile 1.08e-03 fp8_tok 3.88e-03 nvfp4 1.58e-02 H-nvfp4 1.55e-02 tok4 2.02e-02 z4 1.73e-02 w2-4 1.32e-02 z4|tiny 1.73e-02 H-z-nvfp4 1.30e-02 w2z4|tiny 1.32e-02 w2z-nv|tiny 1.21e-02 H-w2z-nv|tiny 1.21e-02 nvfp4|tiny 1.58e-02  staged 242.2 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:14,  1.30it/s]Loading weights:  14%|█▍        | 3/21 [00:19<02:21,  7.86s/it]Loading weights: 100%|██████████| 21/21 [00:19<00:00,  1.09it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer070
+--------------------------+---------+-
+[23:22:07] layer 70: {'load': 61.0, 'total': 285.1}  attn ~4b+: fp8_tile 9.61e-04 fp8_tok 3.31e-03 nvfp4 1.46e-02 H-nvfp4 1.43e-02 tok4 2.98e-02 z4 1.50e-02 w2-4 1.01e-02 z4|tiny 1.50e-02 H-z-nvfp4 1.11e-02 w2z4|tiny 1.01e-02 w2z-nv|tiny 8.87e-03 H-w2z-nv|tiny 9.04e-03 nvfp4|tiny 1.46e-02  staged 243.0 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.18it/s]Loading weights:  19%|█▉        | 3/16 [00:08<00:42,  3.28s/it]Loading weights: 100%|██████████| 16/16 [00:08<00:00,  1.91it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer071
+--------------------------+---------+-
+[23:26:35] layer 71: {'load': 54.2, 'total': 267.8}  attn ~4b+: fp8_tile 6.58e-04 fp8_tok 2.77e-03 nvfp4 1.29e-02 H-nvfp4 1.30e-02 tok4 1.80e-02 z4 1.47e-02 w2-4 1.13e-02 z4|tiny 1.47e-02 H-z-nvfp4 1.03e-02 w2z4|tiny 1.13e-02 w2z-nv|tiny 9.63e-03 H-w2z-nv|tiny 9.89e-03 nvfp4|tiny 1.29e-02  staged 244.2 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:04<00:29,  2.11s/it]Loading weights:  19%|█▉        | 3/16 [00:27<02:20, 10.80s/it]Loading weights: 100%|██████████| 16/16 [00:27<00:00,  1.70s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer072
+--------------------------+---------+-
+[23:32:36] layer 72: {'load': 74.3, 'total': 358.6}  attn ~4b+: fp8_tile 7.29e-04 fp8_tok 2.88e-03 nvfp4 1.32e-02 H-nvfp4 1.30e-02 tok4 2.10e-02 z4 1.74e-02 w2-4 9.97e-03 z4|tiny 1.74e-02 H-z-nvfp4 9.90e-03 w2z4|tiny 9.97e-03 w2z-nv|tiny 9.03e-03 H-w2z-nv|tiny 9.15e-03 nvfp4|tiny 1.32e-02  staged 244.9 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.14it/s]Loading weights:  19%|█▉        | 3/16 [00:12<01:04,  4.92s/it]Loading weights: 100%|██████████| 16/16 [00:12<00:00,  1.30it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer073
+--------------------------+---------+-
+[23:37:44] layer 73: {'load': 61.6, 'total': 308.0}  attn ~4b+: fp8_tile 9.75e-04 fp8_tok 3.56e-03 nvfp4 1.54e-02 H-nvfp4 1.55e-02 tok4 1.89e-02 z4 1.25e-02 w2-4 1.23e-02 z4|tiny 1.25e-02 H-z-nvfp4 1.13e-02 w2z4|tiny 1.23e-02 w2z-nv|tiny 1.09e-02 H-w2z-nv|tiny 1.11e-02 nvfp4|tiny 1.54e-02  staged 245.4 MB/s
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:  10%|▉         | 2/21 [00:01<00:17,  1.11it/s]Loading weights:  14%|█▍        | 3/21 [00:18<02:17,  7.65s/it]Loading weights: 100%|██████████| 21/21 [00:18<00:00,  1.11it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer074
+--------------------------+---------+-
+[23:43:17] layer 74: {'load': 66.5, 'total': 333.3}  attn ~4b+: fp8_tile 8.10e-04 fp8_tok 3.09e-03 nvfp4 1.37e-02 H-nvfp4 1.36e-02 tok4 1.68e-02 z4 1.33e-02 w2-4 1.09e-02 z4|tiny 1.33e-02 H-z-nvfp4 1.05e-02 w2z4|tiny 1.09e-02 w2z-nv|tiny 9.90e-03 H-w2z-nv|tiny 9.94e-03 nvfp4|tiny 1.37e-02  staged 247.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:12,  1.13it/s]Loading weights:  19%|█▉        | 3/16 [00:17<01:32,  7.12s/it]Loading weights: 100%|██████████| 16/16 [00:17<00:00,  1.10s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer075
+--------------------------+---------+-
+[23:48:57] layer 75: {'load': 69.6, 'total': 339.9}  attn ~4b+: fp8_tile 8.37e-04 fp8_tok 3.21e-03 nvfp4 1.39e-02 H-nvfp4 1.36e-02 tok4 1.94e-02 z4 1.64e-02 w2-4 1.12e-02 z4|tiny 1.64e-02 H-z-nvfp4 1.10e-02 w2z4|tiny 1.12e-02 w2z-nv|tiny 1.02e-02 H-w2z-nv|tiny 1.03e-02 nvfp4|tiny 1.39e-02  staged 247.1 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:05<00:39,  2.86s/it]Loading weights:  19%|█▉        | 3/16 [00:32<02:45, 12.76s/it]Loading weights: 100%|██████████| 16/16 [00:32<00:00,  2.02s/it]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer076
+--------------------------+---------+-
+[23:54:24] layer 76: {'load': 80.2, 'total': 327.4}  attn ~4b+: fp8_tile 8.64e-04 fp8_tok 3.19e-03 nvfp4 1.38e-02 H-nvfp4 1.46e-02 tok4 1.96e-02 z4 1.44e-02 w2-4 1.11e-02 z4|tiny 1.44e-02 H-z-nvfp4 1.06e-02 w2z4|tiny 1.11e-02 w2z-nv|tiny 8.80e-03 H-w2z-nv|tiny 9.57e-03 nvfp4|tiny 1.38e-02  staged 247.6 MB/s
+Loading weights:   0%|          | 0/16 [00:00<?, ?it/s]Loading weights:  12%|█▎        | 2/16 [00:01<00:11,  1.19it/s]Loading weights:  19%|█▉        | 3/16 [00:06<00:33,  2.61s/it]Loading weights: 100%|██████████| 16/16 [00:06<00:00,  2.37it/s]
+[transformers] [1mGlmMoeDsaForCausalLM LOAD REPORT[0m from: /scratch/stage/layer077
+--------------------------+---------+-
+[23:58:39] layer 77: {'load': 36.0, 'total': 255.1}  attn ~4b+: fp8_tile 4.38e-04 fp8_tok 1.68e-03 nvfp4 7.35e-03 H-nvfp4 7.42e-03 tok4 9.05e-03 z4 5.99e-03 w2-4 4.93e-03 z4|tiny 5.99e-03 H-z-nvfp4 5.13e-03 w2z4|tiny 4.93e-03 w2z-nv|tiny 4.21e-03 H-w2z-nv|tiny 4.40e-03 nvfp4|tiny 7.35e-03  staged 247.6 MB/s
+# KV anchor probe, all layers — GLM-5.3 w4afp8+act_fp8
+15 AA-LCR eval + 8 generated windows x 4096 tokens; codebooks fit on 23 AA-LCR windows. Attention-output relative MSE.
+## eval
+## gen
+[23:58:40] done -> /mnt/cephfs/hoangduy/results/kv-anchor/glm53-w4afp8-deep-20260925t171725z

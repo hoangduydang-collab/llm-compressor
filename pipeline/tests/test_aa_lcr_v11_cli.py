@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from pipeline import aa_lcr_v11 as A
-from pipeline.tests.test_aa_lcr_v11_candidate import seeded_checkpoint
+from pipeline.tests.test_aa_lcr_v11_candidate import questions, seeded_checkpoint
 from pipeline.tests.test_aa_lcr_v11_checkpoint import preflight_audit
 from pipeline.tests.test_aa_lcr_v11_dataset import (
     prepare_synthetic_100_question_fixture,
@@ -90,6 +90,71 @@ def test_plan_only_rejects_wrong_candidate_identity(tmp_path, monkeypatch):
         )
 
     assert not (tmp_path / "work" / "bad-plan" / "run.sqlite").exists()
+
+
+def _plan_with_candidate_model(tmp_path, monkeypatch, prepared, run_id, served, flag):
+    monkeypatch.setattr(A, "CANDIDATE_MODEL", A.DEFAULT_CANDIDATE_MODEL)
+    identity_path = tmp_path / f"{run_id}-identity.json"
+    identity_path.write_text(
+        json.dumps(
+            {
+                "served_model": served,
+                "expected_served_model": served,
+                "observed_served_model": served,
+            }
+        )
+    )
+    monkeypatch.setattr(A, "prepare_dataset", lambda _path: prepared)
+    argv = [
+        "prepare",
+        "--run-id",
+        run_id,
+        "--work-dir",
+        str(tmp_path / "work"),
+        "--endpoint-identity-file",
+        str(identity_path),
+        "--plan-only",
+    ]
+    if flag is not None:
+        argv += ["--candidate-model", flag]
+    return A.main(argv)
+
+
+def test_candidate_model_flag_accepts_a_differently_named_serve(
+    tmp_path, monkeypatch
+):
+    served = "glm-5.3-w4afp8-phala"
+    prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
+    assert (
+        _plan_with_candidate_model(tmp_path, monkeypatch, prepared, "phala", served, served)
+        == 0
+    )
+    assert A.CANDIDATE_MODEL == served
+    assert A.candidate_request(questions()[0])["model"] == served
+    plan = json.loads((tmp_path / "work" / "phala" / "plan.json").read_text())
+    assert (
+        _plan_with_candidate_model(
+            tmp_path, monkeypatch, prepared, "default", A.DEFAULT_CANDIDATE_MODEL, None
+        )
+        == 0
+    )
+    default_plan = json.loads((tmp_path / "work" / "default" / "plan.json").read_text())
+    # The name is part of the immutable contract, so it changes the fingerprint.
+    assert plan["run_fingerprint"] != default_plan["run_fingerprint"]
+
+
+def test_candidate_model_flag_still_rejects_a_mismatched_serve(tmp_path, monkeypatch):
+    prepared = prepare_synthetic_100_question_fixture(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="2"):
+        _plan_with_candidate_model(
+            tmp_path,
+            monkeypatch,
+            prepared,
+            "mismatch",
+            "glm-5.3-w4afp8",
+            "glm-5.3-w4afp8-phala",
+        )
+    assert not (tmp_path / "work" / "mismatch" / "run.sqlite").exists()
 
 
 def test_cli_defaults_candidate_sampling_to_the_lab_override_branch():

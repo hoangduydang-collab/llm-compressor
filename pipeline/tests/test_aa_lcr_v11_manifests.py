@@ -15,6 +15,8 @@ CANARY_T1_2X = K8S / "hd-aa-lcr-v11-canary-t1-2x.yaml"
 FULL_T1_2X = K8S / "hd-aa-lcr-v11-full-t1-2x.yaml"
 CANARY_GPTQ = K8S / "hd-aa-lcr-v11-canary-gptq.yaml"
 FULL_GPTQ = K8S / "hd-aa-lcr-v11-full-gptq.yaml"
+CANARY_PHALA = K8S / "hd-aa-lcr-v11-canary-phala.yaml"
+FULL_PHALA = K8S / "hd-aa-lcr-v11-full-phala.yaml"
 EVAL_MANIFESTS = (
     CANARY,
     FULL,
@@ -24,6 +26,8 @@ EVAL_MANIFESTS = (
     FULL_T1_2X,
     CANARY_GPTQ,
     FULL_GPTQ,
+    CANARY_PHALA,
+    FULL_PHALA,
 )
 TIKTOKEN_CACHE_DIR = "/mnt/cephfs/hoangduy/cache/aa-lcr-v11-tiktoken"
 CL100K_CACHE_FILE = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
@@ -150,13 +154,33 @@ def test_gptq_jobs_assert_the_checkpoint_and_match_the_awq_arm():
     assert "--repeats 3" in FULL_GPTQ.read_text(encoding="utf-8")
 
 
+def test_phala_jobs_assert_the_snapshot_and_match_the_gptq_arm():
+    # PhalaCloud's serve has its own served name, and the Job still asserts the
+    # pinned snapshot path. Everything else must match the GPTQ arm so the
+    # comparison isolates the checkpoint.
+    for phala, gptq in ((CANARY_PHALA, CANARY_GPTQ), (FULL_PHALA, FULL_GPTQ)):
+        text = phala.read_text(encoding="utf-8")
+        assert "--candidate-model glm-5.3-w4afp8-phala" in text
+        assert (
+            "models--PhalaCloud--GLM-5.3-W4AFP8/snapshots/"
+            "7e77d7b5592d748778459a0dac802e7fd407e593" in text
+        )
+        assert "exit 12" in text
+        assert "glm53-phala-aa-lcr-v11-" in text
+        assert "gptq" not in text.lower()
+        phala_run = load_container(phala)["args"][0].split("-m pipeline.aa_lcr_v11 run")[1]
+        gptq_run = load_container(gptq)["args"][0].split("-m pipeline.aa_lcr_v11 run")[1]
+        phala_run = re.sub(r"[ ]*--candidate-model glm-5\.3-w4afp8-phala \\\n", "", phala_run)
+        assert phala_run.replace("glm53-phala-", "glm53-gptq-") == gptq_run
+
+
 def test_full_jobs_use_24h_deadline():
     # 12h was enough only because the 0.6 campaign resumed into a second Job.
     # A from-scratch 300-unit run needs the extra headroom.
-    for path in (FULL, FULL_T1, FULL_GPTQ):
+    for path in (FULL, FULL_T1, FULL_GPTQ, FULL_PHALA):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert document["spec"]["activeDeadlineSeconds"] == 86400
-    for path in (CANARY, CANARY_T1, CANARY_T1_2X, CANARY_GPTQ):
+    for path in (CANARY, CANARY_T1, CANARY_T1_2X, CANARY_GPTQ, CANARY_PHALA):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert document["spec"]["activeDeadlineSeconds"] == 7200
 

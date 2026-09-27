@@ -61,7 +61,11 @@ HF_RESOLVE = (
     f"https://huggingface.co/datasets/{DATASET_REPO}/resolve/{DATASET_REVISION}"
 )
 REPEATS = 3
-CANDIDATE_MODEL = "glm-5.3-w4afp8"
+DEFAULT_CANDIDATE_MODEL = "glm-5.3-w4afp8"
+# Served model name every identity check and request uses. main() rebinds it
+# from --candidate-model; the contract records it, so a resume under a different
+# name fails closed.
+CANDIDATE_MODEL = DEFAULT_CANDIDATE_MODEL
 # AA publishes a default sampling config, temperature 0.6 / top_p 1.0, and
 # overrides it with the model creator's recommended config whenever the lab
 # publishes one. Z.ai, the creator of GLM-5.3, recommends temperature 1.0 /
@@ -2752,6 +2756,11 @@ def _parser() -> argparse.ArgumentParser:
         default=Path("results") / "glm53-aa-lcr-v11",
     )
     parser.add_argument("--candidate-base-url", default=DEFAULT_CANDIDATE_BASE_URL)
+    parser.add_argument(
+        "--candidate-model",
+        default=DEFAULT_CANDIDATE_MODEL,
+        help="served model name the endpoint must report and requests must use",
+    )
     parser.add_argument("--endpoint-identity-file", type=Path)
     parser.add_argument("--limit", type=_bounded_int("limit", 1, 100), default=100)
     parser.add_argument(
@@ -2936,7 +2945,11 @@ def _run_phase(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """Run one resumable AA-LCR phase with the external OpenAI API judge only."""
+    global CANDIDATE_MODEL
     args = _parser().parse_args(argv)
+    if not args.candidate_model.strip():
+        _parser().error("--candidate-model must not be empty")
+    CANDIDATE_MODEL = args.candidate_model
     try:
         return _run_phase(args)
     except (

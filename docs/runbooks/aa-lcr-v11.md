@@ -378,6 +378,15 @@ the headline delta — 12% of units flip between arms on sampling alone. GPTQ di
 generate **18.2% fewer** output tokens and finished 25 min sooner; see the status
 note's token-efficiency section.
 
+**PhalaCloud arm (pending).** `hd-aa-lcr-v11-{canary,full}-phala.yaml` run the
+same command as the GPTQ pair against the same TP=16 serve with only the
+checkpoint swapped to PhalaCloud's pinned snapshot `7e77d7b5`. That serve uses
+`--served-model-name glm-5.3-w4afp8-phala`, so the Jobs pass
+`--candidate-model glm-5.3-w4afp8-phala`. The runner's served-model checks and
+request body use that name, and the contract records it, so it is part of the
+fingerprint. The Jobs also assert the snapshot path via `/get_server_info` and
+exit 12 on a mismatch. Run ids: `glm53-phala-aa-lcr-v11-{canary,full}-t1p95-r1`.
+
 **The headline is 79.00%** — Z.ai's recommended sampling at AA's max-output
 policy, i.e. AA's own rule on both axes. AA's published GLM-5.3 figure is 80%.
 Write-up:

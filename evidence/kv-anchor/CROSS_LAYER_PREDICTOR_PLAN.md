@@ -49,11 +49,14 @@ roughly independent energy, residual energy should multiply: ρ_combined ≈ ρ_
 
 ## Serving fit: DSA IndexShare
 
-GLM-5.2 runs its own top-k indexer only on layers 0, 1, 2 and every 4th from 6 to 74
-(`pipeline/configs/glm52_distributed_w4afp8_full.yaml:105`); the other layers reuse the
-previous selecting layer's top-2048 tokens (`prev_topk_indices`,
-`pipeline/kv_anchor_deep.py:248`). **GLM-5.3's exact pattern is unconfirmed** — read its
-`config.json` `indexer_types` before relying on it.
+GLM-5.3 runs its own top-k indexer only on layers 0, 1, 2 and every 4th from 6 to 74
+(21 "full" layers); the other 57 are "shared" and reuse the previous full layer's
+top-2048 tokens. Verified 2026-10-09 from the released `zai-org/GLM-5.3` `config.json`
+(`indexer_types`, 78 entries; `index_topk` 2048, `kv_lora_rank` 512). Do not derive it
+from `index_topk_freq` (transformers' default differs; see
+`pipeline/configs/glm52_distributed_w4afp8_full.yaml:109`). The harness threads each
+window's top-k from layer to layer (`pipeline/kv_anchor_deep.py:534-537`, saved in the
+resume state), so shared layers see the right tokens.
 
 * Inside a group (e.g. 6-9), every layer reads the same 2048 tokens, so the rows of
   ĉ^(l-1) needed by layer l are already decoded (keep a ~2 MB/seq BF16 buffer, or re-read

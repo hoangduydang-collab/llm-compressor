@@ -177,6 +177,7 @@ class Tap:
         self.key_mass2: dict[int, torch.Tensor | None] = {}  # [T] mean squared attention weight per key
         self.prenorm: dict[int, torch.Tensor] = {}     # kv_a_layernorm input
         self.replace: dict[int, torch.Tensor] = {}
+        self.transform = None      # optional latent -> decoded latent, applied inside the forward
         self.record = False
         self.handles = []
         for i, layer in enumerate(layers):
@@ -192,6 +193,8 @@ class Tap:
                 self.prenorm[i] = inp[0].detach()
             if i in self.replace:
                 return self.replace[i].to(out.dtype)
+            if self.transform is not None:
+                return self.transform(out)
         return hook
 
     def _pre_hook(self, i):

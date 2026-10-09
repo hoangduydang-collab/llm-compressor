@@ -108,3 +108,28 @@ under ~20% in deep layers (then it cannot beat the codebook arm).
 
 Cost: one short single-GPU run; can share the run with the planned per-layer latent
 covariance + M_K/M_V sensitivity dump (see project notes on FSQ / transform coding).
+
+## Accumulated error (implemented 2026-10-09: `kv_anchor_deep.py --propagate`)
+
+Per-layer scoring above treats every layer as if all earlier layers were exact. In serving,
+quantized KV at layer j changes attention output, so the hidden state entering every later
+layer drifts (and DSA's top-k selection can change). `--propagate` models this the way GPTQ /
+llm-compressor's sequential pipeline (`propagate_error=True`) do for weights:
+
+* One hidden-state stream per arm (`exact`, `fp8`, `nvfp4`, `cb`, `pred`, `predcb`).
+* At each layer, fitted arms (`cb`, `pred`, `predcb`) refit on their own stream's training
+  latents (calibration pass stops right after attention, so it skips the MoE); the predictor
+  is fit on that stream's decoded previous-layer latents (AQUA-KV's sequential calibration).
+* Propagation pass: the latent is replaced by its decoded value inside the forward
+  (`Tap.transform`); the layer output becomes the stream's next input.
+* Metrics per layer and split: local latent/attention error, latent drift, attention error and
+  hidden-state drift vs the exact stream, DSA top-k overlap on full layers; after layer 77:
+  next-token KL vs exact, top-1 agreement, perplexity.
+* Gate 3 (CPU, tiny model with the real layer types): identity codec reproduces the exact
+  stream bit-for-bit, NVFP4 does not, predictor runs on the shared layer, ridge recovers a
+  known map; resume from saved state is bit-identical.
+
+Run cost (estimate, unmeasured): exact/fp8/nvfp4 streams carry the 23 held-out windows, fitted
+arms all 46, so about 7 window-forward-equivalents per held-out window per layer vs ~1 before;
+hidden states ~10 GB on GPU; state checkpoints ~11 GB each (default every 8 layers). All 78
+layers are needed for the end-of-model metrics.

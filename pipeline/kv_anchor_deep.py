@@ -25,6 +25,15 @@ Codecs at each layer, scored on real attention-output error (kv_anchor_probe):
 Held-out AA-LCR windows and windows of GLM-5.3's own generated text are scored
 separately; everything is fit on AA-LCR training windows only.
 
+--propagate instead runs one hidden-state stream per arm (PROP_ARMS), so KV error
+accumulates through the model as it would in serving: each arm's codec is refit at
+every layer on its own stream's latents, the decoded latent replaces the real one
+inside the forward, and that output feeds the next layer (llm-compressor's
+sequential pipeline with propagate_error=True, applied to the KV cache). Scored
+against the exact stream per layer and, after the last layer, by next-token KL /
+top-1 agreement / perplexity. Includes the cross-layer predictor arms
+(evidence/kv-anchor/CROSS_LAYER_PREDICTOR_PLAN.md).
+
 Gates: a tiny model must stream to the same latents as its full forward; each
 layer must load with no missing/unexpected weights; re-running attention with
 the layer's own latent must be exact; (w4afp8) dequantized weights must sit at
@@ -611,6 +620,331 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
     return results
 
 
+# ---------------------------------------------------------------- propagated streams (--propagate)
+# Accumulated KV error, as GPTQ / llm-compressor's sequential pipeline (propagate_error=True) do for
+# weights: every arm carries its own copy of the hidden states; at each layer its codec is fit on that
+# stream's own training latents, every window's latent is replaced by its decoded value inside the
+# forward, and that layer output is the next layer's input. "exact" is the unquantized reference.
+#   fp8     SGLang's served DSA FP8 latent cache (fp8_tile128)
+#   nvfp4   --kv-cache-dtype nvfp4
+#   cb      H-cb<M>w2z-nvfp4|tiny, the best single-layer arm (attention-weighted codebook + zero centroid,
+#           Hadamard-rotated NVFP4 residual, tiny-norm tokens exact)
+#   pred    cross-layer predictor (AQUA-KV style: ridge on the stream's decoded previous-layer latent,
+#           "shared" DSA layers only) + the same residual coder, no codebook
+#   predcb  predictor, then the codebook on the prediction residual, then the residual coder
+#   ident   identity codec (gate only: must reproduce the exact stream)
+PROP_ARMS = ("fp8", "nvfp4", "cb", "pred", "predcb")
+PROP_FITTED = {"cb", "pred", "predcb"}
+
+
+class _AttnDone(Exception):
+    """raised after self_attn when only the latent and attention weights are needed (skips the MoE)"""
+
+
+def ridge(Xin: torch.Tensor, Y: torch.Tensor, lam: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """Y ~ Xin @ A + b; ridge lam x mean diagonal of the centred Gram matrix, float64 normal equations."""
+    xm, ym = Xin.mean(0, keepdim=True), Y.mean(0, keepdim=True)
+    Xc, Yc = (Xin - xm).double(), (Y - ym).double()
+    G = Xc.T @ Xc
+    G += lam * G.diagonal().mean() * torch.eye(G.shape[0], dtype=G.dtype, device=G.device)
+    A = torch.linalg.solve(G, Xc.T @ Yc).float()
+    return A, ym - xm @ A
+
+
+class PropCodec:
+    """one arm's latent codec, refit at every layer on its own stream"""
+
+    def __init__(self, arm: str, cb_size: int, kmeans_iters: int, gen, lam: float):
+        if arm not in (*PROP_ARMS, "ident"):
+            raise ValueError(f"unknown propagated arm {arm}")
+        self.arm, self.cb_size, self.iters, self.gen, self.lam = arm, cb_size, kmeans_iters, gen, lam
+        self.A = self.b = self.C = self.H = None
+        self.thr = 0.0
+
+    def fit(self, X: torch.Tensor, w2: torch.Tensor, prev: torch.Tensor | None) -> dict:
+        """X [N, d] training latents of this stream, w2 [N] attention weights, prev [N, d] decoded
+        previous-layer latents (None: no predictor at this layer)."""
+        self.H = hadamard(X.shape[1], X.device)
+        self.thr = 0.1 * X.norm(dim=1).median()
+        self.xmean = X.mean(0, keepdim=True)
+        stats, R = {}, X
+        E = (X - self.xmean).pow(2).sum().item()
+        if self.arm in ("pred", "predcb") and prev is not None:
+            self.A, self.b = ridge(prev, X, self.lam)
+            R = X - (prev @ self.A + self.b)
+            stats["pred_explained_train"] = 1 - R.pow(2).sum().item() / E
+        if self.arm in ("cb", "predcb"):
+            C = kp.kmeans(R, self.cb_size, self.iters, self.gen, w=w2)
+            self.C = torch.cat([C, torch.zeros_like(C[:1])])
+            stats["cb_resid_train"] = (R - self.C[kp.nearest(R, self.C)]).pow(2).sum().item() / R.pow(2).sum().item()
+        return stats
+
+    def encode(self, X: torch.Tensor, prev: torch.Tensor | None, cur: dict) -> tuple[torch.Tensor, float]:
+        """decoded latent and bits/value; stashes the predictor / codebook residual energies in cur"""
+        if self.arm == "ident":
+            return X, 16.0
+        if self.arm == "fp8":
+            return fp8_tile128(X)
+        if self.arm == "nvfp4":
+            return nvfp4(X)
+        T, d = X.shape
+        P, cost = torch.zeros_like(X), 0.0
+        if self.A is not None:
+            P = prev @ self.A + self.b
+            cur["pred_err"], cur["pred_var"] = (X - P).pow(2).sum().item(), (X - self.xmean).pow(2).sum().item()
+        if self.C is not None:
+            R = X - P
+            P = P + self.C[kp.nearest(R, self.C)]
+            cost = math.log2(self.C.shape[0]) / d
+            cur["cb_in"], cur["cb_out"] = R.pow(2).sum().item(), (X - P).pow(2).sum().item()
+        Rq, b_nv = nvfp4((X - P) @ self.H)
+        tiny = X.norm(dim=1) < self.thr
+        Xh = torch.where(tiny[:, None], X, P + Rq @ self.H.T)
+        bits = b_nv + cost
+        tiny_cost = tiny.float().mean().item() * (1 + math.log2(T) / d)     # x (16 - b) bits, + position
+        return Xh, bits + tiny_cost * (16 - bits)
+
+
+def _topk_overlap(a: torch.Tensor, b: torch.Tensor, every: int = 32) -> float:
+    """mean share of b's selected keys that a also selects, over query rows past the first top-k
+    (earlier rows have fewer valid keys than k, so their selection is partly arbitrary)"""
+    a, b = a[0].long(), b[0].long()
+    S, k = a.shape
+    rows = torch.arange(min(k, S - 1), S, every, device=a.device)
+    m = torch.zeros(len(rows), S, dtype=torch.bool, device=a.device).scatter_(1, b[rows], True)
+    return m.gather(1, a[rows]).float().mean().item()
+
+
+class PropAcc:
+    def __init__(self):
+        self.s: dict[str, float] = {}
+        self.bits, self.topk = [], []
+
+    def add(self, **kv):
+        for k, v in kv.items():
+            self.s[k] = self.s.get(k, 0.0) + v
+
+    def result(self) -> dict:
+        s, r = self.s, lambda a, b: s[a] / s[b] if s.get(b) else None
+        out = {"bits": sum(self.bits) / len(self.bits) if self.bits else None,
+               "local_latent_rel": r("lat", "lat0"),       # this layer's codec, given this stream's latents
+               "local_attn_rel": r("att", "att0"),         # attention with decoded vs own exact latent
+               "latent_drift_rel": r("drift", "drift0"),   # stream's latent vs the exact stream's (upstream error)
+               "attn_total_rel": r("tot", "tot0"),         # attention output vs the exact stream's
+               "hidden_drift_rel": r("hid", "hid0"),       # layer output vs the exact stream's
+               "topk_overlap": sum(self.topk) / len(self.topk) if self.topk else None}
+        if s.get("pred_var"):
+            out["pred_explained"] = 1 - s["pred_err"] / s["pred_var"]
+        if s.get("cb_in"):
+            out["cb_resid"] = s["cb_out"] / s["cb_in"]
+        return out
+
+
+def _rms_norm(h: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
+    x = h.float()
+    return w * (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)).to(h.dtype)
+
+
+@torch.no_grad()
+def prop_final(src: LayerSource, H: dict, own: dict, names: list, windows: dict, dev, chunk: int = 512) -> dict:
+    """next-token metrics after the last layer: KL(exact || arm), top-1 agreement, and NLL of the real
+    next token, per held-out split"""
+    key = lambda suffix: next((k for k in src.other if k.endswith(suffix)), None)
+    w = src.tensor(key("model.norm.weight")).to(dev)
+    W = src.tensor(key("lm_head.weight") or key("embed_tokens.weight")).to(dev)
+    eps = float(src.cfg.get("rms_norm_eps", 1e-6))
+    pos = {a: {j: p for p, j in enumerate(own[a])} for a in H}
+    acc = {}
+    for j, (s, i) in enumerate(names):
+        if s == "train":
+            continue
+        ids = windows[s][i]
+        for c in range(0, ids.shape[0] - 1, chunk):
+            sl = slice(c, min(c + chunk, ids.shape[0] - 1))
+            nxt = ids[sl.start + 1:sl.stop + 1]
+            ref = F.log_softmax((_rms_norm(H["exact"][pos["exact"][j]][sl], w, eps) @ W.T).float(), -1)
+            for a in H:
+                lp = ref if a == "exact" else F.log_softmax((_rms_norm(H[a][pos[a][j]][sl], w, eps) @ W.T).float(), -1)
+                t = acc.setdefault(s, {}).setdefault(a, [0.0, 0.0, 0.0, 0])
+                t[0] += (ref.exp() * (ref - lp)).sum().item()
+                t[1] += (lp.argmax(-1) == ref.argmax(-1)).sum().item()
+                t[2] += -lp.gather(1, nxt[:, None]).sum().item()
+                t[3] += nxt.shape[0]
+    return {s: {a: {"kl_vs_exact": t[0] / t[3], "top1_agree": t[1] / t[3], "nll": t[2] / t[3],
+                    "ppl": math.exp(t[2] / t[3])} for a, t in d.items()} for s, d in acc.items()}
+
+
+@torch.no_grad()
+def stream_propagated(src: LayerSource, windows: dict, dev, out_dir: Path, *, arms=PROP_ARMS,
+                      layers: int | None = None, act_fp8=False, cb_size=4096, kmeans_iters=10, ridge_lam=1e-3,
+                      state_every=8, seed=0) -> dict:
+    gen = torch.Generator().manual_seed(seed)
+    names = [(s, i) for s in ("train", "eval", "gen") for i in range(len(windows[s]))]
+    streams = ("exact", *arms)
+    # held-out windows in every stream; training windows only where a codec is fit on them
+    own = {a: [j for j, (s, _) in enumerate(names) if s != "train" or a in PROP_FITTED] for a in streams}
+    pos = {a: {j: p for p, j in enumerate(own[a])} for a in streams}
+    indexer = src.cfg.get("indexer_types") or ["full"] * src.n_layers
+    (out_dir / "prop_layers").mkdir(parents=True, exist_ok=True)
+    state_p = out_dir / "prop_state.pt"
+    if state_p.exists():
+        st = torch.load(state_p, map_location=dev)
+        if tuple(st["streams"]) != streams:
+            sys.exit(f"FAIL: {state_p} holds streams {st['streams']}, not {streams}")
+        H, topk, prev, start = st["H"], st["topk"], st["prev"], st["next_layer"]
+        log(f"resumed propagated streams at layer {start}")
+    else:
+        emb = src.tensor(next(k for k in src.other if k.endswith("embed_tokens.weight"))).to(dev)
+        H = {a: torch.stack([F.embedding(windows[names[j][0]][names[j][1]], emb) for j in own[a]]) for a in streams}
+        del emb
+        topk = {a: [None] * len(own[a]) for a in streams}
+        prev, start = {a: None for a in streams}, 0
+    last = src.n_layers if layers is None else min(layers, src.n_layers)
+    src.prefetch(start)
+    results = {}
+    for L in range(start, last):
+        t0 = time.time()
+        src.prefetch(L + 1)
+        layer, rotary, hooks = load_layer(src, L, dev, act_fp8)
+        t_load = time.time() - t0
+        gen.manual_seed(seed * 100003 + L)     # per-layer seed: a resumed run fits the same codebooks
+        predict_on = L > 0 and indexer[L] == "shared"
+        tap, stop = kp.Tap([layer]), {"on": False}
+
+        def _stop(mod, inp, out):
+            if stop["on"]:
+                raise _AttnDone
+
+        h_stop = layer.self_attn.register_forward_hook(_stop)    # after the Tap's hooks, which still record
+        res = {"layer": L, "indexer": indexer[L], "predicted": predict_on, "act_fp8_hooks": hooks, "arms": {}}
+        ref, new_prev = {}, {}
+        try:
+            for a in streams:
+                ta = time.time()
+                codec = None if a == "exact" else PropCodec(a, cb_size, kmeans_iters, gen, ridge_lam)
+                fit = {}
+                if a in PROP_FITTED:
+                    # calibration pass: latents and attention weights of this stream's training windows
+                    Xtr, wtr, Ptr = [], [], []
+                    for j in own[a]:
+                        if names[j][0] != "train":
+                            continue
+                        p = pos[a][j]
+                        tap.record, stop["on"] = True, True
+                        try:
+                            run_layer(layer, rotary, H[a][p:p + 1], topk[a][p])
+                        except _AttnDone:
+                            pass
+                        finally:
+                            tap.record, stop["on"] = False, False
+                        Xtr.append(tap.latent[0][0].float())
+                        km2 = tap.key_mass2.get(0)
+                        wtr.append(km2 if km2 is not None else torch.ones_like(Xtr[-1][:, 0]))
+                        if predict_on and prev[a] is not None:
+                            Ptr.append(prev[a][p].float())
+                    fit = codec.fit(torch.cat(Xtr), torch.cat(wtr), torch.cat(Ptr) if Ptr else None)
+                    del Xtr, wtr, Ptr
+                # propagation pass: every window, latent replaced by its decoded value inside the forward
+                accs = {"eval": PropAcc(), "gen": PropAcc()}
+                dec = torch.empty_like(prev[a]) if prev[a] is not None else None
+                for j in own[a]:
+                    s, p = names[j][0], pos[a][j]
+                    cur = {}
+                    if codec is not None:
+                        pv = prev[a][p].float() if codec.A is not None else None
+
+                        def tf(out, pv=pv, cur=cur):
+                            Xh, cur["bits"] = codec.encode(out[0].float(), pv, cur)
+                            Xh = Xh.to(out.dtype)
+                            cur["Xh"] = Xh.float()
+                            return Xh[None]
+                        tap.transform = tf
+                    tap.record = True
+                    try:
+                        out, tk = run_layer(layer, rotary, H[a][p:p + 1], topk[a][p])
+                    finally:
+                        tap.record, tap.transform = False, None
+                    X, o = tap.latent[0][0].float(), tap.out[0].float()
+                    H[a][p], topk[a][p] = out[0], tk
+                    Xh = cur.get("Xh", X)
+                    if a in ("pred", "predcb"):
+                        if dec is None:
+                            dec = torch.empty(len(own[a]), *X.shape, dtype=torch.float16, device=X.device)
+                        dec[p] = Xh.half()
+                    if s == "train":
+                        continue
+                    if a == "exact":
+                        if not ref:   # the hook path must leave an unquantized forward unchanged
+                            noop = (tap.rerun([layer], 0, None).float() - o).pow(2).sum().item() / o.pow(2).sum().item()
+                            if noop > 1e-6:
+                                raise RuntimeError(f"layer {L}: re-running attention is not exact ({noop:.2e})")
+                        ref[j] = (X, o.to(torch.bfloat16), tk)
+                        continue
+                    o_loc = tap.rerun([layer], 0, None).float()     # this stream's own exact latent
+                    Xr, o_r, tk_r = ref[j]
+                    o_r = o_r.float()
+                    hr = H["exact"][pos["exact"][j]].float()
+                    acc = accs[s]
+                    acc.add(lat=(Xh - X).pow(2).sum().item(), lat0=X.pow(2).sum().item(),
+                            att=(o - o_loc).pow(2).sum().item(), att0=o_loc.pow(2).sum().item(),
+                            drift=(X - Xr).pow(2).sum().item(), drift0=Xr.pow(2).sum().item(),
+                            tot=(o - o_r).pow(2).sum().item(), tot0=o_r.pow(2).sum().item(),
+                            hid=(out[0].float() - hr).pow(2).sum().item(), hid0=hr.pow(2).sum().item(),
+                            **{k: cur[k] for k in ("pred_err", "pred_var", "cb_in", "cb_out") if k in cur})
+                    acc.bits.append(cur.get("bits", 16.0))
+                    if indexer[L] == "full" and tk is not None and tk_r is not None:
+                        acc.topk.append(_topk_overlap(tk, tk_r))
+                new_prev[a] = dec
+                res["arms"][a] = {"fit": fit, "seconds": round(time.time() - ta, 1),
+                                  **{s: acc.result() for s, acc in accs.items() if acc.s}}
+        finally:
+            h_stop.remove()
+            tap.close()
+        prev = {a: new_prev.get(a) for a in streams}
+        res["seconds"] = {"load": round(t_load, 1), "total": round(time.time() - t0, 1)}
+        (out_dir / "prop_layers" / f"{L:03d}.json").write_text(json.dumps(res, indent=1))
+        results[L] = res
+        def tot(a):
+            v = (res["arms"][a].get("eval") or {}).get("attn_total_rel")
+            return float("nan") if v is None else v
+        log(f"layer {L} ({indexer[L]}): {res['seconds']}  attn vs exact: "
+            + " ".join(f"{a} {tot(a):.2e}" for a in arms))
+        del layer, rotary, ref
+        if dev.type == "cuda":
+            torch.cuda.empty_cache()
+        if state_every and (L + 1) % state_every == 0 and L + 1 < last:
+            torch.save({"streams": streams, "H": H, "topk": topk, "prev": prev, "next_layer": L + 1}, state_p)
+    if last == src.n_layers:
+        final = prop_final(src, H, own, names, windows, dev)
+        (out_dir / "prop_final.json").write_text(json.dumps(final, indent=1))
+        results["final"] = final
+    return results
+
+
+def summarize_prop(results: dict, meta: dict) -> str:
+    arms = meta["prop_arms"]
+    L = ["# KV codecs with propagated error — GLM-5.3 " + meta["weights"], "",
+         "Each arm runs its own hidden-state stream (codec refit per layer on that stream, decoded latent fed "
+         "forward). Attention-output rel. MSE vs the exact stream (local error in brackets).", ""]
+    for split in ("eval", "gen"):
+        L += [f"## {split}", "", "| layer | type | " + " | ".join(arms) + " |", "|---|---|" + "---|" * len(arms)]
+        for l, r in sorted((k, v) for k, v in results.items() if isinstance(k, int)):
+            cells = []
+            for a in arms:
+                m = r["arms"].get(a, {}).get(split)
+                cells.append(f"{100 * m['attn_total_rel']:.3f}% ({100 * m['local_attn_rel']:.3f}%)" if m else "-")
+            L.append(f"| {l} | {r['indexer']} | " + " | ".join(cells) + " |")
+        L.append("")
+    final = results.get("final")
+    if final:
+        L += ["## next-token metrics after the last layer", "", "| split | arm | KL vs exact | top-1 agree | ppl |",
+              "|---|---|---|---|---|"]
+        for s, d in final.items():
+            for a, m in d.items():
+                L.append(f"| {s} | {a} | {m['kl_vs_exact']:.4f} | {m['top1_agree']:.4f} | {m['ppl']:.3f} |")
+    return "\n".join(L)
+
+
 # ---------------------------------------------------------------- gates
 @torch.no_grad()
 def preflight_stream(base_cfg, dev, tmp: Path) -> float:
@@ -639,6 +973,47 @@ def preflight_stream(base_cfg, dev, tmp: Path) -> float:
     if worst > 1e-6:
         raise RuntimeError(f"preflight: streamed latents differ from the full forward (rel {worst:.2e})")
     return worst
+
+
+@torch.no_grad()
+def preflight_propagate(base_cfg, dev, tmp: Path) -> dict:
+    """Propagated streams on a tiny model with the real layer types: an identity codec must reproduce the
+    exact stream at every layer and at the logits, NVFP4 must not, the predictor must run on the shared
+    DSA layer, and ridge must recover a known linear map."""
+    from transformers import GlmMoeDsaForCausalLM
+
+    g = torch.Generator().manual_seed(0)
+    A, b = torch.randn(32, 32, generator=g), torch.randn(1, 32, generator=g)
+    Xin = torch.randn(4000, 32, generator=g)
+    A2, b2 = ridge(Xin, Xin @ A + b + 1e-3 * torch.randn(4000, 32, generator=g), 1e-9)
+    ridge_rel = ((A2 - A).pow(2).sum() / A.pow(2).sum()).item()
+    if ridge_rel > 1e-5 or (b2 - b).abs().max().item() > 1e-2:
+        raise RuntimeError(f"preflight: ridge does not recover a known map (rel {ridge_rel:.2e})")
+    torch.manual_seed(0)
+    full_dir = tmp / "tiny_full"
+    GlmMoeDsaForCausalLM(kp.tiny_config(base_cfg)).to(torch.bfloat16).save_pretrained(full_dir)
+    src = LayerSource(str(full_dir), str(tmp / "tiny_stage"))
+    mk = lambda: torch.randint(0, int(src.cfg["vocab_size"]), (256,), generator=g).to(dev)
+    windows = {"train": [mk() for _ in range(3)], "eval": [mk() for _ in range(2)], "gen": [mk()]}
+    res = stream_propagated(src, windows, dev, tmp / "prop", arms=("ident", "nvfp4", "predcb"), cb_size=16,
+                            kmeans_iters=2, state_every=0)
+    layers = sorted(k for k in res if isinstance(k, int))
+    for L in layers:
+        m = res[L]["arms"]["ident"]["eval"]
+        if m["hidden_drift_rel"] != 0.0 or m["attn_total_rel"] != 0.0:
+            raise RuntimeError(f"preflight: identity stream drifts at layer {L}: {m}")
+    fin = res["final"]["eval"]
+    if fin["ident"]["kl_vs_exact"] > 1e-9 or fin["ident"]["top1_agree"] != 1.0:
+        raise RuntimeError(f"preflight: identity stream changes the logits: {fin['ident']}")
+    if res[layers[-1]]["arms"]["nvfp4"]["eval"]["hidden_drift_rel"] <= 0 or fin["nvfp4"]["kl_vs_exact"] <= 0:
+        raise RuntimeError("preflight: the NVFP4 stream shows no error, so the latent is not being replaced")
+    shared = [L for L in layers if res[L]["predicted"]]
+    if not shared or not all(math.isfinite(res[L]["arms"]["predcb"]["eval"].get("pred_explained", float("nan")))
+                             for L in shared):
+        raise RuntimeError(f"preflight: the cross-layer predictor did not run on a shared layer ({shared})")
+    return {"ridge_rel": ridge_rel, "shared_layers": shared, "nvfp4_kl": fin["nvfp4"]["kl_vs_exact"],
+            "predcb_kl": fin["predcb"]["kl_vs_exact"],
+            "predcb_pred_explained": {L: res[L]["arms"]["predcb"]["eval"]["pred_explained"] for L in shared}}
 
 
 def dequant_check(qsrc: LayerSource, bf16_snapshot: str, L: int, n_experts: int = 4) -> dict:
@@ -704,6 +1079,11 @@ def main(argv=None):
     ap.add_argument("--sink-keep", type=int, default=0, help="first k tokens of each window stay exact in every arm")
     ap.add_argument("--diag", action="store_true", help="also score key arms with k=1,4 exact sink tokens")
     ap.add_argument("--dump-layers", default="", help="comma list: save eval latents + codebooks of these layers")
+    ap.add_argument("--propagate", action="store_true",
+                    help="per-arm hidden-state streams: accumulated KV error through the model (see PROP_ARMS)")
+    ap.add_argument("--prop-arms", default=",".join(PROP_ARMS), help="comma list of propagated arms")
+    ap.add_argument("--cb-size", type=int, default=4096, help="--propagate: codebook size")
+    ap.add_argument("--ridge", type=float, default=1e-3, help="--propagate: predictor ridge (x mean Gram diagonal)")
     ap.add_argument("--threads", type=int, default=16)
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args(argv)
@@ -726,6 +1106,14 @@ def main(argv=None):
     meta["gate_stream_rel"] = preflight_stream(base_cfg, dev, Path(args.stage_dir) / "preflight")
     shutil.rmtree(Path(args.stage_dir) / "preflight", ignore_errors=True)
     log(f"gate 1 PASS ({meta['gate_stream_rel']:.1e})")
+    if args.propagate:
+        bad = [a for a in args.prop_arms.split(",") if a and a not in PROP_ARMS]
+        if bad:
+            sys.exit(f"FAIL: unknown --prop-arms {bad}; choose from {PROP_ARMS}")
+        log("gate 3: propagated streams (identity == exact, NVFP4 != exact, predictor runs)")
+        meta["gate_propagate"] = preflight_propagate(base_cfg, dev, Path(args.stage_dir) / "preflight_prop")
+        shutil.rmtree(Path(args.stage_dir) / "preflight_prop", ignore_errors=True)
+        log("gate 3 PASS", json.dumps(meta["gate_propagate"]))
 
     if args.weights == "w4afp8":
         if not args.quant_ckpt:
@@ -751,6 +1139,21 @@ def main(argv=None):
     log(f"{len(train)} train ({args.gen_train} generated) / {len(evals)} eval AA-LCR + {len(gens)} generated windows")
 
     meta.update(sink_keep=args.sink_keep, diag=args.diag)
+    if args.propagate:
+        arms = tuple(a for a in args.prop_arms.split(",") if a)
+        meta.update(prop_arms=list(arms), cb_size=args.cb_size, ridge=args.ridge)
+        stream_propagated(src, {"train": train, "eval": evals, "gen": gens}, dev, out, arms=arms,
+                          layers=args.layers, act_fp8=args.act_fp8, cb_size=args.cb_size, ridge_lam=args.ridge)
+        # every finished layer, including ones from before a resume
+        results = {int(p.stem): json.loads(p.read_text()) for p in sorted((out / "prop_layers").glob("*.json"))}
+        if (out / "prop_final.json").exists():
+            results["final"] = json.loads((out / "prop_final.json").read_text())
+        (out / "kv_prop_meta.json").write_text(json.dumps(meta, indent=1))
+        summary = summarize_prop(results, meta)
+        (out / "kv_prop_summary.md").write_text(summary)
+        print("\n" + summary, flush=True)
+        log("done ->", out)
+        return
     stream(src, {"train": train, "eval": evals, "gen": gens}, dev, out, layers=args.layers,
            act_fp8=args.act_fp8, lexico_every=args.lexico_every, sink_keep=args.sink_keep, diag=args.diag,
            dump_layers={int(x) for x in args.dump_layers.split(",") if x})

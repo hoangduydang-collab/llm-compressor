@@ -1,6 +1,7 @@
 # Cross-layer predictor + codebook residual for the GLM-5.3 KV latent
 
-Status: DESIGN, written 2026-10-09. Not an execution packet; nothing has been run.
+Status: RUN 2026-10-12 (all 78 layers, accumulated error). Results:
+`20261012T0852Z-glm53-w4afp8-prop-full/NOTES.md`. Original design below, written 2026-10-09.
 Idea: the user's. Write-up and evidence links: planner session 2026-10-06 to 2026-10-09.
 
 ## Idea

@@ -632,9 +632,16 @@ def stream(src: LayerSource, windows: dict, dev, out_dir: Path, *, layers: int |
 #   pred    cross-layer predictor (AQUA-KV style: ridge on the stream's decoded previous-layer latent,
 #           "shared" DSA layers only) + the same residual coder, no codebook
 #   predcb  predictor, then the codebook on the prediction residual, then the residual coder
+#   int2, cb2, pred2, predcb2   the same arms at 2 bits: per-token INT2 residual (128-value groups, FP16
+#           scale, clip search; no rotation), tiny-norm tokens exact. int2 has no predictor or codebook.
+#   ulp     drift control: +1 BF16 ulp on 1% of the latent's values (far below FP8's error); its drift
+#           vs exact measures how much the model itself amplifies a negligible KV perturbation
 #   ident   identity codec (gate only: must reproduce the exact stream)
-PROP_ARMS = ("fp8", "nvfp4", "cb", "pred", "predcb")
-PROP_FITTED = {"cb", "pred", "predcb"}
+PROP_ARMS = ("fp8", "nvfp4", "cb", "pred", "predcb", "int2", "cb2", "pred2", "predcb2", "ulp")
+PROP_DEFAULT = ("fp8", "nvfp4", "cb", "pred", "predcb")     # the ~4-bit comparison
+PROP_FITTED = {"cb", "pred", "predcb", "int2", "cb2", "pred2", "predcb2"}
+PROP_PRED = {"pred", "predcb", "pred2", "predcb2"}
+PROP_CB = {"cb", "predcb", "cb2", "predcb2"}
 
 
 class _AttnDone(Exception):
@@ -660,6 +667,7 @@ class PropCodec:
         self.arm, self.cb_size, self.iters, self.gen, self.lam = arm, cb_size, kmeans_iters, gen, lam
         self.A = self.b = self.C = self.H = None
         self.thr = 0.0
+        self.int2 = arm in ("int2", "cb2", "pred2", "predcb2")
 
     def fit(self, X: torch.Tensor, w2: torch.Tensor, prev: torch.Tensor | None) -> dict:
         """X [N, d] training latents of this stream, w2 [N] attention weights, prev [N, d] decoded
@@ -669,11 +677,11 @@ class PropCodec:
         self.xmean = X.mean(0, keepdim=True)
         stats, R = {}, X
         E = (X - self.xmean).pow(2).sum().item()
-        if self.arm in ("pred", "predcb") and prev is not None:
+        if self.arm in PROP_PRED and prev is not None:
             self.A, self.b = ridge(prev, X, self.lam)
             R = X - (prev @ self.A + self.b)
             stats["pred_explained_train"] = 1 - R.pow(2).sum().item() / E
-        if self.arm in ("cb", "predcb"):
+        if self.arm in PROP_CB:
             C = kp.kmeans(R, self.cb_size, self.iters, self.gen, w=w2)
             self.C = torch.cat([C, torch.zeros_like(C[:1])])
             stats["cb_resid_train"] = (R - self.C[kp.nearest(R, self.C)]).pow(2).sum().item() / R.pow(2).sum().item()
@@ -687,6 +695,12 @@ class PropCodec:
             return fp8_tile128(X)
         if self.arm == "nvfp4":
             return nvfp4(X)
+        if self.arm == "ulp":
+            Xb = X.to(torch.bfloat16)
+            g = torch.Generator(device=X.device).manual_seed(int(X.shape[0]))
+            hit = torch.rand(X.shape, generator=g, device=X.device) < 0.01
+            Xi = Xb.view(torch.int16)
+            return torch.where(hit, Xi + 1, Xi).view(torch.bfloat16).float(), 16.0
         T, d = X.shape
         P, cost = torch.zeros_like(X), 0.0
         if self.A is not None:
@@ -697,10 +711,14 @@ class PropCodec:
             P = P + self.C[kp.nearest(R, self.C)]
             cost = math.log2(self.C.shape[0]) / d
             cur["cb_in"], cur["cb_out"] = R.pow(2).sum().item(), (X - P).pow(2).sum().item()
-        Rq, b_nv = nvfp4((X - P) @ self.H)
+        if self.int2:
+            Q, b_r = kp.quant_residual(X - P, "tok", 2), 2 + 16 / kp.G
+        else:
+            Rq, b_r = nvfp4((X - P) @ self.H)
+            Q = Rq @ self.H.T
         tiny = X.norm(dim=1) < self.thr
-        Xh = torch.where(tiny[:, None], X, P + Rq @ self.H.T)
-        bits = b_nv + cost
+        Xh = torch.where(tiny[:, None], X, P + Q)
+        bits = b_r + cost
         tiny_cost = tiny.float().mean().item() * (1 + math.log2(T) / d)     # x (16 - b) bits, + position
         return Xh, bits + tiny_cost * (16 - bits)
 
@@ -775,7 +793,7 @@ def prop_final(src: LayerSource, H: dict, own: dict, names: list, windows: dict,
 
 
 @torch.no_grad()
-def stream_propagated(src: LayerSource, windows: dict, dev, out_dir: Path, *, arms=PROP_ARMS,
+def stream_propagated(src: LayerSource, windows: dict, dev, out_dir: Path, *, arms=PROP_DEFAULT,
                       layers: int | None = None, act_fp8=False, cb_size=4096, kmeans_iters=10, ridge_lam=1e-3,
                       state_every=8, seed=0) -> dict:
     gen = torch.Generator().manual_seed(seed)
@@ -867,7 +885,7 @@ def stream_propagated(src: LayerSource, windows: dict, dev, out_dir: Path, *, ar
                     X, o = tap.latent[0][0].float(), tap.out[0].float()
                     H[a][p], topk[a][p] = out[0], tk
                     Xh = cur.get("Xh", X)
-                    if a in ("pred", "predcb"):
+                    if a in PROP_PRED:
                         if dec is None:
                             dec = torch.empty(len(own[a]), *X.shape, dtype=torch.float16, device=X.device)
                         dec[p] = Xh.half()
@@ -1001,7 +1019,7 @@ def preflight_propagate(base_cfg, dev, tmp: Path) -> dict:
     src = LayerSource(str(full_dir), str(tmp / "tiny_stage"))
     mk = lambda: torch.randint(0, int(src.cfg["vocab_size"]), (256,), generator=g).to(dev)
     windows = {"train": [mk() for _ in range(3)], "eval": [mk() for _ in range(2)], "gen": [mk()]}
-    res = stream_propagated(src, windows, dev, tmp / "prop", arms=("ident", "nvfp4", "predcb"), cb_size=16,
+    res = stream_propagated(src, windows, dev, tmp / "prop", arms=("ident", "nvfp4", "predcb", "predcb2", "ulp"), cb_size=16,
                             kmeans_iters=2, state_every=0)
     layers = sorted(k for k in res if isinstance(k, int))
     for L in layers:
@@ -1013,11 +1031,17 @@ def preflight_propagate(base_cfg, dev, tmp: Path) -> dict:
         raise RuntimeError(f"preflight: identity stream changes the logits: {fin['ident']}")
     if res[layers[-1]]["arms"]["nvfp4"]["eval"]["hidden_drift_rel"] <= 0 or fin["nvfp4"]["kl_vs_exact"] <= 0:
         raise RuntimeError("preflight: the NVFP4 stream shows no error, so the latent is not being replaced")
+    for L in layers:
+        b2 = res[L]["arms"]["predcb2"]["eval"]["bits"]
+        u = res[L]["arms"]["ulp"]["eval"]["local_latent_rel"]
+        if not 2.0 < b2 < 2.4 or not 0.0 < u < 1e-4:
+            raise RuntimeError(f"preflight: layer {L} predcb2 bits {b2} / ulp latent error {u} out of range")
     shared = [L for L in layers if res[L]["predicted"]]
     if not shared or not all(math.isfinite(res[L]["arms"]["predcb"]["eval"].get("pred_explained", float("nan")))
                              for L in shared):
         raise RuntimeError(f"preflight: the cross-layer predictor did not run on a shared layer ({shared})")
     return {"ridge_rel": ridge_rel, "shared_layers": shared, "nvfp4_kl": fin["nvfp4"]["kl_vs_exact"],
+            "predcb2_kl": fin["predcb2"]["kl_vs_exact"], "ulp_kl": fin["ulp"]["kl_vs_exact"],
             "predcb_kl": fin["predcb"]["kl_vs_exact"],
             "predcb_pred_explained": {L: res[L]["arms"]["predcb"]["eval"]["pred_explained"] for L in shared}}
 
@@ -1087,7 +1111,8 @@ def main(argv=None):
     ap.add_argument("--dump-layers", default="", help="comma list: save eval latents + codebooks of these layers")
     ap.add_argument("--propagate", action="store_true",
                     help="per-arm hidden-state streams: accumulated KV error through the model (see PROP_ARMS)")
-    ap.add_argument("--prop-arms", default=",".join(PROP_ARMS), help="comma list of propagated arms")
+    ap.add_argument("--prop-arms", default=",".join(PROP_DEFAULT),
+                    help=f"comma list of propagated arms, from {','.join(PROP_ARMS)}")
     ap.add_argument("--cb-size", type=int, default=4096, help="--propagate: codebook size")
     ap.add_argument("--ridge", type=float, default=1e-3, help="--propagate: predictor ridge (x mean Gram diagonal)")
     ap.add_argument("--threads", type=int, default=16)

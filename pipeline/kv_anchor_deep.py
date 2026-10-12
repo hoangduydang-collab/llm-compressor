@@ -914,10 +914,12 @@ def stream_propagated(src: LayerSource, windows: dict, dev, out_dir: Path, *, ar
             torch.cuda.empty_cache()
         if state_every and (L + 1) % state_every == 0 and L + 1 < last:
             torch.save({"streams": streams, "H": H, "topk": topk, "prev": prev, "next_layer": L + 1}, state_p)
-    if last == src.n_layers:
-        final = prop_final(src, H, own, names, windows, dev)
-        (out_dir / "prop_final.json").write_text(json.dumps(final, indent=1))
-        results["final"] = final
+    # after a partial (--layers) run this is the head applied to a mid-depth hidden state: only a smoke
+    # test of the code path, so it records how many layers fed it
+    final = {"after_layers": last, "complete": last == src.n_layers,
+             **prop_final(src, H, own, names, windows, dev)}
+    (out_dir / "prop_final.json").write_text(json.dumps(final, indent=1))
+    results["final"] = final
     return results
 
 
@@ -937,9 +939,13 @@ def summarize_prop(results: dict, meta: dict) -> str:
         L.append("")
     final = results.get("final")
     if final:
-        L += ["## next-token metrics after the last layer", "", "| split | arm | KL vs exact | top-1 agree | ppl |",
+        head = ("after the last layer" if final.get("complete")
+                else f"after layer {final.get('after_layers')} of a partial run (code-path check only)")
+        L += [f"## next-token metrics {head}", "", "| split | arm | KL vs exact | top-1 agree | ppl |",
               "|---|---|---|---|---|"]
         for s, d in final.items():
+            if not isinstance(d, dict):
+                continue
             for a, m in d.items():
                 L.append(f"| {s} | {a} | {m['kl_vs_exact']:.4f} | {m['top1_agree']:.4f} | {m['ppl']:.3f} |")
     return "\n".join(L)
